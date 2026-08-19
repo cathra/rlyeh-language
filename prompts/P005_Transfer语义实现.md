@@ -3,7 +3,8 @@
 > **模块路径**：`crates/zeta-regionck/` (扩展)  
 > **预估工期**：3-5 天  
 > **前置依赖**：P004（区域系统）  
-> **输出**：完整的 transfer 语义——从区域安全转移所有权
+> **输出**：完整的 transfer 语义——从区域安全转移所有权  
+> **状态**：✅ MVP 已实现（2026-08-20）
 
 ---
 
@@ -230,26 +231,26 @@ impl Region {
 ## 必须实现的功能清单
 
 ### 1. 语义检查
-- [ ] 区域存在性验证
-- [ ] 非引用检查
-- [ ] 非部分转移检查
-- [ ] 非重复转移检查
-- [ ] 嵌套区域中的转移方向检查
+- [x] 区域存在性验证（`RegionNotFound`）✅
+- [x] 非引用检查（`CannotTransferReference`，防御性：typecheck 已在 MVP 拒绝 `&` 语法）✅
+- [x] 非部分转移检查（`PartialTransfer`：transfer 非变量表达式直接拒绝；字段/索引形态防御性预留）✅
+- [x] 非重复转移检查（`DoubleTransfer`）✅
+- [x] 嵌套区域中的转移方向检查（`OuterRegionTransfer`：源区域必须是当前活跃栈顶）✅
 
 ### 2. 运行时操作
-- [ ] 从析构列表移除
-- [ ] 标记已迁出
-- [ ] 返回所有权句柄
-- [ ] 区域销毁时跳过已迁出对象
+- [x] 从析构列表移除（`mark_transferred` 内部完成）✅
+- [x] 标记已迁出（`transferred` 列表）✅
+- [x] 返回所有权句柄（`execute_transfer<T>` → `&'static mut T`）✅
+- [x] 区域销毁时跳过已迁出对象（`destroy` + `is_transferred` 查询）✅
 
 ### 3. HIR 转换
-- [ ] Transfer 节点生成
-- [ ] 类型调整为 `'static` 或调用者生命周期
-- [ ] 插入析构列表操作
+- [x] Transfer 节点生成（P004 已实现 `HirExpr::Transfer`）✅
+- [ ] 类型调整为 `'static` 或调用者生命周期（HIR 无类型标注，待类型系统扩展）
+- [ ] 插入析构列表操作（MIR 阶段）
 
 ### 4. MIR  lowering
-- [ ] Transfer 变为 `region_remove_destructor` + `bitcast`
-- [ ] 调用约定调整
+- [ ] Transfer 变为 `region_remove_destructor` + `bitcast`（依赖 `zeta-mir`，当前占位）
+- [ ] 调用约定调整（依赖 MIR）
 
 ---
 
@@ -525,3 +526,40 @@ crates/zeta-region-alloc/src/
 ## 完成后下一步
 
 进入 **P006_Actor运行时.md**，实现 Actor 并发模型。
+
+## 实施记录（2026-08-20）
+
+- **运行时**（`zeta-region-alloc`）：`Region` 新增 `execute_transfer<T>(&mut self, ptr) -> &'static mut T`
+  （移除析构 + 标记已迁出 + 返回所有权句柄）与 `is_transferred(ptr)` 查询；
+  `mark_transferred` 保留为底层簿记入口。
+- **语义**（`zeta-regionck`）：新增 `OuterRegionTransfer` 检查——`transfer v out of 'r`
+  的源区域必须是**当前活跃区域栈栈顶**，从内层区域转移外层区域对象报错；
+  transfer 非变量表达式（调用结果、复合表达式等无法静态判定归属）报 `PartialTransfer`。
+- **错误类型**：`RegionError` 新增 `CannotTransferReference` / `OuterRegionTransfer` /
+  `UnsizedTransfer` 变体（`PartialTransfer` 已有）；`line`/`col` 仍为占位 0（HIR 无 Span）。
+
+## 落地偏差说明
+
+- `zeta-regionck` 未新建 `transfer.rs`，Transfer 检查并入 `checker.rs` 的 `check_transfer`（与 P004 一致）。
+- `execute_transfer` 归属 `zeta-region-alloc::region`（P005 原稿放在 regionck 的 TransferChecker 内；
+  运行时操作涉及 `DestructorRegistry` 内部字段，放 Region 侧更内聚）。
+- 未公开 `remove_destructor`：`mark_transferred` 已内部完成"移除析构 + 标记"；
+  单独公开会导致"析构被移除但未标记"的泄漏状态，保留单一入口。
+- **非引用 / 字段级部分转移检查为防御性**：typecheck 在 MVP 阶段对 `&`、字段访问、元组索引
+  直接返回 `Unsupported`，这些语法无法到达 regionck。`CannotTransferReference` / `UnsizedTransfer`
+  保留变体与 Display，待 HIR 引入引用节点与类型标注后启用。
+- **transfer 后的内存语义**：bump 区域销毁时整体释放全部块（`deallocate_all`），
+  transferred 对象仍位于区域块内（零拷贝，ADR-003）；接收方须在 `destroy` **之前**
+  读取/修改/把值 move 出区域，销毁后句柄失效。真实编译器中的"搬移到外部堆"由 MIR/代码生成阶段完成。
+- `test_transfer_then_use_in_region`（use-after-move）依赖借用检查器（P007），本阶段未实现。
+- 性能基准 `benches/transfer_bench.rs` 未建（可选交付），核心路径已在单元测试覆盖。
+
+## 测试清单（新增 9 项）
+
+- `zeta-region-alloc/tests/transfer_runtime_test.rs`（3 项）：所有权句柄读写、10 对象 transfer 5 个
+  后销毁仅析构 5 个（无 double free）、`is_transferred` 状态查询。
+- `zeta-regionck/tests/transfer_test.rs`（6 项）：内层 transfer 内层对象 OK、内层 transfer 外层对象
+  报 `OuterRegionTransfer`、内层结束后外层直接作用域 transfer OK、transfer 复合表达式/调用结果报
+  `PartialTransfer`、防御性变体 Display。
+
+全 workspace 176 项测试通过，clippy 0 警告，`cargo fmt --check` 通过。

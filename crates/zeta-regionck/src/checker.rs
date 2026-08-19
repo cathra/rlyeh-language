@@ -1,0 +1,262 @@
+//! 区域检查器：验证区域的嵌套、对象归属与 `transfer` 合法性。
+
+use std::collections::{HashMap, HashSet};
+
+use zeta_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+
+use crate::error::RegionError;
+
+/// 检查过程中的可变状态。
+struct CheckState {
+    /// 当前活跃区域栈（由 `region` 块进入/退出）。
+    active_regions: Vec<String>,
+    /// 变量 → 所在区域（由 `in 'r` 记录）。
+    allocated: HashMap<String, String>,
+    /// 已 transfer 的变量集合（防重复转移）。
+    transferred: HashSet<String>,
+    /// 收集到的错误。
+    errors: Vec<RegionError>,
+}
+
+impl CheckState {
+    fn new() -> Self {
+        Self {
+            active_regions: Vec::new(),
+            allocated: HashMap::new(),
+            transferred: HashSet::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    fn region_in_scope(&self, name: &str) -> bool {
+        self.active_regions.contains(&name.to_string())
+    }
+}
+
+/// 区域检查器。
+///
+/// MVP 阶段检查范围：
+/// - 区域块的嵌套与匿名区域唯一化；
+/// - `in 'r` / `transfer ... out of 'r` 引用未定义的区域；
+/// - 被 transfer 的对象确实分配在声明的源区域内；
+/// - 同一对象不得重复 transfer；
+/// - 不能从内层区域转移外层区域的对象（P005 嵌套方向检查）；
+/// - 无法静态判定归属的 transfer（调用结果等）直接拒绝（P005 PartialTransfer）。
+///
+/// 引用逃逸（RegionEscape）的完整分析依赖类型信息，留待后续阶段；
+/// `CannotTransferReference` / `UnsizedTransfer` 为防御性变体，
+/// 待 HIR 引入引用节点与类型标注后启用。
+pub struct RegionChecker {
+    state: CheckState,
+    anon_counter: usize,
+}
+
+impl RegionChecker {
+    /// 创建空检查器。
+    pub fn new() -> Self {
+        Self {
+            state: CheckState::new(),
+            anon_counter: 0,
+        }
+    }
+
+    /// 检查整个程序，返回 `Ok(())` 或收集到的错误列表。
+    pub fn check_program(&mut self, program: &HirProgram) -> Result<(), Vec<RegionError>> {
+        for item in &program.items {
+            self.check_item(item);
+        }
+        if self.state.errors.is_empty() {
+            Ok(())
+        } else {
+            Err(std::mem::take(&mut self.state.errors))
+        }
+    }
+
+    fn check_item(&mut self, item: &zeta_hir::HirItem) {
+        if let HirItemKind::Fn(f) = &item.kind {
+            if let Some(body) = &f.body {
+                self.check_block(body);
+            }
+        }
+    }
+
+    fn check_block(&mut self, block: &HirBlock) {
+        for stmt in &block.stmts {
+            self.check_stmt(stmt);
+        }
+        if let Some(expr) = &block.final_expr {
+            self.check_expr(expr);
+        }
+    }
+
+    fn check_stmt(&mut self, stmt: &HirStmt) {
+        match stmt {
+            HirStmt::Let { name, init, .. } => {
+                self.check_expr(init);
+                // `let x = expr in 'r`：InRegion 包裹的是初始化表达式本身，
+                // 需要在此记录变量 `x` 的归属区域
+                if let HirExpr::InRegion { region, .. } = init {
+                    if self.state.region_in_scope(region) {
+                        self.state.allocated.insert(name.clone(), region.clone());
+                    }
+                }
+            }
+            HirStmt::Expr(e) | HirStmt::Semi(e) => self.check_expr(e),
+        }
+    }
+
+    /// 递归遍历表达式，维护区域栈与变量归属。
+    fn check_expr(&mut self, expr: &HirExpr) {
+        match expr {
+            HirExpr::Region { name, body, .. } => {
+                let key = match name {
+                    Some(n) => n.clone(),
+                    None => {
+                        let key = format!("<anon@{}>", self.anon_counter);
+                        self.anon_counter += 1;
+                        key
+                    }
+                };
+                self.state.active_regions.push(key.clone());
+                self.check_block(body);
+                self.state.active_regions.pop();
+                // 区域结束后，未 transfer 的区域内变量归属一并清除
+                self.state.allocated.retain(|_, r| *r != key);
+            }
+            HirExpr::InRegion { expr, region } => {
+                self.check_expr(expr);
+                if !self.state.region_in_scope(region) {
+                    self.state.errors.push(RegionError::not_found(region));
+                    return;
+                }
+                if let HirExpr::Variable(v) = expr.as_ref() {
+                    self.state.allocated.insert(v.clone(), region.clone());
+                }
+            }
+            HirExpr::Transfer { expr, region } => {
+                self.check_expr(expr);
+                match expr.as_ref() {
+                    HirExpr::Variable(v) => self.check_transfer(v, region),
+                    // 非变量表达式（调用结果、复合表达式等）无法静态判定其归属区域，
+                    // 也不存在"已分配于区域"的对象可转移（P005：PartialTransfer）。
+                    other => {
+                        let _ = other;
+                        self.state.errors.push(RegionError::partial_transfer(
+                            "cannot statically determine the owning region of the transferred value",
+                        ));
+                    }
+                }
+            }
+            HirExpr::Assign { value, .. } => self.check_expr(value),
+            HirExpr::Binary(_, l, r) => {
+                self.check_expr(l);
+                self.check_expr(r);
+            }
+            HirExpr::Unary(_, e) => self.check_expr(e),
+            HirExpr::SetLookup { value, .. } => self.check_expr(value),
+            HirExpr::RangeCheck {
+                value,
+                lower,
+                upper,
+                ..
+            } => {
+                self.check_expr(value);
+                if let Some(l) = lower {
+                    self.check_expr(l);
+                }
+                if let Some(u) = upper {
+                    self.check_expr(u);
+                }
+            }
+            HirExpr::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                self.check_expr(cond);
+                self.check_block(then_block);
+                if let Some(eb) = else_block {
+                    self.check_block(eb);
+                }
+            }
+            HirExpr::Block(b) => self.check_block(b),
+            HirExpr::While { cond, body } => {
+                self.check_expr(cond);
+                self.check_block(body);
+            }
+            HirExpr::Loop { body } => self.check_block(body),
+            HirExpr::Call { args, .. } => {
+                for a in args {
+                    self.check_expr(a);
+                }
+            }
+            HirExpr::Return(e) | HirExpr::Break(e) => {
+                if let Some(e) = e {
+                    self.check_expr(e);
+                }
+            }
+            // 字面量 / 变量引用 / continue / 单元值：无子表达式
+            HirExpr::IntLiteral(_)
+            | HirExpr::FloatLiteral(_)
+            | HirExpr::StringLiteral(_)
+            | HirExpr::CharLiteral(_)
+            | HirExpr::BoolLiteral(_)
+            | HirExpr::Variable(_)
+            | HirExpr::Continue
+            | HirExpr::Unit => {}
+        }
+    }
+
+    /// 校验一次 `transfer v out of 'r`：
+    /// 1. 区域 `'r` 必须当前可见；
+    /// 2. `v` 不得被重复转移；
+    /// 3. `v` 必须分配在 `'r` 内；
+    /// 4. `'r` 必须是当前最内层活跃区域（不能从内层转移外层区域对象，P005）。
+    fn check_transfer(&mut self, v: &str, region: &str) {
+        if !self.state.region_in_scope(region) {
+            self.state.errors.push(RegionError::not_found(region));
+            return;
+        }
+        if self.state.transferred.contains(v) {
+            self.state.errors.push(RegionError::double_transfer(v));
+            return;
+        }
+        match self.state.allocated.get(v) {
+            Some(r) if r == region => {
+                // 嵌套方向检查：transfer 必须写在源区域的直接作用域内，
+                // 栈顶不是源区域说明从更内层区域转移外层区域对象。
+                if self.state.active_regions.last().map(String::as_str) != Some(region) {
+                    self.state
+                        .errors
+                        .push(RegionError::outer_region_transfer(format!(
+                            "object `{v}` belongs to region `'{region}`, \
+                             but the transfer occurs inside a nested region; \
+                             move the transfer into `'{region}` directly"
+                        )));
+                    return;
+                }
+                self.state.transferred.insert(v.to_string());
+            }
+            Some(other) => {
+                self.state
+                    .errors
+                    .push(RegionError::invalid_transfer(format!(
+                        "object `{v}` is allocated in region `'{other}`, not `'{region}`"
+                    )));
+            }
+            None => {
+                self.state
+                    .errors
+                    .push(RegionError::invalid_transfer(format!(
+                        "object `{v}` is not allocated in any visible region"
+                    )));
+            }
+        }
+    }
+}
+
+impl Default for RegionChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}

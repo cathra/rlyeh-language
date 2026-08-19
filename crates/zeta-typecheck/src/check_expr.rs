@@ -1,7 +1,9 @@
 //! 表达式类型推断与 HIR 生成。
 
-use zeta_ast::{AstBlock, AstExpr, AstType, BinaryOp, ExprKind, UnaryOp};
-use zeta_hir::{HirBinaryOp, HirBlock, HirExpr, HirUnaryOp};
+use zeta_ast::{AstBlock, AstExpr, AstType, AssignOp, BinaryOp, ExprKind, UnaryOp};
+use zeta_hir::{
+    HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirRegionOptions, HirUnaryOp,
+};
 use zeta_lexer::Span;
 
 use crate::comparison;
@@ -106,15 +108,20 @@ pub(crate) fn infer_expr(
             range,
             negated,
         } => in_expr::check_in_range_expression(ctx, value.clone(), range.clone(), *negated, span),
-        ExprKind::InRegion { expr, .. } => {
-            // 区域归属：MVP 阶段仅检查内部表达式
+        ExprKind::InRegion { expr, region } => {
             let (hir, ty) = infer_expr(ctx, expr)?;
-            Ok((hir, ty))
+            Ok((
+                HirExpr::InRegion {
+                    expr: Box::new(hir),
+                    region: region.clone(),
+                },
+                ty,
+            ))
         }
 
-        ExprKind::Assign { target, value, .. } => {
-            let (_, t_ty) = infer_expr(ctx, target)?;
-            let (_, v_ty) = infer_expr(ctx, value)?;
+        ExprKind::Assign { target, op, value } => {
+            let (t_hir, t_ty) = infer_expr(ctx, target)?;
+            let (v_hir, v_ty) = infer_expr(ctx, value)?;
             if !t_ty.compatible_with(&v_ty) {
                 return Err(TypeError::WrongType {
                     expected: t_ty.to_string(),
@@ -122,7 +129,30 @@ pub(crate) fn infer_expr(
                     span,
                 });
             }
-            Ok((HirExpr::Unit, Type::Unit))
+            let target_name = match t_hir {
+                HirExpr::Variable(v) => v,
+                _ => {
+                    return Err(TypeError::Unsupported {
+                        what: "非变量赋值目标在 MVP 阶段（仅支持 `x = ...`）".to_string(),
+                        span,
+                    });
+                }
+            };
+            let hir_op = match op {
+                AssignOp::Assign => HirAssignOp::Assign,
+                AssignOp::AddAssign => HirAssignOp::AddAssign,
+                AssignOp::SubAssign => HirAssignOp::SubAssign,
+                AssignOp::MulAssign => HirAssignOp::MulAssign,
+                AssignOp::DivAssign => HirAssignOp::DivAssign,
+            };
+            Ok((
+                HirExpr::Assign {
+                    target: target_name,
+                    op: hir_op,
+                    value: Box::new(v_hir),
+                },
+                Type::Unit,
+            ))
         }
 
         ExprKind::If {
@@ -173,37 +203,67 @@ pub(crate) fn infer_expr(
             span,
         }),
 
-        ExprKind::For { iterator, .. } => {
-            let (_, it_ty) = infer_expr(ctx, iterator)?;
-            if it_ty.is_numeric() || matches!(it_ty, Type::Str) {
-                // 简化：数值与字符串视为可迭代（MVP）
-                Ok((HirExpr::Unit, Type::Unit))
-            } else {
-                Err(TypeError::ExpectedIterable {
-                    found: it_ty.to_string(),
-                    span,
-                })
-            }
-        }
-        ExprKind::While { cond, .. } => {
-            let (_, c_ty) = infer_expr(ctx, cond)?;
+        ExprKind::For { .. } => Err(TypeError::Unsupported {
+            what: "for 循环在 MVP 阶段（用 while 替代）".to_string(),
+            span,
+        }),
+        ExprKind::While { cond, body, .. } => {
+            let (c_hir, c_ty) = infer_expr(ctx, cond)?;
             if !c_ty.is_bool() {
                 return Err(TypeError::ExpectedBool {
                     found: c_ty.to_string(),
                     span,
                 });
             }
-            Ok((HirExpr::Unit, Type::Unit))
+            let (b_hir, _) = check_block(ctx, body)?;
+            Ok((
+                HirExpr::While {
+                    cond: Box::new(c_hir),
+                    body: Box::new(b_hir),
+                },
+                Type::Unit,
+            ))
         }
-        ExprKind::Loop { .. } => Ok((HirExpr::Unit, Type::Unit)),
+        ExprKind::Loop { body, .. } => {
+            let (b_hir, _) = check_block(ctx, body)?;
+            Ok((
+                HirExpr::Loop {
+                    body: Box::new(b_hir),
+                },
+                Type::Unit,
+            ))
+        }
 
-        ExprKind::Region { body, .. } => {
-            let (_, ty) = check_block(ctx, body)?;
-            Ok((HirExpr::Unit, ty))
+        ExprKind::Region {
+            name,
+            options,
+            body,
+        } => {
+            let (hir_block, ty) = check_block(ctx, body)?;
+            Ok((
+                HirExpr::Region {
+                    name: name.clone(),
+                    options: HirRegionOptions {
+                        size: options.size,
+                        allow_growth: options.allow_growth,
+                        growth_factor: options.growth_factor,
+                        adaptive: options.adaptive,
+                        exact: options.exact,
+                    },
+                    body: Box::new(hir_block),
+                },
+                ty,
+            ))
         }
-        ExprKind::Transfer { expr, .. } => {
+        ExprKind::Transfer { expr, region } => {
             let (hir, ty) = infer_expr(ctx, expr)?;
-            Ok((hir, ty))
+            Ok((
+                HirExpr::Transfer {
+                    expr: Box::new(hir),
+                    region: region.clone(),
+                },
+                ty,
+            ))
         }
 
         ExprKind::Call { callee, args } => check_call(ctx, callee, args, span),

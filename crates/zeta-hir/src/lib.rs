@@ -108,6 +108,15 @@ pub enum HirExpr {
     BoolLiteral(bool),
     /// 变量引用
     Variable(String),
+    /// 赋值表达式（`target = value`；MVP 目标仅限变量）
+    Assign {
+        /// 赋值目标（变量名）
+        target: String,
+        /// 赋值运算符
+        op: HirAssignOp,
+        /// 被赋的值
+        value: Box<HirExpr>,
+    },
     /// 二元运算
     Binary(HirBinaryOp, Box<HirExpr>, Box<HirExpr>),
     /// 一元运算
@@ -155,14 +164,79 @@ pub enum HirExpr {
         /// 实参
         args: Vec<HirExpr>,
     },
+    /// while 循环（`while cond { body }`）
+    While {
+        /// 条件表达式
+        cond: Box<HirExpr>,
+        /// 循环体
+        body: Box<HirBlock>,
+    },
+    /// loop 循环（`loop { body }`）
+    Loop {
+        /// 循环体
+        body: Box<HirBlock>,
+    },
     /// return 语句
     Return(Option<Box<HirExpr>>),
     /// break 语句
     Break(Option<Box<HirExpr>>),
     /// continue 语句
     Continue,
+    /// 区域表达式（`region 'r { ... }`）
+    Region {
+        /// 区域名（匿名区域为 `None`）
+        name: Option<String>,
+        /// 区域选项
+        options: HirRegionOptions,
+        /// 区域体
+        body: Box<HirBlock>,
+    },
+    /// 区域归属（`expr in 'r`）
+    InRegion {
+        /// 被归属的表达式
+        expr: Box<HirExpr>,
+        /// 区域名（不含 `'`）
+        region: String,
+    },
+    /// 转移（`transfer expr out of 'r`）
+    Transfer {
+        /// 被转移的表达式
+        expr: Box<HirExpr>,
+        /// 源区域名（不含 `'`）
+        region: String,
+    },
     /// 单元值 `()`
     Unit,
+}
+
+/// 区域选项（编译期已知，由 AST `RegionOptions` 复制而来）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HirRegionOptions {
+    /// 固定初始大小（`with_size(N)`）
+    pub size: Option<usize>,
+    /// 是否允许扩容
+    pub allow_growth: bool,
+    /// 扩容因子（`allow_growth(growth_factor=f)`）
+    pub growth_factor: Option<f64>,
+    /// 自适应分配（`adaptive`）
+    pub adaptive: bool,
+    /// 精确大小模式（`exact`）
+    pub exact: bool,
+}
+
+/// HIR 赋值运算符。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HirAssignOp {
+    /// `=`
+    Assign,
+    /// `+=`
+    AddAssign,
+    /// `-=`
+    SubAssign,
+    /// `*=`
+    MulAssign,
+    /// `/=`
+    DivAssign,
 }
 
 /// HIR 二元运算符。

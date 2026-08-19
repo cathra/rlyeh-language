@@ -729,6 +729,10 @@ version = "0.1.0"
 [[package]]
 name = "zeta-mir"
 version = "0.1.0"
+dependencies = [
+ "zeta-hir",
+ "zeta-typecheck",
+]
 
 [[package]]
 name = "zeta-parser"
@@ -747,6 +751,10 @@ version = "0.1.0"
 [[package]]
 name = "zeta-regionck"
 version = "0.1.0"
+dependencies = [
+ "zeta-hir",
+ "zeta-typecheck",
+]
 
 [[package]]
 name = "zeta-std"

@@ -1,0 +1,137 @@
+//! 死代码消除 pass。
+//!
+//! 1. **不可达块删除**：从入口块（index 0）做图遍历，移除不可达基本块并重映射跳转目标；
+//! 2. **死赋值删除**：后向活跃扫描，删除目标为临时变量（`_tN`）且此后未被使用的赋值。
+
+use crate::{
+    BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue,
+};
+use std::collections::HashSet;
+
+/// 对程序执行死代码消除。
+pub fn dead_code_elimination(program: &mut MirProgram) {
+    for f in &mut program.functions {
+        remove_unreachable_blocks(f);
+        remove_dead_assignments(f);
+    }
+}
+
+/// 基本块的后继块（可达性遍历用）。
+fn successors(block: &BasicBlock) -> Vec<usize> {
+    match &block.terminator {
+        Some(MirTerminator::Jump(t)) => vec![*t],
+        Some(MirTerminator::CondJump { then, otherwise, .. }) => vec![*then, *otherwise],
+        Some(MirTerminator::Return(_)) | None => vec![],
+    }
+}
+
+/// 删除不可达基本块并重映射跳转目标。
+fn remove_unreachable_blocks(f: &mut MirFunction) {
+    let n = f.blocks.len();
+    let mut reachable = vec![false; n];
+    let mut stack = vec![0usize];
+    reachable[0] = true;
+    while let Some(id) = stack.pop() {
+        for succ in successors(&f.blocks[id]) {
+            if !reachable[succ] {
+                reachable[succ] = true;
+                stack.push(succ);
+            }
+        }
+    }
+
+    // 旧 id -> 新 id
+    let mut map = vec![usize::MAX; n];
+    let mut new_blocks = Vec::new();
+    for (old, ok) in reachable.iter().enumerate() {
+        if *ok {
+            map[old] = new_blocks.len();
+            new_blocks.push(f.blocks[old].clone());
+        }
+    }
+
+    // 重映射跳转目标
+    for b in &mut new_blocks {
+        match &mut b.terminator {
+            Some(MirTerminator::Jump(t)) => *t = map[*t],
+            Some(MirTerminator::CondJump { then, otherwise, .. }) => {
+                *then = map[*then];
+                *otherwise = map[*otherwise];
+            }
+            _ => {}
+        }
+    }
+    f.blocks = new_blocks;
+}
+
+/// 收集右值中读取的局部变量。
+fn collect_used(value: &MirValue, used: &mut HashSet<Local>) {
+    match value {
+        MirValue::Place(p) => {
+            used.insert(p.clone());
+        }
+        MirValue::Binary { lhs, rhs, .. } => {
+            collect_used(lhs, used);
+            collect_used(rhs, used);
+        }
+        MirValue::Unary { operand, .. } => collect_used(operand, used),
+        MirValue::Int(_)
+        | MirValue::Float(_)
+        | MirValue::String(_)
+        | MirValue::Char(_)
+        | MirValue::Bool(_)
+        | MirValue::Unit => {}
+    }
+}
+
+/// 删除目标为临时变量且此后未被使用的赋值（后向活跃扫描，块内）。
+fn remove_dead_assignments(f: &mut MirFunction) {
+    for block in &mut f.blocks {
+        // 终止符读取的变量为活跃
+        let mut used: HashSet<Local> = HashSet::new();
+        match &block.terminator {
+            Some(MirTerminator::Return(Some(p))) => {
+                used.insert(p.clone());
+            }
+            Some(MirTerminator::CondJump { cond, .. }) => {
+                used.insert(cond.clone());
+            }
+            _ => {}
+        }
+
+        let mut new_stmts = Vec::with_capacity(block.stmts.len());
+        for stmt in block.stmts.iter().rev() {
+            match stmt {
+                MirStmt::Assign { target, value } => {
+                    // 读取 value 中的变量（无论本赋值是否被删，读取都要保留）
+                    collect_used(value, &mut used);
+                    let dead = is_temp(target) && !used.contains(target);
+                    if !dead {
+                        new_stmts.push(stmt.clone());
+                    }
+                }
+                MirStmt::Call {
+                    target,
+                    args,
+                    ..
+                } => {
+                    for a in args {
+                        used.insert(a.clone());
+                    }
+                    let dead = matches!(target, Some(t) if is_temp(t) && !used.contains(t));
+                    if !dead {
+                        new_stmts.push(stmt.clone());
+                    }
+                }
+                _ => new_stmts.push(stmt.clone()),
+            }
+        }
+        new_stmts.reverse();
+        block.stmts = new_stmts;
+    }
+}
+
+/// 是否为 lowering 生成的临时变量（`_tN`）。
+fn is_temp(name: &str) -> bool {
+    name.starts_with("_t")
+}

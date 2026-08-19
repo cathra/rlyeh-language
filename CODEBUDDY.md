@@ -250,7 +250,7 @@ region 'r adaptive {
 - [ ] **M1.3** AST → HIR  lowering
 - [x] **M1.4** 类型检查器基础（比较链 + `in` 表达式语义；泛型/trait 待扩展）
 - [ ] **M1.5** 借用检查器（L0 所有权系统）
-- [ ] **M1.6** 区域检查器（L1 区域系统 + transfer 语义）
+- [x] **M1.6** 区域系统（`zeta-region-alloc` bump allocator + 四策略 + LIFO 析构 + `execute_transfer` 所有权句柄；`zeta-regionck` 嵌套/归属/transfer 合法性 + P005 嵌套方向/PartialTransfer 语义；MIR lowering 待 P007+）
 - [ ] **M1.7** MIR + 基础优化 passes
 - [ ] **M1.8** 代码生成（LLVM 后端，x86_64 Linux）
 - [ ] **M1.9** 能编译并运行 `hello-world.zeta`
@@ -268,7 +268,7 @@ region 'r adaptive {
 
 ### Milestone 3 — 生态繁荣（Month 8-12）
 
-- [ ] **M3.1** 数据库驱动（SQLite, PostgreSQL）
+- [ ] **M3.1** 数据库驱动（SQLite, PostgreSQL, MySQL）
 - [ ] **M3.2** HTTP 框架
 - [ ] **M3.3** 序列化库（JSON, Protobuf）
 - [ ] **M3.4** 嵌入式支持（RTOS, 裸机）

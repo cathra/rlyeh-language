@@ -5,3 +5,9 @@ edition.workspace = true
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+zeta-hir = { path = "../zeta-hir" }
+
+[dev-dependencies]
+zeta-typecheck = { path = "../zeta-typecheck" }
