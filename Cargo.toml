@@ -22,6 +22,9 @@ members = [
     "zep",
 ]
 
+# cargo-fuzz 的 fuzz crate 独立于工作区构建（需要 nightly）
+exclude = ["crates/zeta-parser/fuzz"]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -68,3 +71,4 @@ dashmap = "5"
 pubgrub = "0"
 toml = "0"
 colored = "2"
+libc = "0.2"

@@ -110,15 +110,20 @@ if 0 < x <= 10 {}
 if 0 > x > 10 {}    // x < 0 || x > 10
 if 0 >= x >= 10 {}  // x <= 0 || x >= 10
 
-// 集合判断
+// 集合判断（括号内为集合，范围元素展开为离散成员）
 if x in (1, 3, 5) {}
-if ch in ('a'..'z', 'A'..'Z') {}
-if x in [0, 10] {}  // 闭区间
-if x not in (0, 10) {}  // 补集
+if ch in ('a'..<'z', 'A'..<'Z') {}
+if x in (0...10) {}  // 等价于 x == 0 || x == 1 || ... || x == 10
+if x not in (0..<10) {}  // 等价于 x != 0 && x != 1 && ... && x != 9
+
+// in 右侧裸范围 = 区间判断（与集合成员判断语义不同）
+if x in 0..<10 {}  // 0 <= x < 10   [0, 10)
+if x in 0...10 {}  // 0 <= x <= 10  [0, 10]
+if x in 0<..10 {}  // 0 < x <= 10   (0, 10]
 
 // 时间字面量
-if hour between 9am and 6pm {}
-if hour between 10pm and 6am {}  // 跨午夜
+if hour in (9am...6pm) {}
+if hour not in (6am..<10pm) {}  // 跨午夜
 ```
 
 ### 3.3 Actor 并发模型
@@ -156,7 +161,7 @@ fn create_data() -> BigStruct {
 
 // 智能分配（编译器自动推断大小）
 region 'r adaptive {
-    for i in 0..10000 {
+    for i in 0..<10000 {
         let obj = Data::new(i) in 'r;
     }
 }
@@ -243,7 +248,7 @@ region 'r adaptive {
 - [ ] **M1.1** Lexer 完成（支持全部关键字和运算符）
 - [ ] **M1.2** Parser 完成（支持完整语法）
 - [ ] **M1.3** AST → HIR  lowering
-- [ ] **M1.4** 类型检查器（支持泛型 + trait）
+- [x] **M1.4** 类型检查器基础（比较链 + `in` 表达式语义；泛型/trait 待扩展）
 - [ ] **M1.5** 借用检查器（L0 所有权系统）
 - [ ] **M1.6** 区域检查器（L1 区域系统 + transfer 语义）
 - [ ] **M1.7** MIR + 基础优化 passes
@@ -293,7 +298,7 @@ region 'r adaptive {
 ```
 feat(lexer): add support for 'in' keyword
 fix(parser): handle edge case in comparison chain
-docs(grammar): clarify between/in precedence
+docs(grammar): clarify in-set precedence
 test(borrowck): add test for partial move
 refactor(mir): simplify CFG construction
 ```
@@ -463,7 +468,7 @@ jobs:
 
 - **决策**：`0 > x > 10` 表示 `x < 0 || x > 10`
 - **理由**：数学直觉对称，零学习成本
-- **替代方案**：`not between`、`outside` 关键词 → 被否决（繁琐）
+- **替代方案**：`outside` 等关键词 → 被否决（繁琐）
 
 ### ADR-002：区域默认使用 bump allocator + 链表扩容
 

@@ -1,7 +1,7 @@
 # Zeta 标准库 API 规范
 
 > 版本：v2.0  
-> 最后更新：2026-08-19
+> 最后更新：2026-08-20
 
 ## 相关文档
 
@@ -40,7 +40,9 @@ zeta-std/
 │   ├── file.zeta
 │   ├── stdin.zeta
 │   ├── stdout.zeta
-│   └── error.zeta
+│   ├── error.zeta
+│   ├── nio.zeta     ← 非阻塞 IO（Interest / Event / Poller）
+│   └── sendfile.zeta ← 内核零拷贝文件传输
 │
 ├── net/           ← 网络
 │   ├── tcp.zeta
@@ -358,6 +360,103 @@ mod fs {
     fn read_dir(path: &str) -> Result<ReadDir, IoError>;
 }
 ```
+
+### 4.4 非阻塞 IO（NIO）
+
+NIO 提供非阻塞模式设置与跨平台事件轮询，是构建事件驱动服务器的基础。
+底层由 `zeta-std` 绑定层实现：Linux 用 `epoll`、macOS/BSD 用 `kqueue`、其他 Unix 用 `poll`。
+
+```zeta
+/// 事件关注标志
+enum Interest {
+    Readable,          // 只关注可读
+    Writable,          // 只关注可写
+    ReadableWritable,  // 同时关注可读与可写
+}
+
+/// 就绪事件：token 用于在应用中定位对应的 fd
+struct Event {
+    token: u64,
+    interest: Interest,
+}
+
+impl Event {
+    fn is_readable(&self) -> bool;
+    fn is_writable(&self) -> bool;
+}
+
+/// 事件轮询器
+struct Poller {
+    // 平台句柄（epoll / kqueue fd，内部持有）
+}
+
+impl Poller {
+    /// 创建轮询器
+    fn new() -> Result<Poller, IoError>;
+
+    /// 注册 fd，绑定应用侧 token
+    fn register(&self, fd: i32, token: u64, interest: Interest) -> Result<(), IoError>;
+
+    /// 修改 fd 的关注事件与 token
+    fn reregister(&self, fd: i32, token: u64, interest: Interest) -> Result<(), IoError>;
+
+    /// 注销 fd
+    fn deregister(&self, fd: i32) -> Result<(), IoError>;
+
+    /// 阻塞等待就绪事件写入 events（清空后追加）；
+    /// timeout = None 表示无限等待，返回本次就绪的事件个数
+    fn poll(&self, events: &mut Vec<Event>, timeout: Option<Duration>) -> Result<usize, IoError>;
+}
+
+/// 设置 fd 是否为非阻塞模式
+fn set_nonblocking(fd: i32, nonblocking: bool) -> Result<(), IoError>;
+
+/// 查询 fd 是否处于非阻塞模式
+fn is_nonblocking(fd: i32) -> Result<bool, IoError>;
+```
+
+典型的事件循环：
+
+```zeta
+set_nonblocking(listener.fd, true)?;
+let poller = Poller::new()?;
+poller.register(listener.fd, 0, Interest::Readable)?;
+let mut events = Vec::new();
+loop {
+    poller.poll(&mut events, Some(100.ms))?;
+    for e in events {
+        match e.token {
+            0 => accept_connection(listener)?,
+            t => handle_conn(t, e.interest)?,
+        }
+    }
+}
+```
+
+### 4.5 零拷贝传输（sendfile）
+
+`sendfile` 在内核态将文件内容直接拷贝到 socket，不经过用户态缓冲区，
+适用于静态文件响应、大文件传输代理等场景。
+
+```zeta
+mod sendfile {
+    /// 将 in_fd 从 offset 处开始的内容零拷贝发送到 out_fd；
+    /// count == 0 表示发送到文件末尾（EOF）
+    fn sendfile(out_fd: i32, in_fd: i32, offset: u64, count: usize) -> Result<usize, IoError>;
+}
+
+impl File {
+    /// 便捷方法：将整个文件（offset 起至 EOF）发送到 socket
+    fn sendfile_to(&self, sock_fd: i32, offset: u64) -> Result<u64, IoError>;
+}
+
+// 示例：HTTP 静态文件响应（无需把文件读进内存）
+let n = sendfile(conn.fd, file.fd, 0, 0)?;   // 发送整个文件
+let n = sendfile(conn.fd, file.fd, 64, 4096)?; // 只发送中间一段
+```
+
+> 平台差异：Linux 与 macOS/BSD 的 `sendfile(2)` 参数顺序不同，由绑定层屏蔽；
+> 非 Unix 平台（Windows/WASM）当前返回 `Unsupported`，Windows 计划用 `TransmitFile` 补齐。
 
 ---
 

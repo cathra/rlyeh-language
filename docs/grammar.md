@@ -79,8 +79,9 @@ Comma       ::= ','
 Colon       ::= ':'
 Semicolon   ::= ';'
 Dot         ::= '.'
-Range       ::= '..'
-RangeIncl   ::= '..='
+DotDotLt    ::= '..<'   // 左闭右开 [a, b)
+Ellipsis    ::= '...'   // 闭区间 [a, b]
+LtDotDot    ::= '<..'   // 左开右闭 (a, b]
 Arrow       ::= '->'
 FatArrow    ::= '=>'
 ```
@@ -213,19 +214,15 @@ LogicOp     ::= '&&' | '||' | 'and' | 'or'
 CompareExpr ::= RangeExpr (CompareOp RangeExpr)*
               | RangeExpr 'in' InTarget
               | RangeExpr 'not' 'in' InTarget
-              | RangeExpr 'between' RangeBound 'and' RangeBound
 
 CompareOp   ::= '<' | '<=' | '>' | '>=' | '==' | '!='
-RangeBound  ::= 'exclusive'? Expr  // 'exclusive' 修饰端点
-InTarget    ::= '(' InList ')'
-              | '(' InList ']'
-              | '[' InList ')'
-              | '[' InList ']'
+InTarget    ::= '(' InList ')'     // 集合：成员判断，范围元素离散展开
+              | RangeExpr          // 裸范围：a..<b / a...b / a<..b 区间判断
 InList      ::= InItem (',' InItem)*
 InItem      ::= Expr
-              | RangeExpr          // a..b 半开区间元素
+              | RangeExpr          // 范围元素：展开为离散成员（要求整数常量）
 
-RangeExpr   ::= BitOrExpr ('..' | '..=' BitOrExpr)?
+RangeExpr   ::= BitOrExpr ('..<' | '...' | '<..' BitOrExpr)?
 
 BitOrExpr   ::= BitXorExpr ('|' BitXorExpr)*
 BitXorExpr  ::= BitAndExpr ('^' BitAndExpr)*
@@ -324,9 +321,9 @@ Pattern     ::= Literal
               | 'ref' 'mut'? Pattern
               | Pattern '|' Pattern
 
-RangePattern ::= Expr '..' Expr
-               | Expr '..=' Expr
-               | 'between' RangeBound 'and' RangeBound
+RangePattern ::= Expr '..<' Expr   // 左闭右开
+               | Expr '...' Expr   // 闭区间
+               | Expr '<..' Expr   // 左开右闭
 ```
 
 ### 2.14 宏系统
@@ -356,7 +353,7 @@ MacroItem   ::= '$' Ident ':' MacroClass
 | 6 | `+`, `-` | 左 |
 | 7 | `<<`, `>>` | 左 |
 | 8 | `<`, `<=`, `>`, `>=`, `==`, `!=` | 左（比较链） |
-| 9 | `in`, `not in`, `between` | 左 |
+| 9 | `in`, `not in` | 左 |
 | 10 | `&`（按位与） | 左 |
 | 11 | `^` | 左 |
 | 12 | `|` | 左 |
@@ -370,31 +367,39 @@ MacroItem   ::= '$' Ident ':' MacroClass
 
 ### 4.1 `in` 表达式
 
+`in` 右侧为**括号集合**时是成员判断（`==` 链），其中范围元素展开为离散成员；
+`in` 右侧为**裸范围**时是区间判断（`>= && <` 等）。
+
 ```
 in (1, 3, 5)              →  x == 1 || x == 3 || x == 5
-in (0..10)                →  x >= 0 && x < 10
-in [0, 10]                →  x >= 0 && x <= 10
-in (0, 10]                →  x > 0 && x <= 10
-in ('a'..'z', 'A'..'Z')  →  (x >= 'a' && x < 'z') || (x >= 'A' && x < 'Z')
-not in (1, 2, 3)         →  x != 1 && x != 2 && x != 3
+in (0..<10)               →  x == 0 || x == 1 || ... || x == 9   // 范围元素展开为离散成员
+in 0..<10                 →  x >= 0 && x < 10                     // 裸范围 = 区间判断 [0, 10)
+in (0...10)               →  x == 0 || x == 1 || ... || x == 10
+in 0...10                 →  x >= 0 && x <= 10                    // [0, 10]
+in (0<..10)               →  x == 1 || x == 2 || ... || x == 10
+in 0<..10                 →  x > 0 && x <= 10                     // (0, 10]
+in ('a'..<'z', 'A'..<'Z') →  (x == 'a' || ... || x == 'y') || (x == 'A' || ... || x == 'Y')
+not in (1, 2, 3)          →  x != 1 && x != 2 && x != 3
+not in (0..<10)           →  x != 0 && x != 1 && ... && x != 9
+not in 0..<10             →  x < 0 || x >= 10
 ```
 
-### 4.2 `between` 表达式
+> 注：集合内范围元素的离散展开要求上下界为编译期整数常量（时间字面量可归一化为分钟值）。
 
-```
-between 0 and 10          →  0 <= x <= 10  (默认闭区间)
-between 0 .. 10           →  0 <= x < 10   (半开)
-between exclusive 0 and 10 →  0 < x < 10   (全开)
-between 0 and exclusive 10 →  0 <= x < 10
-```
-
-### 4.3 时间字面量
+### 4.2 时间字面量
 
 ```
 9am                       →  9 * 3600 (秒)
 6pm                       →  18 * 3600
 22:00                     →  22 * 3600
 09:30am                   →  9 * 3600 + 30 * 60
+
+// 时间集合判断（in 右侧括号集合，范围元素展开为分钟值离散成员）
+if hour in (9am...6pm) {}          //  hour == 9:00 || hour == 9:01 || ... || hour == 18:00
+if hour not in (6am..<10pm) {}     //  6:00 ~ 21:59 分钟值之外的成员
+
+// 时间区间判断（in 右侧裸范围）
+if hour in 9am...6pm {}            //  9:00 ≤ hour ≤ 18:00
 ```
 
 ---
@@ -410,10 +415,10 @@ fn main() {
 // 比较链
 fn check_range(x: i32) {
     if 0 < x < 10 {
-        println!("x is in (0, 10)");
+        println!("x is in 0..<10");
     }
     if 0 > x > 10 {
-        println!("x is outside [0, 10]");
+        println!("x is outside 0...10");
     }
 }
 
@@ -425,7 +430,7 @@ fn is_vowel(ch: char) -> bool {
 // 区域系统
 fn process_data() {
     region 'r adaptive {
-        for i in 0..10000 {
+        for i in 0..<10000 {
             let item = Item::new(i) in 'r;
             process(&item);
         }

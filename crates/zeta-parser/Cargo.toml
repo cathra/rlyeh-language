@@ -1,0 +1,16 @@
+[package]
+name = "zeta-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+zeta-lexer = { workspace = true }
+zeta-ast = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "parser_bench"
+harness = false

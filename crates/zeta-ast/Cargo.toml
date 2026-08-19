@@ -1,0 +1,7 @@
+[package]
+name = "zeta-ast"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+zeta-lexer = { workspace = true }

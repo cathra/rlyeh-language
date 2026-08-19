@@ -1,0 +1,10 @@
+[package]
+name = "zeta-std"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libc = { workspace = true }

@@ -1,0 +1,14 @@
+/Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/deps/serde-cbc3dfa90044fffb.d: /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/build/serde-af1946e527280fa2/out/private.rs
+
+/Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/deps/libserde-cbc3dfa90044fffb.rlib: /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/build/serde-af1946e527280fa2/out/private.rs
+
+/Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/deps/libserde-cbc3dfa90044fffb.rmeta: /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/build/serde-af1946e527280fa2/out/private.rs
+
+/Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/Users/cathra/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/build/serde-af1946e527280fa2/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/cathra/Documents/Works/OpenSource/zeta-language/target/release/build/serde-af1946e527280fa2/out

@@ -285,7 +285,7 @@ impl AdaptiveAllocator {
 region 'r {
     let a = Point::new() in 'r;     // 大小已知：32 bytes
     let b = String::new() in 'r;    // 大小已知：24 bytes（堆指针 + len + cap）
-    for i in 0..100 {
+    for i in 0..<100 {
         let item = Item::new(i) in 'r;  // 循环：100 × 48 bytes
     }
 }
