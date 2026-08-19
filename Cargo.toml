@@ -1,0 +1,70 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/zeta-lexer",
+    "crates/zeta-parser",
+    "crates/zeta-ast",
+    "crates/zeta-hir",
+    "crates/zeta-mir",
+    "crates/zeta-lir",
+    "crates/zeta-typecheck",
+    "crates/zeta-borrowck",
+    "crates/zeta-regionck",
+    "crates/zeta-codegen",
+    "crates/zeta-driver",
+    "crates/zeta-std",
+    "crates/zeta-actor-runtime",
+    "crates/zeta-region-alloc",
+    "tools/zeta-fmt",
+    "tools/zeta-check",
+    "tools/zeta-doc",
+    "tools/zeta-bench",
+    "zep",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/zeta-lang/zeta"
+
+[workspace.dependencies]
+# 内部依赖
+zeta-ast = { path = "crates/zeta-ast" }
+zeta-hir = { path = "crates/zeta-hir" }
+zeta-mir = { path = "crates/zeta-mir" }
+zeta-lir = { path = "crates/zeta-lir" }
+zeta-lexer = { path = "crates/zeta-lexer" }
+zeta-parser = { path = "crates/zeta-parser" }
+zeta-typecheck = { path = "crates/zeta-typecheck" }
+zeta-borrowck = { path = "crates/zeta-borrowck" }
+zeta-regionck = { path = "crates/zeta-regionck" }
+zeta-codegen = { path = "crates/zeta-codegen" }
+zeta-driver = { path = "crates/zeta-driver" }
+zeta-std = { path = "crates/zeta-std" }
+zeta-actor-runtime = { path = "crates/zeta-actor-runtime" }
+zeta-region-alloc = { path = "crates/zeta-region-alloc" }
+
+# 外部依赖
+anyhow = "1"
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+indexmap = "2"
+once_cell = "1"
+regex = "1"
+log = "0"
+env_logger = "0"
+criterion = "0"
+libfuzzer-sys = "0"
+llvm-sys = "170"
+cranelift = "0"
+cranelift-module = "0"
+cranelift-codegen = "0"
+parking_lot = "0"
+rayon = "1"
+dashmap = "5"
+pubgrub = "0"
+toml = "0"
+colored = "2"
