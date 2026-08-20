@@ -7,17 +7,15 @@
 //! - `SetLookup` / `RangeCheck` 展开为比较链（`==`/`!=` 与 `&&`/`||`）；
 //! - 区域操作（`RegionEnter` / `RegionExit` / `AllocInRegion` / `Transfer`）显式化。
 
-use crate::{
-    BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue,
-};
-use zeta_hir::{
-    HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp,
-};
+use crate::{BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
+use zeta_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp};
 
 /// 循环上下文：`break` / `continue` 的跳转目标。
 struct LoopCtx {
     /// `break` 跳转的出口块
     break_target: usize,
+    /// 循环体内是否出现过 `break`（决定 after 块可达性与块值）
+    had_break: bool,
     /// `continue` 跳转的头部块
     continue_target: usize,
 }
@@ -56,7 +54,12 @@ pub fn lower_program(program: &HirProgram) -> MirProgram {
 
 impl MirLowerer {
     /// 降低一个函数为 CFG。
-    fn lower_function(&mut self, name: &str, params: &[zeta_hir::HirParam], body: &HirBlock) -> MirFunction {
+    fn lower_function(
+        &mut self,
+        name: &str,
+        params: &[zeta_hir::HirParam],
+        body: &HirBlock,
+    ) -> MirFunction {
         self.blocks = vec![BasicBlock {
             stmts: Vec::new(),
             terminator: None,
@@ -226,11 +229,15 @@ impl MirLowerer {
                 if let Some(inner) = e {
                     let _ = self.lower_expr(inner); // break 携带的值 MVP 阶段丢弃
                 }
-                let ctx = self
-                    .loop_stack
-                    .last()
-                    .expect("break 出现在循环之外（typecheck 应已拒绝）");
-                self.terminate(MirTerminator::Jump(ctx.break_target));
+                let break_target = {
+                    let ctx = self
+                        .loop_stack
+                        .last_mut()
+                        .expect("break 出现在循环之外（typecheck 应已拒绝）");
+                    ctx.had_break = true;
+                    ctx.break_target
+                };
+                self.terminate(MirTerminator::Jump(break_target));
                 None
             }
             HirExpr::Continue => {
@@ -361,6 +368,62 @@ impl MirLowerer {
                 }
                 Some(r)
             }
+            HirExpr::Alloc { slots } => {
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::Alloc {
+                    target: tmp.clone(),
+                    slots: *slots,
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::FieldGet { base, index, ty } => {
+                let b = self.lower_expr(base)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::FieldGet {
+                    target: tmp.clone(),
+                    base: b,
+                    index: *index,
+                    ty: *ty,
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::FieldSet { base, index, value, ty } => {
+                let b = self.lower_expr(base)?;
+                let v = self.lower_expr(value)?;
+                self.emit(MirStmt::FieldSet {
+                    base: b,
+                    index: *index,
+                    value: v,
+                    ty: *ty,
+                });
+                Some(MirValue::Unit)
+            }
+            HirExpr::Index { base, index, elem, is_str } => {
+                let b = self.lower_expr(base)?;
+                let i = self.lower_expr(index)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::IndexGet {
+                    target: tmp.clone(),
+                    base: b,
+                    index: i,
+                    ty: *elem,
+                    is_str: *is_str,
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::IndexSet { base, index, value, elem, is_str } => {
+                let b = self.lower_expr(base)?;
+                let i = self.lower_expr(index)?;
+                let v = self.lower_expr(value)?;
+                self.emit(MirStmt::IndexSet {
+                    base: b,
+                    index: i,
+                    value: v,
+                    ty: *elem,
+                    is_str: *is_str,
+                });
+                Some(MirValue::Unit)
+            }
         }
     }
 
@@ -371,6 +434,7 @@ impl MirLowerer {
         then_block: &HirBlock,
         else_block: Option<&HirBlock>,
     ) -> Option<MirValue> {
+        let entry_id = self.cur;
         let cond_place = self.lower_expr(cond)?;
         let then_id = self.new_block();
         let merge_id = self.new_block();
@@ -378,6 +442,8 @@ impl MirLowerer {
             Some(_) => (self.new_block(), true),
             None => (merge_id, false),
         };
+        // new_block 已切换当前块，切回 entry 再发射 CondJump
+        self.cur = entry_id;
         self.terminate(MirTerminator::CondJump {
             cond: cond_place,
             then: then_id,
@@ -385,6 +451,7 @@ impl MirLowerer {
         });
 
         let result = self.fresh_temp();
+        let mut assigned = false;
         // then 分支
         self.cur = then_id;
         let then_val = self.lower_block(then_block);
@@ -393,6 +460,7 @@ impl MirLowerer {
                 target: result.clone(),
                 value: MirValue::Place(v),
             });
+            assigned = true;
         }
         if !self.cur_closed() {
             self.terminate(MirTerminator::Jump(merge_id));
@@ -406,20 +474,30 @@ impl MirLowerer {
                     target: result.clone(),
                     value: MirValue::Place(v),
                 });
+                assigned = true;
             }
             if !self.cur_closed() {
                 self.terminate(MirTerminator::Jump(merge_id));
             }
         }
         self.cur = merge_id;
-        Some(MirValue::Place(result))
+        // 两个分支都无值（均为 Never，如 `loop {}` 充当 panic）：
+        // if 表达式不产生块值
+        if assigned {
+            Some(MirValue::Place(result))
+        } else {
+            None
+        }
     }
 
     /// 降低 while 循环：head（条件）/ body / after + 回跳。
     fn lower_while(&mut self, cond: &HirExpr, body: &HirBlock) -> Option<MirValue> {
+        let entry_id = self.cur;
         let head_id = self.new_block();
         let body_id = self.new_block();
         let after_id = self.new_block();
+        // new_block 已切换当前块，切回 entry 再发射 Jump(head)
+        self.cur = entry_id;
         self.terminate(MirTerminator::Jump(head_id));
 
         // head：条件求值 + CondJump
@@ -436,6 +514,7 @@ impl MirLowerer {
         self.loop_stack.push(LoopCtx {
             break_target: after_id,
             continue_target: head_id,
+            had_break: false,
         });
         let _ = self.lower_block(body);
         self.loop_stack.pop();
@@ -455,19 +534,32 @@ impl MirLowerer {
 
     /// 降低 loop 循环：body 自回跳 + after 出口。
     fn lower_loop(&mut self, body: &HirBlock) -> Option<MirValue> {
+        let entry_id = self.cur;
         let body_id = self.new_block();
         let after_id = self.new_block();
+        // new_block 已切换当前块，切回 entry 再发射 Jump(body)
+        self.cur = entry_id;
         self.terminate(MirTerminator::Jump(body_id));
 
         self.cur = body_id;
         self.loop_stack.push(LoopCtx {
             break_target: after_id,
             continue_target: body_id,
+            had_break: false,
         });
         let _ = self.lower_block(body);
-        self.loop_stack.pop();
+        let had_break = self
+            .loop_stack
+            .pop()
+            .expect("lower_loop 的 LoopCtx 应存在")
+            .had_break;
         if !self.cur_closed() {
             self.terminate(MirTerminator::Jump(body_id));
+        }
+        if !had_break {
+            // 无 break 的无限循环：类型 Never，after 块不可达，
+            // 不产生块值（避免 `loop {}` 充当 panic 时污染 if/phi 合并类型）
+            return None;
         }
 
         self.cur = after_id;

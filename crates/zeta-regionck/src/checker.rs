@@ -204,6 +204,28 @@ impl RegionChecker {
             | HirExpr::Variable(_)
             | HirExpr::Continue
             | HirExpr::Unit => {}
+            // 聚合对象构造 / 访问：Alloc 无子表达式；FieldGet / FieldSet 递归检查
+            HirExpr::Alloc { .. } => {}
+            HirExpr::FieldGet { base, .. } => self.check_expr(base),
+            HirExpr::FieldSet { base, value, .. } => {
+                self.check_expr(base);
+                self.check_expr(value);
+            }
+            // 索引读取 / 写入：递归检查基址、索引与值表达式
+            HirExpr::Index { base, index, .. } => {
+                self.check_expr(base);
+                self.check_expr(index);
+            }
+            HirExpr::IndexSet {
+                base,
+                index,
+                value,
+                ..
+            } => {
+                self.check_expr(base);
+                self.check_expr(index);
+                self.check_expr(value);
+            }
         }
     }
 

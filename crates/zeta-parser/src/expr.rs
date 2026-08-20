@@ -379,6 +379,20 @@ impl<'src> Parser<'src> {
                     self.span_until_current(start),
                 ))
             }
+            Some(Token::True) => {
+                self.bump();
+                Ok(AstExpr::new(
+                    ExprKind::BoolLiteral(true),
+                    self.span_until_current(start),
+                ))
+            }
+            Some(Token::False) => {
+                self.bump();
+                Ok(AstExpr::new(
+                    ExprKind::BoolLiteral(false),
+                    self.span_until_current(start),
+                ))
+            }
             Some(Token::TimeLiteral {
                 hour,
                 minute,
@@ -393,6 +407,10 @@ impl<'src> Parser<'src> {
                     },
                     self.span_until_current(start),
                 ))
+            }
+            Some(Token::LBracket) => {
+                self.bump();
+                self.parse_array_lit(start)
             }
             Some(Token::Ident(name)) => self.parse_ident_prefix(name, start),
             Some(Token::SelfKw) => {
@@ -483,6 +501,23 @@ impl<'src> Parser<'src> {
         }
     }
 
+    /// 数组字面量 `[a, b, c]`（允许尾逗号；空数组 `[]` 在 typecheck 阶段报错）
+    fn parse_array_lit(&mut self, start: Span) -> Result<AstExpr, ParseError> {
+        let mut elems = Vec::new();
+        while !self.check(&Token::RBracket) {
+            if self.at_eof() {
+                return Err(self.unexpected("']'"));
+            }
+            elems.push(self.parse_expr()?);
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        let rbracket = self.expect(&Token::RBracket, "']'")?;
+        let span = self.merge_span(start, rbracket.span);
+        Ok(AstExpr::new(ExprKind::ArrayLit(elems), span))
+    }
+
     /// 标识符开头的前缀：`move` 闭包 / 路径 / 普通标识符
     fn parse_ident_prefix(&mut self, name: String, start: Span) -> Result<AstExpr, ParseError> {
         self.bump();
@@ -497,12 +532,61 @@ impl<'src> Parser<'src> {
             segments.push(seg);
         }
         let span = self.span_until_current(start);
+        // 结构体字面量构造：`Point { x: 3, y: 4 }`
+        // （需 lookahead 确认，避免与 `match s { ... }` 的 scrutinee 块歧义）
+        if self.looks_like_struct_ctor() {
+            self.bump();
+            let mut fields = Vec::new();
+            while !self.check(&Token::RBrace) {
+                if self.at_eof() {
+                    return Err(self.unexpected("'}'"));
+                }
+                let fname = self.expect_ident()?;
+                self.expect(&Token::Colon, "':'")?;
+                let value = self.parse_expr()?;
+                fields.push((fname, value));
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+            }
+            let rbrace = self.expect(&Token::RBrace, "'}'")?;
+            let span = self.merge_span(span, rbrace.span);
+            return Ok(AstExpr::new(
+                ExprKind::StructCtor {
+                    type_name: segments,
+                    fields,
+                },
+                span,
+            ));
+        }
         if segments.len() == 1 {
             let name = segments.pop().expect("non-empty segments");
             Ok(AstExpr::new(ExprKind::Ident(name), span))
         } else {
             Ok(AstExpr::new(ExprKind::Path(segments), span))
         }
+    }
+
+    /// 判断当前位置是否为结构体字面量构造 `Ident { field: value, ... }`。
+    ///
+    /// 通过 lookahead 区分：
+    /// - `Point { x: 3 }` → `{` 后是 `ident :` 且冒号后不是 `:`（非 `::`）
+    /// - `match s { Status::Ok => 200 }` → `s {` 后是 `ident ::`，返回 false
+    /// - `x in y {}` → `y {` 后不是 `ident :` 形式，返回 false
+    ///
+    /// 空结构体构造 `Point {}` 在 MVP 阶段不支持（与块/`in` 目标存在歧义）。
+    fn looks_like_struct_ctor(&self) -> bool {
+        if !self.check(&Token::LBrace) {
+            return false;
+        }
+        // `{ Ident :`（冒号后不能是 `:`，避免 `Ident { Enum::Variant` 歧义）
+        if !self.peek_n(1).is_some_and(|t| matches!(t.token, Token::Ident(_))) {
+            return false;
+        }
+        if !self.peek_n(2).is_some_and(|t| t.token == Token::Colon) {
+            return false;
+        }
+        !self.peek_n(3).is_some_and(|t| t.token == Token::Colon)
     }
 
     /// 消费 `::`（由两个相邻 `Colon` 组成）

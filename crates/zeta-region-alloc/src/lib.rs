@@ -24,6 +24,21 @@
 //! ```
 //!
 //! 区域销毁时自动逆序调用各对象的析构（`String` 的堆缓冲区被释放）。
+//!
+//! ## 智能区域（P010）
+//!
+//! [`SmartRegion`] 在基础区域之上引入**自适应初始大小决策**：
+//! 编译器静态推断（[`static_sizer`]）、PGO 画像（[`profile`] / [`pgo_advisor`]）、
+//! 用户提示与 EWMA 预测扩容（[`size_advisor`] / [`allocator`]）。
+//!
+//! ```no_run
+//! use zeta_region_alloc::{SizeAdvisor, SmartRegion};
+//!
+//! let advisor = SizeAdvisor::new("http_pool".into()).with_user_hint(64 * 1024);
+//! let mut region = SmartRegion::new("http_pool".into(), advisor)?;
+//! let v = region.allocate(vec![1u8, 2, 3])?;
+//! # Ok::<(), zeta_region_alloc::AllocError>(())
+//! ```
 
 #![warn(missing_docs)]
 #![allow(unsafe_code)] // 绑定层：手动内存管理本质需要 unsafe
@@ -36,7 +51,17 @@ mod region;
 mod stats;
 mod strategy;
 
+pub mod allocator;
+pub mod compiler_interface;
+pub mod pgo_advisor;
+pub mod profile;
+pub mod size_advisor;
+pub mod static_sizer;
+
+pub use allocator::SmartRegion;
 pub use error::AllocError;
+pub use profile::PgoData;
 pub use region::Region;
+pub use size_advisor::SizeAdvisor;
 pub use stats::RegionStats;
 pub use strategy::GrowthStrategy;

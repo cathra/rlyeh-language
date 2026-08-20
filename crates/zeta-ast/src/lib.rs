@@ -203,6 +203,8 @@ pub struct AstModDecl {
     pub name: String,
     /// 模块内项（`mod foo;` 外部文件形式为空）
     pub items: Vec<AstItem>,
+    /// 是否为外部文件形式（`mod foo;` → 内容在 `foo.zeta` 或 `foo/mod.zeta`）
+    pub external: bool,
     /// 源码位置
     pub span: Span,
 }
@@ -462,6 +464,14 @@ pub enum ExprKind {
         field: String,
     },
 
+    /// 结构体字面量构造（`Point { x: 3, y: 4 }`）
+    StructCtor {
+        /// 结构体路径（`a::b::Point`）
+        type_name: Vec<String>,
+        /// 命名字段初始化列表
+        fields: Vec<(String, AstExpr)>,
+    },
+
     /// 索引访问
     Index {
         /// 被索引的表达式
@@ -469,6 +479,9 @@ pub enum ExprKind {
         /// 索引表达式
         index: AstExpr,
     },
+
+    /// 数组字面量 `[a, b, c]`（元素类型统一，MVP 元素为标量或聚合对象指针）
+    ArrayLit(Vec<AstExpr>),
 
     /// 闭包
     Closure {
@@ -675,6 +688,8 @@ pub enum AstPattern {
     Struct(String, Vec<(String, AstPattern)>),
     /// 枚举模式 `Some(x)`
     Enum(String, Vec<AstPattern>),
+    /// 带模块路径的枚举模式 `mod::Enum::Variant(x)`（最后一段为变体名）
+    EnumPath(Vec<String>, Vec<AstPattern>),
     /// 范围模式 `0..<10` / `0...10` / `0<..10`
     Range {
         /// 下界

@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "files": {
+    "crates/zeta-driver/tests/scratch_for.zeta": {
+      "versions": {
+        "1b6faae2c627e9366d6f861b61785c4475dc4a5da0d1e9d2387748655b9ad659": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/1b6faae2c627e9366d6f861b61785c4475dc4a5da0d1e9d2387748655b9ad659.ll",
+          "compiled_at": "@1787200975"
+        }
+      }
+    },
+    "crates/zeta-driver/tests/scratch_path.zeta": {
+      "versions": {
+        "c643b28af04d297286c2bddf60c36eae25ee91708bba199966b8c177667d3222": {
+          "interface_hash": "f95e8a54b5e08f32daac5970ea63e11da3ffd3558e675ac8231e3116afed06c6",
+          "llvm": "artifacts/c643b28af04d297286c2bddf60c36eae25ee91708bba199966b8c177667d3222.ll",
+          "compiled_at": "@1787206827"
+        }
+      }
+    },
+    "crates/zeta-driver/tests/scratch_path2.zeta": {
+      "versions": {
+        "d85e4f45d5a7cf97c1fba4b2459d4c799dd35a88e71fca90b596bf4bcd167b00": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/d85e4f45d5a7cf97c1fba4b2459d4c799dd35a88e71fca90b596bf4bcd167b00.ll",
+          "compiled_at": "@1787206918"
+        }
+      }
+    }
+  }
+}

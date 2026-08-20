@@ -36,8 +36,15 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// 路径类型（含泛型参数，如 `Result<Response, Error>`）
+    /// 路径类型（含 `::` 段与泛型参数，如 `geo::Point`、`Result<Response, Error>`）
     fn parse_path_type(&mut self, name: String) -> Result<AstType, ParseError> {
+        // 收集 `a::b::c` 完整路径
+        let mut full = name;
+        while self.eat_colon_colon() {
+            full.push_str("::");
+            full.push_str(&self.expect_ident()?);
+        }
+        let name = full;
         if self.check(&Token::Lt) {
             self.bump();
             let mut args = Vec::new();

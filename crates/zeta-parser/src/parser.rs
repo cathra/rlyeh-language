@@ -159,8 +159,17 @@ impl<'src> Parser<'src> {
                 Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
             }
             Some(Token::Actor) => Ok(AstItem::ActorDecl(Box::new(self.parse_actor()?))),
-            // pub / async / unsafe 开头的顶层项只能是函数声明
-            Some(Token::Pub) | Some(Token::Async) | Some(Token::Unsafe) => {
+            // `pub mod name;` / `pub mod name { ... }` 为模块声明，
+            // 其余 pub / async / unsafe 开头项按函数声明解析
+            Some(Token::Pub) => {
+                if self.peek_n(1).is_some_and(|lt| lt.token == Token::Mod) {
+                    self.bump(); // 消费 pub
+                    Ok(AstItem::ModDecl(Box::new(self.parse_mod()?)))
+                } else {
+                    Ok(AstItem::FnDecl(Box::new(self.parse_fn()?)))
+                }
+            }
+            Some(Token::Async) | Some(Token::Unsafe) => {
                 Ok(AstItem::FnDecl(Box::new(self.parse_fn()?)))
             }
             _ => {

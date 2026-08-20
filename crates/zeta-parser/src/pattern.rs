@@ -61,6 +61,14 @@ impl<'src> Parser<'src> {
                 self.bump();
                 Ok(AstPattern::Literal(LiteralValue::Bool(b)))
             }
+            Some(Token::True) => {
+                self.bump();
+                Ok(AstPattern::Literal(LiteralValue::Bool(true)))
+            }
+            Some(Token::False) => {
+                self.bump();
+                Ok(AstPattern::Literal(LiteralValue::Bool(false)))
+            }
             Some(Token::TimeLiteral {
                 hour,
                 minute,
@@ -93,14 +101,22 @@ impl<'src> Parser<'src> {
             let inner = self.parse_pattern()?;
             return Ok(AstPattern::Ref(Box::new(inner), is_mut));
         }
-        // 路径枚举：`Path::Variant(...)`（lexer 将 `::` 拆为两个 `:`）
+        // 路径枚举：`Path::Variant(...)` / `mod::Enum::Variant(...)`
+        // （lexer 将 `::` 拆为两个 `:`；多段路径逐段收集，最后一段为变体名）
         if self.eat_colon_colon() {
-            let variant = self.expect_ident()?;
-            if self.check(&Token::LParen) {
-                let args = self.parse_pattern_paren_args()?;
-                return Ok(AstPattern::Enum(variant, args));
+            let mut segments = vec![name];
+            let mut variant = self.expect_ident()?;
+            while self.eat_colon_colon() {
+                segments.push(variant);
+                variant = self.expect_ident()?;
             }
-            return Ok(AstPattern::Enum(variant, Vec::new()));
+            segments.push(variant);
+            let args = if self.check(&Token::LParen) {
+                self.parse_pattern_paren_args()?
+            } else {
+                Vec::new()
+            };
+            return Ok(AstPattern::EnumPath(segments, args));
         }
         // 枚举模式：`Variant(args)`
         if self.check(&Token::LParen) {

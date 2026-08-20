@@ -6,9 +6,7 @@
 //!
 //! 浮点运算不折叠（`NaN` / 舍入语义由运行时保证）。
 
-use crate::{
-    MirFunction, MirProgram, MirStmt, MirTerminator, MirValue,
-};
+use crate::{MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
 use std::collections::HashMap;
 use zeta_hir::{HirBinaryOp, HirUnaryOp};
 

@@ -2,6 +2,9 @@
 name = "zeta-codegen"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Zeta 代码生成：LIR → LLVM IR 文本（LLVM 后端 MVP，经 clang 汇编链接）"
 
-[lib]
-path = "src/lib.rs"
+[dependencies]
+zeta-lir = { workspace = true }

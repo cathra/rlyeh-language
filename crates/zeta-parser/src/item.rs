@@ -97,7 +97,23 @@ impl<'src> Parser<'src> {
                 return Err(self.unexpected("')'"));
             }
             let start = self.peek().expect("non-eof").span;
-            // `&self` / `&mut self` 接收者参数（`self` 为标识符，`Self` 才是关键字）
+            // 裸 `self` 值接收者（`self` 为标识符，`Self` 才是关键字）
+            if matches!(&self.peek().map(|t| t.token.clone()), Some(Token::Ident(n)) if n == "self")
+            {
+                let name = self.expect_ident()?; // "self"
+                params.push(AstParam {
+                    name,
+                    type_: AstType::Path("Self".to_string(), Vec::new()),
+                    default: None,
+                    is_mut: false,
+                    span: self.span_until_current(start),
+                });
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+                continue;
+            }
+            // `&self` / `&mut self` 引用接收者（`self` 为标识符，`Self` 才是关键字）
             if self.check(&Token::BitAnd)
                 && self.peek_n(1).is_some_and(|t| {
                     t.token == Token::Mut || matches!(&t.token, Token::Ident(n) if n == "self")
@@ -280,6 +296,22 @@ impl<'src> Parser<'src> {
         } else {
             (None, first)
         };
+        // 消费被实现类型的泛型参数列表（如 `impl<T> Option<T>` 的 `<T>`）。
+        // MVP：仅校验参数为标识符列表并丢弃；self 类型由 typecheck 依据 impl
+        // generics 重建（`Named(type_name, generics)`），故无需保留此处实参。
+        if self.check(&Token::Lt) {
+            self.bump();
+            while !self.check(&Token::Gt) {
+                if self.at_eof() {
+                    return Err(self.unexpected("'>'"));
+                }
+                self.expect_ident()?;
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(&Token::Gt, "'>'")?;
+        }
         self.expect(&Token::LBrace, "'{'")?;
         let mut methods = Vec::new();
         while !self.check(&Token::RBrace) {
@@ -302,7 +334,7 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_mod(&mut self) -> Result<AstModDecl, ParseError> {
         let start = self.expect(&Token::Mod, "'mod'")?.span;
         let name = self.expect_ident()?;
-        let items = if self.check(&Token::LBrace) {
+        let (items, external) = if self.check(&Token::LBrace) {
             self.bump();
             let mut items = Vec::new();
             while !self.check(&Token::RBrace) {
@@ -312,25 +344,32 @@ impl<'src> Parser<'src> {
                 items.push(self.parse_item()?);
             }
             self.expect(&Token::RBrace, "'}'")?;
-            items
+            (items, false)
         } else {
             self.expect(&Token::Semicolon, "';' or '{'")?;
-            Vec::new()
+            (Vec::new(), true)
         };
         let end = self.span_until_current(start);
         Ok(AstModDecl {
             name,
             items,
+            external,
             span: self.merge_span(start, end),
         })
     }
 
-    /// use 导入：`use path::to::item [as alias];`
+    /// use 导入：`use path::to::item [as alias];`（末段允许 `*` glob）
     pub(crate) fn parse_use(&mut self) -> Result<AstUseDecl, ParseError> {
         let start = self.expect(&Token::Use, "'use'")?.span;
         let mut path = Vec::new();
         loop {
-            let seg = self.expect_ident()?;
+            // 路径末段允许 `*`（glob 导入，由 typecheck 报不支持）
+            let seg = if self.check(&Token::Star) {
+                self.bump();
+                "*".to_string()
+            } else {
+                self.expect_ident()?
+            };
             path.push(seg);
             if self.eat_colon_colon() {
                 continue;

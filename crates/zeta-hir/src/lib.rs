@@ -207,6 +207,80 @@ pub enum HirExpr {
     },
     /// 单元值 `()`
     Unit,
+    /// 聚合对象分配：在堆上分配 `slots` 个 8 字节槽，返回对象指针。
+    ///
+    /// 由 typecheck 在展开枚举 / 结构体构造时生成。聚合类型的值
+    /// 一律表示为指向该对象的指针（MVP 布局：每槽 8 字节）。
+    Alloc {
+        /// 槽数
+        slots: usize,
+    },
+    /// 读取聚合对象槽位 `index`（槽 0 为枚举判别值 tag）。
+    FieldGet {
+        /// 对象指针表达式
+        base: Box<HirExpr>,
+        /// 槽位索引
+        index: usize,
+        /// 槽值标量种类
+        ty: FieldScalar,
+    },
+    /// 写入聚合对象槽位 `index`（求值为单元值）。
+    FieldSet {
+        /// 对象指针表达式
+        base: Box<HirExpr>,
+        /// 槽位索引
+        index: usize,
+        /// 待写入的值
+        value: Box<HirExpr>,
+        /// 槽值标量种类
+        ty: FieldScalar,
+    },
+    /// 索引读取：数组 `arr[i]` / 字符串 `s[i]`。
+    ///
+    /// `base` 求值为对象指针（数组槽区 / 字符串字符区），`index` 为运行时整数。
+    Index {
+        /// 被索引对象（数组 / 字符串）
+        base: Box<HirExpr>,
+        /// 索引表达式（运行时 i64）
+        index: Box<HirExpr>,
+        /// 元素标量种类
+        elem: FieldScalar,
+        /// `true` 表示字符串索引（字符步长 1 字节）；数组元素步长 8 字节
+        is_str: bool,
+    },
+    /// 索引写入 `arr[i] = v`（求值为单元值）。
+    IndexSet {
+        /// 被索引对象（数组 / 字符串）
+        base: Box<HirExpr>,
+        /// 索引表达式（运行时 i64）
+        index: Box<HirExpr>,
+        /// 待写入的值
+        value: Box<HirExpr>,
+        /// 元素标量种类
+        elem: FieldScalar,
+        /// `true` 表示字符串索引（字符步长 1 字节）；数组元素步长 8 字节
+        is_str: bool,
+    },
+}
+
+/// 聚合对象字段的标量存储种类（typecheck 展开时确定）。
+///
+/// MVP 布局约定：对象内存按 8 字节槽对齐，槽 0 为枚举判别值（`Int`），
+/// 标量字段直接内联，聚合字段（枚举 / 结构体 / 元组 / 数组）存指针。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldScalar {
+    /// 整数（i64）
+    Int,
+    /// 浮点（f64）
+    Float,
+    /// 布尔
+    Bool,
+    /// 字符
+    Char,
+    /// 字符串指针
+    Str,
+    /// 聚合对象 / 引用指针
+    Ptr,
 }
 
 /// 区域选项（编译期已知，由 AST `RegionOptions` 复制而来）。

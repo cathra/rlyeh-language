@@ -95,6 +95,64 @@ pub enum MirStmt {
         /// 源区域名
         region: String,
     },
+    /// `target = alloc(slots)`：堆上分配聚合对象（`slots` 个 8 字节槽），
+    /// 返回对象指针。由 typecheck 展开枚举 / 结构体构造时生成。
+    Alloc {
+        /// 目标变量（对象指针）
+        target: Local,
+        /// 槽数
+        slots: usize,
+    },
+    /// `target = field_get(base, index)`：读取聚合对象槽位
+    /// （槽 0 为枚举判别值 tag）。
+    FieldGet {
+        /// 目标变量
+        target: Local,
+        /// 对象指针变量
+        base: Local,
+        /// 槽位索引
+        index: usize,
+        /// 槽值标量种类
+        ty: zeta_hir::FieldScalar,
+    },
+    /// `field_set(base, index, value)`：写入聚合对象槽位。
+    FieldSet {
+        /// 对象指针变量
+        base: Local,
+        /// 槽位索引
+        index: usize,
+        /// 待写入的变量
+        value: Local,
+        /// 槽值标量种类
+        ty: zeta_hir::FieldScalar,
+    },
+    /// `target = index_get(base, index)`：运行时索引读取
+    /// （数组元素步长 8 字节；字符串字符步长 1 字节）。
+    IndexGet {
+        /// 目标变量
+        target: Local,
+        /// 对象指针变量（数组槽区 / 字符串字符区）
+        base: Local,
+        /// 索引变量（i64）
+        index: Local,
+        /// 元素标量种类
+        ty: zeta_hir::FieldScalar,
+        /// `true` 表示字符串索引
+        is_str: bool,
+    },
+    /// `index_set(base, index, value)`：运行时索引写入。
+    IndexSet {
+        /// 对象指针变量（数组槽区 / 字符串字符区）
+        base: Local,
+        /// 索引变量（i64）
+        index: Local,
+        /// 待写入的变量
+        value: Local,
+        /// 元素标量种类
+        ty: zeta_hir::FieldScalar,
+        /// `true` 表示字符串索引
+        is_str: bool,
+    },
 }
 
 /// 右值（可内联进 `Assign` 的运算树）。

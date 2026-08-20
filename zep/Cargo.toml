@@ -2,6 +2,29 @@
 name = "zep"
 version.workspace = true
 edition.workspace = true
+description = "Zeta Package Manager"
+license.workspace = true
+
+[[bin]]
+name = "zep"
+path = "src/main.rs"
 
 [lib]
+name = "zep"
 path = "src/lib.rs"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+libc = { workspace = true }
+pubgrub = "0.4"
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+tempfile = "3"

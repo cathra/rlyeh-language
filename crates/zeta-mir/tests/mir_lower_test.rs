@@ -24,11 +24,20 @@ fn test_lower_arithmetic() {
     match &f.blocks[0].stmts[0] {
         MirStmt::Assign { target, value } => {
             assert_eq!(target, "_t0");
-            assert!(matches!(value, MirValue::Binary { op: zeta_hir::HirBinaryOp::Add, .. }));
+            assert!(matches!(
+                value,
+                MirValue::Binary {
+                    op: zeta_hir::HirBinaryOp::Add,
+                    ..
+                }
+            ));
         }
         other => panic!("expected Assign, got {other:?}"),
     }
-    assert_eq!(f.blocks[0].terminator, Some(MirTerminator::Return(Some("_t0".into()))));
+    assert_eq!(
+        f.blocks[0].terminator,
+        Some(MirTerminator::Return(Some("_t0".into())))
+    );
 }
 
 #[test]
@@ -65,7 +74,10 @@ fn test_lower_if_no_else() {
         Some(MirTerminator::CondJump { ref then, ref otherwise, .. }) if *then == 1 && *otherwise == 2 // 直接跳 merge
     ));
     assert_eq!(f.blocks[1].terminator, Some(MirTerminator::Jump(2)));
-    assert!(matches!(f.blocks[2].terminator, Some(MirTerminator::Return(_))));
+    assert!(matches!(
+        f.blocks[2].terminator,
+        Some(MirTerminator::Return(_))
+    ));
 }
 
 #[test]
@@ -94,10 +106,16 @@ fn main() -> u32 {
     ));
     // body：`i += 1` 展开为 `i = i + 1`，块尾回跳 head
     assert_eq!(f.blocks[2].terminator, Some(MirTerminator::Jump(1)));
-    assert!(f.blocks[2]
-        .stmts
-        .iter()
-        .any(|s| matches!(s, MirStmt::Assign { value: MirValue::Binary { op: zeta_hir::HirBinaryOp::Add, .. }, .. })));
+    assert!(f.blocks[2].stmts.iter().any(|s| matches!(
+        s,
+        MirStmt::Assign {
+            value: MirValue::Binary {
+                op: zeta_hir::HirBinaryOp::Add,
+                ..
+            },
+            ..
+        }
+    )));
     // after：返回 i
     assert!(matches!(
         f.blocks[3].terminator,
@@ -123,7 +141,10 @@ fn main() -> u32 {
     assert_eq!(f.blocks[0].terminator, Some(MirTerminator::Jump(1)));
     // body：break → Jump(after)
     assert_eq!(f.blocks[1].terminator, Some(MirTerminator::Jump(2)));
-    assert!(matches!(f.blocks[2].terminator, Some(MirTerminator::Return(_))));
+    assert!(matches!(
+        f.blocks[2].terminator,
+        Some(MirTerminator::Return(_))
+    ));
 }
 
 #[test]
@@ -142,10 +163,8 @@ fn main() -> u32 {
     let f = first_fn(&m);
     // entry / head / body / after
     assert_eq!(f.blocks.len(), 4);
-    // body 内：continue → Jump(head=1)；break → Jump(after=3)；
-    // 但 continue 使 break 不可达（lower 阶段跳过）
-    let body_terms = vec![f.blocks[2].terminator.clone()];
-    assert!(body_terms.contains(&Some(MirTerminator::Jump(1))));
+    // body 内：continue → Jump(head=1)；break 不可达（lower 阶段跳过）
+    assert_eq!(f.blocks[2].terminator, Some(MirTerminator::Jump(1)));
 }
 
 #[test]
@@ -172,11 +191,25 @@ fn main() -> u32 {
             MirStmt::Transfer { .. } => "transfer",
             MirStmt::Assign { .. } => "assign",
             MirStmt::Call { .. } => "call",
+            MirStmt::Alloc { .. } => "alloc_obj",
+            MirStmt::FieldGet { .. } => "field_get",
+            MirStmt::FieldSet { .. } => "field_set",
+            MirStmt::IndexGet { .. } => "index_get",
+            MirStmt::IndexSet { .. } => "index_set",
         })
         .collect();
+    // 顺序：RegionEnter → `_t0 = 5`（init 求值）→ AllocInRegion(_t0)
+    // → `x = _t0`（Let 绑定）→ Transfer(x) → RegionExit
     assert_eq!(
         kinds,
-        vec!["region_enter", "assign", "assign", "alloc", "transfer", "region_exit", "assign"]
+        vec![
+            "region_enter",
+            "assign",
+            "alloc",
+            "assign",
+            "transfer",
+            "region_exit"
+        ]
     );
     // transfer 指令携带区域名
     assert!(stmts.iter().any(|s| matches!(
@@ -190,10 +223,18 @@ fn test_lower_range_check_expansion() {
     let m = lower("fn main() -> bool { let x = 5; x in 0..<10 }");
     let f = first_fn(&m);
     // 区间判断展开为 And(Ge(x, 0), Lt(x, 10)) 的运算树
-    let has_ge = f.blocks[0]
-        .stmts
-        .iter()
-        .any(|s| matches!(s, MirStmt::Assign { value: MirValue::Binary { op: zeta_hir::HirBinaryOp::And, .. }, .. }));
+    let has_ge = f.blocks[0].stmts.iter().any(|s| {
+        matches!(
+            s,
+            MirStmt::Assign {
+                value: MirValue::Binary {
+                    op: zeta_hir::HirBinaryOp::And,
+                    ..
+                },
+                ..
+            }
+        )
+    });
     assert!(has_ge, "range check 应展开为 And 运算树");
 }
 
@@ -201,10 +242,18 @@ fn test_lower_range_check_expansion() {
 fn test_lower_set_lookup_expansion() {
     let m = lower("fn main() -> bool { let x = 3; x in (1, 3, 5) }");
     let f = first_fn(&m);
-    let has_or = f.blocks[0]
-        .stmts
-        .iter()
-        .any(|s| matches!(s, MirStmt::Assign { value: MirValue::Binary { op: zeta_hir::HirBinaryOp::Or, .. }, .. }));
+    let has_or = f.blocks[0].stmts.iter().any(|s| {
+        matches!(
+            s,
+            MirStmt::Assign {
+                value: MirValue::Binary {
+                    op: zeta_hir::HirBinaryOp::Or,
+                    ..
+                },
+                ..
+            }
+        )
+    });
     assert!(has_or, "集合成员判断应展开为 Or 链");
 }
 
@@ -243,10 +292,12 @@ fn main() -> u32 {
 }
 "#,
     );
-    let f = first_fn(&m);
-    // add 被降低为独立函数
+    // add 被降低为独立函数（add 在前、main 在后）
     assert_eq!(m.functions.len(), 2);
-    assert!(f.blocks[0].stmts.iter().any(|s| matches!(
+    assert_eq!(m.functions[0].name, "add");
+    let main = &m.functions[1];
+    assert_eq!(main.name, "main");
+    assert!(main.blocks[0].stmts.iter().any(|s| matches!(
         s,
         MirStmt::Call { callee, args, .. } if callee == "add" && args.len() == 2
     )));

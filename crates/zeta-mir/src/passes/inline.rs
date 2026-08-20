@@ -133,10 +133,59 @@ fn inline_stmt(
         } => Some(MirStmt::Call {
             target: target.as_ref().map(|t| map_local(t, subst, counter)),
             callee: callee.clone(),
-            args: args
-                .iter()
-                .map(|a| map_local(a, subst, counter))
-                .collect(),
+            args: args.iter().map(|a| map_local(a, subst, counter)).collect(),
+        }),
+        MirStmt::Alloc { target, slots } => Some(MirStmt::Alloc {
+            target: map_local(target, subst, counter),
+            slots: *slots,
+        }),
+        MirStmt::FieldGet {
+            target,
+            base,
+            index,
+            ty,
+        } => Some(MirStmt::FieldGet {
+            target: map_local(target, subst, counter),
+            base: map_local(base, subst, counter),
+            index: *index,
+            ty: *ty,
+        }),
+        MirStmt::FieldSet {
+            base,
+            index,
+            value,
+            ty,
+        } => Some(MirStmt::FieldSet {
+            base: map_local(base, subst, counter),
+            index: *index,
+            value: map_local(value, subst, counter),
+            ty: *ty,
+        }),
+        MirStmt::IndexGet {
+            target,
+            base,
+            index,
+            ty,
+            is_str,
+        } => Some(MirStmt::IndexGet {
+            target: map_local(target, subst, counter),
+            base: map_local(base, subst, counter),
+            index: map_local(index, subst, counter),
+            ty: *ty,
+            is_str: *is_str,
+        }),
+        MirStmt::IndexSet {
+            base,
+            index,
+            value,
+            ty,
+            is_str,
+        } => Some(MirStmt::IndexSet {
+            base: map_local(base, subst, counter),
+            index: map_local(index, subst, counter),
+            value: map_local(value, subst, counter),
+            ty: *ty,
+            is_str: *is_str,
         }),
         _ => None, // 区域操作已在上层排除
     }
@@ -174,7 +223,10 @@ fn map_value(v: &MirValue, subst: &mut HashMap<String, String>, counter: &mut us
 
 /// 将内联函数返回值绑定到原调用点目标。
 fn bind_call_result(call: &MirStmt, new_stmts: &mut Vec<MirStmt>, ret_place: &str) {
-    if let MirStmt::Call { target: Some(t), .. } = call {
+    if let MirStmt::Call {
+        target: Some(t), ..
+    } = call
+    {
         new_stmts.push(MirStmt::Assign {
             target: t.clone(),
             value: MirValue::Place(ret_place.to_string()),

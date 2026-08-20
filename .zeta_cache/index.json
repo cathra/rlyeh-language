@@ -1,0 +1,56 @@
+{
+  "version": 2,
+  "files": {
+    "scratch2.zeta": {
+      "versions": {
+        "035d55a28ba3377480028addb957caa05dac81d6e98620d331d554f7519b3e74": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/035d55a28ba3377480028addb957caa05dac81d6e98620d331d554f7519b3e74.ll",
+          "compiled_at": "@1787198593"
+        }
+      }
+    },
+    "scratch3.zeta": {
+      "versions": {
+        "b8505b474e19ca3546f8cae75deb2d3dd64bfae7fd9e970301d9b943d225b694": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/b8505b474e19ca3546f8cae75deb2d3dd64bfae7fd9e970301d9b943d225b694.ll",
+          "compiled_at": "@1787200653"
+        }
+      }
+    },
+    "scratch_index.zeta": {
+      "versions": {
+        "3728f7add6107456381fa91da1cad8f1b879c452fcf7e76421ddf07f57c7df52": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/3728f7add6107456381fa91da1cad8f1b879c452fcf7e76421ddf07f57c7df52.ll",
+          "compiled_at": "@1787207558"
+        },
+        "3db8ce22ab607737bfcbbbac92e51104700e6bdff9bd2b7d71b9eb03dcac4ca8": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/3db8ce22ab607737bfcbbbac92e51104700e6bdff9bd2b7d71b9eb03dcac4ca8.ll",
+          "compiled_at": "@1787207537"
+        },
+        "452b37c30cb0fa9fcf8c4d4455ea28458e3d0c184420ad869ba87597047a4222": {
+          "interface_hash": "03e0087f89ab920da9ca9de6def9dce1dbe76819e1c236a12cd501a746bb24d3",
+          "llvm": "artifacts/452b37c30cb0fa9fcf8c4d4455ea28458e3d0c184420ad869ba87597047a4222.ll",
+          "compiled_at": "@1787207604"
+        },
+        "bdc305fd56a765c2afdc13b7a691472f998db69b4ff9e97bfa988f800fc76d26": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/bdc305fd56a765c2afdc13b7a691472f998db69b4ff9e97bfa988f800fc76d26.ll",
+          "compiled_at": "@1787207644"
+        }
+      }
+    },
+    "scratch_prelude.zeta": {
+      "versions": {
+        "01960a9f0567256f4c4da7a891b66139dcb325230c4c5d9af8bfc772f82e83a5": {
+          "interface_hash": "7dc880812fad061c57a70d900366e8fc6d888e4e593b2127538b7c1442e32a84",
+          "llvm": "artifacts/01960a9f0567256f4c4da7a891b66139dcb325230c4c5d9af8bfc772f82e83a5.ll",
+          "compiled_at": "@1787200756"
+        }
+      }
+    }
+  }
+}

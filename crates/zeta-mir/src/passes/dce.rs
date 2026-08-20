@@ -3,9 +3,7 @@
 //! 1. **不可达块删除**：从入口块（index 0）做图遍历，移除不可达基本块并重映射跳转目标；
 //! 2. **死赋值删除**：后向活跃扫描，删除目标为临时变量（`_tN`）且此后未被使用的赋值。
 
-use crate::{
-    BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue,
-};
+use crate::{BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
 use std::collections::HashSet;
 
 /// 对程序执行死代码消除。
@@ -20,7 +18,9 @@ pub fn dead_code_elimination(program: &mut MirProgram) {
 fn successors(block: &BasicBlock) -> Vec<usize> {
     match &block.terminator {
         Some(MirTerminator::Jump(t)) => vec![*t],
-        Some(MirTerminator::CondJump { then, otherwise, .. }) => vec![*then, *otherwise],
+        Some(MirTerminator::CondJump {
+            then, otherwise, ..
+        }) => vec![*then, *otherwise],
         Some(MirTerminator::Return(_)) | None => vec![],
     }
 }
@@ -54,7 +54,9 @@ fn remove_unreachable_blocks(f: &mut MirFunction) {
     for b in &mut new_blocks {
         match &mut b.terminator {
             Some(MirTerminator::Jump(t)) => *t = map[*t],
-            Some(MirTerminator::CondJump { then, otherwise, .. }) => {
+            Some(MirTerminator::CondJump {
+                then, otherwise, ..
+            }) => {
                 *then = map[*then];
                 *otherwise = map[*otherwise];
             }
@@ -84,11 +86,16 @@ fn collect_used(value: &MirValue, used: &mut HashSet<Local>) {
     }
 }
 
-/// 删除目标为临时变量且此后未被使用的赋值（后向活跃扫描，块内）。
+/// 删除目标为临时变量且此后未被使用的赋值。
+///
+/// 活跃信息为**函数级全局**收集（而非块内局部）：if-else 合并等场景中，
+/// 结果变量在 then/else 块产生、在 merge 块被读取，块内扫描会误删跨块
+/// 使用的临时变量，因此先遍历整个函数收集所有被读取的变量，再逐块删除
+/// 全函数未使用的临时赋值。临时变量（`_tN`）作用域不跨函数，全局收集安全。
 fn remove_dead_assignments(f: &mut MirFunction) {
-    for block in &mut f.blocks {
-        // 终止符读取的变量为活跃
-        let mut used: HashSet<Local> = HashSet::new();
+    // 第一遍：收集整个函数内所有被读取的变量（跨块活跃信息）
+    let mut used: HashSet<Local> = HashSet::new();
+    for block in &f.blocks {
         match &block.terminator {
             Some(MirTerminator::Return(Some(p))) => {
                 used.insert(p.clone());
@@ -98,35 +105,47 @@ fn remove_dead_assignments(f: &mut MirFunction) {
             }
             _ => {}
         }
-
-        let mut new_stmts = Vec::with_capacity(block.stmts.len());
-        for stmt in block.stmts.iter().rev() {
+        for stmt in &block.stmts {
             match stmt {
-                MirStmt::Assign { target, value } => {
-                    // 读取 value 中的变量（无论本赋值是否被删，读取都要保留）
-                    collect_used(value, &mut used);
-                    let dead = is_temp(target) && !used.contains(target);
-                    if !dead {
-                        new_stmts.push(stmt.clone());
-                    }
+                MirStmt::Assign { value, .. } => collect_used(value, &mut used),
+                MirStmt::Call { args, .. } => {
+                    // 调用可能有副作用（如 `print` / `println`），参数必活跃
+                    used.extend(args.iter().cloned());
                 }
-                MirStmt::Call {
-                    target,
-                    args,
-                    ..
-                } => {
-                    for a in args {
-                        used.insert(a.clone());
-                    }
-                    let dead = matches!(target, Some(t) if is_temp(t) && !used.contains(t));
-                    if !dead {
-                        new_stmts.push(stmt.clone());
-                    }
+                MirStmt::FieldGet { base, .. } => {
+                    used.insert(base.clone());
                 }
-                _ => new_stmts.push(stmt.clone()),
+                MirStmt::FieldSet { base, value, .. } => {
+                    used.insert(base.clone());
+                    used.insert(value.clone());
+                }
+                MirStmt::IndexGet { base, index, .. } => {
+                    used.insert(base.clone());
+                    used.insert(index.clone());
+                }
+                MirStmt::IndexSet { base, index, value, .. } => {
+                    used.insert(base.clone());
+                    used.insert(index.clone());
+                    used.insert(value.clone());
+                }
+                _ => {}
             }
         }
-        new_stmts.reverse();
+    }
+
+    // 第二遍：逐块删除目标为临时变量且全函数未使用的赋值。
+    // Call / Alloc / FieldGet / FieldSet / IndexGet / IndexSet 有副作用或产出对象，永不删除。
+    for block in &mut f.blocks {
+        let mut new_stmts = Vec::with_capacity(block.stmts.len());
+        for stmt in block.stmts.drain(..) {
+            let dead = matches!(
+                &stmt,
+                MirStmt::Assign { target, .. } if is_temp(target) && !used.contains(target)
+            );
+            if !dead {
+                new_stmts.push(stmt);
+            }
+        }
         block.stmts = new_stmts;
     }
 }

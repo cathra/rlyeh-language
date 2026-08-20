@@ -89,6 +89,24 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 结构体字段未定义
+    UnknownField {
+        /// 结构体名
+        struct_name: String,
+        /// 字段名
+        field: String,
+        /// 源码位置
+        span: Span,
+    },
+    /// 结构体构造缺少字段
+    MissingField {
+        /// 结构体名
+        struct_name: String,
+        /// 字段名
+        field: String,
+        /// 源码位置
+        span: Span,
+    },
     /// 期望可变绑定
     ExpectedMutable {
         /// 实际类型
@@ -198,6 +216,8 @@ impl TypeError {
             | TypeError::ExpectedNumeric { span, .. }
             | TypeError::ExpectedIterable { span, .. }
             | TypeError::ExpectedStruct { span, .. }
+            | TypeError::UnknownField { span, .. }
+            | TypeError::MissingField { span, .. }
             | TypeError::ExpectedMutable { span, .. }
             | TypeError::FunctionNotFound { span, .. }
             | TypeError::UnexpectedArgumentCount { span, .. }
@@ -251,6 +271,22 @@ impl fmt::Display for TypeError {
             TypeError::ExpectedStruct { found, .. } => {
                 write!(f, "{loc}: error: expected a struct, found `{found}`")
             }
+            TypeError::UnknownField {
+                struct_name,
+                field,
+                ..
+            } => write!(
+                f,
+                "{loc}: error: struct `{struct_name}` has no field `{field}`"
+            ),
+            TypeError::MissingField {
+                struct_name,
+                field,
+                ..
+            } => write!(
+                f,
+                "{loc}: error: missing field `{field}` in struct `{struct_name}` construction"
+            ),
             TypeError::ExpectedMutable { found, .. } => {
                 write!(f, "{loc}: error: expected a mutable binding, found `{found}`")
             }

@@ -49,8 +49,14 @@ fn test_const_fold_cond_and_dce() {
     // 条件折叠为 Jump，else 分支不可达被删除：entry / then / merge = 3 块
     assert_eq!(f.blocks.len(), 3);
     assert_eq!(f.blocks[0].terminator, Some(MirTerminator::Jump(1)));
-    assert!(matches!(f.blocks[1].terminator, Some(MirTerminator::Jump(2))));
-    assert!(matches!(f.blocks[2].terminator, Some(MirTerminator::Return(_))));
+    assert!(matches!(
+        f.blocks[1].terminator,
+        Some(MirTerminator::Jump(2))
+    ));
+    assert!(matches!(
+        f.blocks[2].terminator,
+        Some(MirTerminator::Return(_))
+    ));
 }
 
 #[test]
@@ -69,7 +75,10 @@ fn test_dce_keeps_live_assignments() {
         .collect();
     assert!(targets.contains(&"a"));
     assert!(targets.contains(&"b"));
-    assert_eq!(f.blocks[0].terminator, Some(MirTerminator::Return(Some("b".into()))));
+    assert_eq!(
+        f.blocks[0].terminator,
+        Some(MirTerminator::Return(Some("b".into())))
+    );
 }
 
 #[test]
@@ -84,23 +93,23 @@ fn main() -> u32 {
     );
     inline_small_functions(&mut m);
     let f = &m.functions[1]; // main
-    // Call 被替换为内联体
+                             // Call 被替换为内联体
     let has_call = f.blocks[0]
         .stmts
         .iter()
         .any(|s| matches!(s, MirStmt::Call { .. }));
     assert!(!has_call, "add1(41) 应被内联，不再有 Call");
     // 内联体：`_i0 = _t1 + 1`，返回值绑定到调用点目标 `_t0`
-    assert!(f.blocks[0]
-        .stmts
-        .iter()
-        .any(|s| matches!(
-            s,
-            MirStmt::Assign {
-                value: MirValue::Binary { op: zeta_hir::HirBinaryOp::Add, .. },
+    assert!(f.blocks[0].stmts.iter().any(|s| matches!(
+        s,
+        MirStmt::Assign {
+            value: MirValue::Binary {
+                op: zeta_hir::HirBinaryOp::Add,
                 ..
-            }
-        )));
+            },
+            ..
+        }
+    )));
 }
 
 #[test]
@@ -132,7 +141,7 @@ fn main() -> u32 {
     let mut i = 0;
     while i < 10 {
         i += 1;
-    }
+    };
     i
 }
 "#,

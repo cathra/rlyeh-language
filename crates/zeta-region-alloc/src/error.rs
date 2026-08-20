@@ -14,6 +14,15 @@ pub enum AllocError {
         /// 本次请求的字节数。
         requested: usize,
     },
+    /// 请求大小超过区域最大容量上限（`SmartRegion`）。
+    TooLarge {
+        /// 本次请求的字节数。
+        requested: usize,
+        /// 区域允许的最大块大小。
+        max: usize,
+    },
+    /// 区域已冻结（销毁 / `transfer` 冻结后）仍尝试分配。
+    Frozen,
 }
 
 impl fmt::Display for AllocError {
@@ -24,6 +33,10 @@ impl fmt::Display for AllocError {
             AllocError::OutOfMemory { requested } => {
                 write!(f, "region out of memory (requested {requested} bytes)")
             }
+            AllocError::TooLarge { requested, max } => {
+                write!(f, "region allocation too large (requested {requested} bytes, max {max})")
+            }
+            AllocError::Frozen => write!(f, "region is frozen"),
         }
     }
 }

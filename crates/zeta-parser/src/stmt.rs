@@ -31,6 +31,22 @@ impl<'src> Parser<'src> {
             let expr = self.parse_expr()?;
             if self.eat(&Token::Semicolon) {
                 stmts.push(AstStmt::Expr(expr));
+            } else if matches!(
+                *expr.kind,
+                ExprKind::If { .. }
+                    | ExprKind::Match { .. }
+                    | ExprKind::For { .. }
+                    | ExprKind::While { .. }
+                    | ExprKind::Loop { .. }
+                    | ExprKind::Region { .. }
+            ) {
+                // 语句式 if / match / for / while / loop / region：无分号时，
+                // 若块到此结束则作为块尾表达式，否则按语句处理（允许后续继续跟语句）
+                if self.check(&Token::RBrace) {
+                    final_expr = Some(expr);
+                    break;
+                }
+                stmts.push(AstStmt::Semi(expr));
             } else {
                 // 块尾表达式（其后必须是 `}`）
                 final_expr = Some(expr);

@@ -1,0 +1,63 @@
+// Zeta 标准库核心类型（纯 Zeta 实现）
+//
+// 状态：编译器标准库预置（2026-08-20）
+// - `zeta build/run` 文件入口自动注入本文件（zeta-driver/src/stdlib.rs 定位：
+//   环境变量 `ZETA_STD_PATH` 优先，默认 <workspace>/crates/zeta-std/zeta/core.zeta）。
+// - CLI `--no-std` 可禁用注入；字符串 API（run_source 等）不注入。
+// - 测试内联副本见 zeta-driver/tests/std_test.rs 的 CORE_TYPES。
+//
+// 已知语言限制（见 CODEBUDDY.md / prompts/README.md）：
+// - 无 `panic`：`loop {}` 充当永不返回（Never）的崩溃替代；
+// - `Option::None` 的泛型参数以 `_`（Infer）占位，由使用上下文推断。
+
+enum Option<T> {
+    None,
+    Some(T),
+}
+
+impl<T> Option<T> {
+    fn is_some(self) -> i64 {
+        match self {
+            Option::Some(v) => 1,
+            Option::None => 0,
+        }
+    }
+    fn is_none(self) -> i64 {
+        match self {
+            Option::Some(v) => 0,
+            Option::None => 1,
+        }
+    }
+    fn unwrap(self) -> T {
+        match self {
+            Option::Some(v) => v,
+            Option::None => loop {},
+        }
+    }
+    fn unwrap_or(self, default: T) -> T {
+        match self {
+            Option::Some(v) => v,
+            Option::None => default,
+        }
+    }
+}
+
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+
+impl<T, E> Result<T, E> {
+    fn is_ok(self) -> i64 {
+        match self {
+            Result::Ok(v) => 1,
+            Result::Err(e) => 0,
+        }
+    }
+    fn unwrap(self) -> T {
+        match self {
+            Result::Ok(v) => v,
+            Result::Err(e) => loop {},
+        }
+    }
+}

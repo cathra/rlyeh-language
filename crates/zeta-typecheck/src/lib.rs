@@ -32,7 +32,7 @@ pub use types::{FnSignature, Mutability, StructDef, Type};
 
 use zeta_hir::HirProgram;
 
-pub use crate::check_item::typecheck;
+pub use crate::check_item::{collect_fn_signatures, typecheck};
 
 /// 便捷函数：解析源码并类型检查，返回 HIR。
 pub fn typecheck_source(source: &str) -> Result<HirProgram, TypeError> {

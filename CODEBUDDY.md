@@ -230,8 +230,8 @@ region 'r adaptive {
 | 命令 | 功能 | 状态 |
 |------|------|------|
 | `zeta new <name>` | 创建新项目 | 🔲 待实现 |
-| `zeta build` | 编译项目 | 🔧 开发中 |
-| `zeta run` | 编译并运行 | 🔲 待实现 |
+| `zeta build` | 编译项目 | ✅ 可用（MVP） |
+| `zeta run` | 编译并运行 | ✅ 可用（MVP） |
 | `zeta test` | 运行测试 | 🔧 开发中 |
 | `zeta bench` | 基准测试 | 🔲 待实现 |
 | `zeta doc` | 生成文档 | 🔲 待实现 |
@@ -245,21 +245,22 @@ region 'r adaptive {
 
 ### Milestone 1 — 编译器 MVP（Month 0-4）
 
-- [ ] **M1.1** Lexer 完成（支持全部关键字和运算符）
-- [ ] **M1.2** Parser 完成（支持完整语法）
-- [ ] **M1.3** AST → HIR  lowering
+- [x] **M1.1** Lexer 完成（支持全部关键字和运算符）
+- [x] **M1.2** Parser 完成（支持完整语法）
+- [x] **M1.3** AST → HIR  lowering
 - [x] **M1.4** 类型检查器基础（比较链 + `in` 表达式语义；泛型/trait 待扩展）
-- [ ] **M1.5** 借用检查器（L0 所有权系统）
+- [x] **M1.5** 借用检查器（L0 所有权系统：use-after-move + 不可变绑定赋值，区域块值传递例外；借用互斥规则待 `&` 语法支持）
 - [x] **M1.6** 区域系统（`zeta-region-alloc` bump allocator + 四策略 + LIFO 析构 + `execute_transfer` 所有权句柄；`zeta-regionck` 嵌套/归属/transfer 合法性 + P005 嵌套方向/PartialTransfer 语义；MIR lowering 待 P007+）
-- [ ] **M1.7** MIR + 基础优化 passes
-- [ ] **M1.8** 代码生成（LLVM 后端，x86_64 Linux）
-- [ ] **M1.9** 能编译并运行 `hello-world.zeta`
+- [x] **M1.7** MIR + 基础优化 passes（CFG lowering：if/while/loop/break/continue + 区域指令显式化；常量折叠、DCE、小函数内联）
+- [x] **M1.8** 代码生成（LLVM 后端，x86_64 Linux）
+- [x] **M1.9** 能编译并运行 `hello-world.zeta`
 
 ### Milestone 2 — 生产可用（Month 4-8）
 
-- [ ] **M2.1** Actor 运行时
+- [x] **M2.1** Actor 运行时（`zeta-actor-runtime`：工作窃取调度 + 每 Actor 互斥处理 + 有界邮箱 + ask/reply 模式 + Supervisor 监督恢复（OneForOne/AllForOne/RestartForOne + 频率限制）+ 内置 Router/Timer + 优雅排空关闭；`ActorRef`/`Runtime` API 就绪，语言级 `actor`/`spawn` 语法与标准库集成待 M2.5）
+- [x] **模块系统**（嵌套 `mod {}` + `mod foo;` 多文件加载（`foo.zeta` / `foo/mod.zeta`）+ `use` 导入与别名 + 扁平符号名 `mod::item` + LLVM 引号标识符接线；typecheck 支持模块内函数/常量/结构体符号解析）
 - [ ] **M2.2** 包管理器 Zep（依赖解析 + 注册表）
-- [ ] **M2.3** 增量编译引擎
+- [x] **M2.3** 增量编译引擎（源码/接口哈希 + LLVM IR 产物缓存 + 依赖图 + 多文件模块编译缓存）
 - [ ] **M2.4** LSP 服务器（IDE 支持）
 - [ ] **M2.5** 标准库核心模块（collections, io, net, sync）
 - [ ] **M2.6** 交叉编译（macOS, Windows, ARM）

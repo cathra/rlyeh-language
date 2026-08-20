@@ -123,9 +123,13 @@ impl Type {
 
     /// 与另一类型是否兼容（可参与同一比较 / 集合）。
     ///
-    /// 数值类型互相兼容；其余要求类型完全相同。
+    /// 数值类型互相兼容；`_`（Infer）与任意类型兼容（类型由上下文推断）；
+    /// 其余要求类型完全相同。
     pub fn compatible_with(&self, other: &Type) -> bool {
-        (self.is_numeric() && other.is_numeric()) || self == other
+        matches!(self, Type::Infer)
+            || matches!(other, Type::Infer)
+            || (self.is_numeric() && other.is_numeric())
+            || self == other
     }
 }
 
@@ -196,4 +200,116 @@ pub struct FnSignature {
 pub struct StructDef {
     /// 字段名与类型
     pub fields: Vec<(String, Type)>,
+}
+
+/// 枚举变体定义。
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantDef {
+    /// 变体名
+    pub name: String,
+    /// 字段名与类型
+    pub fields: Vec<(String, Type)>,
+    /// 判别值（变体在枚举中的序号，槽 0 存储）
+    pub tag: usize,
+}
+
+/// 枚举定义。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumDef {
+    /// 枚举名
+    pub name: String,
+    /// 泛型参数名（如 `Option` 的 `["T"]`）
+    pub type_params: Vec<String>,
+    /// 变体列表（按声明顺序，`tag` 即下标）
+    pub variants: Vec<VariantDef>,
+    /// 对象槽数：`1（tag）+ max(变体字段数)`，MVP 布局下所有变体
+    /// 的字段从槽 1 起连续排布。
+    pub slot_count: usize,
+}
+
+/// 方法签名。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodSig {
+    /// 方法名
+    pub name: String,
+    /// 参数类型（含 `self`，位于 `params[0]`）
+    pub params: Vec<Type>,
+    /// 返回类型
+    pub return_type: Type,
+}
+
+/// trait 定义。
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitDef {
+    /// trait 名
+    pub name: String,
+    /// 泛型参数名
+    pub type_params: Vec<String>,
+    /// 抽象方法签名
+    pub methods: Vec<MethodSig>,
+}
+
+/// impl 块中的方法（含原始 AST，供泛型实例化时克隆检查）。
+#[derive(Debug, Clone)]
+pub struct ImplMethod {
+    /// 方法签名
+    pub sig: MethodSig,
+    /// 原始函数 AST（抽象方法 / 仅声明为 `None`）
+    pub body: Option<zeta_ast::AstFnDecl>,
+}
+
+/// impl 块定义（inherent 或 trait impl）。
+#[derive(Debug, Clone)]
+pub struct ImplDef {
+    /// 若为 trait impl，则为 trait 名；否则为 `None`（inherent impl）
+    pub trait_name: Option<String>,
+    /// impl 目标类型（如 `Named("Vec", [Generic("T")])`）
+    pub self_type: Type,
+    /// 泛型参数名
+    pub type_params: Vec<String>,
+    /// 方法（`self` 位于参数首位）
+    pub methods: Vec<ImplMethod>,
+}
+
+/// 判定类型对应的对象槽标量种类（MVP 布局规则）。
+pub fn field_scalar_of(ty: &Type) -> zeta_hir::FieldScalar {
+    use zeta_hir::FieldScalar;
+    match ty {
+        Type::F32 | Type::F64 => FieldScalar::Float,
+        Type::Bool => FieldScalar::Bool,
+        Type::Char => FieldScalar::Char,
+        Type::Str => FieldScalar::Str,
+        // 聚合类型 / 引用 / 数组 / 元组均以指针形式存储
+        Type::Ref(..) | Type::Array(..) | Type::Tuple(..) | Type::Named(..) => FieldScalar::Ptr,
+        Type::Unit => FieldScalar::Int,
+        _ => FieldScalar::Int,
+    }
+}
+
+/// 将类型转换为泛型实例化的稳定键。
+pub fn type_mono_key(ty: &Type) -> String {
+    match ty {
+        Type::Named(name, args) => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let inner = args
+                    .iter()
+                    .map(type_mono_key)
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("{name}_{inner}")
+            }
+        }
+        Type::Ref(t, m) => format!(
+            "ref{}_{}",
+            if *m == Mutability::Mutable { "mut" } else { "imm" },
+            type_mono_key(t)
+        ),
+        Type::Tuple(ts) => {
+            let inner = ts.iter().map(type_mono_key).collect::<Vec<_>>().join("_");
+            format!("tup_{inner}")
+        }
+        _ => ty.to_string(),
+    }
 }

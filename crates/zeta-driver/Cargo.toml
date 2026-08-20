@@ -2,6 +2,20 @@
 name = "zeta-driver"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Zeta 编译器驱动：串联 lexer → parser → typecheck → borrowck → regionck → MIR → LIR → 代码生成，提供 zeta CLI"
 
-[lib]
-path = "src/lib.rs"
+[dependencies]
+zeta-typecheck = { workspace = true }
+zeta-borrowck = { workspace = true }
+zeta-regionck = { workspace = true }
+zeta-mir = { workspace = true }
+zeta-lir = { workspace = true }
+zeta-codegen = { workspace = true }
+zeta-parser = { workspace = true }
+zeta-ast = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

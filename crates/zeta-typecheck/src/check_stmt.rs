@@ -74,7 +74,9 @@ pub(crate) fn check_stmt(
             Ok((HirStmt::Semi(hir), Type::Unit))
         }
         AstStmt::Item(item) => {
-            crate::check_item::check_item(ctx, item)?;
+            // 语句级嵌套项（如函数体内的局部 fn）：检查但不在顶层生成 HIR
+            let mut scratch = Vec::new();
+            crate::check_item::check_item(ctx, item, "", &mut scratch)?;
             Ok((HirStmt::Semi(HirExpr::Unit), Type::Unit))
         }
     }
