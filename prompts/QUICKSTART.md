@@ -41,7 +41,10 @@ zeta-language/
 │   ├── P007_增量编译引擎.md
 │   ├── P008_包管理器Zep.md
 │   ├── P009_标准库核心模块.md
-│   └── P010_智能区域分配器.md
+│   ├── P010_智能区域分配器.md
+│   ├── P011_MIR中间表示实现.md
+│   ├── P012_L0借用检查器实现.md
+│   └── P013_LLVM后端与代码生成.md
 ├── crates/                   ← 编译器各组件（Rust crate）
 ├── tools/                    ← 工具链
 ├── zep/                      ← 包管理器
@@ -82,7 +85,7 @@ CodeBuddy 会：
 ## 4. 依赖关系图
 
 ```
-P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005
+P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 ──→ P011 ──→ P013
                                        │
                               P006 ←───┤
                                        │
@@ -91,9 +94,9 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005
                            └───→ P010
 ```
 
-**关键路径**：P001 → P002 → P003 → P004 → P005 → P007 → P008 → P009
+**关键路径**：P001 → P002 → P003 → P004 → P005 → P007 → P008 → P009（P012/P011/P013 为编译器主线支路）
 
-> 注：P006 的精确前置依赖为 P004；P007 的精确前置依赖为 P002-P005；P010 的精确前置依赖为 P004 + P007（P007 已隐含 P004，故图中从 P007 引出）。
+> 注：P006 的精确前置依赖为 P004；P007 的精确前置依赖为 P002-P005；P010 的精确前置依赖为 P004 + P007（P007 已隐含 P004，故图中从 P007 引出）；P012 的前置为 P005；P011 的前置为 P004 + P005 + P012；P013 的前置为 P011。
 
 **不要跳步！** 每个 Prompt 依赖前一个的输出。
 
@@ -113,6 +116,9 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005
 | P008 | `zep/` 包管理器 | `cargo test` 全部通过 |
 | P009 | `crates/zeta-std/` 标准库 | `zeta test` 全部通过 |
 | P010 | 智能区域分配器（最终版） | `cargo test` 全部通过 |
+| P011 | `crates/zeta-mir/` + `zeta-lir/` MIR/LIR | `cargo test` 全部通过 |
+| P012 | `crates/zeta-borrowck/` L0 借用检查器 | `cargo test` 全部通过 |
+| P013 | `crates/zeta-codegen/` LLVM 后端 + driver | `zeta run` 输出正确 |
 
 ---
 
@@ -194,7 +200,7 @@ zeta build test3.zeta
 | 文档 | 路径 | 说明 |
 |------|------|------|
 | 项目总纲 | [../CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 + 里程碑 |
-| Prompt 索引 | [README.md](./README.md) | 10 个 Prompt 的索引 |
+| Prompt 索引 | [README.md](./README.md) | 13 个 Prompt 的索引 |
 | 语法规范 | [../docs/grammar.md](../docs/grammar.md) | EBNF 语法定义 |
 | 语义规则 | [../docs/semantics.md](../docs/semantics.md) | 类型/求值规则 |
 | 内存模型 | [../docs/memory-model.md](../docs/memory-model.md) | 分层内存管理 |

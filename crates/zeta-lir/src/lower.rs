@@ -10,10 +10,24 @@ use crate::{
     LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType, Local,
 };
 
-/// 内建函数（由代码生成层映射到运行时，LLVM 后端实现为 `printf` 调用）。
+/// 内建函数（由代码生成层映射到运行时，LLVM 后端实现为 `printf` / `malloc` /
+/// `llvm.memcpy` / `free` 调用）。
 ///
 /// 这里集中登记，供类型推断阶段区分"内建调用返回单元值"与"用户函数调用"。
-pub const BUILTIN_FUNCTIONS: &[&str] = &["print", "println"];
+pub const BUILTIN_FUNCTIONS: &[&str] = &[
+    "print",
+    "println",
+    "alloc_array",
+    "array_copy",
+    "array_free",
+    "alloc_bytes",
+    "copy_bytes",
+    "bytes_eq",
+    "bytes_cmp",
+    "print_string",
+    "println_string",
+    "hash_value",
+];
 
 /// 将优化后的 MIR 程序降低为 LIR 程序。
 ///
@@ -30,16 +44,49 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
     }
 
     // 全程序函数返回类型表（供跨函数调用目标解析）
-    let ret_types: HashMap<String, LirType> = program
+    let mut ret_types: HashMap<String, LirType> = program
         .functions
         .iter()
         .zip(&infer_results)
         .map(|(f, (_, ret))| (f.name.clone(), *ret))
         .collect();
-    // 第二遍：生成 LIR 函数
+
+    // 跨函数返回类型重算：第一遍推断在函数内独立进行，用户函数调用的 target
+    // 类型取不到（占位 i64），导致「返回用户函数调用结果」的函数（如
+    // `String::trim` 返回 `String::substring` 调用）返回类型被误判为 i64。
+    // 此处用全程序 ret_types 解析调用目标后再重算返回类型，并迭代至稳定以
+    // 处理函数间链式依赖；最终 ret_types 供第二遍与 `lower_function` 使用。
+    for _ in 0..8 {
+        let mut changed = false;
+        for (f, (ty, ret)) in program.functions.iter().zip(&mut infer_results) {
+            let mut resolved = ty.clone();
+            resolve_call_target_types(f, &mut resolved, &ret_types);
+            let new_ret = infer_return_type(f, &resolved);
+            if new_ret != *ret {
+                *ret = new_ret;
+                changed = true;
+            }
+        }
+        let rebuilt: HashMap<String, LirType> = program
+            .functions
+            .iter()
+            .zip(&infer_results)
+            .map(|(f, (_, ret))| (f.name.clone(), *ret))
+            .collect();
+        if rebuilt != ret_types {
+            ret_types = rebuilt;
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // 第二遍：生成 LIR 函数（返回类型取重算后的全程序表）
     let mut functions = Vec::with_capacity(program.functions.len());
-    for (f, (ty, ret)) in program.functions.iter().zip(&infer_results) {
-        functions.push(lower_function(f, ty, *ret, &ret_types)?);
+    for (f, (ty, _)) in program.functions.iter().zip(&infer_results) {
+        let ret = ret_types.get(&f.name).copied().unwrap_or(LirType::Unit);
+        functions.push(lower_function(f, ty, ret, &ret_types)?);
     }
 
     Ok(LirProgram { functions })
@@ -65,7 +112,19 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                         callee,
                         ..
                     } if BUILTIN_FUNCTIONS.contains(&callee.as_str()) => {
-                        changed |= set_type(&mut ty, t, LirType::Unit)?;
+                        // `alloc_array` / `alloc_bytes` 返回动态缓冲指针，
+                        // `hash_value` / `bytes_cmp` 返回 i64（散列值 / memcmp 结果），
+                        // `bytes_eq` 返回布尔，其余内建返回单元值
+                        let rt = if callee == "alloc_array" || callee == "alloc_bytes" {
+                            LirType::Ptr
+                        } else if callee == "hash_value" || callee == "bytes_cmp" {
+                            LirType::I64
+                        } else if callee == "bytes_eq" {
+                            LirType::Bool
+                        } else {
+                            LirType::Unit
+                        };
+                        changed |= set_type(&mut ty, t, rt)?;
                     }
                     // 用户函数调用：跨函数类型在全部推断完成后解析
                     MirStmt::Call { .. } => {}
@@ -263,21 +322,18 @@ fn infer_return_type(f: &MirFunction, ty: &HashMap<Local, LirType>) -> LirType {
     LirType::Unit
 }
 
-/// 将单个 MIR 函数降低为 LIR 函数。
-fn lower_function(
+/// 用全程序返回类型表解析跨函数调用目标类型。
+///
+/// 注意：推断阶段对所有未推断变量默认填充 i64（`infer_function_types`
+/// 的占位策略），因此这里使用**覆盖**语义而非冲突检测——用户调用 target
+/// 的真实类型由 callee 返回类型决定。同时做多遍**副本类型传播**
+/// （`x = y` 且 `y` 为 Place 时，`x` 跟随 `y` 的类型），保证
+/// `let v = obj.method();` 这类别名变量的类型与调用结果一致。
+fn resolve_call_target_types(
     f: &MirFunction,
-    ty: &HashMap<Local, LirType>,
-    return_type: LirType,
+    ty: &mut HashMap<Local, LirType>,
     ret_types: &HashMap<String, LirType>,
-) -> Result<LirFunction, LirError> {
-    // 解析跨函数调用目标类型：用户函数 → 全程序返回类型表。
-    //
-    // 注意：推断阶段对所有未推断变量默认填充 i64（`infer_function_types`
-    // 的占位策略），因此这里使用**覆盖**语义而非冲突检测——用户调用 target
-    // 的真实类型由 callee 返回类型决定。同时做多遍**副本类型传播**
-    // （`x = y` 且 `y` 为 Place 时，`x` 跟随 `y` 的类型），保证
-    // `let v = obj.method();` 这类别名变量的类型与调用结果一致。
-    let mut ty = ty.clone();
+) {
     for _ in 0..8 {
         let mut changed = false;
         for block in &f.blocks {
@@ -313,6 +369,17 @@ fn lower_function(
             break;
         }
     }
+}
+
+/// 将单个 MIR 函数降低为 LIR 函数。
+fn lower_function(
+    f: &MirFunction,
+    ty: &HashMap<Local, LirType>,
+    return_type: LirType,
+    ret_types: &HashMap<String, LirType>,
+) -> Result<LirFunction, LirError> {
+    let mut ty = ty.clone();
+    resolve_call_target_types(f, &mut ty, ret_types);
 
     let params = f
         .params
@@ -587,6 +654,27 @@ impl FunctionLowerer {
         }
     }
 
+    /// 二元运算的结果类型：比较（`==`/`!=`/`<`/`<=`/`>`/`>=`）与逻辑（`and`/`or`）
+    /// 为 `bool`，算术为操作数类型（`icmp`/`fcmp` 恒产生 i1，
+    /// 必须登记为 Bool 槽，否则 i1 存 i64 槽报错）。
+    fn binary_result_type(&self, op: HirBinaryOp, oty: LirType) -> LirType {
+        if matches!(
+            op,
+            HirBinaryOp::Eq
+                | HirBinaryOp::Ne
+                | HirBinaryOp::Lt
+                | HirBinaryOp::Le
+                | HirBinaryOp::Gt
+                | HirBinaryOp::Ge
+                | HirBinaryOp::And
+                | HirBinaryOp::Or
+        ) {
+            LirType::Bool
+        } else {
+            oty
+        }
+    }
+
     /// 一元运算的操作数类型：`neg` 取操作数数值类型（默认整数），`not` 为 `bool`。
     fn unary_operand_type(&self, op: HirUnaryOp, operand: &LirOperand) -> LirType {
         match op {
@@ -614,15 +702,16 @@ impl FunctionLowerer {
             MirValue::Unit => Ok(LirOperand::Unit),
             MirValue::Place(l) => Ok(LirOperand::Local(l.clone())),
             MirValue::Binary { op, lhs, rhs } => {
-                // 嵌套二元 → 拆平到临时变量
+                // 嵌套二元 → 拆平到临时变量；
+                // ty 字段为操作数类型，临时变量槽登记为结果类型（比较 / 逻辑 → bool）
                 let lhs_op = self.lower_operand(lhs, out)?;
                 let rhs_op = self.lower_operand(rhs, out)?;
-                let ty = self.binary_operand_type(*op, &lhs_op, &rhs_op);
-                let tmp = self.fresh_temp(ty);
+                let oty = self.binary_operand_type(*op, &lhs_op, &rhs_op);
+                let tmp = self.fresh_temp(self.binary_result_type(*op, oty));
                 out.push(LirStmt::Binary {
                     target: tmp.clone(),
                     op: *op,
-                    ty,
+                    ty: oty,
                     lhs: lhs_op,
                     rhs: rhs_op,
                 });

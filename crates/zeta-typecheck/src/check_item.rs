@@ -173,12 +173,21 @@ pub(crate) fn check_item(
 }
 
 /// 收集结构体字段定义。
+///
+/// 泛型结构体（`struct Vec<T>`）在解析字段类型时，`T` 应处于类型参数作用域内
+/// （与 `collect_enum` / `collect_impl` 保持一致）。
 fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Result<(), TypeError> {
+    let saved_params = std::mem::take(&mut ctx.type_params);
+    let saved_subst = std::mem::take(&mut ctx.generic_subst);
+    ctx.type_params = s.generics.clone();
+
     let mut fields = Vec::with_capacity(s.fields.len());
     for field in &s.fields {
         let ty = resolve_ast_type(ctx, &field.type_, field.span)?;
         fields.push((field.name.clone(), ty));
     }
+    ctx.type_params = saved_params;
+    ctx.generic_subst = saved_subst;
     ctx.insert_struct(full_name(prefix, &s.name), StructDef { fields });
     Ok(())
 }

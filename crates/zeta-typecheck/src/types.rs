@@ -124,12 +124,23 @@ impl Type {
     /// 与另一类型是否兼容（可参与同一比较 / 集合）。
     ///
     /// 数值类型互相兼容；`_`（Infer）与任意类型兼容（类型由上下文推断）；
+    /// 数组要求长度一致且元素兼容；命名类型（泛型）要求同名且类型参数逐个兼容；
     /// 其余要求类型完全相同。
     pub fn compatible_with(&self, other: &Type) -> bool {
         matches!(self, Type::Infer)
             || matches!(other, Type::Infer)
             || (self.is_numeric() && other.is_numeric())
-            || self == other
+            || match (self, other) {
+                (Type::Array(a, na), Type::Array(b, nb)) => {
+                    na == nb && a.compatible_with(b)
+                }
+                (Type::Named(sa, aa), Type::Named(sb, ab)) => {
+                    sa == sb
+                        && aa.len() == ab.len()
+                        && aa.iter().zip(ab).all(|(x, y)| x.compatible_with(y))
+                }
+                _ => self == other,
+            }
     }
 }
 

@@ -23,21 +23,27 @@ pub(crate) fn check_stmt(
             let span = init.span;
             let (h_init, ty) = infer_expr(ctx, init)?;
 
-            // 类型标注一致性检查
-            if let Some(anno) = type_anno {
-                let anno_ty = resolve_ast_type(ctx, anno, span)?;
-                if !anno_ty.compatible_with(&ty) {
-                    return Err(TypeError::WrongType {
-                        expected: anno_ty.to_string(),
-                        found: ty.to_string(),
-                        span,
-                    });
+            // 类型标注一致性检查；标注存在时以标注类型作为绑定类型，
+            // 以便统一 init 中残留的 `_`（Infer）占位（如 `Vec::with_capacity` 返回 `Vec<_>`）
+            let anno_ty = match type_anno {
+                Some(anno) => {
+                    let at = resolve_ast_type(ctx, anno, span)?;
+                    if !at.compatible_with(&ty) {
+                        return Err(TypeError::WrongType {
+                            expected: at.to_string(),
+                            found: ty.to_string(),
+                            span,
+                        });
+                    }
+                    Some(at)
                 }
-            }
+                None => None,
+            };
 
             match pattern {
                 AstPattern::Ident(name) => {
-                    ctx.insert_variable(name.clone(), ty.clone());
+                    let bind_ty = anno_ty.clone().unwrap_or_else(|| ty.clone());
+                    ctx.insert_variable(name.clone(), bind_ty);
                     Ok((
                         HirStmt::Let {
                             name: name.clone(),

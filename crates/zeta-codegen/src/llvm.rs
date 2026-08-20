@@ -17,7 +17,20 @@ use zeta_lir::{FieldScalar, LirFunction, LirOperand, LirProgram, LirStmt, LirTer
 use crate::error::CodegenError;
 
 /// 内建函数名（与 `zeta-lir::lower::BUILTIN_FUNCTIONS` 保持一致）。
-const BUILTIN_FUNCTIONS: &[&str] = &["print", "println"];
+const BUILTIN_FUNCTIONS: &[&str] = &[
+    "print",
+    "println",
+    "alloc_array",
+    "array_copy",
+    "array_free",
+    "alloc_bytes",
+    "copy_bytes",
+    "bytes_eq",
+    "bytes_cmp",
+    "print_string",
+    "println_string",
+    "hash_value",
+];
 
 /// 生成 LLVM IR 文本。
 pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
@@ -30,6 +43,9 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     out.push_str("; ModuleID = 'zeta'\n");
     out.push_str("declare i32 @printf(i8*, ...)\n");
     out.push_str("declare i8* @malloc(i64)\n");
+    out.push_str("declare void @free(i8*)\n");
+    out.push_str("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)\n");
+    out.push_str("declare i32 @memcmp(i8*, i8*, i64)\n");
     for g in &emitter.globals {
         out.push_str(g);
         out.push('\n');
@@ -91,6 +107,8 @@ impl LlvmEmitter {
 
         let ret_ty = if is_main {
             "i32".to_string()
+        } else if f.return_type == LirType::Unit {
+            "void".to_string()
         } else {
             llvm_type(f.return_type)?.to_string()
         };
@@ -292,18 +310,30 @@ impl LlvmEmitter {
                 let addr = self.reg();
                 if *is_str {
                     body.push_str(&format!("  %{addr} = getelementptr i8, i8* {b}, i64 {i}\n"));
+                    // 1 字节元素：字符串字符 / `u8` 字节缓冲。load i8 后按需零扩展
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{addr} to i8*\n"));
+                    let r8 = self.reg();
+                    body.push_str(&format!("  %{r8} = load i8, i8* %{c}\n"));
+                    if *ty == FieldScalar::Int {
+                        let r = self.reg();
+                        body.push_str(&format!("  %{r} = zext i8 %{r8} to i64\n"));
+                        self.store_to(target, &r, body, f)?;
+                    } else {
+                        self.store_to(target, &r8, body, f)?;
+                    }
                 } else {
                     let scaled = self.reg();
                     body.push_str(&format!("  %{scaled} = mul i64 {i}, 8\n"));
                     body.push_str(&format!(
                         "  %{addr} = getelementptr i8, i8* {b}, i64 %{scaled}\n"
                     ));
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{addr} to {lt}*\n"));
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
+                    self.store_to(target, &r, body, f)?;
                 }
-                let c = self.reg();
-                body.push_str(&format!("  %{c} = bitcast i8* %{addr} to {lt}*\n"));
-                let r = self.reg();
-                body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
-                self.store_to(target, &r, body, f)?;
             }
             LirStmt::IndexSet {
                 base,
@@ -329,17 +359,28 @@ impl LlvmEmitter {
                 let addr = self.reg();
                 if *is_str {
                     body.push_str(&format!("  %{addr} = getelementptr i8, i8* {b}, i64 {i}\n"));
+                    // 1 字节元素：store 前按需截断为 i8
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{addr} to i8*\n"));
+                    let v = self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?;
+                    if *ty == FieldScalar::Int {
+                        let v8 = self.reg();
+                        body.push_str(&format!("  %{v8} = trunc i64 {v} to i8\n"));
+                        body.push_str(&format!("  store i8 %{v8}, i8* %{c}\n"));
+                    } else {
+                        body.push_str(&format!("  store i8 {v}, i8* %{c}\n"));
+                    }
                 } else {
                     let scaled = self.reg();
                     body.push_str(&format!("  %{scaled} = mul i64 {i}, 8\n"));
                     body.push_str(&format!(
                         "  %{addr} = getelementptr i8, i8* {b}, i64 %{scaled}\n"
                     ));
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{addr} to {lt}*\n"));
+                    let v = self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?;
+                    body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
                 }
-                let c = self.reg();
-                body.push_str(&format!("  %{c} = bitcast i8* %{addr} to {lt}*\n"));
-                let v = self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?;
-                body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
             }
             // 区域标注指令：LLVM 后端 MVP 忽略
             LirStmt::RegionEnter { .. }
@@ -360,7 +401,7 @@ impl LlvmEmitter {
         f: &LirFunction,
     ) -> Result<(), CodegenError> {
         if BUILTIN_FUNCTIONS.contains(&callee) {
-            return self.emit_builtin_call(callee, args, body, f);
+            return self.emit_builtin_call(target, callee, args, body, f);
         }
 
         let (param_tys, ret_ty) =
@@ -399,14 +440,145 @@ impl LlvmEmitter {
         Ok(())
     }
 
-    /// 生成内建 `print` / `println` 调用（`printf`）。
+    /// 生成内建调用：
+    /// `print` / `println` → `printf`；`alloc_array` → `malloc`；
+    /// `array_copy` → `llvm.memcpy`；`array_free` → `free`。
     fn emit_builtin_call(
         &mut self,
+        target: Option<&Local>,
         callee: &str,
         args: &[Local],
         body: &mut String,
         f: &LirFunction,
     ) -> Result<(), CodegenError> {
+        // 动态数组分配：target = malloc(n * 8)（每槽 8 字节，与数组元素步长一致）
+        if callee == "alloc_array" {
+            let n =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::I64, body, f)?;
+            let bytes = self.reg();
+            body.push_str(&format!("  %{bytes} = mul i64 {n}, 8\n"));
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = call i8* @malloc(i64 %{bytes})\n"));
+            if let Some(t) = target {
+                body.push_str(&format!("  store i8* %{r}, i8** %{t}.addr\n"));
+            }
+            return Ok(());
+        }
+        // 动态数组拷贝：memcpy(dst, src, n * 8)
+        if callee == "array_copy" {
+            let dst =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            let src =
+                self.operand_value(&LirOperand::Local(args[1].clone()), LirType::Ptr, body, f)?;
+            let n =
+                self.operand_value(&LirOperand::Local(args[2].clone()), LirType::I64, body, f)?;
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = mul i64 {n}, 8\n"));
+            body.push_str(&format!(
+                "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* {dst}, i8* {src}, i64 %{r}, i1 false)\n"
+            ));
+            return Ok(());
+        }
+        // 动态数组释放：free(p)
+        if callee == "array_free" {
+            let p = self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            body.push_str(&format!("  call void @free(i8* {p})\n"));
+            return Ok(());
+        }
+        // 字节缓冲分配（String 动态缓冲）：target = malloc(n)（按字节，无步长缩放）
+        if callee == "alloc_bytes" {
+            let n =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::I64, body, f)?;
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = call i8* @malloc(i64 {n})\n"));
+            if let Some(t) = target {
+                body.push_str(&format!("  store i8* %{r}, i8** %{t}.addr\n"));
+            }
+            return Ok(());
+        }
+        // HashMap 键散列：Knuth 乘法混合散列（wrapping 乘法，MVP 仅支持整数键）
+        if callee == "hash_value" {
+            let v =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::I64, body, f)?;
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = mul i64 {v}, 2654435761\n"));
+            if let Some(t) = target {
+                body.push_str(&format!("  store i64 %{r}, i64* %{t}.addr\n"));
+            }
+            return Ok(());
+        }
+        // 字节缓冲拷贝：memcpy(dst, src, n)（不经 8 倍缩放）
+        if callee == "copy_bytes" {
+            let dst =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            let src =
+                self.operand_value(&LirOperand::Local(args[1].clone()), LirType::Ptr, body, f)?;
+            let n =
+                self.operand_value(&LirOperand::Local(args[2].clone()), LirType::I64, body, f)?;
+            body.push_str(&format!(
+                "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* {dst}, i8* {src}, i64 {n}, i1 false)\n"
+            ));
+            return Ok(());
+        }
+        // 字节缓冲相等：`memcmp(a, b, n) == 0`（String 内容比较；
+        // 长度相等性由调用方先比较，n 恒为同一长度）
+        if callee == "bytes_eq" {
+            let a =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            let b =
+                self.operand_value(&LirOperand::Local(args[1].clone()), LirType::Ptr, body, f)?;
+            let n =
+                self.operand_value(&LirOperand::Local(args[2].clone()), LirType::I64, body, f)?;
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = call i32 @memcmp(i8* {a}, i8* {b}, i64 {n})\n"));
+            if let Some(t) = target {
+                let eq = self.reg();
+                body.push_str(&format!("  %{eq} = icmp eq i32 %{r}, 0\n"));
+                body.push_str(&format!("  store i1 %{eq}, i1* %{t}.addr\n"));
+            }
+            return Ok(());
+        }
+        // 字节缓冲字典序：`memcmp(a, b, n)` 有符号扩展为 i64（String 排序；
+        // 负/零/正 → 小于/等于/大于；前缀相等时长度兜底由 desugar 层处理）
+        if callee == "bytes_cmp" {
+            let a =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            let b =
+                self.operand_value(&LirOperand::Local(args[1].clone()), LirType::Ptr, body, f)?;
+            let n =
+                self.operand_value(&LirOperand::Local(args[2].clone()), LirType::I64, body, f)?;
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = call i32 @memcmp(i8* {a}, i8* {b}, i64 {n})\n"));
+            if let Some(t) = target {
+                let sext = self.reg();
+                body.push_str(&format!("  %{sext} = sext i32 %{r} to i64\n"));
+                body.push_str(&format!("  store i64 %{sext}, i64* %{t}.addr\n"));
+            }
+            return Ok(());
+        }
+        // String 打印：读 String 对象槽 0（data 指针）与槽 1（字节长度），
+        // 以 `printf("%.*s", len, data)` 输出（支持任意字节内容，遇 \0 截断）。
+        if callee == "print_string" || callee == "println_string" {
+            let p = self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            let len_a = self.reg();
+            body.push_str(&format!(
+                "  %{len_a} = getelementptr i8, i8* {p}, i64 8\n"
+            ));
+            let len_v = self.reg();
+            body.push_str(&format!("  %{len_v} = load i64, i64* %{len_a}\n"));
+            let len32 = self.reg();
+            body.push_str(&format!("  %{len32} = trunc i64 %{len_v} to i32\n"));
+            let data_a = self.reg();
+            body.push_str(&format!("  %{data_a} = bitcast i8* {p} to i8**\n"));
+            let data_v = self.reg();
+            body.push_str(&format!("  %{data_v} = load i8*, i8** %{data_a}\n"));
+            let nl = if callee == "println_string" { "\n" } else { "" };
+            let fmt = self.emit_fmt_global(&format!("%.*s{nl}"))?;
+            body.push_str(&format!(
+                "  call i32 (i8*, ...) @printf(i8* {fmt}, i32 %{len32}, i8* %{data_v})\n"
+            ));
+            return Ok(());
+        }
         let newline = callee == "println";
         if args.is_empty() {
             // 仅换行

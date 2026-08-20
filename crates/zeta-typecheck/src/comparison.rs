@@ -1,7 +1,9 @@
 //! 比较链（`0 < x < 10`）方向检查与展开。
 
 use zeta_ast::{AstExpr, CompareOp};
-use zeta_hir::{HirBinaryOp, HirExpr};
+use zeta_hir::{
+    FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirStmt, HirUnaryOp,
+};
 use zeta_lexer::Span;
 
 use crate::check_expr;
@@ -46,8 +48,59 @@ pub(crate) fn check_comparison_chain(
 
     // 单个比较（如 `x != 7`）：直接展开，不参与链方向检查
     if operators.len() == 1 {
-        check_comparison(&items[0].2, &items[1].2, operators[0], span)?;
-        let hir = compare_hir(&items[0].1, operators[0], &items[1].1);
+        let op = operators[0];
+        // String 对象字典序比较 `<` / `>` / `<=` / `>=`：跳过数值类型检查
+        // （`check_comparison` 仅放行数值与字符），直接 desugar 为
+        // 前缀 memcmp（`bytes_cmp` 内建）+ 长度兜底：
+        //   `s1 < s2`  → `__c < 0 || (__c == 0 && __la < __lb)`
+        //   `s1 > s2`  → `s2 < s1`（交换操作数）
+        //   `s1 <= s2` → `!(s2 < s1)`，`s1 >= s2` → `!(s1 < s2)`
+        if matches!(
+            op,
+            CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge
+        ) && is_string_type(ctx, &items[0].2)
+            && is_string_type(ctx, &items[1].2)
+        {
+            let (lhs, rhs) = (&items[0].1, &items[1].1);
+            let hir = match op {
+                CompareOp::Lt => string_lt_hir(ctx, lhs, rhs),
+                CompareOp::Gt => string_lt_hir(ctx, rhs, lhs),
+                CompareOp::Le => {
+                    HirExpr::Unary(HirUnaryOp::Not, Box::new(string_lt_hir(ctx, rhs, lhs)))
+                }
+                CompareOp::Ge => {
+                    HirExpr::Unary(HirUnaryOp::Not, Box::new(string_lt_hir(ctx, lhs, rhs)))
+                }
+                _ => unreachable!(),
+            };
+            return Ok((hir, Type::Bool));
+        }
+        check_comparison(&items[0].2, &items[1].2, op, span)?;
+        // String 对象相等 / 不等：内容比较 desugar
+        // `s1 == s2` → `s1.len == s2.len && bytes_eq(s1.data, s2.data, s1.len)`
+        if matches!(op, CompareOp::Eq | CompareOp::Ne)
+            && is_string_type(ctx, &items[0].2)
+            && is_string_type(ctx, &items[1].2)
+        {
+            let eq = string_eq_hir(ctx, &items[0].1, &items[1].1);
+            let hir = if op == CompareOp::Ne {
+                HirExpr::Unary(HirUnaryOp::Not, Box::new(eq))
+            } else {
+                eq
+            };
+            return Ok((hir, Type::Bool));
+        }
+        // 其余聚合对象（结构体 / Vec 等）的 `==` / `!=`：MVP 仅 String 支持内容比较
+        if matches!(op, CompareOp::Eq | CompareOp::Ne) && is_struct_object(ctx, &items[0].2) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "{} 对象的 == / !=（MVP 阶段仅 String 支持内容相等比较）",
+                    items[0].2
+                ),
+                span,
+            });
+        }
+        let hir = compare_hir(&items[0].1, op, &items[1].1);
         return Ok((hir, Type::Bool));
     }
 
@@ -167,4 +220,215 @@ fn reverse_op(op: CompareOp) -> CompareOp {
         CompareOp::Ge => CompareOp::Le,
         _ => op,
     }
+}
+
+/// 判断类型是否为 `String` 对象（Named 类型，解析后全名 == "String"）。
+pub(crate) fn is_string_type(ctx: &TypeContext, ty: &Type) -> bool {
+    if let Type::Named(n, _) = ty {
+        let full = ctx.resolve_full_name(n).unwrap_or_else(|| n.clone());
+        return full == "String" && ctx.lookup_struct(&full).is_some();
+    }
+    false
+}
+
+/// 判断类型是否为已定义的结构体对象（含 `Vec` / `HashMap` 等动态集合）。
+fn is_struct_object(ctx: &TypeContext, ty: &Type) -> bool {
+    if let Type::Named(n, _) = ty {
+        let full = ctx.resolve_full_name(n).unwrap_or_else(|| n.clone());
+        return ctx.lookup_struct(&full).is_some();
+    }
+    false
+}
+
+/// 生成 String 内容相等的比较 HIR：`s1 == s2` →
+/// `s1.len == s2.len && bytes_eq(s1.data, s2.data, s1.len)`。
+///
+/// 操作数绑定到唯一临时变量（防止重复求值）；String 槽布局：
+/// 槽 0 = data 指针、槽 1 = len、槽 2 = cap。`bytes_eq` 为内建
+/// （`memcmp(a, b, n) == 0`），经 MIR/LIR 透传至代码生成。
+fn string_eq_hir(ctx: &mut TypeContext, lhs: &HirExpr, rhs: &HirExpr) -> HirExpr {
+    let a = ctx.fresh_temp();
+    let b = ctx.fresh_temp();
+
+    let a_var = HirExpr::Variable(a.clone());
+    let b_var = HirExpr::Variable(b.clone());
+    let a_data = HirExpr::FieldGet {
+        base: Box::new(a_var.clone()),
+        index: 0, // 槽 0 = data 指针
+        ty: FieldScalar::Ptr,
+    };
+    let b_data = HirExpr::FieldGet {
+        base: Box::new(b_var.clone()),
+        index: 0,
+        ty: FieldScalar::Ptr,
+    };
+    let a_len = HirExpr::FieldGet {
+        base: Box::new(a_var),
+        index: 1, // 槽 1 = len
+        ty: FieldScalar::Int,
+    };
+    let b_len = HirExpr::FieldGet {
+        base: Box::new(b_var),
+        index: 1,
+        ty: FieldScalar::Int,
+    };
+
+    let stmts = vec![
+        HirStmt::Let {
+            name: a.clone(),
+            init: lhs.clone(),
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: b.clone(),
+            init: rhs.clone(),
+            mutable: false,
+        },
+    ];
+
+    let len_eq = HirExpr::Binary(HirBinaryOp::Eq, Box::new(a_len.clone()), Box::new(b_len));
+    let content_eq = HirExpr::Call {
+        callee: "bytes_eq".to_string(),
+        args: vec![a_data, b_data, a_len],
+    };
+    let cmp = HirExpr::Binary(HirBinaryOp::And, Box::new(len_eq), Box::new(content_eq));
+    HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(cmp),
+    }))
+}
+
+/// 生成 String 字典序 `<` 比较 HIR：`s1 < s2` →
+/// 前缀 memcmp（`bytes_cmp` 内建，负/零/正 → 小于/等于/大于）+ 长度兜底：
+///
+/// ```text
+/// let __a = <lhs>;
+/// let __b = <rhs>;
+/// let __la = __a.len;       // 槽 1 长度
+/// let __lb = __b.len;
+/// let mut __n = __la;       // n = min(la, lb)
+/// if __la >= __lb { __n = __lb; }
+/// let __c = bytes_cmp(__a.data, __b.data, __n);
+/// __c < 0 || (__c == 0 && __la < __lb)
+/// ```
+///
+/// 前缀字节相同且长度相等 → 相等（false）；前缀相同但长度不等 → 短者更小；
+/// 前缀第一个不同字节即定大小（memcmp 返回其差值符号）。操作数绑定唯一
+/// 临时变量防重复求值。`>` / `<=` / `>=` 由调用方交换操作数或取反获得。
+fn string_lt_hir(ctx: &mut TypeContext, lhs: &HirExpr, rhs: &HirExpr) -> HirExpr {
+    let a = ctx.fresh_temp();
+    let b = ctx.fresh_temp();
+    let la = ctx.fresh_temp();
+    let lb = ctx.fresh_temp();
+    let n = ctx.fresh_temp();
+    let c = ctx.fresh_temp();
+
+    let a_var = HirExpr::Variable(a.clone());
+    let b_var = HirExpr::Variable(b.clone());
+    let a_len = HirExpr::Variable(la.clone());
+    let b_len = HirExpr::Variable(lb.clone());
+    let a_data = HirExpr::FieldGet {
+        base: Box::new(a_var.clone()),
+        index: 0, // 槽 0 = data 指针
+        ty: FieldScalar::Ptr,
+    };
+    let a_len_field = HirExpr::FieldGet {
+        base: Box::new(a_var),
+        index: 1, // 槽 1 = len
+        ty: FieldScalar::Int,
+    };
+    let b_data = HirExpr::FieldGet {
+        base: Box::new(b_var.clone()),
+        index: 0,
+        ty: FieldScalar::Ptr,
+    };
+    let b_len_field = HirExpr::FieldGet {
+        base: Box::new(b_var),
+        index: 1,
+        ty: FieldScalar::Int,
+    };
+
+    let stmts = vec![
+        HirStmt::Let {
+            name: a,
+            init: lhs.clone(),
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: b,
+            init: rhs.clone(),
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: la,
+            init: a_len_field,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: lb,
+            init: b_len_field,
+            mutable: false,
+        },
+        // n = min(la, lb)：先取 la，la >= lb 时覆盖为 lb（if 仅做控制流，
+        // 与既有 `check_for_range` desugar 模式一致，避免 block 值语义）
+        HirStmt::Let {
+            name: n.clone(),
+            init: a_len.clone(),
+            mutable: true,
+        },
+        HirStmt::Expr(HirExpr::If {
+            cond: Box::new(HirExpr::Binary(
+                HirBinaryOp::Ge,
+                Box::new(a_len.clone()),
+                Box::new(b_len.clone()),
+            )),
+            then_block: Box::new(HirBlock {
+                stmts: vec![HirStmt::Expr(HirExpr::Assign {
+                    target: n.clone(),
+                    op: HirAssignOp::Assign,
+                    value: Box::new(b_len.clone()),
+                })],
+                final_expr: None,
+            }),
+            else_block: None,
+        }),
+        HirStmt::Let {
+            name: c.clone(),
+            init: HirExpr::Call {
+                callee: "bytes_cmp".to_string(),
+                args: vec![a_data, b_data, HirExpr::Variable(n)],
+            },
+            mutable: false,
+        },
+    ];
+
+    let prefix_lt = HirExpr::Binary(
+        HirBinaryOp::Lt,
+        Box::new(HirExpr::Variable(c.clone())),
+        Box::new(HirExpr::IntLiteral(0)),
+    );
+    let eq_zero = HirExpr::Binary(
+        HirBinaryOp::Eq,
+        Box::new(HirExpr::Variable(c)),
+        Box::new(HirExpr::IntLiteral(0)),
+    );
+    let len_lt = HirExpr::Binary(
+        HirBinaryOp::Lt,
+        Box::new(a_len.clone()),
+        Box::new(b_len),
+    );
+    let result = HirExpr::Binary(
+        HirBinaryOp::Or,
+        Box::new(prefix_lt),
+        Box::new(HirExpr::Binary(
+            HirBinaryOp::And,
+            Box::new(eq_zero),
+            Box::new(len_lt),
+        )),
+    );
+
+    HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(result),
+    }))
 }

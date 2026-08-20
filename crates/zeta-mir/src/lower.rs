@@ -434,16 +434,20 @@ impl MirLowerer {
         then_block: &HirBlock,
         else_block: Option<&HirBlock>,
     ) -> Option<MirValue> {
-        let entry_id = self.cur;
         let cond_place = self.lower_expr(cond)?;
+        // cond 求值可能发射控制流（如条件为含 if 的块表达式）：CondJump
+        // 必须从 cond 求值结束后的当前块发出，而非强制回到入口块——
+        // 否则嵌套场景下入口块已被内层 if 闭合（「基本块已有终止符」）。
+        // cond 无分支时收尾块 == 入口块，行为不变。
+        let emit_id = self.cur;
         let then_id = self.new_block();
         let merge_id = self.new_block();
         let (else_id, has_else) = match else_block {
             Some(_) => (self.new_block(), true),
             None => (merge_id, false),
         };
-        // new_block 已切换当前块，切回 entry 再发射 CondJump
-        self.cur = entry_id;
+        // new_block 已切换当前块，切回 cond 收尾块再发射 CondJump
+        self.cur = emit_id;
         self.terminate(MirTerminator::CondJump {
             cond: cond_place,
             then: then_id,

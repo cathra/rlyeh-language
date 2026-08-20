@@ -10,6 +10,18 @@
 // - 无 `panic`：`loop {}` 充当永不返回（Never）的崩溃替代；
 // - `Option::None` 的泛型参数以 `_`（Infer）占位，由使用上下文推断。
 
+// String 结构体前移声明：`Option::expect`/`Result::expect` 的 `msg: String`
+// 参数需要类型在使用前定义（类型符号顺序解析，无前向引用）。
+
+// 动态字符串（UTF-8 字节缓冲，按字符/字节索引步长 1）
+// 布局与 Vec 相同：槽 0 = data 指针（[u8; 0] 动态缓冲），槽 1 = len，槽 2 = cap
+// 构造器（new / with_capacity / from）由编译器特判展开（alloc_bytes / copy_bytes）
+struct String {
+    data: [u8; 0],
+    len: i64,
+    cap: i64,
+}
+
 enum Option<T> {
     None,
     Some(T),
@@ -34,10 +46,22 @@ impl<T> Option<T> {
             Option::None => loop {},
         }
     }
+    // 默认值：Some 返回 v；None 返回 default。
+    // 注意：MVP 已知 codegen 限制——String（聚合载荷）实例化下 match 分支
+    // 返回 default 会得到损坏值（枚举载荷以 Ptr 存储的返回路径 bug），
+    // 仅标量（i64/f64）实例化可靠；String 场景请用 expect。
     fn unwrap_or(self, default: T) -> T {
         match self {
             Option::Some(v) => v,
             Option::None => default,
+        }
+    }
+    // 期望值：Some 返回 v；None 以 `loop {}` 充当崩溃替代（MVP 无 panic
+    // 机制，消息参数保留对齐 Rust 语义，当前不打印）。
+    fn expect(self, msg: String) -> T {
+        match self {
+            Option::Some(v) => v,
+            Option::None => loop {},
         }
     }
 }
@@ -59,5 +83,799 @@ impl<T, E> Result<T, E> {
             Result::Ok(v) => v,
             Result::Err(e) => loop {},
         }
+    }
+    // 是否错误：Ok → 0，Err → 1（与 is_ok 互补）。
+    fn is_err(self) -> i64 {
+        match self {
+            Result::Ok(v) => 0,
+            Result::Err(e) => 1,
+        }
+    }
+    // 默认值：Ok 返回 v；Err 返回 default（Err 载荷被丢弃）。
+    // 同 Option::unwrap_or：String（聚合载荷）实例化受 codegen 返回路径限制，
+    // 仅标量实例化可靠；String 场景请用 expect。
+    fn unwrap_or(self, default: T) -> T {
+        match self {
+            Result::Ok(v) => v,
+            Result::Err(e) => default,
+        }
+    }
+    // 期望值：Ok 返回 v；Err 以 `loop {}` 充当崩溃替代（消息预留打印）。
+    fn expect(self, msg: String) -> T {
+        match self {
+            Result::Ok(v) => v,
+            Result::Err(e) => loop {},
+        }
+    }
+}
+
+// 动态数组（Vec<T>）
+//
+// - `data` 字段类型 `[T; 0]`：约定长度 0 = 运行时长度（动态数组指针）
+//   （数组索引步长固定 8 字节，与 `[T; N]` 定长数组共用同一套内存布局）。
+// - `Vec::with_capacity(n)` / `Vec::new()` 由编译器特判展开
+//   （泛型 impl 静态方法 MVP 不支持），返回 `Vec<_>` 由上下文统一类型参数。
+// - `grow()` 翻倍扩容：`alloc_array` 新分配 + `array_copy` 整块拷贝（槽区共享语义）。
+
+struct Vec<T> {
+    data: [T; 0],
+    len: i64,
+    cap: i64,
+}
+
+impl<T> Vec<T> {
+    fn len(self) -> i64 {
+        self.len
+    }
+    fn cap(self) -> i64 {
+        self.cap
+    }
+    fn is_empty(self) -> i64 {
+        if self.len == 0 {
+            1
+        } else {
+            0
+        }
+    }
+    fn get(self, i: i64) -> T {
+        self.data[i]
+    }
+    fn set(&mut self, i: i64, x: T) {
+        self.data[i] = x;
+    }
+    fn push(&mut self, x: T) {
+        if self.len >= self.cap {
+            self.grow();
+        }
+        self.data[self.len] = x;
+        self.len = self.len + 1;
+    }
+    fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            self.len = self.len - 1;
+            let v = self.data[self.len];
+            Option::Some(v)
+        }
+    }
+    fn grow(&mut self) {
+        let new_cap = self.cap * 2;
+        let new_data = alloc_array(new_cap);
+        array_copy(new_data, self.data, self.len);
+        array_free(self.data);
+        self.data = new_data;
+        self.cap = new_cap;
+    }
+    // 包含判断：是否存在元素与 `x` 相等（`==` 在泛型实例化后按具体类型比较：
+    // i64 数值相等 / String 内容相等）。命中即置位标志，O(n) 遍历。
+    fn contains(&self, x: T) -> bool {
+        let mut result = false;
+        let mut i = 0;
+        while i < self.len {
+            if self.data[i] == x {
+                result = true;
+            }
+            i = i + 1;
+        }
+        result
+    }
+    // 删除并返回第 i 个元素：其后元素逐位前移（浅拷贝槽），len -= 1。
+    // 越界（i >= len）MVP 无 panic，以 `loop {}` 充当崩溃替代。
+    fn remove(&mut self, i: i64) -> T {
+        if i >= self.len {
+            loop {}
+        }
+        let v = self.data[i];
+        let mut j = i;
+        while j + 1 < self.len {
+            self.data[j] = self.data[j + 1];
+            j = j + 1;
+        }
+        self.len = self.len - 1;
+        v
+    }
+    // 在第 i 位前插入 x：从尾部反向搬移元素（避免正向覆盖），len += 1。
+    // 容量不足先扩容。i 越界（> len）行为未定义，调用方保证合法。
+    fn insert(&mut self, i: i64, x: T) {
+        if self.len >= self.cap {
+            self.grow();
+        }
+        let mut j = self.len;
+        while j > i {
+            self.data[j] = self.data[j - 1];
+            j = j - 1;
+        }
+        self.data[i] = x;
+        self.len = self.len + 1;
+    }
+    // 清空：仅重置 len，槽区残留数据被后续 push 覆盖写，无需释放。
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+    // 查找：返回第一个与 `x` 相等的元素下标，未命中返回 -1（对齐 String::find）。
+    // result 变量模式返回；命中即 `i = self.len` 提前终止，保住首个下标。
+    fn find(&self, x: T) -> i64 {
+        let mut result = -1;
+        let mut i = 0;
+        while i < self.len {
+            if self.data[i] == x {
+                result = i;
+                i = self.len;
+            }
+            i = i + 1;
+        }
+        result
+    }
+    // 排序：原地选择排序（升序），`<` 在实例化后按具体类型比较
+    // （i64 数值 / String 字典序）。O(n²)，MVP 简单实现；非稳定排序。
+    fn sort(&mut self) {
+        let mut i = 0;
+        while i < self.len {
+            let mut min = i;
+            let mut j = i + 1;
+            while j < self.len {
+                if self.data[j] < self.data[min] {
+                    min = j;
+                }
+                j = j + 1;
+            }
+            if min != i {
+                let t = self.data[i];
+                self.data[i] = self.data[min];
+                self.data[min] = t;
+            }
+            i = i + 1;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// String：动态字符串（UTF-8 字节缓冲，按字符/字节索引步长 1）
+// 布局与 Vec 相同：槽 0 = data 指针（[u8; 0] 动态缓冲），槽 1 = len，槽 2 = cap
+// 构造器（new / with_capacity / from）由编译器特判展开（alloc_bytes / copy_bytes）
+// （struct 定义已前移文件顶部，供 Option/Result 的 expect 引用）
+// ---------------------------------------------------------------------------
+
+impl String {
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn cap(&self) -> i64 {
+        self.cap
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    // 按字节读取（UTF-8 字符需组合字节；MVP 索引粒度 = 字节，与 s[i] 一致）
+    fn get(&self, i: i64) -> i64 {
+        self.data[i]
+    }
+    fn push_byte(&mut self, b: i64) {
+        if self.len >= self.cap {
+            self.grow();
+        }
+        self.data[self.len] = b;
+        self.len = self.len + 1;
+    }
+    // 拼接：追加另一字符串的全部字节（other 值拷贝 3 槽共享缓冲，逐字节
+    // push_byte 自动触发扩容迁移；`a + b` 运算符在 typecheck 层 desugar 为
+    // `let __s = a; __s.push_str(b); __s`）
+    fn push_str(&mut self, other: String) {
+        let mut i = 0;
+        while i < other.len {
+            self.push_byte(other.data[i]);
+            i = i + 1;
+        }
+    }
+    // 子串：截取 [start, end) 字节区间（UTF-8 需调用方保证边界不切分多字节
+    // 字符；MVP 索引粒度 = 字节，与 s[i] 一致）。边界越界时 clamp 到
+    // [0, len]，start >= end 返回空串。返回全新缓冲，原字符串不受影响。
+    fn substring(&self, start: i64, end: i64) -> String {
+        let mut s = start;
+        if s < 0 {
+            s = 0;
+        }
+        if s > self.len {
+            s = self.len;
+        }
+        let mut e = end;
+        if e < 0 {
+            e = 0;
+        }
+        if e > self.len {
+            e = self.len;
+        }
+        let mut buf = String::new();
+        let mut i = s;
+        while i < e {
+            buf.push_byte(self.data[i]);
+            i = i + 1;
+        }
+        buf
+    }
+    // 子串查找：`self` 中首次出现 `sub` 的起始字节下标，未找到返回 -1；
+    // 空子串恒返回 0。朴素滑动窗口匹配（MVP）。
+    // 注意：结果经 `result` 变量返回，避免 while 块后直接跟 `-1` 被解析为减法
+    fn find(&self, sub: String) -> i64 {
+        let mut result = -1;
+        if sub.len == 0 {
+            return 0;
+        }
+        if sub.len > self.len {
+            return -1;
+        }
+        let mut i = 0;
+        while i + sub.len <= self.len {
+            let mut j = 0;
+            let mut ok = 1;
+            while j < sub.len {
+                if self.data[i + j] != sub.data[j] {
+                    ok = 0;
+                }
+                j = j + 1;
+            }
+            if ok == 1 {
+                return i;
+            }
+            i = i + 1;
+        }
+        result
+    }
+    // 子串包含：`self` 中是否出现 `sub`（find >= 0）；空子串恒为真。
+    fn contains(&self, sub: String) -> bool {
+        self.find(sub) >= 0
+    }
+    // 前缀判断：`self` 是否以 `prefix` 开头。prefix 长于 self 恒 false，
+    // 空 prefix 恒 true（内层 while 不执行，ok 保持 1）。逐字节比较。
+    fn starts_with(&self, prefix: String) -> bool {
+        let mut result = false;
+        if prefix.len > self.len {
+            return result;
+        }
+        let mut ok = 1;
+        let mut i = 0;
+        while i < prefix.len {
+            if self.data[i] != prefix.data[i] {
+                ok = 0;
+            }
+            i = i + 1;
+        }
+        if ok == 1 {
+            result = true;
+        }
+        result
+    }
+    // 后缀判断：`self` 是否以 `suffix` 结尾。suffix 长于 self 恒 false，
+    // 空 suffix 恒 true。从 self 尾部对齐比较。
+    fn ends_with(&self, suffix: String) -> bool {
+        let mut result = false;
+        if suffix.len > self.len {
+            return result;
+        }
+        let mut ok = 1;
+        let mut i = 0;
+        while i < suffix.len {
+            if self.data[self.len - suffix.len + i] != suffix.data[i] {
+                ok = 0;
+            }
+            i = i + 1;
+        }
+        if ok == 1 {
+            result = true;
+        }
+        result
+    }
+    // 替换：将 `self` 中所有 `old` 子串替换为 `new`，返回新缓冲。
+    // 滑动窗口扫描：命中处追加 `new` 全部字节并跳过 `old.len`，否则追加原字节。
+    // 空 `old` 不替换（返回自身拷贝），避免死循环。
+    fn replace(&self, old: String, new: String) -> String {
+        let mut buf = String::new();
+        if old.len == 0 {
+            let mut i = 0;
+            while i < self.len {
+                buf.push_byte(self.data[i]);
+                i = i + 1;
+            }
+            return buf;
+        }
+        let mut i = 0;
+        while i < self.len {
+            if i + old.len <= self.len {
+                let mut ok = 1;
+                let mut j = 0;
+                while j < old.len {
+                    if self.data[i + j] != old.data[j] {
+                        ok = 0;
+                    }
+                    j = j + 1;
+                }
+                if ok == 1 {
+                    buf.push_str(new);
+                    i = i + old.len;
+                } else {
+                    buf.push_byte(self.data[i]);
+                    i = i + 1;
+                }
+            } else {
+                buf.push_byte(self.data[i]);
+                i = i + 1;
+            }
+        }
+        buf
+    }
+    // 转大写：逐字节拷贝到新缓冲，ASCII 小写字母（'a'-'z' = 97-122）减 32
+    // 转大写；其余字节原样。非 ASCII（UTF-8 多字节）不转换（MVP）。
+    fn to_upper(&self) -> String {
+        let mut buf = String::new();
+        let mut i = 0;
+        while i < self.len {
+            let b = self.data[i];
+            if 97 <= b <= 122 {
+                buf.push_byte(b - 32);
+            } else {
+                buf.push_byte(b);
+            }
+            i = i + 1;
+        }
+        buf
+    }
+    // 转小写：逐字节拷贝到新缓冲，ASCII 大写字母（'A'-'Z' = 65-90）加 32
+    // 转小写；其余字节原样。非 ASCII 不转换（MVP）。
+    fn to_lower(&self) -> String {
+        let mut buf = String::new();
+        let mut i = 0;
+        while i < self.len {
+            let b = self.data[i];
+            if 65 <= b <= 90 {
+                buf.push_byte(b + 32);
+            } else {
+                buf.push_byte(b);
+            }
+            i = i + 1;
+        }
+        buf
+    }
+    // 裁剪：剥离首尾空白（空格 32 / 制表 9 / 换行 10 / 回车 13），返回新缓冲。
+    // 正向扫描跳过开头空白找 start，反向扫描跳过结尾空白找 end，再 substring；
+    // 全空白串返回空串（start 推进到 len 后反向条件 end > start 不成立）。
+    fn trim(&self) -> String {
+        let mut start = 0;
+        let mut scanning = 1;
+        while scanning == 1 {
+            if start < self.len {
+                let b = self.data[start];
+                if b == 32 || b == 9 || b == 10 || b == 13 {
+                    start = start + 1;
+                } else {
+                    scanning = 0;
+                }
+            } else {
+                scanning = 0;
+            }
+        }
+        let mut end = self.len;
+        let mut scanning2 = 1;
+        while scanning2 == 1 {
+            if end > start {
+                let b = self.data[end - 1];
+                if b == 32 || b == 9 || b == 10 || b == 13 {
+                    end = end - 1;
+                } else {
+                    scanning2 = 0;
+                }
+            } else {
+                scanning2 = 0;
+            }
+        }
+        // 结果经 `result` 变量返回（与 find 相同）：函数末尾直接返回
+        // 方法调用结果（聚合值）会触发 codegen 返回类型错位
+        let result = self.substring(start, end);
+        result
+    }
+    fn grow(&mut self) {
+        let new_cap = if self.cap == 0 { 8 } else { self.cap * 2 };
+        let new_data = alloc_bytes(new_cap);
+        copy_bytes(new_data, self.data, self.len);
+        array_free(self.data);
+        self.data = new_data;
+        self.cap = new_cap;
+    }
+    // 分割：以 sep 为分隔符拆分 self 为 Vec<String>（每段均为新缓冲）。
+    // 空 sep 特判返回整体自身拷贝（对齐 replace 空 old 语义，避免死循环）。
+    // 连续分隔符产生空串段；尾部分隔符后也有段（可为空）。滑动窗口匹配。
+    fn split(&self, sep: String) -> Vec<String> {
+        let mut parts: Vec<String> = Vec::new();
+        if sep.len == 0 {
+            parts.push(self.substring(0, self.len));
+            return parts;
+        }
+        let mut start = 0;
+        let mut i = 0;
+        while i < self.len {
+            if i + sep.len <= self.len {
+                let mut ok = 1;
+                let mut j = 0;
+                while j < sep.len {
+                    if self.data[i + j] != sep.data[j] {
+                        ok = 0;
+                    }
+                    j = j + 1;
+                }
+                if ok == 1 {
+                    parts.push(self.substring(start, i));
+                    i = i + sep.len;
+                    start = i;
+                } else {
+                    i = i + 1;
+                }
+            } else {
+                i = i + 1;
+            }
+        }
+        parts.push(self.substring(start, self.len));
+        parts
+    }
+    // 重复：将 self 拼接 count 次，返回新缓冲。count <= 0 返回空串。
+    // 逐字节 push_byte 拷贝（`push_str` 参数为值 String，`&self` 无法直传，
+    // 与 pad_start 拷贝循环同构）。
+    fn repeat(&self, count: i64) -> String {
+        let mut buf = String::new();
+        let mut i = 0;
+        while i < count {
+            let mut j = 0;
+            while j < self.len {
+                buf.push_byte(self.data[j]);
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        buf
+    }
+    // 左填充：pad 字节重复填充到总长 total（total <= len 原样拷贝）。
+    // pad 为字节值（如 48 = '0'，45 = '-'），与 push_byte 一致。
+    fn pad_start(&self, total: i64, pad: i64) -> String {
+        let mut buf = String::new();
+        let mut i = 0;
+        while i + self.len < total {
+            buf.push_byte(pad);
+            i = i + 1;
+        }
+        let mut j = 0;
+        while j < self.len {
+            buf.push_byte(self.data[j]);
+            j = j + 1;
+        }
+        buf
+    }
+    // 右填充：pad 字节重复填充到总长 total（total <= len 原样拷贝）。
+    fn pad_end(&self, total: i64, pad: i64) -> String {
+        let mut buf = String::new();
+        let mut j = 0;
+        while j < self.len {
+            buf.push_byte(self.data[j]);
+            j = j + 1;
+        }
+        let mut i = 0;
+        while i + self.len < total {
+            buf.push_byte(pad);
+            i = i + 1;
+        }
+        buf
+    }
+    // 去除前缀：以 prefix 开头则返回去掉前缀的剩余部分（新缓冲），否则 None。
+    // 逐字节窗口比较（与 split 同构）；空前缀返回自身拷贝；prefix 长于 self 返回 None。
+    fn strip_prefix(&self, prefix: String) -> Option<String> {
+        let mut result: Option<String> = Option::None;
+        if prefix.len <= self.len {
+            let mut ok = 1;
+            let mut j = 0;
+            while j < prefix.len {
+                if self.data[j] != prefix.data[j] {
+                    ok = 0;
+                }
+                j = j + 1;
+            }
+            if ok == 1 {
+                result = Option::Some(self.substring(prefix.len, self.len));
+            }
+        }
+        result
+    }
+    // 去除后缀：以 suffix 结尾则返回去掉后缀的剩余部分（新缓冲），否则 None。
+    // 从 self.len - suffix.len 处对齐比较；空后缀返回自身拷贝；suffix 长于 self 返回 None。
+    fn strip_suffix(&self, suffix: String) -> Option<String> {
+        let mut result: Option<String> = Option::None;
+        if suffix.len <= self.len {
+            let mut ok = 1;
+            let mut j = 0;
+            while j < suffix.len {
+                if self.data[self.len - suffix.len + j] != suffix.data[j] {
+                    ok = 0;
+                }
+                j = j + 1;
+            }
+            if ok == 1 {
+                result = Option::Some(self.substring(0, self.len - suffix.len));
+            }
+        }
+        result
+    }
+    // 截断：返回前 new_len 字节的新缓冲。越界由 substring clamp
+    //（负数 → 空串，> len → 整体拷贝），返回新缓冲不影响 self。
+    fn truncate(&self, new_len: i64) -> String {
+        let result = self.substring(0, new_len);
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 数值 <-> 字符串转换（顶层自由函数，i64 与 String 互转）
+// ---------------------------------------------------------------------------
+// 整数转字符串：负数加 '-'（45）前缀；0 特判输出 '0'（48）；先算位数
+// ndigits，再以位权 place（10^(ndigits-1)）从最高位逐位 `(v / place) % 10`
+// 输出。全部 i64 算术（不用 Vec——`Vec::new()` 的 Infer 类型参数在标准库
+// 自举时无上下文注解可统一）。i64::MIN 取负溢出 MVP 不处理。
+fn int_to_string(n: i64) -> String {
+    let mut buf = String::new();
+    let mut v = n;
+    if v < 0 {
+        buf.push_byte(45);
+        v = 0 - v;
+    }
+    if v == 0 {
+        buf.push_byte(48);
+        return buf;
+    }
+    let mut ndigits = 0;
+    let mut tmp = v;
+    while tmp > 0 {
+        ndigits = ndigits + 1;
+        tmp = tmp / 10;
+    }
+    let mut place = 1;
+    let mut k = 1;
+    while k < ndigits {
+        place = place * 10;
+        k = k + 1;
+    }
+    while place >= 1 {
+        let d = (v / place) % 10;
+        buf.push_byte(48 + d);
+        place = place / 10;
+    }
+    buf
+}
+// 字符串转整数：解析十进制数字（'0'-'9' = 48-57）累加；'-'（45）前缀为负；
+// 遇非数字字符停止解析（返回已解析部分）；空串/无数字返回 0。
+fn string_to_int(s: String) -> i64 {
+    let mut result = 0;
+    let mut i = 0;
+    let mut negative = 0;
+    if s.len > 0 {
+        if s.get(0) == 45 {
+            negative = 1;
+            i = 1;
+        }
+    }
+    while i < s.len {
+        let c = s.get(i);
+        if 48 <= c <= 57 {
+            result = result * 10 + (c - 48);
+            i = i + 1;
+        } else {
+            i = s.len;
+        }
+    }
+    if negative == 1 {
+        result = 0 - result;
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
+// HashMap<K, V>：开放寻址哈希表（线性探测 + 墓碑删除）
+// 布局（6 槽）：槽 0 = keys 指针（[K; 0]），槽 1 = vals 指针（[V; 0]），
+//               槽 2 = states 指针（[i64; 0]：0=空 1=占用 2=墓碑），
+//               槽 3 = len（实际键值对数），槽 4 = used（占用+墓碑槽数），
+//               槽 5 = cap（容量，恒为 2 的幂）。
+// 键类型：整数键走 `hash_value` 内建（Knuth 乘法散列）；String 键由 typecheck
+// 特判展开为 djb2 内容哈希（同内容恒同哈希），键相等比较走 String `==` 内容比较。
+// 结果取非负后 `% cap` 定位槽位。其余聚合对象键暂不支持。
+// 负载因子 used/cap >= 1/2 时翻倍 rehash（墓碑随之清除，len 即占用数）。
+// 构造器（new / with_capacity）由编译器特判展开（6 槽 + alloc_array 三数组）。
+// ---------------------------------------------------------------------------
+struct HashMap<K, V> {
+    keys: [K; 0],
+    vals: [V; 0],
+    states: [i64; 0],
+    len: i64,
+    used: i64,
+    cap: i64,
+}
+
+impl<K, V> HashMap<K, V> {
+    // 哈希：内建混合散列后取绝对值，保证 `% cap` 结果非负
+    fn hash(&self, k: K) -> i64 {
+        let h = hash_value(k);
+        if h < 0 {
+            -h
+        } else {
+            h
+        }
+    }
+    // 线性探测查找：命中返回槽位索引，未找到返回 -1（遇空槽提前终止）
+    // 注意：结果经 `result` 变量返回，避免 while 块后直接跟 `-1` 被解析为减法
+    fn find(&self, k: K) -> i64 {
+        let mut idx = self.hash(k) % self.cap;
+        let mut n = 0;
+        let mut result = -1;
+        while n < self.cap {
+            if self.states[idx] == 0 {
+                return result;
+            }
+            if self.states[idx] == 1 {
+                if self.keys[idx] == k {
+                    return idx;
+                }
+            }
+            idx = idx + 1;
+            if idx >= self.cap {
+                idx = 0;
+            }
+            n = n + 1;
+        }
+        result
+    }
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn cap(&self) -> i64 {
+        self.cap
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    fn contains_key(&self, k: K) -> bool {
+        self.find(k) >= 0
+    }
+    fn get(&self, k: K) -> Option<V> {
+        let idx = self.find(k);
+        if idx < 0 {
+            Option::None
+        } else {
+            Option::Some(self.vals[idx])
+        }
+    }
+    // 插入：已存在则覆盖值；新键先按负载因子决定是否扩容，再探测空槽/墓碑写入
+    fn insert(&mut self, k: K, v: V) {
+        let idx = self.find(k);
+        if idx >= 0 {
+            self.vals[idx] = v;
+        } else {
+            if self.used * 2 >= self.cap {
+                self.grow();
+            }
+            let mut j = self.hash(k) % self.cap;
+            while self.states[j] == 1 {
+                j = j + 1;
+                if j >= self.cap {
+                    j = 0;
+                }
+            }
+            if self.states[j] == 0 {
+                self.used = self.used + 1;
+            }
+            self.keys[j] = k;
+            self.vals[j] = v;
+            self.states[j] = 1;
+            self.len = self.len + 1;
+        }
+    }
+    // 删除：命中槽位标记为墓碑（不破坏后续探测链），返回旧值
+    fn remove(&mut self, k: K) -> Option<V> {
+        let idx = self.find(k);
+        if idx < 0 {
+            Option::None
+        } else {
+            let v = self.vals[idx];
+            self.states[idx] = 2;
+            self.len = self.len - 1;
+            Option::Some(v)
+        }
+    }
+    // 翻倍扩容：新开三数组，重哈希所有占用槽位（墓碑丢弃），释放旧缓冲
+    // 三个数组以类型注解显式定型（`alloc_array` 返回 `[Infer; 0]`，
+    // 后续索引比较/赋值前必须先统一元素类型）
+    fn grow(&mut self) {
+        let new_cap = self.cap * 2;
+        let new_keys: [K; 0] = alloc_array(new_cap);
+        let new_vals: [V; 0] = alloc_array(new_cap);
+        let new_states: [i64; 0] = alloc_array(new_cap);
+        let mut i = 0;
+        while i < self.cap {
+            if self.states[i] == 1 {
+                let mut j = self.hash(self.keys[i]) % new_cap;
+                while new_states[j] == 1 {
+                    j = j + 1;
+                    if j >= new_cap {
+                        j = 0;
+                    }
+                }
+                new_keys[j] = self.keys[i];
+                new_vals[j] = self.vals[i];
+                new_states[j] = 1;
+            }
+            i = i + 1;
+        }
+        array_free(self.keys);
+        array_free(self.vals);
+        array_free(self.states);
+        self.keys = new_keys;
+        self.vals = new_vals;
+        self.states = new_states;
+        self.used = self.len;
+        self.cap = new_cap;
+    }
+    // 清空：完全重置为容量不变的空表（重开三数组，墓碑/旧数据全部丢弃，
+    // 避免墓碑堆积拖慢探测）。与 `remove` 的逐键墓碑不同，后续插入即全新探测链。
+    fn clear(&mut self) {
+        let k: [K; 0] = alloc_array(self.cap);
+        let v: [V; 0] = alloc_array(self.cap);
+        let s: [i64; 0] = alloc_array(self.cap);
+        array_free(self.keys);
+        array_free(self.vals);
+        array_free(self.states);
+        self.keys = k;
+        self.vals = v;
+        self.states = s;
+        self.len = 0;
+        self.used = 0;
+    }
+    // 键集合：稀疏遍历全部槽位，收集 states == 1（存活）的键为 Vec<K>。
+    // 遍历顺序与插入无关（开放寻址），调用方断言需 sort 或求和。
+    fn keys(&self) -> Vec<K> {
+        let mut ks: Vec<K> = Vec::new();
+        let mut i = 0;
+        while i < self.cap {
+            if self.states[i] == 1 {
+                ks.push(self.keys[i]);
+            }
+            i = i + 1;
+        }
+        ks
+    }
+    // 值集合：稀疏遍历全部槽位，收集 states == 1（存活）的值为 Vec<V>。
+    // 顺序与 keys 一致（同槽位遍历），顺序与插入无关。
+    fn values(&self) -> Vec<V> {
+        let mut vs: Vec<V> = Vec::new();
+        let mut i = 0;
+        while i < self.cap {
+            if self.states[i] == 1 {
+                vs.push(self.vals[i]);
+            }
+            i = i + 1;
+        }
+        vs
     }
 }

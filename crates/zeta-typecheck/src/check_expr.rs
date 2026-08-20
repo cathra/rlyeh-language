@@ -15,10 +15,35 @@ use crate::error::TypeError;
 use crate::in_expr;
 use crate::types::{field_scalar_of, type_mono_key, FnSignature, ImplDef, Mutability, Type};
 
-/// 内建函数（由代码生成层映射到运行时，无需用户声明）。
+/// 查询内建函数签名；`None` 表示不是内建。
+///
+/// - `print` / `println`：任意类型参数（`Infer` 与一切兼容）、返回 `()`
+/// - `alloc_array(n)`：运行时槽数分配，返回 `[T; 0]`（长度 0 约定 = 动态数组指针）
+/// - `array_copy(dst, src, n)` / `array_free(p)`：动态数组缓冲操作
 ///
 /// 与 `zeta-lir::lower::BUILTIN_FUNCTIONS`、`zeta-codegen` 保持一致。
-pub const BUILTIN_FUNCTIONS: &[&str] = &["print", "println"];
+pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
+    let dyn_arr = || Type::Array(Box::new(Type::Infer), 0);
+    match name {
+        "print" | "println" => Some((vec![Type::Infer], Type::Unit)),
+        "alloc_array" => Some((vec![Type::I64], dyn_arr())),
+        "array_copy" => Some((vec![dyn_arr(), dyn_arr(), Type::I64], Type::Unit)),
+        "array_free" => Some((vec![dyn_arr()], Type::Unit)),
+        // String 动态缓冲（按字节）：
+        "alloc_bytes" => Some((vec![Type::I64], Type::Array(Box::new(Type::U8), 0))),
+        "copy_bytes" => Some((vec![Type::Infer, Type::Infer, Type::I64], Type::Unit)),
+        // String 内容相等：`bytes_eq(a, b, n)` → `memcmp(a, b, n) == 0`
+        "bytes_eq" => Some((vec![Type::Infer, Type::Infer, Type::I64], Type::Bool)),
+        // String 字典序：`bytes_cmp(a, b, n)` → `memcmp(a, b, n)` 有符号扩展为 i64
+        // （负/零/正 → 小于/等于/大于；前缀相等时长度兜底由 desugar 层处理）
+        "bytes_cmp" => Some((vec![Type::Infer, Type::Infer, Type::I64], Type::I64)),
+        // String 打印：`print_string` / `println_string` 接收 String 对象指针
+        "print_string" | "println_string" => Some((vec![Type::Infer], Type::Unit)),
+        // HashMap 键散列：Knuth 乘法混合散列（MVP 仅支持整数键），返回非负散列值
+        "hash_value" => Some((vec![Type::Infer], Type::I64)),
+        _ => None,
+    }
+}
 
 /// 推断表达式的类型并生成对应 HIR。
 pub(crate) fn infer_expr(
@@ -98,6 +123,48 @@ pub(crate) fn infer_expr(
         ExprKind::Binary { op, left, right } => {
             let (l_hir, l_ty) = infer_expr(ctx, left)?;
             let (r_hir, r_ty) = infer_expr(ctx, right)?;
+            // `a + b`（String + String）→ 拼接：
+            // `let __s = a; __s.push_str(b); __s`（__s 为 3 槽值拷贝，共享缓冲；
+            // push_str 经方法实例化路径注册函数体，返回拼接结果）
+            if *op == BinaryOp::Add
+                && comparison::is_string_type(ctx, &l_ty)
+                && comparison::is_string_type(ctx, &r_ty)
+            {
+                let s_name = ctx.fresh_temp();
+                let impl_def = ctx
+                    .find_impl_for_method(&l_ty, "push_str")
+                    .cloned()
+                    .ok_or_else(|| TypeError::FunctionNotFound {
+                        name: "String::push_str".to_string(),
+                        span,
+                    })?;
+                let method_def = impl_def
+                    .methods
+                    .iter()
+                    .find(|m| m.sig.name == "push_str")
+                    .cloned()
+                    .ok_or_else(|| TypeError::FunctionNotFound {
+                        name: "String::push_str".to_string(),
+                        span,
+                    })?;
+                let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &HashMap::new(), span)?;
+                let stmts = vec![
+                    HirStmt::Let {
+                        name: s_name.clone(),
+                        init: l_hir,
+                        mutable: true,
+                    },
+                    HirStmt::Expr(HirExpr::Call {
+                        callee: fn_name,
+                        args: vec![HirExpr::Variable(s_name.clone()), r_hir],
+                    }),
+                ];
+                let hir = HirExpr::Block(Box::new(HirBlock {
+                    stmts,
+                    final_expr: Some(HirExpr::Variable(s_name)),
+                }));
+                return Ok((hir, l_ty));
+            }
             let (hir_op, result_ty) = check_binary(*op, &l_ty, &r_ty, span)?;
             let hir = HirExpr::Binary(hir_op, Box::new(l_hir), Box::new(r_hir));
             Ok((hir, result_ty))
@@ -259,9 +326,18 @@ pub(crate) fn infer_expr(
             };
             let result_ty = match (&e_ty, t_ty == Type::Unit) {
                 (Some(et), false) if *et != t_ty => {
-                    // then 与 else 分支类型不一致：取较大的（数值）或报错
-                    if t_ty.compatible_with(et) {
+                    // then 与 else 分支类型不一致：
+                    // - 数值类型 → 取合并类型（int/float 提升）；
+                    // - 其余类型（聚合/引用等）→ 兼容时取更具体的那个（`_` 占位被具体类型吸收），
+                    //   否则报错。注意不能对非数值调用 merge_numeric（会把 Option<i64> 合并成 i64）。
+                    if t_ty.is_numeric() && et.is_numeric() {
                         merge_numeric(t_ty.clone(), et.clone())
+                    } else if t_ty.compatible_with(et) {
+                        if matches!(&t_ty, Type::Infer) {
+                            et.clone()
+                        } else {
+                            t_ty
+                        }
                     } else {
                         return Err(TypeError::WrongType {
                             expected: t_ty.to_string(),
@@ -417,7 +493,39 @@ pub(crate) fn check_block(
     Ok((HirBlock { stmts, final_expr }, final_ty))
 }
 
-/// 检查 for 循环：`for pat in lo..<hi { body }`。
+/// 检查 for 循环：迭代器分派。
+///
+/// - range 表达式（`lo..<hi` 等）→ [`check_for_range`]（数值递增循环）
+/// - `Vec<T>` 容器（`for x in v`）→ [`check_for_vec`]（索引遍历循环）
+/// - 其余（HashMap 等，需元组模式解构）在 MVP 阶段待支持
+fn check_for(
+    ctx: &mut TypeContext,
+    pattern: &AstPattern,
+    iterator: &AstExpr,
+    body: &AstBlock,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if matches!(&*iterator.kind, ExprKind::Range { .. }) {
+        return check_for_range(ctx, pattern, iterator, body, span);
+    }
+    let (iter_hir, iter_ty) = infer_expr(ctx, iterator)?;
+    if let Type::Named(n, args) = peel_ref(&iter_ty) {
+        let full = ctx.resolve_full_name(&n).unwrap_or_else(|| n.clone());
+        if full == "Vec" && ctx.lookup_struct(&full).is_some() {
+            return check_for_vec(ctx, pattern, iter_hir, &args, body, span);
+        }
+        if full == "HashMap" && ctx.lookup_struct(&full).is_some() {
+            return check_for_hashmap(ctx, pattern, iter_hir, &args, body, span);
+        }
+    }
+    Err(TypeError::Unsupported {
+        what: "非 range / Vec / HashMap 迭代器的 for 循环（集合 / 容器迭代 MVP 阶段仅支持 Vec 与 HashMap）"
+            .to_string(),
+        span,
+    })
+}
+
+/// 检查 range 迭代的 for 循环：`for pat in lo..<hi { body }`。
 ///
 /// MVP 阶段支持 range 迭代器（`..<` / `...` / `<..` / `<..<`），
 /// 在类型检查层 desugar 为 `loop`：
@@ -432,7 +540,7 @@ pub(crate) fn check_block(
 ///     body
 /// }
 /// ```
-fn check_for(
+fn check_for_range(
     ctx: &mut TypeContext,
     pattern: &AstPattern,
     iterator: &AstExpr,
@@ -581,6 +689,356 @@ fn check_for(
     ))
 }
 
+/// 检查 `Vec<T>` 容器迭代的 for 循环：`for pat in v { body }`。
+///
+/// 在类型检查层 desugar 为索引遍历循环（复用 Vec 3 槽布局：
+/// 槽 0 = data 指针、槽 1 = len、槽 2 = cap）：
+///
+/// ```zeta
+/// let __for_v = v;             // 绑定容器（防迭代器重复求值）
+/// let __for_len = __for_v.len; // 缓存长度（槽 1）
+/// let mut __for_i = 0;
+/// loop {
+///     if __for_i >= __for_len { break; }
+///     let pat = __for_v[__for_i]; // Index：槽 0 data 指针 + 元素步长 8
+///     __for_i += 1;               // continue 回跳前已递增，不会死循环
+///     body
+/// }
+/// ```
+fn check_for_vec(
+    ctx: &mut TypeContext,
+    pattern: &AstPattern,
+    iter_hir: HirExpr,
+    args: &[Type],
+    body: &AstBlock,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 1. 元素类型：`Vec<T>` 的类型参数经泛型替换；Infer 无法确定槽标量
+    let elem_ty = substitute(args.first().unwrap_or(&Type::Infer), &ctx.generic_subst);
+    if matches!(elem_ty, Type::Infer) {
+        return Err(TypeError::Unsupported {
+            what: "`for ... in` 的 Vec 迭代要求元素类型确定（如 `let v: Vec<i64> = ...`）"
+                .to_string(),
+            span,
+        });
+    }
+
+    // 2. 循环变量必须是标识符
+    let name = match pattern {
+        AstPattern::Ident(n) => n.clone(),
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: "for 循环复杂模式（元组 / 结构体解构）".to_string(),
+                span,
+            })
+        }
+    };
+
+    // 3. 唯一临时名（避免与用户变量冲突）
+    let v_name = format!("__for_v_{}", ctx.temp_counter);
+    ctx.temp_counter += 1;
+    let len_name = format!("__for_len_{}", ctx.temp_counter);
+    ctx.temp_counter += 1;
+    let i_name = format!("__for_i_{}", ctx.temp_counter);
+    ctx.temp_counter += 1;
+
+    // 4. 前缀语句：绑定容器、缓存长度、初始化计数器
+    let mut stmts = vec![
+        HirStmt::Let {
+            name: v_name.clone(),
+            init: iter_hir,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: len_name.clone(),
+            init: HirExpr::FieldGet {
+                base: Box::new(HirExpr::Variable(v_name.clone())),
+                index: 1, // Vec 槽 1 = len
+                ty: FieldScalar::Int,
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: i_name.clone(),
+            init: HirExpr::IntLiteral(0),
+            mutable: true,
+        },
+    ];
+
+    // 5. 循环体检查（容器 / 长度 / 计数器 / 迭代变量在作用域内）
+    let vec_ty = Type::Named("Vec".to_string(), vec![elem_ty.clone()]);
+    ctx.insert_variable(v_name.clone(), vec_ty);
+    ctx.insert_variable(len_name.clone(), Type::I64);
+    ctx.insert_variable(i_name.clone(), Type::I64);
+    ctx.insert_variable(name.clone(), elem_ty.clone());
+    let (b_hir, _) = check_block(ctx, body)?;
+    for var in [&name, &i_name, &len_name, &v_name] {
+        ctx.variables.remove(var);
+    }
+
+    // 6. loop 体：边界检查 → 取元素绑定 → 递增 → 原 body 语句
+    let elem_scalar = field_scalar_of(&elem_ty);
+    let mut loop_body_stmts = vec![
+        HirStmt::Expr(HirExpr::If {
+            cond: Box::new(HirExpr::Binary(
+                HirBinaryOp::Ge,
+                Box::new(HirExpr::Variable(i_name.clone())),
+                Box::new(HirExpr::Variable(len_name.clone())),
+            )),
+            then_block: Box::new(HirBlock {
+                stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                final_expr: None,
+            }),
+            else_block: None,
+        }),
+        HirStmt::Let {
+            name: name.clone(),
+            init: HirExpr::Index {
+                base: Box::new(HirExpr::FieldGet {
+                    base: Box::new(HirExpr::Variable(v_name.clone())),
+                    index: 0, // Vec 槽 0 = data 指针
+                    ty: FieldScalar::Ptr,
+                }),
+                index: Box::new(HirExpr::Variable(i_name.clone())),
+                elem: elem_scalar,
+                is_str: false,
+            },
+            mutable: false,
+        },
+        HirStmt::Expr(HirExpr::Assign {
+            target: i_name.clone(),
+            op: HirAssignOp::AddAssign,
+            value: Box::new(HirExpr::IntLiteral(1)),
+        }),
+    ];
+    loop_body_stmts.extend(b_hir.stmts);
+    if let Some(fe) = b_hir.final_expr {
+        loop_body_stmts.push(HirStmt::Expr(fe));
+    }
+    let loop_expr = HirExpr::Loop {
+        body: Box::new(HirBlock {
+            stmts: loop_body_stmts,
+            final_expr: None,
+        }),
+    };
+
+    stmts.push(HirStmt::Expr(loop_expr));
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: None,
+        })),
+        Type::Unit,
+    ))
+}
+
+/// 检查 `HashMap<K, V>` 容器迭代的 for 循环：`for (k, v) in m { body }`。
+///
+/// 在类型检查层 desugar 为索引遍历循环（复用 HashMap 6 槽布局：
+/// 槽 0 = keys 指针、槽 1 = vals 指针、槽 2 = states 指针（0=空 1=占用 2=墓碑）、
+/// 槽 3 = len、槽 4 = used、槽 5 = cap）。HashMap 是稀疏存储（删除产生墓碑），
+/// 遍历必须按容量扫描并跳过 `states[i] != 1` 的空槽 / 墓碑：
+///
+/// ```zeta
+/// let __for_m = m;               // 绑定容器（防迭代器重复求值）
+/// let __for_cap = __for_m.cap;   // 容量（槽 5，含墓碑槽）
+/// let mut __for_i = 0;
+/// loop {
+///     if __for_i >= __for_cap { break; }
+///     if __for_m.states[__for_i] != 1 { __for_i += 1; continue; } // 跳槽
+///     let k = __for_m.keys[__for_i];  // keys 指针（槽 0）+ 步长 8
+///     let v = __for_m.vals[__for_i];  // vals 指针（槽 1）+ 步长 8
+///     __for_i += 1;                   // continue 回跳前已递增，无死循环
+///     body
+/// }
+/// ```
+fn check_for_hashmap(
+    ctx: &mut TypeContext,
+    pattern: &AstPattern,
+    iter_hir: HirExpr,
+    args: &[Type],
+    body: &AstBlock,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 1. 键值类型：`HashMap<K, V>` 的类型参数经泛型替换；Infer 无法确定槽标量
+    let k_ty = substitute(args.first().unwrap_or(&Type::Infer), &ctx.generic_subst);
+    let v_ty = substitute(args.get(1).unwrap_or(&Type::Infer), &ctx.generic_subst);
+    if matches!(k_ty, Type::Infer) || matches!(v_ty, Type::Infer) {
+        return Err(TypeError::Unsupported {
+            what: "`for ... in` 的 HashMap 迭代要求键值类型确定（如 `let m: HashMap<i64, i64> = ...`）"
+                .to_string(),
+            span,
+        });
+    }
+
+    // 2. 模式必须为 `(k, v)` 二元元组，元素均为标识符
+    let (k_name, v_name) = match pattern {
+        AstPattern::Tuple(pats) if pats.len() == 2 => {
+            match (&pats[0], &pats[1]) {
+                (AstPattern::Ident(k), AstPattern::Ident(v)) => (k.clone(), v.clone()),
+                _ => {
+                    return Err(TypeError::Unsupported {
+                        what: "HashMap 迭代模式必须为 `(k, v)` 标识符对".to_string(),
+                        span,
+                    })
+                }
+            }
+        }
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: "HashMap 迭代必须使用 `for (k, v) in m` 元组模式".to_string(),
+                span,
+            })
+        }
+    };
+
+    // 3. 唯一临时名（避免与用户变量冲突）
+    let m_name = format!("__for_m_{}", ctx.temp_counter);
+    ctx.temp_counter += 1;
+    let cap_name = format!("__for_cap_{}", ctx.temp_counter);
+    ctx.temp_counter += 1;
+    let i_name = format!("__for_i_{}", ctx.temp_counter);
+    ctx.temp_counter += 1;
+
+    // 4. 前缀语句：绑定容器、缓存容量、初始化计数器
+    let mut stmts = vec![
+        HirStmt::Let {
+            name: m_name.clone(),
+            init: iter_hir,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: cap_name.clone(),
+            init: HirExpr::FieldGet {
+                base: Box::new(HirExpr::Variable(m_name.clone())),
+                index: 5, // HashMap 槽 5 = cap
+                ty: FieldScalar::Int,
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: i_name.clone(),
+            init: HirExpr::IntLiteral(0),
+            mutable: true,
+        },
+    ];
+
+    // 5. 循环体检查（容器 / 容量 / 计数器 / k / v 在作用域内）
+    let map_ty = Type::Named("HashMap".to_string(), vec![k_ty.clone(), v_ty.clone()]);
+    ctx.insert_variable(m_name.clone(), map_ty);
+    ctx.insert_variable(cap_name.clone(), Type::I64);
+    ctx.insert_variable(i_name.clone(), Type::I64);
+    ctx.insert_variable(k_name.clone(), k_ty.clone());
+    ctx.insert_variable(v_name.clone(), v_ty.clone());
+    let (b_hir, _) = check_block(ctx, body)?;
+    for var in [&k_name, &v_name, &i_name, &cap_name, &m_name] {
+        ctx.variables.remove(var);
+    }
+
+    // 6. loop 体：边界检查 → 跳槽 → 绑定 k/v → 递增 → 原 body 语句
+    let k_scalar = field_scalar_of(&k_ty);
+    let v_scalar = field_scalar_of(&v_ty);
+    let mut loop_body_stmts = vec![
+        // if __for_i >= __for_cap { break }
+        HirStmt::Expr(HirExpr::If {
+            cond: Box::new(HirExpr::Binary(
+                HirBinaryOp::Ge,
+                Box::new(HirExpr::Variable(i_name.clone())),
+                Box::new(HirExpr::Variable(cap_name.clone())),
+            )),
+            then_block: Box::new(HirBlock {
+                stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                final_expr: None,
+            }),
+            else_block: None,
+        }),
+        // if __for_m.states[__for_i] != 1 { __for_i += 1; continue; }
+        HirStmt::Expr(HirExpr::If {
+            cond: Box::new(HirExpr::Binary(
+                HirBinaryOp::Ne,
+                Box::new(HirExpr::Index {
+                    base: Box::new(HirExpr::FieldGet {
+                        base: Box::new(HirExpr::Variable(m_name.clone())),
+                        index: 2, // HashMap 槽 2 = states 指针
+                        ty: FieldScalar::Ptr,
+                    }),
+                    index: Box::new(HirExpr::Variable(i_name.clone())),
+                    elem: FieldScalar::Int,
+                    is_str: false,
+                }),
+                Box::new(HirExpr::IntLiteral(1)),
+            )),
+            then_block: Box::new(HirBlock {
+                stmts: vec![
+                    HirStmt::Expr(HirExpr::Assign {
+                        target: i_name.clone(),
+                        op: HirAssignOp::AddAssign,
+                        value: Box::new(HirExpr::IntLiteral(1)),
+                    }),
+                    HirStmt::Expr(HirExpr::Continue),
+                ],
+                final_expr: None,
+            }),
+            else_block: None,
+        }),
+        // let k = __for_m.keys[__for_i]
+        HirStmt::Let {
+            name: k_name.clone(),
+            init: HirExpr::Index {
+                base: Box::new(HirExpr::FieldGet {
+                    base: Box::new(HirExpr::Variable(m_name.clone())),
+                    index: 0, // HashMap 槽 0 = keys 指针
+                    ty: FieldScalar::Ptr,
+                }),
+                index: Box::new(HirExpr::Variable(i_name.clone())),
+                elem: k_scalar,
+                is_str: false,
+            },
+            mutable: false,
+        },
+        // let v = __for_m.vals[__for_i]
+        HirStmt::Let {
+            name: v_name.clone(),
+            init: HirExpr::Index {
+                base: Box::new(HirExpr::FieldGet {
+                    base: Box::new(HirExpr::Variable(m_name.clone())),
+                    index: 1, // HashMap 槽 1 = vals 指针
+                    ty: FieldScalar::Ptr,
+                }),
+                index: Box::new(HirExpr::Variable(i_name.clone())),
+                elem: v_scalar,
+                is_str: false,
+            },
+            mutable: false,
+        },
+        // __for_i += 1
+        HirStmt::Expr(HirExpr::Assign {
+            target: i_name.clone(),
+            op: HirAssignOp::AddAssign,
+            value: Box::new(HirExpr::IntLiteral(1)),
+        }),
+    ];
+    loop_body_stmts.extend(b_hir.stmts);
+    if let Some(fe) = b_hir.final_expr {
+        loop_body_stmts.push(HirStmt::Expr(fe));
+    }
+    let loop_expr = HirExpr::Loop {
+        body: Box::new(HirBlock {
+            stmts: loop_body_stmts,
+            final_expr: None,
+        }),
+    };
+
+    stmts.push(HirStmt::Expr(loop_expr));
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: None,
+        })),
+        Type::Unit,
+    ))
+}
+
 /// 检查二元运算：运算符与操作数类型。
 fn check_binary(
     op: BinaryOp,
@@ -675,12 +1133,71 @@ fn check_call(
         }
     };
 
-    // 内建函数（`print` / `println` 等，由代码生成层映射到运行时）：
-    // 接受任意类型参数、返回 `()`
-    if BUILTIN_FUNCTIONS.contains(&name.as_str()) {
+    // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
+    // 按签名检查参数、返回签名类型
+    if let Some((params, ret)) = builtin_signature(&name) {
+        // `print` / `println` 允许 0..=1 个参数（`println()` 打印空行）
+        let is_print = name == "print" || name == "println";
+        let max_args = if is_print { 1 } else { params.len() };
+        if args.len() > max_args {
+            return Err(TypeError::UnexpectedArgumentCount {
+                name: name.clone(),
+                expected: max_args,
+                found: args.len(),
+                span,
+            });
+        }
+        // `print(s)` / `println(s)` 参数为 String → 展开为 `print_string` / `println_string`
+        // 内建（动态缓冲按 `%.*s` 打印；typecheck 无法在内建签名层表达对象槽读取）
+        if is_print && args.len() == 1 {
+            let (hir, ty) = infer_expr(ctx, &args[0])?;
+            if let Type::Named(n, _) = peel_ref(&ty) {
+                let full = ctx
+                    .resolve_full_name(&n)
+                    .unwrap_or_else(|| n.clone());
+                if full == "String" && ctx.lookup_struct(&full).is_some() {
+                    let callee = if name == "println" {
+                        "println_string"
+                    } else {
+                        "print_string"
+                    };
+                    return Ok((
+                        HirExpr::Call {
+                            callee: callee.to_string(),
+                            args: vec![hir],
+                        },
+                        Type::Unit,
+                    ));
+                }
+            }
+        }
+        // `hash_value(s)` 参数为 String → 展开为 djb2 内容哈希（逐字节散列，
+        // 同一内容字符串恒同哈希，保证 HashMap 探测链正确；字节索引 `s[i]`
+        // 步长 1，typecheck 无法在内建签名层表达对象槽读取 + 循环）
+        if name == "hash_value" && args.len() == 1 {
+            let (hir, ty) = infer_expr(ctx, &args[0])?;
+            if let Type::Named(n, _) = peel_ref(&ty) {
+                let full = ctx
+                    .resolve_full_name(&n)
+                    .unwrap_or_else(|| n.clone());
+                if full == "String" && ctx.lookup_struct(&full).is_some() {
+                    let hash = string_hash_hir(ctx, &hir);
+                    return Ok((hash, Type::I64));
+                }
+            }
+        }
         let mut hir_args = Vec::with_capacity(args.len());
-        for a in args {
-            let (hir, _) = infer_expr(ctx, a)?;
+        for (i, (a, pty)) in args.iter().zip(&params).enumerate() {
+            let (hir, ty) = infer_expr(ctx, a)?;
+            if !ty.compatible_with(pty) {
+                return Err(TypeError::ArgumentTypeMismatch {
+                    name: name.clone(),
+                    index: i,
+                    expected: pty.to_string(),
+                    found: ty.to_string(),
+                    span: a.span,
+                });
+            }
             hir_args.push(hir);
         }
         return Ok((
@@ -688,7 +1205,7 @@ fn check_call(
                 callee: name,
                 args: hir_args,
             },
-            Type::Unit,
+            ret,
         ));
     }
 
@@ -714,6 +1231,35 @@ fn check_call(
     if !ctx.fn_signatures.contains_key(&resolved) {
         if let Some((en, vr)) = split_variant_path(ctx, &resolved) {
             return check_variant_construct(ctx, &en, &vr, args, span);
+        }
+    }
+
+    // `Vec` 构造器特判：`Vec::with_capacity(n)` / `Vec::new()`
+    // （泛型 impl 静态方法 MVP 不支持，编译器直接展开为动态数组分配 + 结构体构造）
+    if let Some((ty_name, method)) = resolved.split_once("::") {
+        let ty_full = ctx
+            .resolve_full_name(ty_name)
+            .unwrap_or_else(|| ty_name.to_string());
+        if ty_full == "Vec" && ctx.lookup_struct(&ty_full).is_some()
+            && (method == "with_capacity" || method == "new")
+        {
+            return check_vec_construct(ctx, method, args, span);
+        }
+        // `String` 构造器特判：`new()` / `with_capacity(n)` / `from("字面量")`
+        if ty_full == "String" && ctx.lookup_struct(&ty_full).is_some() {
+            match method {
+                "new" | "with_capacity" => {
+                    return check_string_construct(ctx, method, args, span);
+                }
+                "from" => return check_string_from(ctx, args, span),
+                _ => {}
+            }
+        }
+        // `HashMap` 构造器特判：`new()` / `with_capacity(n)`（6 槽开放寻址哈希表）
+        if ty_full == "HashMap" && ctx.lookup_struct(&ty_full).is_some()
+            && (method == "with_capacity" || method == "new")
+        {
+            return check_hashmap_construct(ctx, method, args, span);
         }
     }
 
@@ -953,6 +1499,366 @@ fn check_struct_construct(
     ))
 }
 
+/// `Vec::with_capacity(cap)` / `Vec::new()`：编译器直接展开。
+///
+/// 展开为 `data = alloc_array(cap)` + `Vec` 结构体构造
+/// （槽 0 = data 指针，槽 1 = len = 0，槽 2 = cap），返回 `Vec<Infer>`，
+/// 类型参数由上下文（如 `let v: Vec<i64> = ...` 注解）统一。
+fn check_vec_construct(
+    ctx: &mut TypeContext,
+    method: &str,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let cap = if method == "new" {
+        AstExpr::new(ExprKind::IntLiteral(4), span)
+    } else if args.len() == 1 {
+        args[0].clone()
+    } else {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("Vec::{method}"),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    };
+    let (cap_hir, cap_ty) = infer_expr(ctx, &cap)?;
+    if !cap_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: cap_ty.to_string(),
+            span,
+        });
+    }
+
+    // 展开为 Alloc + 三个字段槽（data / len / cap）
+    let data_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let cap_for_alloc = cap_hir.clone();
+    let stmts = vec![
+        HirStmt::Let {
+            name: data_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_for_alloc],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc { slots: 3 },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(data_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(cap_hir),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("Vec".to_string(), vec![Type::Infer]),
+    ))
+}
+
+/// `String::with_capacity(cap)` / `String::new()`：编译器直接展开。
+///
+/// 与 `Vec` 构造相同的三槽布局（data 指针 / len / cap），但缓冲按**字节**
+/// 分配（`alloc_bytes`），默认容量 8 字节。返回 `String`（非泛型）。
+fn check_string_construct(
+    ctx: &mut TypeContext,
+    method: &str,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let cap = if method == "new" {
+        AstExpr::new(ExprKind::IntLiteral(8), span)
+    } else if args.len() == 1 {
+        args[0].clone()
+    } else {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("String::{method}"),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    };
+    let (cap_hir, cap_ty) = infer_expr(ctx, &cap)?;
+    if !cap_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: cap_ty.to_string(),
+            span,
+        });
+    }
+
+    let data_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let cap_for_alloc = cap_hir.clone();
+    let stmts = vec![
+        HirStmt::Let {
+            name: data_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_bytes".to_string(),
+                args: vec![cap_for_alloc],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc { slots: 3 },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(data_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(cap_hir),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("String".to_string(), vec![]),
+    ))
+}
+
+/// `HashMap::with_capacity(cap)` / `HashMap::new()`：编译器直接展开。
+///
+/// 与 `HashMap` 结构体字段顺序一致（6 槽）：槽 0 = keys 指针（`[K; 0]`）、
+/// 槽 1 = vals 指针（`[V; 0]`）、槽 2 = states 指针（`[i64; 0]`）、
+/// 槽 3 = len = 0、槽 4 = used = 0、槽 5 = cap。三个动态数组均经
+/// `alloc_array` 分配（8 字节步长），默认容量 8。返回 `HashMap<Infer, Infer>`，
+/// 类型参数由上下文（如 `let m: HashMap<i64, i64> = ...` 注解）统一。
+fn check_hashmap_construct(
+    ctx: &mut TypeContext,
+    method: &str,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let cap = if method == "new" {
+        AstExpr::new(ExprKind::IntLiteral(8), span)
+    } else if args.len() == 1 {
+        args[0].clone()
+    } else {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("HashMap::{method}"),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    };
+    let (cap_hir, cap_ty) = infer_expr(ctx, &cap)?;
+    if !cap_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: cap_ty.to_string(),
+            span,
+        });
+    }
+
+    let keys_tmp = ctx.fresh_temp();
+    let vals_tmp = ctx.fresh_temp();
+    let states_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let cap_for_alloc = cap_hir.clone();
+    let stmts = vec![
+        HirStmt::Let {
+            name: keys_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_for_alloc],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: vals_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_hir.clone()],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: states_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_hir.clone()],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc { slots: 6 },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(keys_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::Variable(vals_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(HirExpr::Variable(states_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 3,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 4,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 5,
+            value: Box::new(cap_hir),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("HashMap".to_string(), vec![Type::Infer, Type::Infer]),
+    ))
+}
+
+/// `String::from("字面量")`：把字符串字面量拷贝到动态字节缓冲。
+///
+/// MVP 限制：参数必须是字符串字面量（编译器已知字节长度；非字面量 Str
+/// 的运行时长度表达后续版本支持）。展开为
+/// `data = alloc_bytes(len)` + `copy_bytes(data, s, len)` + 三槽构造（cap = len）。
+fn check_string_from(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "String::from".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    let (s_hir, s_ty) = infer_expr(ctx, &args[0])?;
+    if s_ty != Type::Str {
+        return Err(TypeError::WrongType {
+            expected: "string literal".to_string(),
+            found: s_ty.to_string(),
+            span: args[0].span,
+        });
+    }
+    let s = match &s_hir {
+        HirExpr::StringLiteral(s) => s.clone(),
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: "String::from 暂仅支持字符串字面量（非字面量 Str 的长度表达未实现）"
+                    .to_string(),
+                span: args[0].span,
+            })
+        }
+    };
+    let len = s.len() as i128;
+
+    let data_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let stmts = vec![
+        HirStmt::Let {
+            name: data_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_bytes".to_string(),
+                args: vec![HirExpr::IntLiteral(len)],
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::Call {
+            callee: "copy_bytes".to_string(),
+            args: vec![
+                HirExpr::Variable(data_tmp.clone()),
+                HirExpr::StringLiteral(s.clone()),
+                HirExpr::IntLiteral(len),
+            ],
+        }),
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc { slots: 3 },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(data_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::IntLiteral(len)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(HirExpr::IntLiteral(len)),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("String".to_string(), vec![]),
+    ))
+}
+
 /// 结构体字段访问：`point.x` → `FieldGet(base, index)`。
 ///
 /// 接收者可为结构体值或引用（`&Point` / `&mut Point`），字段类型按定义返回。
@@ -986,13 +1892,104 @@ fn check_field_access(
             field: field.to_string(),
             span,
         })?;
+    // 字段类型经泛型替换（泛型方法实例化时 `T` → 具体类型），
+    // 与 match 模式解构（`substitute(fty, &ctx.generic_subst)`）保持一致
+    let fty_sub = substitute(&fty, &ctx.generic_subst);
     Ok((
         HirExpr::FieldGet {
             base: Box::new(base_hir),
             index: idx,
-            ty: field_scalar_of(&fty),
+            ty: field_scalar_of(&fty_sub),
         },
-        fty,
+        fty_sub,
+    ))
+}
+
+/// 范围切片：`s[lo..<hi]` / `s[lo...hi]` / `s[lo<..hi]`（MVP 仅 String）。
+///
+/// desugar 为 `String::substring` 方法调用（typecheck 层特判展开，经
+/// `instantiate_impl_method` 注册函数体，复用纯 Zeta `substring`）：
+/// - `s[lo..<hi]` → `s.substring(lo, hi)`（左闭右开）
+/// - `s[lo...hi]` → `s.substring(lo, hi + 1)`（闭区间 → 半开）
+/// - `s[lo<..hi]` → `s.substring(lo + 1, hi + 1)`（左开右闭 → 半开）
+///
+/// 数组/Vec 动态切片（结果长度运行时确定）暂报 Unsupported。
+fn check_slice(
+    ctx: &mut TypeContext,
+    expr: &AstExpr,
+    lower: &AstExpr,
+    upper: &AstExpr,
+    lower_inclusive: bool,
+    upper_inclusive: bool,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let (b_hir, b_ty) = infer_expr(ctx, expr)?;
+    if !comparison::is_string_type(ctx, &b_ty) {
+        return Err(TypeError::Unsupported {
+            what: "范围切片（`s[lo..<hi]`）暂仅支持 String 对象；数组/Vec 动态切片待实现"
+                .to_string(),
+            span,
+        });
+    }
+    let (lo_hir, lo_ty) = infer_expr(ctx, lower)?;
+    let (hi_hir, hi_ty) = infer_expr(ctx, upper)?;
+    if !lo_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: lo_ty.to_string(),
+            span: lower.span,
+        });
+    }
+    if !hi_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: hi_ty.to_string(),
+            span: upper.span,
+        });
+    }
+    // 区间 → substring 的半开参数 [start, end)：
+    // `..<` 含下界不含上界；`...` 双闭（end + 1）；`<..` 不含下界（start + 1）
+    let start = if lower_inclusive {
+        lo_hir
+    } else {
+        HirExpr::Binary(
+            HirBinaryOp::Add,
+            Box::new(lo_hir),
+            Box::new(HirExpr::IntLiteral(1)),
+        )
+    };
+    let end = if upper_inclusive {
+        HirExpr::Binary(
+            HirBinaryOp::Add,
+            Box::new(hi_hir),
+            Box::new(HirExpr::IntLiteral(1)),
+        )
+    } else {
+        hi_hir
+    };
+    // 复用方法实例化路径：String::substring（非泛型，subst 为空）
+    let impl_def = ctx
+        .find_impl_for_method(&b_ty, "substring")
+        .cloned()
+        .ok_or_else(|| TypeError::FunctionNotFound {
+            name: "String::substring".to_string(),
+            span,
+        })?;
+    let method_def = impl_def
+        .methods
+        .iter()
+        .find(|m| m.sig.name == "substring")
+        .cloned()
+        .ok_or_else(|| TypeError::FunctionNotFound {
+            name: "String::substring".to_string(),
+            span,
+        })?;
+    let subst: HashMap<String, Type> = HashMap::new();
+    let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &subst, span)?;
+    Ok((
+        HirExpr::Call {
+            callee: fn_name,
+            args: vec![b_hir, start, end],
+        },
+        b_ty,
     ))
 }
 
@@ -1006,6 +2003,26 @@ fn check_index(
     index: &AstExpr,
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    // 范围切片 `s[lo..<hi]` / `s[lo...hi]` / `s[lo<..hi]`：索引表达式为
+    // Range 时改走切片路径（`infer_expr` 对 Range 仅返回 Unit，须先行特判）
+    if let ExprKind::Range {
+        lower,
+        upper,
+        lower_inclusive,
+        upper_inclusive,
+        ..
+    } = &*index.kind
+    {
+        return check_slice(
+            ctx,
+            expr,
+            lower,
+            upper,
+            *lower_inclusive,
+            *upper_inclusive,
+            span,
+        );
+    }
     let (b_hir, b_ty) = infer_expr(ctx, expr)?;
     let (i_hir, i_ty) = infer_expr(ctx, index)?;
     if !i_ty.is_integer() {
@@ -1015,15 +2032,21 @@ fn check_index(
         });
     }
     match peel_ref(&b_ty) {
-        Type::Array(elem_ty, _) => Ok((
-            HirExpr::Index {
-                base: Box::new(b_hir),
-                index: Box::new(i_hir),
-                elem: field_scalar_of(&elem_ty),
-                is_str: false,
-            },
-            elem_ty.as_ref().clone(),
-        )),
+        Type::Array(elem_ty, _) => {
+            // 元素类型经泛型替换（泛型方法实例化时 `T` → 具体类型）
+            let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
+            // `u8` 字节数组按字节存储（步长 1，is_str=true）；其余元素步长 8
+            let is_byte = matches!(elem_sub, Type::U8);
+            Ok((
+                HirExpr::Index {
+                    base: Box::new(b_hir),
+                    index: Box::new(i_hir),
+                    elem: field_scalar_of(&elem_sub),
+                    is_str: is_byte,
+                },
+                elem_sub,
+            ))
+        }
         Type::Str => Ok((
             HirExpr::Index {
                 base: Box::new(b_hir),
@@ -1033,6 +2056,49 @@ fn check_index(
             },
             Type::Char,
         )),
+        Type::Named(n, args) => {
+            let full = ctx.resolve_full_name(&n).unwrap_or_else(|| n.clone());
+            // `s[i]`：String 对象按字节索引（步长 1），base 取槽 0 的 data 指针
+            if full == "String" && ctx.lookup_struct(&full).is_some() {
+                Ok((
+                    HirExpr::Index {
+                        base: Box::new(HirExpr::FieldGet {
+                            base: Box::new(b_hir),
+                            index: 0,
+                            ty: FieldScalar::Ptr,
+                        }),
+                        index: Box::new(i_hir),
+                        elem: FieldScalar::Int,
+                        is_str: true,
+                    },
+                    Type::U8,
+                ))
+            } else if full == "Vec" && ctx.lookup_struct(&full).is_some() {
+                // `v[i]`：Vec 动态数组按元素索引（步长 8），base 取槽 0 的 data 指针；
+                // 元素类型取 `Vec<T>` 的类型参数并经泛型替换
+                let elem_ty = args.first().cloned().unwrap_or(Type::Infer);
+                let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
+                Ok((
+                    HirExpr::Index {
+                        base: Box::new(HirExpr::FieldGet {
+                            base: Box::new(b_hir),
+                            index: 0,
+                            ty: FieldScalar::Ptr,
+                        }),
+                        index: Box::new(i_hir),
+                        elem: field_scalar_of(&elem_sub),
+                        is_str: false,
+                    },
+                    elem_sub,
+                ))
+            } else {
+                Err(TypeError::WrongType {
+                    expected: "array or string".to_string(),
+                    found: b_ty.to_string(),
+                    span,
+                })
+            }
+        }
         other => Err(TypeError::WrongType {
             expected: "array or string".to_string(),
             found: other.to_string(),
@@ -1941,4 +3007,134 @@ fn peel_ref(ty: &Type) -> Type {
         Type::Ref(inner, _) => (**inner).clone(),
         _ => ty.clone(),
     }
+}
+
+/// `hash_value(s)`（s: String）→ djb2 内容哈希 HIR：
+///
+/// ```text
+/// let __s = <expr>;
+/// let __data = __s.data;   // 槽 0 字节指针
+/// let __len = __s.len;     // 槽 1 长度
+/// let mut __h = 5381;      // djb2 初始值
+/// let mut __i = 0;
+/// loop {
+///     if __i >= __len { break }
+///     let __b = __data[__i];   // 字节（u8，LIR 层 zext 为 i64）
+///     __h = __h * 33 + __b;
+///     __i = __i + 1;
+/// }
+/// __h
+/// ```
+///
+/// 同一内容字符串恒得相同哈希（HashMap 探测链正确性）；乘法按 LLVM `mul`
+/// wrapping 语义回绕。操作数绑定唯一临时变量，防止重复求值。
+fn string_hash_hir(ctx: &mut TypeContext, s: &HirExpr) -> HirExpr {
+    let s_name = ctx.fresh_temp();
+    let data_name = ctx.fresh_temp();
+    let len_name = ctx.fresh_temp();
+    let h_name = ctx.fresh_temp();
+    let i_name = ctx.fresh_temp();
+    let b_name = ctx.fresh_temp();
+
+    let s_var = HirExpr::Variable(s_name.clone());
+    let data_field = HirExpr::FieldGet {
+        base: Box::new(s_var.clone()),
+        index: 0,
+        ty: FieldScalar::Ptr,
+    };
+    let len_field = HirExpr::FieldGet {
+        base: Box::new(s_var),
+        index: 1,
+        ty: FieldScalar::Int,
+    };
+
+    let loop_body = HirBlock {
+        stmts: vec![
+            // if __i >= __len { break }
+            HirStmt::Expr(HirExpr::If {
+                cond: Box::new(HirExpr::Binary(
+                    HirBinaryOp::Ge,
+                    Box::new(HirExpr::Variable(i_name.clone())),
+                    Box::new(HirExpr::Variable(len_name.clone())),
+                )),
+                then_block: Box::new(HirBlock {
+                    stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                    final_expr: None,
+                }),
+                else_block: None,
+            }),
+            // let __b = __data[__i]
+            HirStmt::Let {
+                name: b_name.clone(),
+                init: HirExpr::Index {
+                    base: Box::new(HirExpr::Variable(data_name.clone())),
+                    index: Box::new(HirExpr::Variable(i_name.clone())),
+                    elem: FieldScalar::Int,
+                    is_str: true,
+                },
+                mutable: false,
+            },
+            // __h = __h * 33 + __b
+            HirStmt::Expr(HirExpr::Assign {
+                target: h_name.clone(),
+                op: HirAssignOp::Assign,
+                value: Box::new(HirExpr::Binary(
+                    HirBinaryOp::Add,
+                    Box::new(HirExpr::Binary(
+                        HirBinaryOp::Mul,
+                        Box::new(HirExpr::Variable(h_name.clone())),
+                        Box::new(HirExpr::IntLiteral(33)),
+                    )),
+                    Box::new(HirExpr::Variable(b_name)),
+                )),
+            }),
+            // __i = __i + 1
+            HirStmt::Expr(HirExpr::Assign {
+                target: i_name.clone(),
+                op: HirAssignOp::Assign,
+                value: Box::new(HirExpr::Binary(
+                    HirBinaryOp::Add,
+                    Box::new(HirExpr::Variable(i_name.clone())),
+                    Box::new(HirExpr::IntLiteral(1)),
+                )),
+            }),
+        ],
+        final_expr: None,
+    };
+
+    let stmts = vec![
+        HirStmt::Let {
+            name: s_name,
+            init: s.clone(),
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: data_name,
+            init: data_field,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: len_name,
+            init: len_field,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: h_name.clone(),
+            init: HirExpr::IntLiteral(5381),
+            mutable: true,
+        },
+        HirStmt::Let {
+            name: i_name.clone(),
+            init: HirExpr::IntLiteral(0),
+            mutable: true,
+        },
+        HirStmt::Expr(HirExpr::Loop {
+            body: Box::new(loop_body),
+        }),
+    ];
+
+    HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(h_name)),
+    }))
 }

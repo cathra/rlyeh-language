@@ -1,2 +1,3 @@
-./target/
-./release/
+target/
+release/
+target/debug/.fingerprint/criterion-plot-7bae2173b5a3b021/lib-criterion_plot
