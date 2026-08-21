@@ -64,7 +64,8 @@ zeta-language/
 │   ├── memory-model.md       ← 分层内存管理规范
 │   ├── actor-model.md        ← Actor 并发模型规范
 │   ├── std-lib.md            ← 标准库 API 规范
-│   └── development-plan.md   ← 新版开发计划（阶段 A–F，权威副本）
+│   ├── development-plan.md   ← 新版开发计划（阶段 A–F，权威副本）
+│   └── design/               ← 早期设计稿归档（映射见 design/README.md）
 │
 ├── examples/                 ← 示例代码
 │   ├── hello-world.zeta

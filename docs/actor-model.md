@@ -8,7 +8,7 @@
 | 类型 | 文档 | 说明 |
 |------|------|------|
 | 项目总纲 | [CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
-| 设计文档 | [07_Actor并发模型](../07_Actor并发模型.md) | 模块设计 |
+| 设计文档 | [07_Actor并发模型](../design/07_Actor并发模型.md) | 模块设计 |
 | 实现任务 | [P006](../prompts/P006_Actor运行时.md) | Actor 运行时 |
 
 ---
