@@ -92,6 +92,13 @@ pub struct LirFunction {
     pub locals: Vec<(Local, LirType)>,
     /// 基本块列表（index 0 为入口）
     pub blocks: Vec<LirBlock>,
+    /// 是否为 extern 声明（无函数体，codegen 生成 `declare` 而非 `define`）
+    pub is_extern: bool,
+    /// extern 声明返回类型是否为 32 位整数（`-> i32`，如 pthread 的
+    /// `trylock`/`close` 等返回 `int` 的函数）。codegen 据此生成
+    /// `declare i32` + 调用后 `sext` 存槽，规避 x86-64 上以 i64 声明
+    /// 时 int 返回值高位未定义的问题。
+    pub extern_ret32: bool,
 }
 
 /// LIR 基本块。

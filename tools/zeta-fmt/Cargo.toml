@@ -2,6 +2,15 @@
 name = "zeta-fmt"
 version.workspace = true
 edition.workspace = true
+description = "Zeta 语言代码格式化器（基于 AST 重建，规范缩进与空格）"
+
+[dependencies]
+zeta-ast = { workspace = true }
+zeta-parser = { workspace = true }
+
+[[bin]]
+name = "zeta-fmt"
+path = "src/main.rs"
 
 [lib]
 path = "src/lib.rs"

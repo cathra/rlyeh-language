@@ -18,6 +18,8 @@ pub struct Parser<'src> {
     pub(crate) pos: usize,
     /// 待补位的 `>` 数量（处理 `>>` 关闭嵌套泛型）
     pub(crate) pending_gt: usize,
+    /// 最后被消费 token 的起始行号（用于判断块类表达式 `}` 与后续中缀运算符是否跨行）
+    pub(crate) last_line: usize,
     /// 生命周期占位：保留泛型参数以兼容宏体切片等未来扩展
     _source: PhantomData<&'src str>,
 }
@@ -30,6 +32,7 @@ impl<'src> Parser<'src> {
             tokens,
             pos: 0,
             pending_gt: 0,
+            last_line: 0,
             _source: PhantomData,
         })
     }
@@ -66,8 +69,9 @@ impl<'src> Parser<'src> {
     /// 消费并返回当前 token
     pub(crate) fn bump(&mut self) -> Option<LocatedToken> {
         let tok = self.tokens.get(self.pos).cloned();
-        if tok.is_some() {
+        if let Some(t) = &tok {
             self.pos += 1;
+            self.last_line = t.span.line;
         }
         tok
     }
@@ -159,17 +163,49 @@ impl<'src> Parser<'src> {
                 Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
             }
             Some(Token::Actor) => Ok(AstItem::ActorDecl(Box::new(self.parse_actor()?))),
-            // `pub mod name;` / `pub mod name { ... }` 为模块声明，
-            // 其余 pub / async / unsafe 开头项按函数声明解析
+            // `pub` 后按实际关键字分派：mod / const / static / struct / enum /
+            // trait / impl / use / actor 消费 pub 后进入各自解析器；
+            // `fn`（及 async / unsafe / extern 前缀）**不消费 pub**，交给
+            // `parse_fn` 自行处理以正确记录 `is_pub`。
             Some(Token::Pub) => {
-                if self.peek_n(1).is_some_and(|lt| lt.token == Token::Mod) {
-                    self.bump(); // 消费 pub
-                    Ok(AstItem::ModDecl(Box::new(self.parse_mod()?)))
-                } else {
-                    Ok(AstItem::FnDecl(Box::new(self.parse_fn()?)))
+                let next = self.peek_n(1).map(|lt| lt.token.clone());
+                match next {
+                    Some(Token::Mod) => {
+                        self.bump(); // 消费 pub
+                        Ok(AstItem::ModDecl(Box::new(self.parse_mod()?)))
+                    }
+                    Some(Token::Const) | Some(Token::Static) => {
+                        self.bump(); // 消费 pub
+                        Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
+                    }
+                    Some(Token::Struct) => {
+                        self.bump();
+                        Ok(AstItem::StructDecl(Box::new(self.parse_struct()?)))
+                    }
+                    Some(Token::Enum) => {
+                        self.bump();
+                        Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?)))
+                    }
+                    Some(Token::Trait) => {
+                        self.bump();
+                        Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?)))
+                    }
+                    Some(Token::Impl) => {
+                        self.bump();
+                        Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?)))
+                    }
+                    Some(Token::Use) => {
+                        self.bump();
+                        Ok(AstItem::UseDecl(Box::new(self.parse_use()?)))
+                    }
+                    Some(Token::Actor) => {
+                        self.bump();
+                        Ok(AstItem::ActorDecl(Box::new(self.parse_actor()?)))
+                    }
+                    _ => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
                 }
             }
-            Some(Token::Async) | Some(Token::Unsafe) => {
+            Some(Token::Async) | Some(Token::Unsafe) | Some(Token::Extern) => {
                 Ok(AstItem::FnDecl(Box::new(self.parse_fn()?)))
             }
             _ => {

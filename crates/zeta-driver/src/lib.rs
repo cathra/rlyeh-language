@@ -18,6 +18,7 @@ pub mod error;
 pub mod incremental;
 mod module;
 mod stdlib;
+pub mod test_runner;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -49,8 +50,17 @@ pub fn compile_to_llvm(source: &str) -> Result<String, DriverError> {
 ///
 /// `out_path` 指定产物路径（父目录需存在）。
 pub fn build_executable(source: &str, out_path: &Path) -> Result<(), DriverError> {
+    build_executable_with_target(source, out_path, None)
+}
+
+/// 指定 LLVM 目标 triple 构建可执行文件（`None` 为主机目标）。
+pub fn build_executable_with_target(
+    source: &str,
+    out_path: &Path,
+    target: Option<&str>,
+) -> Result<(), DriverError> {
     let llvm = full_pipeline(source)?;
-    assemble(&llvm, out_path)
+    assemble(&llvm, out_path, target)
 }
 
 /// 编译并运行源码，返回程序标准输出（UTF-8），无缓存。
@@ -75,8 +85,17 @@ pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
 
 /// 编译入口文件（含外部模块）为可执行文件，无缓存。
 pub fn build_executable_file(entry: &Path, out_path: &Path) -> Result<(), DriverError> {
+    build_executable_file_with_target(entry, out_path, None)
+}
+
+/// 指定 LLVM 目标 triple 编译入口文件（含外部模块）并构建可执行文件。
+pub fn build_executable_file_with_target(
+    entry: &Path,
+    out_path: &Path,
+    target: Option<&str>,
+) -> Result<(), DriverError> {
     let llvm = compile_file_to_llvm(entry)?;
-    assemble(&llvm, out_path)
+    assemble(&llvm, out_path, target)
 }
 
 /// 编译并运行入口文件（含外部模块），返回程序标准输出（UTF-8），无缓存。
@@ -89,6 +108,21 @@ pub fn run_source_file(entry: &Path) -> Result<String, DriverError> {
     Ok(out)
 }
 
+/// 读取源码文件并执行静态检查（`zeta check`）。
+///
+/// 解析失败返回 `parse-error` 诊断；否则返回 lint 规则诊断。
+/// 仅负责分析，不涉及完整编译流水线。
+pub fn check_source_file(path: &Path) -> Result<Vec<zeta_check::Diagnostic>, DriverError> {
+    let source = std::fs::read_to_string(path).map_err(DriverError::Io)?;
+    Ok(zeta_check::check_source(&source))
+}
+
+/// 读取源码文件并生成 Markdown 文档（`zeta doc`）。
+pub fn doc_source_file(path: &Path, options: &zeta_doc::DocOptions) -> Result<String, DriverError> {
+    let source = std::fs::read_to_string(path).map_err(DriverError::Io)?;
+    zeta_doc::doc_source(&source, options).map_err(DriverError::Doc)
+}
+
 /// 增量编译驱动：源码哈希命中时跳过完整流水线，直接复用缓存 LLVM IR。
 ///
 /// 缓存目录为 `<cache_dir>/.zeta_cache`；`--force` 语义下强制全量重编译。
@@ -99,6 +133,8 @@ pub struct IncrementalDriver {
     force: bool,
     /// 禁用标准库预置注入（`--no-std`）
     no_std: bool,
+    /// LLVM 目标 triple（`--target` 交叉编译；`None` = 主机目标）
+    target: Option<String>,
     /// 会话内缓存统计
     stats: CacheStats,
 }
@@ -110,6 +146,7 @@ impl IncrementalDriver {
             cache_dir,
             force: false,
             no_std: false,
+            target: None,
             stats: CacheStats::default(),
         }
     }
@@ -123,6 +160,12 @@ impl IncrementalDriver {
     /// 禁用标准库预置注入（文件入口 API 默认注入 `core.zeta`）。
     pub fn with_no_std(mut self, no_std: bool) -> Self {
         self.no_std = no_std;
+        self
+    }
+
+    /// 指定 LLVM 目标 triple（交叉编译；`None` 为主机目标）。
+    pub fn with_target(mut self, target: Option<String>) -> Self {
+        self.target = target;
         self
     }
 
@@ -181,7 +224,7 @@ impl IncrementalDriver {
         out_path: &Path,
     ) -> Result<BuildOutcome, DriverError> {
         let outcome = self.compile_to_llvm(file, source)?;
-        assemble(&outcome.llvm, out_path)?;
+        assemble(&outcome.llvm, out_path, self.target.as_deref())?;
         Ok(outcome)
     }
 
@@ -216,7 +259,7 @@ impl IncrementalDriver {
         out_path: &Path,
     ) -> Result<BuildOutcome, DriverError> {
         let outcome = self.compile_file_to_llvm(entry)?;
-        assemble(&outcome.llvm, out_path)?;
+        assemble(&outcome.llvm, out_path, self.target.as_deref())?;
         Ok(outcome)
     }
 
@@ -273,7 +316,9 @@ fn full_pipeline(source: &str) -> Result<String, DriverError> {
 }
 
 /// LLVM IR 文本 → clang 汇编 / 链接 → 可执行文件。
-fn assemble(llvm: &str, out_path: &Path) -> Result<(), DriverError> {
+///
+/// `target` 为 LLVM 目标 triple（`--target` 交叉编译）；`None` 表示主机目标。
+fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), DriverError> {
     // 输出路径的父目录必须存在（链接器无法创建）
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent).map_err(DriverError::Io)?;
@@ -281,22 +326,236 @@ fn assemble(llvm: &str, out_path: &Path) -> Result<(), DriverError> {
     let dir = temp_dir();
     std::fs::create_dir_all(&dir).map_err(DriverError::Io)?;
     let ll_path = dir.join("main.ll");
-    std::fs::write(&ll_path, llvm).map_err(DriverError::Io)?;
+    // 注入平台内建（`__zeta_target_os`）后写盘——codegen 对 `__zeta_` 前缀 extern 不生成 declare。
+    let llvm_with_builtins = format!("{llvm}\n{}", platform_builtin_ir(target));
+    std::fs::write(&ll_path, llvm_with_builtins).map_err(DriverError::Io)?;
+
+    // WebAssembly 目标走独立汇编链路（wasi-libc sysroot + wasm-ld），其余走系统链接器。
+    if let Some(t) = target {
+        if is_wasm_triple(t) {
+            return assemble_wasm(&ll_path, out_path, t, &dir);
+        }
+    }
 
     let clang = clang_path();
-    let result = Command::new(&clang)
-        .arg(&ll_path)
-        .arg("-o")
-        .arg(out_path)
-        .output()
-        .map_err(|e| DriverError::Clang(format!("无法启动 `{clang}`: {e}")))?;
+    // Actor 运行时 C ABI（staticlib）：Zeta 程序经 `extern fn zeta_actor_*` 调用。
+    // 链接器按需提取对象——不含 actor 的程序不受影响（库可缺失则跳过）。
+    // 交叉编译到其他架构时，本机 staticlib 无法链接，跳过并提示。
+    let runtime_lib = if is_cross_target(target) {
+        eprintln!(
+            "zeta: 提示: 交叉编译目标 `{}` 与主机架构不同，跳过 Actor 运行时库（actor 程序暂不支持交叉编译）",
+            target.unwrap_or_default()
+        );
+        None
+    } else {
+        actor_runtime_lib_path()
+    };
+    let mut cmd = Command::new(&clang);
+    if let Some(t) = target {
+        cmd.arg(format!("--target={t}"));
+    }
+    cmd.arg(&ll_path);
+    if let Some(lib) = runtime_lib {
+        if let Some(parent) = lib.parent() {
+            cmd.arg("-L").arg(parent);
+        }
+        cmd.arg("-l").arg(
+            lib.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.trim_start_matches("lib").trim_end_matches(".a"))
+                .unwrap_or("zeta_actor_runtime"),
+        );
+    }
+    cmd.arg("-o").arg(out_path);
+    let result = cmd.output().map_err(|e| {
+        DriverError::Clang(format!("无法启动 `{clang}`: {e}"))
+    })?;
 
-    let _ = std::fs::remove_dir_all(&dir);
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
         return Err(DriverError::Clang(stderr));
     }
+    let _ = std::fs::remove_dir_all(&dir);
     Ok(())
+}
+
+/// 指定目标 triple 是否为 WebAssembly（`wasm32` / `wasm64`）。
+pub fn is_wasm_triple(triple: &str) -> bool {
+    triple.starts_with("wasm32") || triple.starts_with("wasm64")
+}
+
+/// WebAssembly 汇编：clang 交叉编译 LLVM IR 为 wasm 目标，链接 wasi-libc 生成 `.wasm`。
+///
+/// 依赖（缺一即报错并提示安装）：
+/// - wasi-libc（`brew install wasi-libc`，或 `WASI_SYSROOT` 环境变量指向 sysroot）
+/// - wasm-ld（`brew install lld`；已在 PATH 则直接使用）
+///
+/// 入口语义：WASI 的 `_start` 由 wasi-libc crt1.o 提供并调用 Zeta 生成的 `main()`；
+/// 标准库中 WASI 不存在的 extern 符号（socket/pthread 等）仅在被引用时才会链接，
+/// 未使用的模块不会引入未定义符号。
+fn assemble_wasm(
+    ll_path: &Path,
+    out_path: &Path,
+    target: &str,
+    dir: &Path,
+) -> Result<(), DriverError> {
+    let sysroot = wasi_sysroot().ok_or_else(|| {
+        DriverError::Clang(
+            "wasm 目标需要 wasi-libc sysroot：brew install wasi-libc，或设置 WASI_SYSROOT 环境变量"
+                .to_string(),
+        )
+    })?;
+    let clang = clang_path();
+    let mut cmd = Command::new(&clang);
+    cmd.arg(format!("--target={target}"));
+    cmd.arg(format!("--sysroot={}", sysroot.display()));
+    cmd.arg(ll_path);
+    cmd.arg("-o").arg(out_path);
+    // wasm-ld 不在 PATH（Homebrew lld keg-only 时）则注入其 bin 目录，
+    // clang 链接 wasm 目标时按名查找 `wasm-ld`。
+    if let Some(ld_dir) = wasm_ld_dir() {
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.env("PATH", format!("{}:{path}", ld_dir.display()));
+    }
+    let result = cmd
+        .output()
+        .map_err(|e| DriverError::Clang(format!("无法启动 `{clang}`: {e}")))?;
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        return Err(DriverError::Clang(stderr));
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    Ok(())
+}
+
+/// 定位 WASI sysroot（wasi-libc 的头文件与 libc 库根目录）。
+///
+/// 顺序：`WASI_SYSROOT` 环境变量 → Homebrew wasi-libc 的
+/// `share/wasi-sysroot`（Apple Silicon / Intel 两种前缀）。
+/// 目录需含 `lib/`（wasi-libc 产物）才算有效。
+fn wasi_sysroot() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("WASI_SYSROOT") {
+        let p = PathBuf::from(p);
+        if p.join("lib").exists() {
+            return Some(p);
+        }
+    }
+    for base in [
+        "/opt/homebrew/opt/wasi-libc/share/wasi-sysroot",
+        "/usr/local/opt/wasi-libc/share/wasi-sysroot",
+    ] {
+        let p = Path::new(base);
+        if p.join("lib").exists() {
+            return Some(p.to_path_buf());
+        }
+    }
+    None
+}
+
+/// 定位 wasm-ld 所在目录（PATH 中已存在则返回 `None`）。
+///
+/// Homebrew lld 可能 keg-only（不软链进 PATH），需显式注入其 bin 目录。
+fn wasm_ld_dir() -> Option<PathBuf> {
+    let probe = Command::new("wasm-ld")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    if probe.is_ok_and(|s| s.success()) {
+        return None;
+    }
+    for base in ["/opt/homebrew/opt/lld/bin", "/usr/local/opt/lld/bin"] {
+        if Path::new(base).join("wasm-ld").exists() {
+            return Some(PathBuf::from(base));
+        }
+    }
+    None
+}
+
+/// 定位 Actor 运行时静态库（staticlib 产物）；缺失返回 `None`（无 actor 的程序不受影响）。
+fn actor_runtime_lib_path() -> Option<PathBuf> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let lib = manifest
+        .join("../../target")
+        .join(profile)
+        .join("libzeta_actor_runtime.a");
+    lib.exists().then_some(lib)
+}
+
+/// 本机 LLVM 目标 triple（如 `arm64-apple-macosx` / `x86_64-unknown-linux-gnu`）。
+pub fn host_triple() -> String {
+    let arch = match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x86_64",
+        a => a,
+    };
+    let os = match std::env::consts::OS {
+        "macos" => "apple-macosx",
+        "linux" => "unknown-linux-gnu",
+        "windows" => "pc-windows-msvc",
+        o => o,
+    };
+    format!("{arch}-{os}")
+}
+
+/// 从 LLVM target triple 提取架构名（`arm64`/`aarch64` 归一为 `aarch64`）。
+pub fn target_arch(triple: &str) -> Option<&str> {
+    let arch = triple.split('-').next()?;
+    if arch.is_empty() {
+        return None;
+    }
+    Some(match arch {
+        "arm64" | "aarch64" => "aarch64",
+        other => other,
+    })
+}
+
+/// 指定目标是否与本机架构不同（交叉编译）。
+pub fn is_cross_target(target: Option<&str>) -> bool {
+    match target {
+        None => false,
+        Some(t) => target_arch(t) != Some(host_arch()),
+    }
+}
+
+/// 本机架构（与 [`target_arch`] 同一归一化命名）。
+fn host_arch() -> &'static str {
+    match std::env::consts::ARCH {
+        "aarch64" => "aarch64",
+        "x86_64" => "x86_64",
+        a => a,
+    }
+}
+
+/// 平台内建 `__zeta_target_os()` 的返回码（0=未知 1=linux 2=macos 3=windows 4=freebsd）。
+///
+/// 从目标 triple 提取 OS 段（`None` = 主机）；标准库据此做平台分支
+/// （如 `sockaddr_in4` 的 `sin_len` 布局：macOS 有、Linux 无）。
+pub fn target_os_code(target: Option<&str>) -> i32 {
+    let os = match target {
+        None => std::env::consts::OS,
+        Some(t) => t,
+    };
+    if os.contains("linux") {
+        1
+    } else if os.contains("macosx") || os.contains("darwin") || os == "macos" {
+        2
+    } else if os.contains("windows") || os.contains("win32") {
+        3
+    } else if os.contains("freebsd") {
+        4
+    } else {
+        0
+    }
+}
+
+/// 注入平台内建的 LLVM IR 定义文本（`__zeta_target_os` 返回当前目标 OS 码）。
+fn platform_builtin_ir(target: Option<&str>) -> String {
+    format!(
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__zeta_target_os() {{\nentry:\n  ret i32 {}\n}}\n",
+        target_os_code(target)
+    )
 }
 
 /// 执行可执行文件并捕获标准输出。
@@ -311,6 +570,7 @@ fn run_exe(exe: &Path) -> Result<String, DriverError> {
             out.status.code()
         )));
     }
+    eprint!("{}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8(out.stdout).map_err(|e| DriverError::Run(format!("输出非 UTF-8: {e}")))
 }
 

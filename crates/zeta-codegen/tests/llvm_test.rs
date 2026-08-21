@@ -19,6 +19,8 @@ fn simple_main(
                 .map(|(n, t)| (n.to_string(), t))
                 .collect(),
             blocks: vec![LirBlock { stmts, terminator }],
+            is_extern: false,
+            extern_ret32: false,
         }],
     }
 }
@@ -75,6 +77,8 @@ fn gen_user_function_and_call() {
                     }],
                     terminator: LirTerminator::Return(Some("_t0".to_string())),
                 }],
+                is_extern: false,
+                extern_ret32: false,
             },
             LirFunction {
                 name: "main".to_string(),
@@ -89,6 +93,8 @@ fn gen_user_function_and_call() {
                     }],
                     terminator: LirTerminator::Return(None),
                 }],
+                is_extern: false,
+                extern_ret32: false,
             },
         ],
     };

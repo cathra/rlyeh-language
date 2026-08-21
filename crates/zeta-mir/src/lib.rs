@@ -42,6 +42,11 @@ pub struct MirFunction {
     pub params: Vec<Local>,
     /// 基本块列表（index 0 为入口）
     pub blocks: Vec<BasicBlock>,
+    /// 是否为 extern 外部函数声明（无函数体，`blocks` 为空）
+    pub is_extern: bool,
+    /// extern 函数签名：参数类型名列表 + 返回类型名（由 typecheck 序列化，
+    /// LIR 侧解析为 `LirType`）
+    pub extern_sig: Option<(Vec<String>, String)>,
 }
 
 /// 基本块：指令序列 + 终止符。

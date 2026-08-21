@@ -42,6 +42,15 @@ pub fn lower_program(program: &HirProgram) -> MirProgram {
             HirItemKind::Fn(f) => {
                 if let Some(body) = &f.body {
                     functions.push(lowerer.lower_function(&item.name, &f.params, body));
+                } else if f.is_extern {
+                    // extern 声明：保留空 CFG + 签名（LIR 解析 extern_sig 生成 declare）
+                    functions.push(MirFunction {
+                        name: item.name.clone(),
+                        params: f.params.iter().map(|p| p.name.clone()).collect(),
+                        blocks: Vec::new(),
+                        is_extern: true,
+                        extern_sig: f.extern_sig.clone(),
+                    });
                 }
             }
             HirItemKind::Const(_) => {
@@ -76,6 +85,8 @@ impl MirLowerer {
             name: name.to_string(),
             params: params.iter().map(|p| p.name.clone()).collect(),
             blocks: std::mem::take(&mut self.blocks),
+            is_extern: false,
+            extern_sig: None,
         }
     }
 

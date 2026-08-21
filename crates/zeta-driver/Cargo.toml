@@ -15,6 +15,11 @@ zeta-lir = { workspace = true }
 zeta-codegen = { workspace = true }
 zeta-parser = { workspace = true }
 zeta-ast = { workspace = true }
+zeta-actor-runtime = { workspace = true }
+zeta-fmt = { workspace = true }
+zeta-check = { workspace = true }
+zeta-doc = { workspace = true }
+zeta-bench = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

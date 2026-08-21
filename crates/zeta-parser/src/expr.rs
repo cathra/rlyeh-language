@@ -149,6 +149,13 @@ impl<'src> Parser<'src> {
             if p < min_prec {
                 break;
             }
+            // 块类表达式（if/match/while/loop/for/region）以 `}` 结尾；若后续中缀
+            // 运算符与 `}` 跨行，视为语句结束而非运算延续：
+            // `if k == 0 { return st; }` 换行后的 `-1` 应为独立表达式而非 `(if...) - 1`
+            let op_line = self.peek().map(|lt| lt.span.line).unwrap_or(0);
+            if is_block_expr(&lhs) && self.last_line != op_line {
+                break;
+            }
 
             // 赋值（右结合）
             if right_assoc {
@@ -826,6 +833,19 @@ impl<'src> Parser<'src> {
             None => start,
         }
     }
+}
+
+/// 块类表达式（以 `}` 结尾，可独立成语句）：跨行后不应与后续运算符组成二元表达式
+fn is_block_expr(e: &AstExpr) -> bool {
+    matches!(
+        *e.kind,
+        ExprKind::If { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::While { .. }
+            | ExprKind::Loop { .. }
+            | ExprKind::For { .. }
+            | ExprKind::Region { .. }
+    )
 }
 
 /// 中缀运算符信息：`(优先级, 是否右结合)`

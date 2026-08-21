@@ -27,6 +27,8 @@ pub enum DriverError {
     Usage(String),
     /// 模块加载失败（`mod foo;` 外部模块缺失 / 循环引用 / 解析失败）
     Module(String),
+    /// 文档生成失败（`zeta doc`）
+    Doc(String),
 }
 
 impl fmt::Display for DriverError {
@@ -43,6 +45,7 @@ impl fmt::Display for DriverError {
             DriverError::Cache(m) => write!(f, "[cache] {m}"),
             DriverError::Usage(m) => write!(f, "{m}"),
             DriverError::Module(m) => write!(f, "[module] {m}"),
+            DriverError::Doc(m) => write!(f, "[doc] {m}"),
         }
     }
 }

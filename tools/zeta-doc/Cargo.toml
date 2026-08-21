@@ -2,6 +2,16 @@
 name = "zeta-doc"
 version.workspace = true
 edition.workspace = true
+description = "Zeta 语言文档生成器（/// 注释提取 → Markdown）"
+
+[dependencies]
+zeta-ast = { workspace = true }
+zeta-lexer = { workspace = true }
+zeta-parser = { workspace = true }
+
+[[bin]]
+name = "zeta-doc"
+path = "src/main.rs"
 
 [lib]
 path = "src/lib.rs"

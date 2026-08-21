@@ -248,6 +248,66 @@ impl<T> Vec<T> {
             i = i + 1;
         }
     }
+    // 首元素：空容器返回 None，否则返回槽 0 的值拷贝。
+    fn first(&self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            Option::Some(self.data[0])
+        }
+    }
+    // 末元素：空容器返回 None，否则返回槽 len-1 的值拷贝。
+    fn last(&self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            Option::Some(self.data[self.len - 1])
+        }
+    }
+    // 原地翻转：双指针从两端交换，O(n)。
+    fn reverse(&mut self) {
+        let mut i = 0;
+        let mut j = self.len - 1;
+        while i < j {
+            let t = self.data[i];
+            self.data[i] = self.data[j];
+            self.data[j] = t;
+            i = i + 1;
+            j = j - 1;
+        }
+    }
+    // 交换下标 i、j 的元素（越界以 `loop {}` 充当崩溃替代，MVP 无 panic）。
+    fn swap(&mut self, i: i64, j: i64) {
+        if i >= self.len {
+            loop {}
+        }
+        if j >= self.len {
+            loop {}
+        }
+        let t = self.data[i];
+        self.data[i] = self.data[j];
+        self.data[j] = t;
+    }
+    // 二分查找：要求已升序排列，返回 `x` 的下标，未命中返回 -1。
+    // `self.data[mid] < x` 与 `x < self.data[mid]` 双比较区分三态，
+    // `<` 在实例化后按具体类型比较（i64 数值 / String 字典序）。
+    fn binary_search(&self, x: T) -> i64 {
+        let mut result = -1;
+        let mut lo = 0;
+        let mut hi = self.len - 1;
+        while lo <= hi {
+            let mid = (lo + hi) / 2;
+            if self.data[mid] < x {
+                lo = mid + 1;
+            } else if x < self.data[mid] {
+                hi = mid - 1;
+            } else {
+                result = mid;
+                hi = mid - 1;
+            }
+        }
+        result
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -879,3 +939,347 @@ impl<K, V> HashMap<K, V> {
         vs
     }
 }
+
+// ===== 时间模块（MVP）：Duration / Instant =====
+// 底层时钟：libc `clock()`（进程 CPU 时钟，POSIX CLOCKS_PER_SEC=1e6，返回微秒）。
+// 语言层无常量定义，1e6 以字面量 1000000 使用。
+
+extern fn clock() -> i64;
+
+// 时长：以微秒为唯一存储单位，各单位视图由换算方法提供。
+struct Duration {
+    micros: i64,
+}
+
+impl Duration {
+    // 秒（向下取整）
+    fn secs(self) -> i64 {
+        self.micros / 1000000
+    }
+    // 毫秒
+    fn millis(self) -> i64 {
+        self.micros / 1000
+    }
+    // 微秒
+    fn micros(self) -> i64 {
+        self.micros
+    }
+    // 纳秒
+    fn nanos(self) -> i64 {
+        self.micros * 1000
+    }
+}
+
+// 时刻：记录起始微秒，`elapsed` 计算与当前时刻的差值。
+struct Instant {
+    start: i64,
+}
+
+impl Instant {
+    // 当前时刻（进程 CPU 时钟）
+    fn now() -> Instant {
+        Instant { start: clock() }
+    }
+    // 距 `now` 已过时长（CPU 时钟差，恒 >= 0）
+    fn elapsed(self) -> Duration {
+        Duration { micros: clock() - self.start }
+    }
+}
+
+// ===== io 模块（B2，2026-08）：libc stdio 文件 IO + 控制台 IO =====
+// 基于通用 FFI（extern fn，阶段 A4）直接绑定 libc 符号，由链接器解析。
+// String 在 LIR 中即 data 指针（i8*），可直接作为 C 字符串 / 缓冲传入 extern。
+// 路径参数需 NUL 结尾（c_str 构造）；读入缓冲后由调用方手动设置 len。
+// 选择 stdio（fopen/fread/fwrite/fclose/fseek/ftell）：mode 字符串 "r"/"w"/"a"
+// 与 SEEK_SET/SEEK_END 常量在 C 标准层面可移植，避开 open() 平台相关 flags 位。
+// FILE* 以 i64 承载（x86-64 ABI 中指针与整数同宽，链接器不检查符号类型）。
+
+extern fn fopen(path: String, mode: String) -> i64;
+extern fn fread(buf: String, size: i64, nmemb: i64, f: i64) -> i64;
+extern fn fwrite(buf: String, size: i64, nmemb: i64, f: i64) -> i64;
+extern fn fclose(f: i64) -> i64;
+extern fn fseek(f: i64, offset: i64, whence: i64) -> i64;
+extern fn ftell(f: i64) -> i64;
+extern fn read(fd: i64, buf: String, count: i64) -> i64;   // 控制台读取（fd 0 = stdin）
+
+// 复制 s 并附加 NUL 终止符，返回仅用于 C 字符串参数的拷贝。
+// 返回值的 len 为内容长度（不含 NUL）；data[len] 处为 0。
+fn c_str(s: String) -> String {
+    let mut buf = String::with_capacity(s.len + 1);
+    let mut i = 0;
+    while i < s.len {
+        buf.push_byte(s.data[i]);
+        i = i + 1;
+    }
+    buf.push_byte(0);   // 附加 NUL（容量 s.len + 1 保证可写）
+    buf.len = s.len;    // 恢复内容长度
+    buf
+}
+
+// 读整个文件为 String（打开失败返回空串；MVP 无 io Result 类型）。
+// 单次 fread：文件大小已知（fseek SEEK_END + ftell），普通文件一次可读满。
+fn read_file(path: String) -> String {
+    let cpath = c_str(path);
+    let f = fopen(cpath, String::from("r"));
+    if f == 0 {
+        return String::from("");
+    }
+    let _end = fseek(f, 0, 2);   // SEEK_END = 2，文件字节数
+    let size = ftell(f);
+    let _set = fseek(f, 0, 0);   // SEEK_SET = 0，回到开头
+    let mut buf = String::with_capacity(size);
+    let n = fread(buf, 1, size, f);
+    buf.len = n;                 // 实际读入字节数（空文件 n = 0）
+    let _ = fclose(f);
+    buf
+}
+
+// 写入整个文件（"w" 截断写）；返回写入字节数，失败返回 -1。
+fn write_file(path: String, content: String) -> i64 {
+    let cpath = c_str(path);
+    let f = fopen(cpath, String::from("w"));
+    if f == 0 {
+        return -1;
+    }
+    let n = fwrite(content, 1, content.len, f);
+    let _ = fclose(f);
+    n
+}
+
+// 追加写入（"a"）；返回写入字节数，失败返回 -1。
+fn append_file(path: String, content: String) -> i64 {
+    let cpath = c_str(path);
+    let f = fopen(cpath, String::from("a"));
+    if f == 0 {
+        return -1;
+    }
+    let n = fwrite(content, 1, content.len, f);
+    let _ = fclose(f);
+    n
+}
+
+// 从 stdin（fd 0）读取一行，不含换行符（无输入则返回空串）。
+fn read_line() -> String {
+    let mut tmp = String::with_capacity(256);
+    let n = read(0, tmp, 256);
+    let mut buf = String::new();
+    let mut i = 0;
+    while i < n {
+        if tmp.data[i] == 10 {   // '\n'
+            break;
+        }
+        buf.push_byte(tmp.data[i]);
+        i = i + 1;
+    }
+    buf
+}
+
+// ===== net 模块（B3 完成，2026-08）：socket 字节流 + 字节序工具 =====
+// 位运算全链路打通（& | ^ << >>）后启用：
+// - sockaddr_in 经 String 缓冲逐字节打包（sockaddr_in4）
+// - socketpair 的 fd 数组经 String 缓冲字节解释（fd_at，小端 int32）
+// - socket/connect/close 返回 int，以 `-> i32` 声明（extern_ret32 sext 清洗）
+// - send/recv 返回 ssize_t（i64 承载），buf 为 String（codegen 取 data 指针）
+// 注意：sockaddr_in4 按 macOS 布局（offset 0 = sin_len）；Linux 无 sin_len
+// （offset 0-1 = sin_family），移植时需调整（条件编译待 cfg 支持）。
+
+// AF_UNIX=1, SOCK_STREAM=1（macOS/Linux 一致）
+extern fn socketpair(domain: i64, type_: i64, protocol: i64, fds: String) -> i32;
+extern fn socket(domain: i64, type_: i64, protocol: i64) -> i32;
+extern fn connect(fd: i64, addr: String, len: i64) -> i32;
+extern fn close(fd: i64) -> i32;
+// `send`/`recv` 为 actor 保留字，用原始标识符 `r#` 绕开（lexer 解为 Ident）
+extern fn r#send(fd: i64, buf: String, len: i64, flags: i64) -> i64;
+extern fn r#recv(fd: i64, buf: String, len: i64, flags: i64) -> i64;
+
+// 主机字节序 → 网络字节序（大端）。纯位运算实现（不依赖 htons extern）。
+fn htons(v: i64) -> i64 {
+    ((v & 0xFF) << 8) | ((v >> 8) & 0xFF)
+}
+
+// 创建全双工字节流套接字对（AF_UNIX SOCK_STREAM，无需 sockaddr）。
+// 返回承载 fd 数组的 8 字节缓冲（两个 int32）；经 fd_at 读取。
+fn socketpair_stream() -> String {
+    let fds = String::with_capacity(8);
+    let _ = socketpair(1, 1, 0, fds);
+    fds
+}
+
+// 读取 fd 数组缓冲中第 k 个 int（k = 0 / 1），小端字节解释（x86-64 布局：
+// int32 低字节在前，fd 为小正整数，符号位不触发）。
+fn fd_at(fds: String, k: i64) -> i64 {
+    let base = k * 4;
+    fds.data[base] | (fds.data[base + 1] << 8) | (fds.data[base + 2] << 16) | (fds.data[base + 3] << 24)
+}
+
+// 发送整段内容（len 字节）；返回实际发送字节数。
+fn send_all(fd: i64, buf: String) -> i64 {
+    r#send(fd, buf, buf.len, 0)
+}
+
+// 接收至多 cap 字节；返回按实际字节数设 len 的内容。
+fn recv_some(fd: i64, cap: i64) -> String {
+    let mut buf = String::with_capacity(cap);
+    let n = r#recv(fd, buf, cap, 0);
+    buf.len = n;
+    buf
+}
+
+// 编译器注入的平台内建：返回当前目标 OS 码（0=未知 1=linux 2=macos 3=windows 4=freebsd）。
+// 由 zeta-driver 在汇编阶段注入 `define internal i32 @__zeta_target_os()`；
+// codegen 对 `__zeta_` 前缀 extern 不生成 declare（避免同符号 declare+define 冲突）。
+extern fn __zeta_target_os() -> i32;
+
+// 构造 IPv4 sockaddr_in（16 字节）。a.b.c.d 点分四字节，port 为主机字节序。
+// has_sin_len 选择平台布局（由 __zeta_target_os 决定）：
+//   macOS（true）： 0 = sin_len(16)，1 = AF_INET(2)
+//   Linux（false）：0-1 = sin_family（uint16 小端 0x0002 → 2, 0），无 sin_len
+// 之后 2-3 = 端口（大端/网络序），4-7 = IP（大端/网络序），8-15 = sin_zero。
+// 注意：sin_port/sin_addr 直接按大端布局拆字节（高字节在前），
+// 不经过 htons 数值转换——htons 返回字节交换后的数值，若再按高字节先存
+// 会把字节序反向（8080 会错成 0x901F 布局）。
+fn sockaddr_in4_with_layout(has_sin_len: bool, port: i64, a: i64, b: i64, c: i64, d: i64) -> String {
+    let mut sa = String::with_capacity(16);
+    if has_sin_len {
+        sa.push_byte(16);               // sin_len（macOS 特有）
+        sa.push_byte(2);                // AF_INET
+    } else {
+        sa.push_byte(2);                // sin_family 低字节（小端 0x0002）
+        sa.push_byte(0);                // sin_family 高字节
+    }
+    sa.push_byte((port >> 8) & 0xFF);  // 端口高字节（大端）
+    sa.push_byte(port & 0xFF);         // 端口低字节
+    sa.push_byte(a); sa.push_byte(b); sa.push_byte(c); sa.push_byte(d);
+    sa.push_byte(0); sa.push_byte(0); sa.push_byte(0); sa.push_byte(0);
+    sa.push_byte(0); sa.push_byte(0); sa.push_byte(0); sa.push_byte(0);
+    sa
+}
+
+// 平台自适应 sockaddr_in4（按目标 OS 选布局）。
+fn sockaddr_in4(port: i64, a: i64, b: i64, c: i64, d: i64) -> String {
+    sockaddr_in4_with_layout(__zeta_target_os() == 2, port, a, b, c, d)
+}
+
+// TCP 连接（阻塞）：成功返回 fd（>0），失败返回 -1（已 close 释放）。
+fn tcp_connect(port: i64, a: i64, b: i64, c: i64, d: i64) -> i64 {
+    let fd = socket(2, 1, 0);   // AF_INET=2, SOCK_STREAM=1
+    if fd < 0 {
+        return -1;
+    }
+    let sa = sockaddr_in4(port, a, b, c, d);
+    let r = connect(fd, sa, 16);
+    if r != 0 {
+        let _ = close(fd);
+        return -1;
+    }
+    fd
+}
+
+extern fn gethostname(name: String, len: i64) -> i64;
+
+// 本机主机名。
+// gethostname 返回 int（i32），以 i64 声明时高位未定义，故不依赖返回值，
+// 仅扫描缓冲内首个 NUL 定位实际长度（成功时 gethostname 保证 NUL 结尾）。
+fn hostname() -> String {
+    let mut buf = String::with_capacity(256);
+    let _r = gethostname(buf, 256);
+    // 定位 NUL 终止位置作为实际长度（找不到则回退 255）
+    let mut i = 0;
+    while i < 256 {
+        if buf.data[i] == 0 {
+            break;
+        }
+        i = i + 1;
+    }
+    buf.len = i;
+    buf
+}
+
+// ===== sync 模块（B4，2026-08）：pthread 互斥锁 / 读写锁 =====
+// 基于 extern FFI 绑定 pthread 家族；原语对象（pthread_mutex_t /
+// pthread_rwlock_t）承载于 malloc 缓冲，句柄（i64 指针）存于结构体字段。
+// 注意：malloc 缓冲无显式释放（MVP 无析构函数），进程退出时由 OS 回收。
+// trylock 系列 C 侧返回 int，声明为 `-> i32`：编译器对 ret32 extern 生成
+// `declare i32` + 调用后 sext 清洗（extern_ret32），返回值可靠
+// （0 = 成功 / EBUSY = 失败）。
+// 分配用 `calloc` 而非 `malloc`：内建 alloc_array/alloc_bytes 已按
+// `i8* @malloc(i64)` 声明 malloc，再以 i64 返回声明会触发 LLVM
+// "invalid redefinition of function 'malloc'"；calloc 符号无内建冲突。
+
+extern fn calloc(n: i64, size: i64) -> i64;
+extern fn pthread_mutex_init(m: i64, attr: i64) -> i32;
+extern fn pthread_mutex_lock(m: i64) -> i32;
+extern fn pthread_mutex_unlock(m: i64) -> i32;
+extern fn pthread_mutex_trylock(m: i64) -> i32;
+extern fn pthread_rwlock_init(r: i64, attr: i64) -> i32;
+extern fn pthread_rwlock_rdlock(r: i64) -> i32;
+extern fn pthread_rwlock_wrlock(r: i64) -> i32;
+extern fn pthread_rwlock_unlock(r: i64) -> i32;
+extern fn pthread_rwlock_tryrdlock(r: i64) -> i32;
+extern fn pthread_rwlock_trywrlock(r: i64) -> i32;
+
+// 互斥锁（非递归；p 为 pthread_mutex_t*）。
+// macOS pthread_mutex_t = 64 字节，Linux glibc = 40 字节，calloc(1, 64) 双平台安全。
+struct Mutex { p: i64 }
+
+impl Mutex {
+    fn new() -> Mutex {
+        let p = calloc(1, 64);
+        let _ = pthread_mutex_init(p, 0);   // attr = NULL
+        Mutex { p: p }
+    }
+    // 加锁（无竞争者时立即返回；已持锁线程重复加锁为未定义行为）
+    fn lock(self) {
+        let _ = pthread_mutex_lock(self.p);
+    }
+    fn unlock(self) {
+        let _ = pthread_mutex_unlock(self.p);
+    }
+    // 尝试加锁：成功返回 true，已被占用返回 false（不阻塞）
+    fn try_lock(self) -> bool {
+        let r = pthread_mutex_trylock(self.p);
+        r == 0
+    }
+}
+
+// 读写锁（读-读共享，写-写/读-写互斥；p 为 pthread_rwlock_t*）。
+// macOS pthread_rwlock_t = 200 字节（__opaque[192] + __sig），Linux glibc = 56 字节，
+// calloc(1, 256) 双平台安全。
+struct RwLock { p: i64 }
+
+impl RwLock {
+    fn new() -> RwLock {
+        let p = calloc(1, 256);
+        let _ = pthread_rwlock_init(p, 0);
+        RwLock { p: p }
+    }
+    // 读锁（可多个读者并发持有）
+    fn read_lock(self) {
+        let _ = pthread_rwlock_rdlock(self.p);
+    }
+    // 写锁（与任何其他锁互斥）
+    fn write_lock(self) {
+        let _ = pthread_rwlock_wrlock(self.p);
+    }
+    fn unlock(self) {
+        let _ = pthread_rwlock_unlock(self.p);
+    }
+    fn try_read_lock(self) -> bool {
+        let r = pthread_rwlock_tryrdlock(self.p);
+        r == 0
+    }
+    fn try_write_lock(self) -> bool {
+        let r = pthread_rwlock_trywrlock(self.p);
+        r == 0
+    }
+}
+
+// Condvar / Barrier：骨架声明（待线程创建支持后启用）。
+// MVP 语言无函数指针，无法调用 pthread_create；条件变量的 wait/signal
+// 协作与屏障的 count>1 语义均需多线程，单线程不可验证，故暂不绑定。
+//   extern fn pthread_cond_init(c: i64, attr: i64) -> i32;
+//   extern fn pthread_cond_wait(c: i64, m: i64) -> i32;
+//   extern fn pthread_cond_signal(c: i64) -> i32;
+//   extern fn pthread_barrier_init(b: i64, attr: i64, count: i64) -> i32;
+//   extern fn pthread_barrier_wait(b: i64) -> i32;
+

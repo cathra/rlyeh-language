@@ -37,10 +37,16 @@ pub const BUILTIN_FUNCTIONS: &[&str] = &[
 /// 3. 解析跨函数调用目标变量的类型。
 pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
     // 第一遍：每个函数的局部类型表 + 返回类型
+    // extern 声明无函数体，直接由 extern_sig 构造签名（不参与类型推断）
     let mut infer_results: Vec<(HashMap<Local, LirType>, LirType)> =
         Vec::with_capacity(program.functions.len());
     for f in &program.functions {
-        infer_results.push(infer_function_types(f)?);
+        if f.is_extern {
+            let ret = extern_return_type(f);
+            infer_results.push((HashMap::new(), ret));
+        } else {
+            infer_results.push(infer_function_types(f)?);
+        }
     }
 
     // 全程序函数返回类型表（供跨函数调用目标解析）
@@ -59,6 +65,9 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
     for _ in 0..8 {
         let mut changed = false;
         for (f, (ty, ret)) in program.functions.iter().zip(&mut infer_results) {
+            if f.is_extern {
+                continue;
+            }
             let mut resolved = ty.clone();
             resolve_call_target_types(f, &mut resolved, &ret_types);
             let new_ret = infer_return_type(f, &resolved);
@@ -217,6 +226,35 @@ fn collect_locals(f: &MirFunction) -> Vec<Local> {
     names
 }
 
+/// extern 声明的返回类型（由 extern_sig 解析；缺省为单元类型）。
+fn extern_return_type(f: &MirFunction) -> LirType {
+    match &f.extern_sig {
+        Some((_, ret)) => parse_extern_type(ret),
+        None => LirType::Unit,
+    }
+}
+
+/// 将 extern 签名类型名解析为 `LirType`（与 typecheck `type_to_extern_name` 对应）。
+fn parse_extern_type(name: &str) -> LirType {
+    match name {
+        "i64" | "isize" | "u64" | "usize" => LirType::I64,
+        // 32 位整数返回值：ABI 上按 i64 承载（LIR 无 i32 槽），
+        // 由 codegen 的 `extern_ret32` 标记生成 i32 declare + sext 清洗。
+        "i32" | "u32" => LirType::I64,
+        "i8" | "u8" => LirType::Char,
+        "f64" => LirType::F64,
+        "bool" => LirType::Bool,
+        "char" => LirType::Char,
+        "string" => LirType::Str,
+        // 标准库 `String` 结构体参数：ABI 上按 C 字符串（data 指针）传递，
+        // 登记为 `Str` 以便 codegen 在调用点取 data 指针（而非结构体指针）。
+        "String" => LirType::Str,
+        "()" => LirType::Unit,
+        // 引用 / 聚合等一律按指针处理（extern ABI 按值传指针数字）
+        _ => LirType::Ptr,
+    }
+}
+
 /// 收集 MIR 值树中出现的全部变量名。
 fn collect_value_locals(v: &MirValue, names: &mut Vec<Local>) {
     match v {
@@ -267,14 +305,19 @@ fn field_scalar_to_lir(ty: FieldScalar) -> LirType {
     }
 }
 
-/// 二元运算结果类型：算术按操作数（浮点优先），比较 / 逻辑为 `Bool`。
+/// 二元运算结果类型：算术/位运算按操作数（浮点优先），比较 / 逻辑为 `Bool`。
 fn binary_result_type(op: HirBinaryOp, lt: Option<LirType>, rt: Option<LirType>) -> LirType {
     match op {
         HirBinaryOp::Add
         | HirBinaryOp::Sub
         | HirBinaryOp::Mul
         | HirBinaryOp::Div
-        | HirBinaryOp::Mod => {
+        | HirBinaryOp::Mod
+        | HirBinaryOp::BitAnd
+        | HirBinaryOp::BitOr
+        | HirBinaryOp::BitXor
+        | HirBinaryOp::Shl
+        | HirBinaryOp::Shr => {
             if lt == Some(LirType::F64) || rt == Some(LirType::F64) {
                 LirType::F64
             } else {
@@ -378,6 +421,41 @@ fn lower_function(
     return_type: LirType,
     ret_types: &HashMap<String, LirType>,
 ) -> Result<LirFunction, LirError> {
+    if f.is_extern {
+        // extern 声明：无函数体，参数类型由 extern_sig 解析，codegen 生成 declare
+        let mut params = Vec::with_capacity(f.params.len());
+        if let Some((ptys, ret)) = &f.extern_sig {
+            for (p, pt) in f.params.iter().zip(ptys) {
+                params.push((p.clone(), parse_extern_type(pt)));
+            }
+            // 返回 i32 的 extern（pthread trylock 等）：标记以便 codegen 生成
+            // `declare i32` + 调用后 sext 存槽（规避 int 返回值高位未定义）。
+            let extern_ret32 = matches!(ret.as_str(), "i32");
+            return Ok(LirFunction {
+                name: f.name.clone(),
+                params,
+                return_type,
+                locals: Vec::new(),
+                blocks: Vec::new(),
+                is_extern: true,
+                extern_ret32,
+            });
+        } else {
+            for p in &f.params {
+                params.push((p.clone(), LirType::I64));
+            }
+        }
+        return Ok(LirFunction {
+            name: f.name.clone(),
+            params,
+            return_type,
+            locals: Vec::new(),
+            blocks: Vec::new(),
+            is_extern: true,
+            extern_ret32: false,
+        });
+    }
+
     let mut ty = ty.clone();
     resolve_call_target_types(f, &mut ty, ret_types);
 
@@ -408,6 +486,8 @@ fn lower_function(
         return_type,
         locals,
         blocks,
+        is_extern: false,
+        extern_ret32: false,
     })
 }
 

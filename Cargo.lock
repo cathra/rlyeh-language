@@ -1246,6 +1246,7 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
  "dashmap",
+ "libc",
  "thiserror 1.0.69",
  "uuid",
 ]
@@ -1272,6 +1273,11 @@ dependencies = [
 [[package]]
 name = "zeta-check"
 version = "0.1.0"
+dependencies = [
+ "zeta-ast",
+ "zeta-lexer",
+ "zeta-parser",
+]
 
 [[package]]
 name = "zeta-codegen"
@@ -1283,6 +1289,11 @@ dependencies = [
 [[package]]
 name = "zeta-doc"
 version = "0.1.0"
+dependencies = [
+ "zeta-ast",
+ "zeta-lexer",
+ "zeta-parser",
+]
 
 [[package]]
 name = "zeta-driver"
@@ -1291,9 +1302,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "zeta-actor-runtime",
  "zeta-ast",
+ "zeta-bench",
  "zeta-borrowck",
+ "zeta-check",
  "zeta-codegen",
+ "zeta-doc",
+ "zeta-fmt",
  "zeta-lir",
  "zeta-mir",
  "zeta-parser",
@@ -1304,6 +1320,10 @@ dependencies = [
 [[package]]
 name = "zeta-fmt"
 version = "0.1.0"
+dependencies = [
+ "zeta-ast",
+ "zeta-parser",
+]
 
 [[package]]
 name = "zeta-hir"

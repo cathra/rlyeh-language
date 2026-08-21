@@ -2,6 +2,11 @@
 name = "zeta-bench"
 version.workspace = true
 edition.workspace = true
+description = "Zeta 语言基准测试框架（编译 + 多次计时统计）"
+
+[[bin]]
+name = "zeta-bench"
+path = "src/main.rs"
 
 [lib]
 path = "src/lib.rs"

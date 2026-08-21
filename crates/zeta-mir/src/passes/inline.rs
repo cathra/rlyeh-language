@@ -191,17 +191,21 @@ fn inline_stmt(
     }
 }
 
-/// 重命名局部变量：参数映射到实参，临时变量映射为内联副本新名。
+/// 重命名局部变量：参数映射到实参，其余名字（函数内部局部变量）一律
+/// 映射为内联副本新名。
+///
+/// 修复：此前仅对 `_` 开头的临时变量重命名，用户命名的局部变量（如
+/// `let r = ...`）被原样保留，内联进调用者后与调用者同名变量合并为同一
+/// 槽位，导致语义错误（如 `r.try_read_lock()` 的返回值写回调用者 `r`）。
 fn map_local(name: &str, subst: &mut HashMap<String, String>, counter: &mut usize) -> Local {
     if let Some(mapped) = subst.get(name) {
         return mapped.clone();
     }
-    if name.starts_with('_') {
-        let fresh = fresh_inline_temp(counter);
-        subst.insert(name.to_string(), fresh.clone());
-        return fresh;
-    }
-    name.to_string()
+    // 非参数的名字必然属于被内联函数内部（参数已由 subst 映射到实参），
+    // 全部重命名以避免与调用者作用域中的同名变量冲突。
+    let fresh = fresh_inline_temp(counter);
+    subst.insert(name.to_string(), fresh.clone());
+    fresh
 }
 
 /// 递归重命名右值中的局部变量。

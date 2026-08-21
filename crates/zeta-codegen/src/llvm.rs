@@ -57,8 +57,8 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
 
 /// LLVM IR 生成器状态。
 struct LlvmEmitter {
-    /// 函数签名表：名称 → (参数类型, 返回类型)
-    sigs: HashMap<String, (Vec<LirType>, LirType)>,
+    /// 函数签名表：名称 → (参数类型, 返回类型, 是否 extern, extern 返回 i32)
+    sigs: HashMap<String, (Vec<LirType>, LirType, bool, bool)>,
     /// 收集的全局常量定义
     globals: Vec<String>,
     /// 全局常量 / 格式串计数器
@@ -76,7 +76,10 @@ impl LlvmEmitter {
             .iter()
             .map(|f| {
                 let params = f.params.iter().map(|(_, t)| *t).collect::<Vec<_>>();
-                (f.name.clone(), (params, f.return_type))
+                (
+                    f.name.clone(),
+                    (params, f.return_type, f.is_extern, f.extern_ret32),
+                )
             })
             .collect();
         Self {
@@ -98,8 +101,36 @@ impl LlvmEmitter {
         format!("r{r}")
     }
 
-    /// 生成单个函数定义。
+    /// 生成单个函数定义（extern 声明生成 `declare`）。
     fn emit_function(&mut self, f: &LirFunction) -> Result<(), CodegenError> {
+        if f.is_extern {
+            // `__zeta_` 前缀为驱动注入的平台内建（如 `__zeta_target_os`）：
+            // 跳过 declare——driver 在汇编阶段追加 `define internal`（同符号 declare+define 冲突）。
+            if f.name.starts_with("__zeta_") {
+                return Ok(());
+            }
+            // extern 声明：返回 i32 的（pthread trylock 等）按 i32 声明，
+            // 调用点经 `sext i32` 清洗后存入 i64 槽（规避 int 返回值高位未定义）。
+            let ret_ty = if f.extern_ret32 {
+                "i32".to_string()
+            } else if f.return_type == LirType::Unit {
+                "void".to_string()
+            } else {
+                llvm_type(f.return_type)?.to_string()
+            };
+            let params = f
+                .params
+                .iter()
+                .map(|(name, ty)| Ok(format!("{} %{name}", llvm_type(*ty)?)))
+                .collect::<Result<Vec<_>, CodegenError>>()?
+                .join(", ");
+            self.body.push_str(&format!(
+                "declare {ret_ty} @{}({params})\n",
+                llvm_global_name(&f.name)
+            ));
+            return Ok(());
+        }
+
         let is_main = f.name == "main";
         if is_main && !f.params.is_empty() {
             return Err(CodegenError::InvalidMain);
@@ -404,7 +435,7 @@ impl LlvmEmitter {
             return self.emit_builtin_call(target, callee, args, body, f);
         }
 
-        let (param_tys, ret_ty) =
+        let (param_tys, ret_ty, is_extern, extern_ret32) =
             self.sigs
                 .get(callee)
                 .cloned()
@@ -414,7 +445,18 @@ impl LlvmEmitter {
 
         let mut arg_v = Vec::with_capacity(args.len());
         for (arg, pt) in args.iter().zip(&param_tys) {
-            arg_v.push(self.operand_value(&LirOperand::Local(arg.clone()), *pt, body, f)?);
+            if is_extern && *pt == LirType::Str {
+                // extern 的 `String` 参数：实参是 String 结构体指针（3 槽 data/len/cap），
+                // 需取其 data 指针（槽 0）作为 C 字符串/缓冲传给 libc。
+                let p = self.operand_value(&LirOperand::Local(arg.clone()), LirType::Ptr, body, f)?;
+                let addr = self.reg();
+                body.push_str(&format!("  %{addr} = bitcast i8* {p} to i8**\n"));
+                let d = self.reg();
+                body.push_str(&format!("  %{d} = load i8*, i8** %{addr}\n"));
+                arg_v.push(format!("%{d}"));
+            } else {
+                arg_v.push(self.operand_value(&LirOperand::Local(arg.clone()), *pt, body, f)?);
+            }
         }
         let arg_str = arg_v
             .iter()
@@ -426,6 +468,16 @@ impl LlvmEmitter {
         let callee_name = llvm_global_name(callee);
         if ret_ty == LirType::Unit {
             body.push_str(&format!("  call void @{callee_name}({arg_str})\n"));
+        } else if is_extern && extern_ret32 {
+            // extern 返回 i32（pthread trylock 等）：call i32 后 sext 到 i64
+            // 存入 i64 槽，得到干净的 32 位符号扩展值（规避高位未定义）。
+            let r = self.reg();
+            body.push_str(&format!("  %{r} = call i32 @{callee_name}({arg_str})\n"));
+            let e = self.reg();
+            body.push_str(&format!("  %{e} = sext i32 %{r} to i64\n"));
+            if let Some(t) = target {
+                body.push_str(&format!("  store i64 %{e}, i64* %{t}.addr\n"));
+            }
         } else {
             let r = self.reg();
             body.push_str(&format!(
@@ -848,6 +900,12 @@ fn binary_instr(op: &zeta_lir::HirBinaryOp, ty: LirType) -> Result<&'static str,
         (Mul, LirType::F64) => ok("fmul"),
         (Div, LirType::F64) => ok("fdiv"),
         (Mod, LirType::F64) => ok("frem"),
+        // 位运算（整数语义；Shr 用 ashr 算术右移保持有符号语义）
+        (BitAnd, LirType::I64) => ok("and"),
+        (BitOr, LirType::I64) => ok("or"),
+        (BitXor, LirType::I64) => ok("xor"),
+        (Shl, LirType::I64) => ok("shl"),
+        (Shr, LirType::I64) => ok("ashr"),
         (And, LirType::Bool) => ok("and"),
         (Or, LirType::Bool) => ok("or"),
         (Eq, LirType::I64 | LirType::Bool | LirType::Char) => ok("icmp eq"),

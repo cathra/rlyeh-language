@@ -236,14 +236,34 @@ pub(crate) fn infer_expr(
             }
             let target_name = match t_hir {
                 HirExpr::Variable(v) => v,
-                // 结构体字段赋值：`obj.field = value` → FieldSet（仅纯赋值）
+                // 结构体 / actor 状态字段赋值：`obj.field = value` → FieldSet；
+                // 复合赋值 `obj.field += v` → FieldSet(base, idx, Binary(op, FieldGet, v))
                 HirExpr::FieldGet { base, index, ty } => {
                     if !matches!(op, AssignOp::Assign) {
-                        return Err(TypeError::Unsupported {
-                            what: "复合赋值目标为结构体字段在 MVP 阶段（仅支持 `field = ...`）"
-                                .to_string(),
-                            span,
-                        });
+                        let hir_op = match op {
+                            AssignOp::AddAssign => HirBinaryOp::Add,
+                            AssignOp::SubAssign => HirBinaryOp::Sub,
+                            AssignOp::MulAssign => HirBinaryOp::Mul,
+                            AssignOp::DivAssign => HirBinaryOp::Div,
+                            AssignOp::Assign => unreachable!(),
+                        };
+                        return Ok((
+                            HirExpr::FieldSet {
+                                base: base.clone(),
+                                index,
+                                value: Box::new(HirExpr::Binary(
+                                    hir_op,
+                                    Box::new(HirExpr::FieldGet {
+                                        base,
+                                        index,
+                                        ty,
+                                    }),
+                                    Box::new(v_hir),
+                                )),
+                                ty,
+                            },
+                            Type::Unit,
+                        ));
                     }
                     return Ok((
                         HirExpr::FieldSet {
@@ -466,10 +486,60 @@ pub(crate) fn infer_expr(
         ExprKind::Break(None) => Ok((HirExpr::Break(None), Type::Never)),
         ExprKind::Continue => Ok((HirExpr::Continue, Type::Never)),
 
-        ExprKind::Send { .. } => Err(TypeError::Unsupported {
-            what: "Actor 消息发送在 MVP 阶段".to_string(),
-            span,
-        }),
+        ExprKind::Send { actor, method, args } => {
+            // `send actor.method(a, b)` → `zeta_actor_send(recv, kind, a, b, 0)`
+            // （异步发送不等待结果；参数经消息槽传递）
+            let (recv_hir, recv_ty) = infer_expr(ctx, actor)?;
+            let self_ty = peel_ref(&recv_ty);
+            if let Type::Named(name, _) = &self_ty {
+                if let Some(ad) = ctx.lookup_actor(name).cloned() {
+                    let kind = ad
+                        .methods
+                        .iter()
+                        .position(|m| m.name == *method)
+                        .ok_or_else(|| TypeError::FunctionNotFound {
+                            name: format!("{self_ty}::{method}"),
+                            span,
+                        })?;
+                    if args.len() > 3 {
+                        return Err(TypeError::UnexpectedArgumentCount {
+                            name: format!("{self_ty}::{method}"),
+                            expected: 3,
+                            found: args.len(),
+                            span,
+                        });
+                    }
+                    let mut call_args = vec![recv_hir, HirExpr::IntLiteral(kind as i128)];
+                    for arg in args {
+                        let (h, t) = infer_expr(ctx, arg)?;
+                        if !t.compatible_with(&Type::I64) {
+                            return Err(TypeError::ArgumentTypeMismatch {
+                                name: format!("{self_ty}::{method}"),
+                                index: call_args.len() - 2,
+                                expected: "i64".to_string(),
+                                found: t.to_string(),
+                                span: arg.span,
+                            });
+                        }
+                        call_args.push(h);
+                    }
+                    while call_args.len() < 5 {
+                        call_args.push(HirExpr::IntLiteral(0));
+                    }
+                    return Ok((
+                        HirExpr::Call {
+                            callee: "zeta_actor_send".to_string(),
+                            args: call_args,
+                        },
+                        Type::I64,
+                    ));
+                }
+            }
+            Err(TypeError::Unsupported {
+                what: "send 目标不是 Actor 类型".to_string(),
+                span,
+            })
+        }
     }
 }
 
@@ -1067,6 +1137,7 @@ fn check_binary(
             return Ok((hir_op, Type::Bool));
         }
         BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+            // 位运算：要求整数操作数，结果为整数
             if !left.is_integer() || !right.is_integer() {
                 return Err(TypeError::ExpectedInt {
                     found: left.to_string(),
@@ -1074,17 +1145,13 @@ fn check_binary(
                 });
             }
             let hir_op = match op {
-                BinaryOp::BitAnd => HirBinaryOp::Mod, // placeholder 不会命中
-                BinaryOp::BitOr => HirBinaryOp::Mod,
-                BinaryOp::BitXor => HirBinaryOp::Mod,
-                BinaryOp::Shl => HirBinaryOp::Mod,
-                _ => HirBinaryOp::Mod,
+                BinaryOp::BitAnd => HirBinaryOp::BitAnd,
+                BinaryOp::BitOr => HirBinaryOp::BitOr,
+                BinaryOp::BitXor => HirBinaryOp::BitXor,
+                BinaryOp::Shl => HirBinaryOp::Shl,
+                _ => HirBinaryOp::Shr,
             };
-            let _ = hir_op;
-            return Err(TypeError::Unsupported {
-                what: "位运算在 MVP 阶段".to_string(),
-                span,
-            });
+            return Ok((hir_op, left.clone()));
         }
     };
 
@@ -1221,6 +1288,82 @@ fn check_call(
             },
             Type::Unit,
         ));
+    }
+
+    // actor 构造函数：`Counter::new()` → `zeta_actor_spawn("<handle>", <state_new>())`；
+    // `Counter::new_supervised(strategy)` → `zeta_actor_spawn_supervised("<handle>", "<state_new>", strategy)`
+    if let Some((actor_part, seg)) = name.rsplit_once("::") {
+        if seg == "new" || seg == "new_supervised" {
+            if let Some(actor_full) = ctx.lookup_actor(actor_part).map(|_| {
+                ctx.resolve_full_name(actor_part)
+                    .unwrap_or_else(|| actor_part.to_string())
+            }) {
+                let supervised = seg == "new_supervised";
+                // 受监督构造必须提供策略参数（i64）：0=OneForOne 1=AllForOne 2=RestartForOne
+                let strategy_hir = if supervised {
+                    if args.len() != 1 {
+                        return Err(TypeError::Unsupported {
+                            what: format!("`{actor_part}::new_supervised` 需要 1 个策略参数（i64）"),
+                            span,
+                        });
+                    }
+                    let (s_hir, s_ty) = infer_expr(ctx, &args[0])?;
+                    if !matches!(s_ty, Type::I64) {
+                        return Err(TypeError::Unsupported {
+                            what: "actor 监督策略参数必须是 i64".to_string(),
+                            span: args[0].span,
+                        });
+                    }
+                    s_hir
+                } else {
+                    if !args.is_empty() {
+                        return Err(TypeError::Unsupported {
+                            what: format!("`{actor_part}::new` 不接受参数"),
+                            span,
+                        });
+                    }
+                    HirExpr::IntLiteral(0)
+                };
+                // handler / factory 名必须为 3 槽 String 结构体（data/len/cap）——runtime 侧
+                // `cstr()` 按 C 字符串读取。不能传裸字符串字面量（瘦 data 指针，
+                // codegen 对 extern `String` 参数会按结构体再解引用一层）。
+                // 复用 `String::from` 展开（alloc_bytes + copy_bytes + 三槽构造）。
+                let handle = format!("{actor_full}::__handle");
+                let (handle_hir, _) = check_string_from(
+                    ctx,
+                    &[AstExpr {
+                        kind: Box::new(ExprKind::StringLiteral(handle)),
+                        span,
+                    }],
+                    span,
+                )?;
+                let state_new_call = HirExpr::Call {
+                    callee: format!("{actor_full}::__state_new"),
+                    args: vec![],
+                };
+                let (callee, args) = if supervised {
+                    let factory = format!("{actor_full}::__state_new");
+                    let (factory_hir, _) = check_string_from(
+                        ctx,
+                        &[AstExpr {
+                            kind: Box::new(ExprKind::StringLiteral(factory)),
+                            span,
+                        }],
+                        span,
+                    )?;
+                    (
+                        "zeta_actor_spawn_supervised".to_string(),
+                        vec![handle_hir, factory_hir, strategy_hir],
+                    )
+                } else {
+                    ("zeta_actor_spawn".to_string(), vec![handle_hir, state_new_call])
+                };
+                return Ok((
+                    HirExpr::Call { callee, args },
+                    Type::Named(actor_full, vec![]),
+                ));
+            }
+        }
     }
 
     // 普通函数调用：先经 use 别名 / 模块路径解析到完整符号名，再查签名
@@ -1805,6 +1948,10 @@ fn check_string_from(
         }
     };
     let len = s.len() as i128;
+    // 分配 len+1 字节并连 LLVM 字符串常量自带的 \00 一起拷入：
+    // runtime 侧按 C 字符串（NUL 结尾）读取（如 actor 的 handle/factory 符号名
+    // 经 dlsym 前由 CStr 扫描），缓冲末尾必须补 NUL，否则读超到相邻堆内存。
+    let alloc_len = len + 1;
 
     let data_tmp = ctx.fresh_temp();
     let base = ctx.fresh_temp();
@@ -1813,7 +1960,7 @@ fn check_string_from(
             name: data_tmp.clone(),
             init: HirExpr::Call {
                 callee: "alloc_bytes".to_string(),
-                args: vec![HirExpr::IntLiteral(len)],
+                args: vec![HirExpr::IntLiteral(alloc_len)],
             },
             mutable: false,
         },
@@ -1822,7 +1969,7 @@ fn check_string_from(
             args: vec![
                 HirExpr::Variable(data_tmp.clone()),
                 HirExpr::StringLiteral(s.clone()),
-                HirExpr::IntLiteral(len),
+                HirExpr::IntLiteral(alloc_len),
             ],
         }),
         HirStmt::Let {
@@ -1875,6 +2022,29 @@ fn check_field_access(
             span,
         });
     };
+
+    // actor 状态字段访问（方法体内 `self.value`）：状态 = 槽数组，FieldGet 槽索引
+    if let Some(ad) = ctx.lookup_actor(&name) {
+        let idx = ad
+            .fields
+            .iter()
+            .position(|f| f.name == field)
+            .ok_or_else(|| TypeError::UnknownField {
+                struct_name: name.clone(),
+                field: field.to_string(),
+                span,
+            })?;
+        let fty = resolve_ast_type(ctx, &ad.fields[idx].type_, span)?;
+        return Ok((
+            HirExpr::FieldGet {
+                base: Box::new(base_hir),
+                index: idx,
+                ty: field_scalar_of(&fty),
+            },
+            fty,
+        ));
+    }
+
     let def = ctx.lookup_struct(&name).cloned().ok_or_else(|| {
         TypeError::UndefinedType {
             name: name.clone(),
@@ -2451,12 +2621,23 @@ fn check_pattern(
                 Box::new(HirExpr::IntLiteral(variant_def.tag as i128)),
             );
             // 子模式：字段槽 1+i，条件用 And 合并。
-            // 字段类型经泛型替换（impl 方法实例化时 `T` → 具体类型）。
+            // 字段类型经泛型替换：优先合并当前 generic_subst（泛型方法体内
+            // `T` → 具体类型）；再从具体实例化 `pat_ty` 的类型参数推导枚举
+            // 泛型映射——用户级 match（非泛型方法体，generic_subst 为空）时，
+            // `match (o: Option<String>)` 需把 `T` 解析为 `String`。
+            let mut subst = ctx.generic_subst.clone();
+            if let Type::Named(_, pat_args) = pat_ty {
+                if !pat_args.is_empty() && pat_args.len() == enum_def.type_params.len() {
+                    for (tp, arg) in enum_def.type_params.iter().zip(pat_args) {
+                        subst.insert(tp.clone(), arg.clone());
+                    }
+                }
+            }
             let mut binds = Vec::new();
             let mut bound_tys = Vec::new();
             let mut cond = tag_cond;
             for (i, (sub, (_, fty))) in sub_pats.iter().zip(&variant_def.fields).enumerate() {
-                let fty_sub = substitute(fty, &ctx.generic_subst);
+                let fty_sub = substitute(fty, &subst);
                 let (sub_cond, sub_binds, _, sub_tys) = check_pattern(
                     ctx,
                     sub,
@@ -2628,6 +2809,53 @@ fn check_method_call(
         });
     }
 
+    // actor 方法调用：`counter.method(a, b)` → `zeta_actor_ask(recv, kind, a, b, 0)`
+    // （MVP 同步语义，`.await` 仅为可选语法标记；参数经消息槽传递）
+    if let Type::Named(name, _) = &self_ty {
+        if let Some(ad) = ctx.lookup_actor(name).cloned() {
+            let kind = ad
+                .methods
+                .iter()
+                .position(|m| m.name == method)
+                .ok_or_else(|| TypeError::FunctionNotFound {
+                    name: format!("{self_ty}::{method}"),
+                    span,
+                })?;
+            if args.len() > 3 {
+                return Err(TypeError::UnexpectedArgumentCount {
+                    name: format!("{self_ty}::{method}"),
+                    expected: 3,
+                    found: args.len(),
+                    span,
+                });
+            }
+            let mut call_args = vec![recv_hir, HirExpr::IntLiteral(kind as i128)];
+            for arg in args {
+                let (h, t) = infer_expr(ctx, arg)?;
+                if !t.compatible_with(&Type::I64) {
+                    return Err(TypeError::ArgumentTypeMismatch {
+                        name: format!("{self_ty}::{method}"),
+                        index: call_args.len() - 2,
+                        expected: "i64".to_string(),
+                        found: t.to_string(),
+                        span: arg.span,
+                    });
+                }
+                call_args.push(h);
+            }
+            while call_args.len() < 5 {
+                call_args.push(HirExpr::IntLiteral(0));
+            }
+            return Ok((
+                HirExpr::Call {
+                    callee: "zeta_actor_ask".to_string(),
+                    args: call_args,
+                },
+                Type::I64,
+            ));
+        }
+    }
+
     // 查找含该方法的 impl 块（inherent 优先，trait 次之）
     let impl_def = ctx
         .find_impl_for_method(&self_ty, method)
@@ -2673,6 +2901,27 @@ fn check_method_call(
             .collect();
     }
 
+    // 参数类型推断 + Infer 回填：期望类型含未定型 `_`（如裸 `Result::Err(7)`
+    // 的 `unwrap_or(default: T)`，T 经接收者 unified 后仍为 Infer）时，用实参
+    // 类型定型，使返回类型不再泄漏 `_`。
+    let mut hir_args = vec![recv_hir];
+    let mut arg_tys = Vec::with_capacity(args.len());
+    for (pty, a) in expected.iter().zip(args.iter()) {
+        let (hir, ty) = infer_expr(ctx, a)?;
+        arg_tys.push(ty.clone());
+        if contains_infer(pty) {
+            unify(pty, &ty, &mut subst)?;
+        }
+        hir_args.push(hir);
+    }
+    // 回填可能定型类型参数，重算签名（返回类型必须用定型后的 subst）
+    expected = method_def
+        .sig
+        .params
+        .iter()
+        .skip(1)
+        .map(|p| substitute(p, &subst))
+        .collect();
     let ret_ty = substitute(&method_def.sig.return_type, &subst);
 
     // 方法函数名：inherent/trait 方法统一 `Type::method`，泛型实例化追加后缀
@@ -2695,19 +2944,16 @@ fn check_method_call(
             span,
         });
     }
-    let mut hir_args = vec![recv_hir];
-    for (i, (arg, pty)) in args.iter().zip(&expected).enumerate() {
-        let (hir, ty) = infer_expr(ctx, arg)?;
+    for (i, (ty, pty)) in arg_tys.iter().zip(&expected).enumerate() {
         if !ty.compatible_with(pty) {
             return Err(TypeError::ArgumentTypeMismatch {
                 name: base_fn.clone(),
                 index: i + 1,
                 expected: pty.to_string(),
                 found: ty.to_string(),
-                span: arg.span,
+                span: args[i].span,
             });
         }
-        hir_args.push(hir);
     }
     Ok((
         HirExpr::Call {
@@ -2846,7 +3092,12 @@ fn instantiate_generic_fn(
         .collect();
     ctx.mono_items.push(HirItem {
         name: mono_name.clone(),
-        kind: HirItemKind::Fn(HirFnDecl { params, body }),
+        kind: HirItemKind::Fn(HirFnDecl {
+            params,
+            body,
+            is_extern: false,
+            extern_sig: None,
+        }),
     });
     ctx.insert_fn_signature(mono_name.clone(), sig.clone());
     Ok((mono_name, sig))
@@ -2921,7 +3172,12 @@ fn instantiate_impl_method(
         .collect();
     ctx.mono_items.push(HirItem {
         name: mono_name.clone(),
-        kind: HirItemKind::Fn(HirFnDecl { params, body }),
+        kind: HirItemKind::Fn(HirFnDecl {
+            params,
+            body,
+            is_extern: false,
+            extern_sig: None,
+        }),
     });
     ctx.insert_fn_signature(mono_name.clone(), sig);
     Ok(mono_name)
@@ -2982,7 +3238,30 @@ fn unify(
             }
             Ok(())
         }
+        // 未定型类型参数（`_`）：用实参类型替换 subst 中所有 Infer 条目。
+        // 场景：裸 `Result::Err(7).unwrap_or(100)` —— 接收者 unified 后
+        // `T → Infer`、`E → i64`，实参 100 将 T 定型为 i64。
+        Type::Infer => {
+            for v in subst.values_mut() {
+                if matches!(v, Type::Infer) {
+                    *v = arg.clone();
+                }
+            }
+            Ok(())
+        }
         _ => Ok(()),
+    }
+}
+
+/// 类型中是否含未定型 `_`（Infer）。
+fn contains_infer(ty: &Type) -> bool {
+    match ty {
+        Type::Infer => true,
+        Type::Named(_, ps) => ps.iter().any(contains_infer),
+        Type::Ref(inner, _) => contains_infer(inner),
+        Type::Tuple(ts) => ts.iter().any(contains_infer),
+        Type::Array(inner, _) => contains_infer(inner),
+        _ => false,
     }
 }
 

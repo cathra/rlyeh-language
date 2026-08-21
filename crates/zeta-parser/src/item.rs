@@ -9,10 +9,11 @@ use zeta_ast::{
 use zeta_lexer::Token;
 
 impl<'src> Parser<'src> {
-    /// 解析函数声明（含 pub / async / unsafe 前置修饰符）
+    /// 解析函数声明（含 pub / async / unsafe / extern 前置修饰符）
     pub(crate) fn parse_fn(&mut self) -> Result<AstFnDecl, ParseError> {
         let mut is_pub = false;
         let mut is_async = false;
+        let mut is_extern = false;
         loop {
             if self.eat(&Token::Pub) {
                 is_pub = true;
@@ -23,6 +24,10 @@ impl<'src> Parser<'src> {
                 continue;
             }
             if self.eat(&Token::Unsafe) {
+                continue;
+            }
+            if self.eat(&Token::Extern) {
+                is_extern = true;
                 continue;
             }
             break;
@@ -52,6 +57,7 @@ impl<'src> Parser<'src> {
             body,
             is_pub,
             is_async,
+            is_extern,
             span,
         })
     }

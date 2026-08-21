@@ -58,12 +58,13 @@ zeta-language/
 │   ├── Cargo.toml
 │   └── src/
 │
-├── docs/                     ← 语言规范文档
+├── docs/                     ← 语言规范 + 开发计划文档
 │   ├── grammar.md            ← 完整语法规范（EBNF）
 │   ├── semantics.md          ← 语义规则
 │   ├── memory-model.md       ← 分层内存管理规范
 │   ├── actor-model.md        ← Actor 并发模型规范
-│   └── std-lib.md            ← 标准库 API 规范
+│   ├── std-lib.md            ← 标准库 API 规范
+│   └── development-plan.md   ← 新版开发计划（阶段 A–F，权威副本）
 │
 ├── examples/                 ← 示例代码
 │   ├── hello-world.zeta
@@ -130,17 +131,26 @@ if hour not in (6am..<10pm) {}  // 跨午夜
 
 ```zeta
 actor Counter {
-    value: u32 = 0,
-    
-    pub fn increment(amount: u32) -> u32 {
+    value: i64 = 0,
+
+    // 方法返回 -1 会被 runtime 视为崩溃信号（Panic）
+    pub fn increment(amount: i64) -> i64 {
         self.value += amount;
         self.value
     }
 }
 
-let counter = Counter::new();
-let result = counter.increment(10).await;
+let counter = Counter::new();                 // 普通 spawn（无监督）
+let result = counter.increment(10).await;     // ask 同步往返
+
+send counter.increment(1);                    // fire-and-forget（异步）
+
+// 受监督 spawn：0=OneForOne 1=AllForOne 2=RestartForOne，
+// 崩溃后 runtime 经 __state_new 重建初始状态并重启
+let supervised = Counter::new_supervised(0);
 ```
+
+语义：actor 方法消息经「kind 槽 + 3 个 i64 消息槽」传递，同一 actor 消息按邮箱 FIFO 互斥处理；返回 -1 触发崩溃协议（ask 立即返回 0，supervisor 重启；无监督则 actor 停止）。
 
 ### 3.4 区域系统
 
@@ -275,14 +285,55 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 | 命令 | 功能 | 状态 |
 |------|------|------|
 | `zeta new <name>` | 创建新项目 | 🔲 待实现 |
-| `zeta build` | 编译项目 | ✅ 可用（MVP） |
+| `zeta build` | 编译项目 | ✅ 可用（MVP；`--target <triple>` 交叉编译，macOS 双架构已验证） |
 | `zeta run` | 编译并运行 | ✅ 可用（MVP） |
-| `zeta test` | 运行测试 | 🔧 开发中（子命令未实现，测试经 `cargo test` 驱动） |
-| `zeta bench` | 基准测试 | 🔲 待实现 |
-| `zeta doc` | 生成文档 | 🔲 待实现 |
-| `zeta fmt` | 代码格式化 | 🔲 待实现 |
-| `zeta check` | 静态分析 | 🔲 待实现 |
+| `zeta test` | 运行测试 | ✅ 可用（D1：`tests/` 目录 compile-pass/compile-fail/run-pass） |
+| `zeta fmt` | 代码格式化 | ✅ 可用（D2：AST 重建，`--check`/`-w`/`--indent`） |
+| `zeta check` | 静态分析 | ✅ 可用（D2：未使用变量/恒常条件/冗余比较/不可达代码） |
+| `zeta bench` | 基准测试 | ✅ 可用（D3：编译 + 多次计时统计，`--runs`/`--warmup`） |
+| `zeta doc` | 生成文档 | ✅ 可用（D3：`///` 注释提取 → Markdown，`--out`/`--title`） |
 | `zeta publish` | 发布包 | 🔲 待实现 |
+
+---
+
+## 5.5 编译器加固与标准库扩展（新版开发计划执行记录，2026-08）
+
+> 本节记录新版开发计划（阶段 A–F，详见 [`docs/development-plan.md`](docs/development-plan.md)）的执行进度：
+> **阶段 A 已完成（A1/A2/A4），阶段 B 全部完成（B1–B5 ✅），阶段 C 全部完成（C1–C3 ✅），阶段 D 全部完成（D1–D3 ✅：zeta test / zeta fmt / zeta check / zeta doc / zeta bench），阶段 E 的 E1 大部分完成（交叉编译 `--target` macOS 双架构 + `__zeta_target_os` 平台内建消除 `sockaddr_in4` 布局假设）**，A3 待决策，E1 Windows/ARM 工具链、E2/E3 与阶段 F 待做。
+
+- [x] **用户级 match 解构具体实例化枚举聚合载荷**（修复 `expected String, found T`：`check_pattern` Enum 分支原仅用 `ctx.generic_subst` 替换字段类型，用户级 match（非泛型方法体）subst 为空导致 `T` 未定型；修复为合并「当前 generic_subst + 由 `pat_ty` 类型参数与 `enum_def.type_params` 建立的新映射」，嵌套泛型 `Option<Vec<T>>`/`Result<Option<String>, i64>` 递归生效；`option_result_test.rs::user_level_match_string_payload` 8 断言覆盖 Some/None/Ok/Err/嵌套/方法链）
+- [x] **Infer 枚举自动定型**（修复裸 `Result::Err(7).unwrap_or(100)` 返回 `_`：`check_method_call` 参数检查时对含 `_` 的期望类型用实参 unify 回填 subst（`unify` 新增 `Type::Infer` 分支：替换 subst 中所有 Infer 条目），回填后重算签名再实例化方法；`option_result_test.rs::bare_enum_infer` 5 断言覆盖裸 Ok/Err/Some + 聚合载荷 + 算术链）
+- [x] **通用 FFI：`extern fn` 声明**（打通 parser→typecheck→HIR→MIR→LIR→LLVM→链接全链路：AST `AstFnDecl.is_extern` + parser 识别 `extern` 前缀；typecheck 允许无 body 并序列化签名（`type_to_extern_name`，标量 i8/i16/i32/i64/isize/u8/u16/u32/u64/usize/f32/f64/bool/char/()/&T）；HIR `HirFnDecl.is_extern` + `extern_sig`；MIR `MirFunction.is_extern` + `extern_sig`（空 CFG，DCE pass 跳过）；LIR `LirFunction.is_extern` + `parse_extern_type`（未知名→Ptr），extern 跳过类型推断/重算循环；codegen 对 extern 生成 `declare` 而非 `define`（`llvm_global_name`）；`ffi_extern_test.rs` 3 用例：i64（libc labs）/f64+void（fabs、srand）/嵌套+循环+运算（labs、llabs）——extern 符号由链接器解析，为 io/net 绑定层接线扫清障碍）
+- [x] **`Duration`/`Instant` 时间模块**（core.zeta 末尾；底层时钟 libc `clock()` extern（POSIX CLOCKS_PER_SEC=1e6 微秒）；`Duration { micros: i64 }` 结构体 + `secs()`/`millis()`/`micros()`/`nanos()` 单位换算（整除/乘法）；`Instant { start: i64 }` + `now()`（关联函数，`Instant { start: clock() }` 字面量构造）/`elapsed()` 返回 `Duration`（时钟差）；首例 extern 驱动标准库模块，验证 FFI 全链路可用；`time_test.rs` 3 用例：单位换算（含非整秒/零值）/字段访问+算术/now-elapsed 时钟差非负+计算执行）
+- [x] **`Vec<T>` 补充方法：`first`/`last`/`reverse`/`swap`/`binary_search`**（core.zeta Vec impl；`first`/`last` 空容器返回 `Option::None`、否则值拷贝 `Some(self.data[0])`/`self.data[len-1]`；`reverse` 双指针原地交换 O(n)；`swap(i,j)` 越界 `loop{}` 崩溃替代；`binary_search(x)` 三态二分（`data[mid] < x` / `x < data[mid]` 双比较区分，`<` 实例化后按具体类型比较——i64 数值/String 字典序），命中返回下标（最左）、未命中 -1；`vec_more_ops_test.rs` 5 用例：first/last 空+多元素/单元素、reverse+swap 原地验证、binary_search i64 边界+未命中、binary_search String（含 sort 组合）、组合链路）
+- [x] **`HashMap` `len`/`is_empty` 确认已有**（`len(&self)`/`cap`/`is_empty(&self)->bool`/`contains_key` 均已在早期实现；本轮补充 `hashmap_len_test.rs` 4 用例固化：空表+插入、同键覆盖不重复计数+remove 墓碑递减、扩容 rehash 后 len 保持+clear 归零+复用、String 键实例化；发现并删除了一次重复的 `len`/`is_empty` 定义）
+- [x] **io 模块（B2）**（core.zeta；基于 extern FFI 的 libc stdio 文件 IO：`fopen`/`fread`/`fwrite`/`fclose`/`fseek`/`ftell` + POSIX `read`（fd 0 = stdin）；`c_str` NUL 结尾拷贝（`String::with_capacity(len+1)` + push_byte(0) + 恢复 len）+ `read_file`（fseek SEEK_END + ftell 取 size + 单次 fread 读满 + 手动设 len）/`write_file`（"w" 截断）/`append_file`（"a" 追加）/`read_line`（stdin 读一行，fd 0）；**选 stdio 而非 open()**：mode 字符串 "r"/"w"/"a" 与 SEEK_SET/SEEK_END 在 C 标准层可移植，避开 open() 平台相关 flags（macOS O_CREAT=0x200 vs Linux 0x40）；**编译器改动**：extern `String` 参数在 LIR 登记为 `Str`（`parse_extern_type` 新增 `"String" => Str`），codegen sigs 增加 is_extern 标记（`HashMap<String,(Vec<LirType>,LirType,bool)>`），`emit_call` 对 extern 的 `Str` 参数生成 `bitcast 结构体指针 → load 槽 0 data 指针` 传给 libc（String 局部变量存的是结构体指针，C 侧需要 data 指针；普通函数调用不受影响）；FILE* 以 i64 承载（x86-64 ABI 指针与整数同宽）；`io_file_test.rs` 9 用例：往返+字节数（Hello Zeta! = 11 字节）/覆盖截断/追加/UTF-8 中文 16 字节往返/4096 大文件（len+首尾字节）/缺失文件空串/空文件/组合链路（写→读→拼接→再写→读）/hostname）
+- [x] **net 基础绑定（B3 部分）**（core.zeta；`gethostname` extern + `hostname()`——不依赖返回值（`gethostname` 返回 int 以 i64 声明时高位未定义），仅扫描缓冲内首个 NUL 定位实际长度（无 NUL 回退 255））
+- [x] **位运算全链路（`&`/`|`/`^`/`<<`/`>>`）**（解除 B3 剩余阻塞的核心能力：parser/AST 早已解析，typecheck 原以 placeholder `HirBinaryOp::Mod` 显式报 `Unsupported`「位运算在 MVP 阶段」且 HIR/MIR/LIR/codegen 全未实现；本轮打通：HIR `HirBinaryOp` 新增 5 变体、typecheck 真正映射（整数操作数，结果取左操作数类型）、MIR const_fold 折叠（`wrapping_shl/shr` 位移量截断 u32 兜底 poison）、LIR `binary_result_type`/操作数类型推断统一 I64、codegen 生成 `and`/`or`/`xor`/`shl`/`ashr`（右移用**算术 ashr**保持有符号语义）；`bitwise_test.rs` 6 用例：基础运算（常量折叠 + 变量两路径）/移位含负数/优先级混合（`*`>`+`>`<<`>`&`>`^`>`|`，`COMPARE > BIT_AND` 故裸 `x & 3 == 2` 解析为 bool 参与位运算需括号）/字节打包解包（端口 8080、IPv4 0xC0A8010A）/掩码应用/循环累积移位（字节流拼接 0x010203））
+- [x] **net 模块（B3 完成）**（core.zeta；位运算打通后启用：`socketpair`/`socket`/`connect`/`close`/`r#send`/`r#recv`（`send`/`recv` 为 actor 保留字，用原始标识符 `r#` 绕开）extern + `htons`（纯位运算字节交换）/`socketpair_stream`（AF_UNIX SOCK_STREAM 全双工，fd 数组承载于 `String::with_capacity(8)`）/`fd_at`（小端 int32 字节解释）/`send_all`/`recv_some`/`sockaddr_in4`（macOS 布局：sin_len 头 + AF_INET + 端口/IP 大端逐字节打包，**直接按大端拆字节而非经 htons**——htons 返回交换后的数值再拆会反向；已由 `__zeta_target_os` 平台内建双布局化，见 E1）/`tcp_connect`（socket→sockaddr→connect，失败 close 释放返回 -1）；socket/connect/close 返回 int 以 `-> i32` 声明（复用 B4 extern_ret32 清洗），send/recv 返回 ssize_t（i64）；`net_socket_test.rs` 6 用例：htons 字节序（含往返对合）/socketpair 单双向字节流/fd 数组解析/循环多包/4096 二进制块往返（循环收满防 SOCK_STREAM 分片）/sockaddr_in4 字节布局（sin_len=16、AF_INET=2、8080→[31,144]、127.0.0.1）/connect 未监听端口 127.0.0.1:1 拒绝（ECONNREFUSED 而非 EINVAL/EFAULT——验证构造的 sockaddr_in 被内核正确解析）；Linux 无 sin_len 字段——已由 E1 平台内建 `__zeta_target_os` 双布局化（`sockaddr_in4_with_layout`：macOS sin_len 头 / Linux family 小端），消除「待 cfg 支持」遗留）
+- [x] **sync 模块（B4）**（core.zeta；基于 extern FFI 绑定 pthread：`Mutex { p: i64 }` + `new`/`lock`/`unlock`/`try_lock`、`RwLock { p: i64 }` + `new`/`read_lock`/`write_lock`/`unlock`/`try_read_lock`/`try_write_lock`；原语对象承载于 `calloc` 缓冲（`pthread_mutex_t` macOS 64/Linux 40 字节、`pthread_rwlock_t` macOS 200/Linux 56 字节，统一 `calloc(1, 256)` 保守分配；**选 calloc 而非 malloc**：内建 alloc_array/alloc_bytes 已声明 `i8* @malloc`，extern 以 i64 声明会触发 LLVM redefinition；无显式释放，MVP 无析构，进程退出时 OS 回收）；Condvar/Barrier 骨架声明留注释（MVP 无函数指针无法 `pthread_create`，wait/signal 与 count>1 语义需多线程）；**编译器改动**：extern 返回 `i32` 支持（LIR `LirFunction.extern_ret32` 标记 + `parse_extern_type` 加 `"i32"` 映射；codegen sigs 表第 4 字段 + `declare i32` + 调用点 `sext i32` 存槽——根治 int 返回 extern 高位未定义问题，`trylock` 等返回值可靠）；`sync_test.rs` 6 用例：Mutex trylock EBUSY 互斥语义/临界区计数/百次循环、RwLock 读读共享+读锁下写锁 EBUSY/写锁排他/读写交替循环）
+- [x] **修复内联 pass 变量重命名 bug**（zeta-mir/passes/inline.rs；原实现仅对 `_` 开头临时变量重命名，被内联函数内**用户命名的局部变量**（如 `let r = ...`）原样保留，内联进调用者后与同名变量合并为同一槽位导致语义错误——`r.try_read_lock()` 的返回值被写回调用者 `r`，第二次调用把 0/1 当结构体指针解引用崩溃；修复为 `map_local` 对非参数名字一律重命名（`_i{seq}`），参数仍经 subst 映射到实参）
+- [x] **阶段 C：Actor 语言级接线（C1–C3 全部完成）**（`crates/zeta-driver/tests/actor_test.rs` 8 用例全绿；详见 [`docs/development-plan.md`](docs/development-plan.md) 阶段 C 执行记录）
+  - **C1 actor desugar 全链路**：`actor` 语法经 `zeta-typecheck` `expand_actor` 展开为普通结构 + 生成函数 `<Actor>::__state_new`（N 槽 calloc 缓冲 + 字段初值）/`__m<i>`（第 i 个方法：self 槽数组 + 消息槽参数）/`__handle`（按 kind 分发，槽 4/5 为 kind 与返回槽）/`__handle_message`（返回槽 5 结果）；runtime `CallbackActor` 承载（状态指针 + handler fn 指针，u64 槽语义）；方法返回 -1 = 崩溃信号（`u64::MAX` → Panic）；编译器自动生成 `zeta_actor_spawn`/`spawn_supervised`/`ask`/`send` extern 声明（**用户显式声明则跳过生成**）
+  - **C1 排障**：① 返回 -1 误触崩溃协议 → Panic 前先 `reply(0u64)`（裸字面量推断 i32 会 WrongReplyType），否则 ask 干等满 ASK_TIMEOUT ② supervisor 重启竞态：崩溃时旧 state 放回 + `running=false` 使后续消息被其他 Worker 用旧 state 处理 → 崩溃时保持 `running=true`、不放回旧 state，重启完成后重置并重新调度 ③ staticlib 陈旧：改 runtime 后需显式 `cargo build -p zeta-actor-runtime`
+  - **C2 语言级受监督 spawn**：`Actor::new_supervised(strategy)`（0=OneForOne 1=AllForOne 2=RestartForOne）→ `zeta_actor_spawn_supervised("<__handle>", "<__state_new>", strategy)`（factory 传符号名，runtime 内部 dlsym）
+  - **C2 修复 `String::from` NUL 终止 bug**：原展开 `alloc_bytes(len)`+`copy_bytes(len)` 缓冲末尾无 NUL，runtime `CStr::from_ptr` 按 NUL 扫描读超界（16 字节 `Wobbly::__handle` 读到相邻堆垃圾，17 字节 `Counter::__handle` 靠对齐运气幸存）→ `alloc_bytes(len+1)`+`copy_bytes(len+1)`（LLVM 字符串常量自带 `\00` 拷入），cap 字段保持 len
+  - **C3 示例与测试固化**：`examples/actor-ping-pong.zeta`（ask 往返 + send 异步 + FIFO，输出 11/12/2/4）、`examples/actor-supervisor.zeta`（`new_supervised(0)` 崩溃恢复，输出 5/0/3）；集成测试补 `crash_without_supervisor_stops_actor`、`send_fifo_order`
+  - **D1 `zeta test` 子命令**（`crates/zeta-driver/src/test_runner.rs`：`run_test_suite(root)` 扫描 `compile-pass/`/`compile-fail/`/`run-pass/` 三个子目录——compile-pass 编译到 LLVM IR 成功即过；compile-fail 要求编译失败，源内 `// expect: <片段>` 注释断言错误消息包含片段；run-pass 编译运行成功，同名 `.out` 文件作为期望 stdout 精确对比；用例目录可选、文件按名排序保证确定性；CLI `zeta test [<tests-dir>]` 默认 `./tests`，逐用例打印通过/失败 + 汇总 + 失败时非零退出码；**cargo 矩阵**：`crates/zeta-driver/tests/suite_test.rs` 断言 `tests/` 全部通过且三类均有覆盖；初始用例 13 个：compile-pass 5（hello/arith/struct-trait/modules/actor）+ compile-fail 5（type-mismatch/undefined-var/unknown-field/undefined-fn/no-method，均带 expect 断言）+ run-pass 3（hello/arith/actor-ping-pong + .out））
+  - **D1 连带修复 ① 模块项 pub 可见性**（`zeta-parser/src/parser.rs`）：`parse_item` 的 `Pub` 分支原仅识别 `pub mod`，其余一律按函数解析（`pub const PI` 报 `expected 'fn', found Const`）→ 按实际关键字分派到 mod/const/static/struct/enum/trait/impl/use/actor；`pub fn`（含 async/unsafe/extern 前缀）不预消费 `pub`、交回 `parse_fn` 保证 `is_pub` 正确
+  - **D1 连带修复 ② use 导入常量短名解析**（`zeta-typecheck/src/context.rs`）：`lookup_constant` 原仅按裸名查表（`use math::PI; println(PI)` 报 `undefined variable`）→ 裸名失败后回退 `use_aliases`，`resolve_full_name` 增加 `constants` 直接命中分支
+  - **D2 `zeta fmt` 格式化器**（`tools/zeta-fmt`）：解析为 AST 后按统一规范重建——顶层项空一行、块类表达式多行展开、表达式按**优先级表**重排括号保证语义不变（Assign<Or<And<BitOr<BitXor<BitAnd<Compare<Shift<Add<Mul<Cast<Unary<Postfix，右侧同优先级补括号）、字符串/字符按 lexer 转义规则重编码（`\"`/`\\`/`\n`/`\xNN`）、浮点字面量强制保留小数点、时间字面量还原（`9am`/`6pm`/`12:00`/`1:05pm`）；`AstStmt::Expr`=带分号语句 / `AstStmt::Semi`=无分号块后语句（与 parser 语义一致）；self 接收者打印 `&self`/`&mut self` 特例；注释暂不保留（MVP 基于 AST 重建）；CLI `zeta fmt <file> [--check] [-w] [--indent N]`（默认 stdout，`--check` 检查是否已格式化 exit 1，`-w` 写回）
+  - **D2 `zeta check` 静态分析器**（`tools/zeta-check`）：4 条 AST lint 规则 + parse-error——`unused-variable`（块/函数/闭包/for 作用域栈 + 遮蔽查找，`_` 通配与 self 接收者豁免）、`constant-condition`（if/while 条件为字面量或 `!字面量`）、`redundant-compare`（`==`/`!=` 两侧均为字面量）、`unreachable-code`（return/break/continue 后语句，含 `loop` 体内 break 后）；诊断格式 `line:col: level[rule]: message`；CLI `zeta check <file>`（有诊断 exit 1）
+  - **D2 driver 挂载**：`zeta-driver` 增加 `fmt`/`check` 子命令（复用 tools 库，`check_source_file` 仅静态分析不跑流水线）；两个 tools crate 各带独立 binary + 根 workspace 依赖表登记
+  - **D2 测试固化**：`zeta-fmt` 9 单测（round-trip 再解析/幂等/顶层空行/优先级括号/浮点小数点/字符串转义/时间字面量/parse-error/actor+region）、`zeta-check` 12 单测（每规则正反用例+遮蔽+参数+self 豁免+干净代码零诊断）、`crates/zeta-driver/tests/fmt_check_test.rs` 5 集成（真实源码格式化 round-trip 幂等、格式化后**编译运行语义不变**、干净代码零诊断、规则报告与行号、parse-error）；`zeta test` 13/13 全绿 + 全量回归通过
+  - **D3 `zeta doc` 文档生成器**（`tools/zeta-doc`）：按源码位置提取 `///` 文档注释（连续行合并为块，允许空行/普通注释间隔，紧邻顶层项即关联；`//!` 行作为文件级文档渲染在标题下方；无注释的项仍以签名+位置出现保证 API 目录完整）；输出 Markdown：标题 + 文件级文档 + 目录（分类标签+简短标题）+ 按类别分组正文（函数/结构体/枚举/Trait/impl/Actor/常量/模块/其他），每项渲染「标题、```zeta 签名代码块、`> 位置: line:col`、文档正文」，聚合类型附成员列表（trait/impl 方法、actor 字段与方法、mod 子项）；**签名重建**独立实现（`item_signature`/`fn_signature`/`fmt_type`/`fmt_param`：`pub`/`async`/`extern` 修饰符、泛型参数、self 接收者 `&self`/`&mut self` 特判——`self: &Self` 无法再解析）；CLI `zeta doc <file.zeta> [--out <file.md>] [--title <标题>]`
+  - **D3 `zeta bench` 基准测试框架**（`tools/zeta-bench`，纯 std 无外部依赖）：`BenchOptions { warmup, runs, quiet }`（预热轮数不计统计）；`bench_executable` 多次启动进程 `Instant` 计时、非零退出码报错；`bench_source` 接受编译回调先编译再计时；`BenchReport` 输出平均/中位数/最小/最大/样本标准差/吞吐（ops/s）类 criterion 摘要；CLI `zeta-bench <file.zeta|exe> [--runs N] [--warmup N] [--out <路径>] [--quiet]`（源码模式自定位 `zeta build`：复用当前二进制或 PATH）
+  - **D3 driver 挂载**：`zeta-driver` 增加 `doc`/`bench` 子命令（`doc_source_file` 仅文档生成不跑流水线；`zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N] [--cache-dir <dir>] [--force]` 复用 `build_file` 编译后交 `zeta_bench::bench_executable` 计时）；`DriverError` 新增 `Doc` 变体
+  - **D3 测试固化**：`zeta-doc` 5 单测（相邻 `///` 合并/`//!` 与 `///` 分离/空白与普通注释间隔关联/代码行阻断/self 签名）、`zeta-bench` 3 单测（统计计算/单样本与空样本/时长格式化）、`crates/zeta-driver/tests/doc_bench_test.rs` 9 集成（doc 注释+签名+位置提取、无注释目录、parse-error、driver 文件 API 正反、bench 统计、产物计时、编译回调链路、缺失产物报错）；`zeta doc` 对真实 `core.zeta` 输出完整目录；全量回归通过
+  - **E1 `--target` 交叉编译（macOS 双架构基础）**：编译流水线目标无关（LLVM IR → clang），交叉编译 = 链接阶段注入 triple；`zeta-driver` 新增 `host_triple()`（本机 triple）/`target_arch()`（arm64/aarch64 归一）/`is_cross_target()`；`assemble` 接受 target → clang `--target=<t>`；**Actor 运行时跨架构跳过**（本机 staticlib 无法链接其他架构，stderr 提示）；API：`build_executable_with_target`/`build_executable_file_with_target`/`IncrementalDriver.with_target`；CLI `zeta build <file> --target <triple>`（run 拒绝）；验证：同一源码编译出 arm64 + x86_64 Mach-O，本机与 Rosetta 均运行输出 `Hello, Zeta!`；Windows/ARM 链接器/库路径留待后续（`sockaddr_in4` 布局已由平台内建消除）
+  - **E1 测试固化**：`crates/zeta-driver/tests/cross_compile_test.rs` 6 集成（arch/triple 归一化、本机 target 编译运行、无 target 兼容、无效 target 报错、macOS 双架构产物 `file` 校验、std 特性程序交叉编译 Rosetta 运行）；全量回归通过
+  - **E1 平台内建 `__zeta_target_os`（消除平台相关假设）**：Zeta 无 `#[cfg]` 属性机制（词法层无 `#`），改由**驱动注入平台内建**：`target_os_code(target)`（triple→OS 码 0/1/2/3/4）+ `platform_builtin_ir` 在 assemble 写盘前注入 `define internal i32 @__zeta_target_os()`；**codegen 对 `__zeta_` 前缀 extern 跳过 declare**（防 declare+define 冲突）；`core.zeta` `extern fn __zeta_target_os() -> i32` + `sockaddr_in4_with_layout(has_sin_len, ...)` 双布局（macOS：0=sin_len(16),1=AF_INET(2)；Linux：0-1=sin_family 小端 0x0002），`sockaddr_in4` 按平台自适应——消除「Linux 无 sin_len 待 cfg 支持」遗留
+  - **E1 测试固化**：`crates/zeta-driver/tests/platform_builtin_test.rs` 4 集成（target→OS 码映射含主机、平台内建端到端接线、sockaddr_in4 双布局字节序列、双布局尾部一致性）；全量回归 104 套件通过
 
 ---
 
@@ -307,7 +358,7 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 - [x] **M2.2** 包管理器 Zep（P008：pubgrub 依赖解析 + 本地/HTTP 注册表 + 打包解包 + 构建驱动，29 测试）
 - [x] **M2.3** 增量编译引擎（源码/接口哈希 + LLVM IR 产物缓存 + 依赖图 + 多文件模块编译缓存）
 - [ ] **M2.4** LSP 服务器（IDE 支持）
-- [x] **M2.5 部分完成** 标准库核心模块：P009 完成 `Option<T>`/`Result<T,E>` 纯 Zeta 实现 + 编译器标准库搜索路径注入（`--no-std`/缓存键覆盖）+ NIO/sendfile 绑定层；**collections 已落地 `Vec<T>` + `String` + `HashMap<K,V>`**（`Vec<T>`：`new`/`with_capacity` + `push`/`pop`/`get`/`set`/`len`/`cap`/`is_empty` + `v[i]` 索引读写（`check_index` 解 `Vec<T>` 类型参数，步长 8）+ `for x in v` 容器迭代 + 自动扩容 + `contains`/`remove`/`insert`/`clear`/`find`/`sort` 常用操作 + 内建 `alloc_array`/`array_copy`/`array_free`，`vec_test.rs` 6 用例 + `vec_for_test.rs` 6 用例 + `vec_common_ops_test.rs` 6 用例 + `vec_find_sort_test.rs` 6 用例；`String`：UTF-8 字节缓冲（3 槽布局）+ `String::from("字面量")`/`new`/`with_capacity` + `println(String)`（`%.*s`）+ `len`/`cap`/`is_empty`/`get`/`push_byte`/`push_str` + `a + b` 拼接运算符 + 字节级 `s[i]` 索引（步长 1）+ `s1 == s2`/`!=` 内容相等比较（len 短路 + `bytes_eq` 内建 = `memcmp == 0`）+ `s1 < s2`/`>`/`<=`/`>=` 字典序比较（`bytes_cmp` 内建 = `memcmp` 有符号扩展 i64，desugar 为前缀 memcmp + 长度兜底）+ `substring(start, end)` 子串截取（[start, end) 字节区间 + 越界 clamp）+ `find(sub)`/`contains(sub)` 子串查找（朴素滑动窗口，未命中 -1 / 空子串 0）+ 范围切片语法 `s[lo..<hi]`/`s[lo...hi]`/`s[lo<..hi]`（typecheck 层 `check_slice` desugar 为 `String::substring`：`..<` 直通、`...` 闭区间 end+1、`<..` 左开 start+1，仅 String）/ + `to_upper`/`to_lower` 大小写转换（比较链区间 ±32，非 ASCII 不转换）+ `trim` 首尾空白剥离（双扫描 + substring）+ `starts_with`/`ends_with` 前后缀判断（逐字节比较 + 空前缀恒真 + 长于自身恒假）+ `replace` 子串替换（滑动窗口 + 空 old 特判防死循环）+ 顶层 `int_to_string`/`string_to_int` 数值互转（位权除法逐位输出 / 逐字符累加 + 负号 + 遇非数字停止）+ `split` 分割返回 `Vec<String>`（滑动窗口 + 空 sep 特判）/ `repeat` 重复拼接 / `pad_start`/`pad_end` 字节填充 / `strip_prefix`/`strip_suffix` 前后缀剥离返回 `Option<String>` / `truncate` 截断 / + 内建 `alloc_bytes`/`copy_bytes`/`bytes_eq`/`bytes_cmp`/`print_string`/`println_string`，`string_test.rs` 6 用例 + `string_eq_test.rs` 6 用例 + `string_concat_test.rs` 6 用例 + `string_cmp_test.rs` 6 用例 + `string_slice_test.rs` 6 用例 + `string_slice_syntax_test.rs` 6 用例 + `string_case_trim_test.rs` 6 用例 + `string_common_ops_test.rs` 6 用例 + `string_conv_test.rs` 6 用例 + `string_split_pad_test.rs` 6 用例 + `string_strip_trunc_test.rs` 6 用例；`HashMap<K,V>`：开放寻址线性探测 + 墓碑删除 + 翻倍 rehash（负载 1/2）+ 6 槽布局（keys/vals/states/len/used/cap）+ 内建 `hash_value`（整数键 Knuth 乘法散列 / String 键 djb2 内容哈希）+ 构造器特判展开 + `for (k, v) in m` 元组模式迭代 + `keys()`/`values()` 键值集收集 + `clear()` 完全重置（容量不变），`hashmap_test.rs` 6 用例 + `hashmap_for_test.rs` 6 用例 + `hashmap_string_key_test.rs` 7 用例 + `hashmap_keys_clear_test.rs` 6 用例）；io/net/sync 待完成
+- [x] **M2.5 部分完成** 标准库核心模块：P009 完成 `Option<T>`/`Result<T,E>` 纯 Zeta 实现 + 编译器标准库搜索路径注入（`--no-std`/缓存键覆盖）+ NIO/sendfile 绑定层；**collections 已落地 `Vec<T>` + `String` + `HashMap<K,V>`**（`Vec<T>`：`new`/`with_capacity` + `push`/`pop`/`get`/`set`/`len`/`cap`/`is_empty` + `v[i]` 索引读写（`check_index` 解 `Vec<T>` 类型参数，步长 8）+ `for x in v` 容器迭代 + 自动扩容 + `contains`/`remove`/`insert`/`clear`/`find`/`sort` 常用操作 + 内建 `alloc_array`/`array_copy`/`array_free`，`vec_test.rs` 6 用例 + `vec_for_test.rs` 6 用例 + `vec_common_ops_test.rs` 6 用例 + `vec_find_sort_test.rs` 6 用例；`String`：UTF-8 字节缓冲（3 槽布局）+ `String::from("字面量")`/`new`/`with_capacity` + `println(String)`（`%.*s`）+ `len`/`cap`/`is_empty`/`get`/`push_byte`/`push_str` + `a + b` 拼接运算符 + 字节级 `s[i]` 索引（步长 1）+ `s1 == s2`/`!=` 内容相等比较（len 短路 + `bytes_eq` 内建 = `memcmp == 0`）+ `s1 < s2`/`>`/`<=`/`>=` 字典序比较（`bytes_cmp` 内建 = `memcmp` 有符号扩展 i64，desugar 为前缀 memcmp + 长度兜底）+ `substring(start, end)` 子串截取（[start, end) 字节区间 + 越界 clamp）+ `find(sub)`/`contains(sub)` 子串查找（朴素滑动窗口，未命中 -1 / 空子串 0）+ 范围切片语法 `s[lo..<hi]`/`s[lo...hi]`/`s[lo<..hi]`（typecheck 层 `check_slice` desugar 为 `String::substring`：`..<` 直通、`...` 闭区间 end+1、`<..` 左开 start+1，仅 String）/ + `to_upper`/`to_lower` 大小写转换（比较链区间 ±32，非 ASCII 不转换）+ `trim` 首尾空白剥离（双扫描 + substring）+ `starts_with`/`ends_with` 前后缀判断（逐字节比较 + 空前缀恒真 + 长于自身恒假）+ `replace` 子串替换（滑动窗口 + 空 old 特判防死循环）+ 顶层 `int_to_string`/`string_to_int` 数值互转（位权除法逐位输出 / 逐字符累加 + 负号 + 遇非数字停止）+ `split` 分割返回 `Vec<String>`（滑动窗口 + 空 sep 特判）/ `repeat` 重复拼接 / `pad_start`/`pad_end` 字节填充 / `strip_prefix`/`strip_suffix` 前后缀剥离返回 `Option<String>` / `truncate` 截断 / + 内建 `alloc_bytes`/`copy_bytes`/`bytes_eq`/`bytes_cmp`/`print_string`/`println_string`，`string_test.rs` 6 用例 + `string_eq_test.rs` 6 用例 + `string_concat_test.rs` 6 用例 + `string_cmp_test.rs` 6 用例 + `string_slice_test.rs` 6 用例 + `string_slice_syntax_test.rs` 6 用例 + `string_case_trim_test.rs` 6 用例 + `string_common_ops_test.rs` 6 用例 + `string_conv_test.rs` 6 用例 + `string_split_pad_test.rs` 6 用例 + `string_strip_trunc_test.rs` 6 用例；`HashMap<K,V>`：开放寻址线性探测 + 墓碑删除 + 翻倍 rehash（负载 1/2）+ 6 槽布局（keys/vals/states/len/used/cap）+ 内建 `hash_value`（整数键 Knuth 乘法散列 / String 键 djb2 内容哈希）+ 构造器特判展开 + `for (k, v) in m` 元组模式迭代 + `keys()`/`values()` 键值集收集 + `clear()` 完全重置（容量不变），`hashmap_test.rs` 6 用例 + `hashmap_for_test.rs` 6 用例 + `hashmap_string_key_test.rs` 7 用例 + `hashmap_keys_clear_test.rs` 6 用例 + `hashmap_len_test.rs` 4 用例，`len`/`is_empty` 已固化（见 5.5/B5））；**补充（见 5.5）**：`Vec<T>` 新增 `first`/`last`/`reverse`/`swap`/`binary_search`（`vec_more_ops_test.rs` 5 用例）；新增 `Duration`/`Instant` 时间模块（libc `clock()` extern 驱动，`time_test.rs` 3 用例）；**io 模块 ✅（B2）**：libc stdio 文件 IO + `read_file`/`write_file`/`append_file`/`read_line`（`io_file_test.rs` 9 用例）；**net 模块 ✅（B3）**：`hostname()` + `htons` + `socketpair_stream`/`fd_at`/`send_all`/`recv_some`/`sockaddr_in4`/`tcp_connect`（依赖本轮位运算全链路，`net_socket_test.rs` 6 用例，见 5.5）；**sync 模块 ✅（B4）**：`Mutex`/`RwLock`（pthread extern + calloc 承载，`sync_test.rs` 6 用例），Condvar/Barrier 待线程创建支持（见 5.5）
 - [ ] **M2.6** 交叉编译（macOS, Windows, ARM）
 - [ ] **M2.7** WASM 目标支持
 - [x] **M2.8 分配器侧完成** 智能区域（P010：静态大小推断 + PGO 画像/推荐 + EWMA 自适应扩容 + 碎片/事件统计 + 编译器集成报告）；PGO 数据回灌编译流程待完成
@@ -320,7 +371,7 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 - [x] **`for (k, v) in m` HashMap 元组模式迭代**（`check_for` 分派新增 HashMap 分支 → `check_for_hashmap`：`AstPattern::Tuple` 二元标识符模式解构 + typecheck 层 desugar 为稀疏索引遍历——绑定容器 `__for_m` + 缓存容量 `__for_cap`（槽 5）+ 计数器 `__for_i` + `loop { if __for_i >= __for_cap { break } if __for_m.states[__for_i] != 1 { __for_i += 1; continue } let k = __for_m.keys[__for_i]; let v = __for_m.vals[__for_i]; __for_i += 1; body }`，`states` 跳槽跳过空槽/墓碑（0/2），K/V 各自经泛型替换取 `field_scalar_of`；`hashmap_for_test.rs` 6 用例：求和/计数/删除后跳槽/空 map/扩容 rehash 后遍历/f64 值类型；遍历顺序与插入无关，测试全部用求和或计数断言）
 - [x] **`String` 内容相等比较 `==`/`!=`**（comparison.rs 单比较分支对 `String == String` desugar：绑定操作数到唯一临时变量（防重复求值）+ `s1.len == s2.len && bytes_eq(s1.data, s2.data, s1.len)`，`!=` 取 `Not` 反转；新增内建 `bytes_eq`（typecheck builtin_signature `(Infer, Infer, I64) -> Bool` / LIR BUILTIN_FUNCTIONS 返回 Bool / codegen `declare i32 @memcmp(i8*, i8*, i64)` + `call` + `icmp eq i32, 0` 存 i1）；其他聚合对象（Vec/结构体）的 `==`/`!=` 报 Unsupported（MVP 仅 String）；`string_eq_test.rs` 6 用例：同内容相等/异内容同长度不等/长度不等短路/前缀相同长度不同/中间字节不同/if 分支/复杂表达式操作数）
 - [x] **修复：LIR 嵌套 Binary 比较结果错登记为 i64 槽**（既有 bug：`icmp`/`fcmp` 恒产生 i1，但 `lower_operand` 拆平嵌套 Binary 时 `fresh_temp(binary_operand_type)` 对比较运算登记 I64，导致 `let x = a < b` / `println(a == b)` 生成 `store i64 %i1` 类型错误；修复：`binary_operand_type` 保持操作数类型语义，新增 `binary_result_type`（比较/逻辑 → Bool，算术 → 操作数类型），`fresh_temp` 登记结果类型）
-- [x] **`HashMap` 字符串键（djb2 内容哈希）**（check_expr.rs builtin 检查处 `hash_value(s)` 参数为 String → 特判 desugar 为纯 Zeta djb2 哈希 HIR 块：绑定 `__s` → 槽 0 data 指针 + 槽 1 len → `__h = 5381` + `loop { if __i >= __len { break } let __b = __data[__i]（字节索引步长 1，LIR 层 zext i64）；__h = __h * 33 + __b; __i += 1 }` → 返回 I64；同内容字符串恒同哈希保证探测链正确，乘法 LLVM mul wrapping 回绕；无新增内建/LIR/codegen 改动，泛型实例化 `HashMap<String,V>` 后 `hash()`/`find()` 键比较 `==` 走内容相等）；`hashmap_string_key_test.rs` 7 用例：insert/get/contains_key/同内容不同对象哈希一致/同键覆盖/remove 墓碑/12 键扩容 rehash/未命中/for 元组迭代）\n- [x] **`HashMap` 键值集/清空：`keys()` + `values()` + `clear()`**（core.zeta 纯 Zeta 泛型 impl 方法；`keys()`/`values()` 稀疏遍历全部槽位收集 `states == 1`（存活）的键/值为 `Vec<K>`/`Vec<V>`——`let mut ks: Vec<K> = Vec::new();` 带泛型参数注解定型（`Vec::new()` Infer 占位需上下文，`grow` 的 `[K; 0]` 先例），遍历顺序与插入无关（开放寻址），同槽位遍历保证 keys 与 values 顺序一致，墓碑/空槽跳过；`clear()` 完全重置——重开三数组（容量不变）替换旧缓冲并 free，`len`/`used` 归零，墓碑与旧数据全部丢弃（与 `remove` 逐键墓碑不同，后续插入即全新探测链，无墓碑堆积拖慢））；`hashmap_keys_clear_test.rs` 6 用例：clear 基本（3 键清空后 len/is_empty/contains_key 全空 + 重新插入可查）/clear 保持容量（cap 8 清空后仍 8 + 复用 4 键不扩容无墓碑残留）/keys 基本（5 键扩容后键集 sort 逐位断言 10→50）/keys String 键（字典序 sort + 与 values 等长同遍历）/values 基本（重复值 + sort 断言 + 与键数一致）/组合（insert + remove 墓碑后 keys/values 只含存活 4 键 + clear 终态键集空））\n- [x] **`Option`/`Result` 补充方法：`expect` + `is_err` + `unwrap_or`**（core.zeta 纯 Zeta 泛型 impl 方法；`Option::expect(msg)`/`Result::expect(msg)` Some/Ok 返回载荷、None/Err 以 `loop {}` 充当崩溃替代（消息参数保留对齐 Rust 语义，MVP 不打印）；`Result::is_err` match 分派 Ok→0/Err→1（与 is_ok 互补）；`Option/Result::unwrap_or(default)` match 分派 Some/Ok 返回载荷、None/Err 返回 default）；为让 expect 的 `msg: String` 参数可引用，`struct String` 定义前移文件顶部（类型符号顺序解析无前向引用）；`option_result_test.rs` 6 用例：Option expect Some 路径（i64/String 双实例化 + 参与算术与比较）/Option unwrap_or 默认值（Some 自身/None 默认/i64 实例化）/Result is_err（Ok→0/Err→1/与 is_ok 互补和恒 1）/Result unwrap_or（Ok 载荷/Err 默认/i64 实例化）/Result expect Ok 路径（载荷 + 算术比较）/组合（带显式类型注解的 Result<i64,i64>/Option<i64> 混合链路 + expect 载荷走 String 方法））\n- [ ] **编译器已知 bug：枚举聚合载荷 + 方法返回路径**（`Option<String>`/`Result<String,E>` 等**聚合载荷**实例化下，`unwrap_or` 的 match 分支返回 default（参数/局部 String）会得到损坏值（垃圾指针数字）；`expect` 的 Some/Ok 分支返回载荷正常、i64 实例化全部正常。根因线索：`field_scalar_of(聚合)=Ptr`——枚举载荷以指针存于 `1 + max_fields` 槽（String 载荷仅 1 字段槽），match 解构恢复聚合的「返回非载荷来源聚合」路径在 codegen 层损坏。纯 Zeta 全部变体（result 变量/match 空分支/局部中转/if+unwrap）均无法绕过；**String 场景请用 `expect`**，`unwrap_or` 仅标量实例化可靠。另：main/顶层函数 `match` 解构具体实例化枚举的聚合载荷报 `expected String, found T`（泛型替换未下沉到用户级 match，仅 std 泛型方法体路径正常）；`Option::Some(10)` 等部分 Infer 类型参数枚举 + 泛型方法实例化需显式类型注解。修复待编译器深水区排查）
+- [x] **`HashMap` 字符串键（djb2 内容哈希）**（check_expr.rs builtin 检查处 `hash_value(s)` 参数为 String → 特判 desugar 为纯 Zeta djb2 哈希 HIR 块：绑定 `__s` → 槽 0 data 指针 + 槽 1 len → `__h = 5381` + `loop { if __i >= __len { break } let __b = __data[__i]（字节索引步长 1，LIR 层 zext i64）；__h = __h * 33 + __b; __i += 1 }` → 返回 I64；同内容字符串恒同哈希保证探测链正确，乘法 LLVM mul wrapping 回绕；无新增内建/LIR/codegen 改动，泛型实例化 `HashMap<String,V>` 后 `hash()`/`find()` 键比较 `==` 走内容相等）；`hashmap_string_key_test.rs` 7 用例：insert/get/contains_key/同内容不同对象哈希一致/同键覆盖/remove 墓碑/12 键扩容 rehash/未命中/for 元组迭代）\n- [x] **`HashMap` 键值集/清空：`keys()` + `values()` + `clear()`**（core.zeta 纯 Zeta 泛型 impl 方法；`keys()`/`values()` 稀疏遍历全部槽位收集 `states == 1`（存活）的键/值为 `Vec<K>`/`Vec<V>`——`let mut ks: Vec<K> = Vec::new();` 带泛型参数注解定型（`Vec::new()` Infer 占位需上下文，`grow` 的 `[K; 0]` 先例），遍历顺序与插入无关（开放寻址），同槽位遍历保证 keys 与 values 顺序一致，墓碑/空槽跳过；`clear()` 完全重置——重开三数组（容量不变）替换旧缓冲并 free，`len`/`used` 归零，墓碑与旧数据全部丢弃（与 `remove` 逐键墓碑不同，后续插入即全新探测链，无墓碑堆积拖慢））；`hashmap_keys_clear_test.rs` 6 用例：clear 基本（3 键清空后 len/is_empty/contains_key 全空 + 重新插入可查）/clear 保持容量（cap 8 清空后仍 8 + 复用 4 键不扩容无墓碑残留）/keys 基本（5 键扩容后键集 sort 逐位断言 10→50）/keys String 键（字典序 sort + 与 values 等长同遍历）/values 基本（重复值 + sort 断言 + 与键数一致）/组合（insert + remove 墓碑后 keys/values 只含存活 4 键 + clear 终态键集空））\n- [x] **`Option`/`Result` 补充方法：`expect` + `is_err` + `unwrap_or`**（core.zeta 纯 Zeta 泛型 impl 方法；`Option::expect(msg)`/`Result::expect(msg)` Some/Ok 返回载荷、None/Err 以 `loop {}` 充当崩溃替代（消息参数保留对齐 Rust 语义，MVP 不打印）；`Result::is_err` match 分派 Ok→0/Err→1（与 is_ok 互补）；`Option/Result::unwrap_or(default)` match 分派 Some/Ok 返回载荷、None/Err 返回 default）；为让 expect 的 `msg: String` 参数可引用，`struct String` 定义前移文件顶部（类型符号顺序解析无前向引用）；`option_result_test.rs` 6 用例：Option expect Some 路径（i64/String 双实例化 + 参与算术与比较）/Option unwrap_or 默认值（Some 自身/None 默认/i64 实例化）/Result is_err（Ok→0/Err→1/与 is_ok 互补和恒 1）/Result unwrap_or（Ok 载荷/Err 默认/i64 实例化）/Result expect Ok 路径（载荷 + 算术比较）/组合（带显式类型注解的 Result<i64,i64>/Option<i64> 混合链路 + expect 载荷走 String 方法））\n- [x] **修复：枚举聚合载荷 + 方法返回路径**（`Option<String>`/`Result<String,E>` 等**聚合载荷**实例化下，`unwrap_or` 的 match 分支返回 default（参数/局部 String）曾得到损坏值（垃圾指针数字）；`expect` 的 Some/Ok 分支返回载荷正常、i64 实例化全部正常。根因线索：`field_scalar_of(聚合)=Ptr`——枚举载荷以指针存于 `1 + max_fields` 槽（String 载荷仅 1 字段槽），match 解构恢复聚合的「返回非载荷来源聚合」路径在 codegen 层损坏（R4 排查后经 codegen 改动意外修复）。**已验证修复**：`option_result_test.rs::unwrap_or_string_aggregate` 覆盖 None/Some/Err/Ok 全分支返回 default/载荷 + String 方法链（len/to_upper/==）/拼接/循环，全部正确，`option_result_test.rs` 现 7 用例。另：`Option::Some(10)` 等部分 Infer 类型参数枚举 + 泛型方法实例化需显式类型注解——**已修复**（见下「编译器加固」条目））
 - [x] **`String` 拼接 `+` 运算符 + `push_str`**（core.zeta 纯 Zeta 实现 `fn push_str(&mut self, other: String)`：逐字节 `other.data[i]` → `push_byte`（自动扩容迁移），值参数 3 槽拷贝共享缓冲；check_expr.rs `ExprKind::Binary` 分支对 `Add` + 双侧 String 特判 desugar 为 `let __s = a; __s.push_str(b); __s`——`__s` 为 mutable 临时绑定，`push_str` 经 `find_impl_for_method` + `instantiate_impl_method` 实例化注册函数体（mono_instances 防递归重复），返回左侧操作数类型；链式 `a + b + c` 左结合递归展开；`is_string_type` 提升为 `pub(crate)` 供 check_expr 复用）；`string_concat_test.rs` 6 用例：基本拼接/链式拼接/拼接结果字节索引/内容相等比较/push_str 直接调用/多次拼接触发扩容（cap 6→12→24））
 - [x] **`String` 字典序比较 `<`/`>`/`<=`/`>=`**（新增内建 `bytes_cmp`（typecheck 签名 `(Infer, Infer, I64) -> I64` / LIR BUILTIN_FUNCTIONS 返回 I64 / codegen `call i32 @memcmp` + `sext i32 to i64` 保留符号）；comparison.rs 单比较分支对 String 排序操作跳过数值类型检查直接 desugar：`string_lt_hir` 绑定 `__a`/`__b` → 槽 1 长度 + min（`if __la >= __lb { __n = __lb }` 控制流赋值）+ `__c = bytes_cmp(__a.data, __b.data, __n)` → `__c < 0 || (__c == 0 && __la < __lb)`；`>` 交换操作数、`<=`/`>=` 取 `Not` 反转）；`string_cmp_test.rs` 6 用例：等长前缀不同定大小/前缀相同长度兜底/完全相等四方向/不等四方向 + == 回归/拼接复杂表达式操作数/if 分支 + 三串取最大）
 - [x] **`String` 子串/查找：`substring` + `find` + `contains`**（core.zeta 纯 Zeta 方法；`substring(start, end)` 截取 [start, end) 字节区间——start/end 越界 clamp 到 [0, len]、start >= end 空串，`String::new()` 特判展开 + 逐字节 `push_byte`（自动扩容）拷贝到新缓冲，原字符串不受影响；`find(sub)` 朴素滑动窗口匹配返回首次出现下标（未命中 -1、空子串 0），`result` 变量返回规避 while 块后 `-1` 被解析为减法；`contains(sub)` = `find(sub) >= 0`）；`string_slice_test.rs` 6 用例：基本截取/越界 clamp/find 命中-未命中-空子串/contains 真假 + 自身包含/`find` 下标喂 `substring` 组合提取/拼接 + 子串链式）
@@ -361,7 +412,7 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 
 ### 7.2 Zeta 代码（标准库 + 示例）
 
-- 使用 `zeta fmt` 格式化（语言确定后实现）
+- 使用 `zeta fmt` 格式化（D2 已实现：`zeta fmt <file.zeta> [-w]`）
 - 文件扩展名：`.zeta`
 - 模块声明：`mod foo { ... }`
 - 导入：`use foo::bar;`
@@ -412,18 +463,16 @@ fn test_comparison_chain_tokens() {
 
 ```
 tests/
-├── compile-pass/    ← 应该编译通过的用例
-│   ├── basic-types.zeta
-│   ├── region-basic.zeta
-│   └── actor-simple.zeta
-├── compile-fail/    ← 应该编译失败的用例（含预期错误信息）
-│   ├── borrowck-double-mut.zeta
-│   ├── region-escape.zeta
-│   └── comparison-chain-invalid.zeta
-└── run-pass/         ← 编译并运行，检查输出
-    ├── hello-world.zeta
-    ├── sort-bench.zeta
-    └── actor-pingpong.zeta
+├── compile-pass/    ← 应该编译通过的用例（编译到 LLVM IR，不运行）
+│   ├── hello.zeta / arith.zeta / struct-trait.zeta
+│   ├── modules.zeta / actor.zeta
+├── compile-fail/    ← 应该编译失败的用例（`// expect: <片段>` 断言错误消息）
+│   ├── type-mismatch.zeta / undefined-var.zeta / unknown-field.zeta
+│   └── undefined-fn.zeta / no-method.zeta
+└── run-pass/         ← 编译并运行，同名 `.out` 文件精确对比输出
+    ├── hello.zeta (+ hello.out)
+    ├── arith.zeta (+ arith.out)
+    └── actor-ping-pong.zeta (+ actor-ping-pong.out)
 ```
 
 ### 8.3 基准测试

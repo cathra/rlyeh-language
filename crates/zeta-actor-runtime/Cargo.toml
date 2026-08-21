@@ -5,11 +5,13 @@ edition.workspace = true
 
 [lib]
 path = "src/lib.rs"
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 crossbeam-channel = "0.5"
 crossbeam-queue = "0.3"
 dashmap.workspace = true
+libc = "0.2"
 thiserror.workspace = true
 uuid = { version = "1", features = ["v4"] }
 

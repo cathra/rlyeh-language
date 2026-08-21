@@ -2,18 +2,21 @@
 //! + enum / trait / impl 收集）。
 
 use zeta_ast::{
-    AstEnumDecl, AstFnDecl, AstImplBlock, AstItem, AstModDecl, AstProgram, AstStructDecl,
-    AstTraitDecl, AstUseDecl,
+    AstActorDecl, AstEnumDecl, AstFnDecl, AstImplBlock, AstItem, AstModDecl, AstProgram,
+    AstStructDecl, AstTraitDecl, AstUseDecl,
 };
-use zeta_hir::{HirConstDecl, HirFnDecl, HirItem, HirItemKind, HirParam, HirProgram};
+use zeta_hir::{
+    FieldScalar, HirBinaryOp, HirBlock, HirConstDecl, HirExpr, HirFnDecl, HirItem, HirItemKind,
+    HirParam, HirProgram, HirStmt,
+};
 use zeta_lexer::Span;
 
 use crate::check_expr::{check_block, infer_expr, resolve_ast_type};
 use crate::context::{FnTemplate, TypeContext};
 use crate::error::TypeError;
 use crate::types::{
-    EnumDef, FnSignature, ImplDef, ImplMethod, MethodSig, Mutability, StructDef, TraitDef, Type,
-    VariantDef,
+    field_scalar_of, EnumDef, FnSignature, ImplDef, ImplMethod, MethodSig, Mutability, StructDef,
+    TraitDef, Type, VariantDef,
 };
 
 /// 类型检查完整程序。
@@ -83,6 +86,7 @@ fn collect_item_decls(
         AstItem::EnumDecl(e) => collect_enum(ctx, e, prefix)?,
         AstItem::TraitDecl(t) => collect_trait(ctx, t, prefix)?,
         AstItem::ImplBlock(imp) => collect_impl(ctx, imp, prefix)?,
+        AstItem::ActorDecl(a) => collect_actor(ctx, a, prefix)?,
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
             for inner in &m.items {
@@ -98,6 +102,30 @@ fn collect_item_decls(
         _ => {}
     }
     Ok(())
+}
+
+/// 将 typecheck 类型序列化为 extern 签名类型名（LIR 侧解析为 `LirType`）。
+/// MVP 仅支持标量类型与单元类型；引用参数视为标量指针（按值传递数字）。
+fn type_to_extern_name(ty: &Type) -> String {
+    match ty {
+        Type::I8 => "i8".into(),
+        Type::I16 => "i16".into(),
+        Type::I32 => "i32".into(),
+        Type::I64 => "i64".into(),
+        Type::ISize => "isize".into(),
+        Type::U8 => "u8".into(),
+        Type::U16 => "u16".into(),
+        Type::U32 => "u32".into(),
+        Type::U64 => "u64".into(),
+        Type::USize => "usize".into(),
+        Type::F32 => "f32".into(),
+        Type::F64 => "f64".into(),
+        Type::Bool => "bool".into(),
+        Type::Char => "char".into(),
+        Type::Unit => "()".into(),
+        Type::Ref(inner, _) => format!("&{inner}"),
+        t => t.to_string(),
+    }
 }
 
 /// 注册 use 导入别名（`use path::to::item [as alias];`）。
@@ -143,9 +171,27 @@ pub(crate) fn check_item(
                     name: p.name.clone(),
                 })
                 .collect();
+            // extern 声明：序列化签名（参数类型名 + 返回类型名）供 LIR 解析
+            let extern_sig = if f.is_extern {
+                let sig = crate::check_item::fn_signature_with_self(ctx, f, None, f.span)?;
+                Some((
+                    sig.params
+                        .iter()
+                        .map(type_to_extern_name)
+                        .collect::<Vec<_>>(),
+                    type_to_extern_name(&sig.return_type),
+                ))
+            } else {
+                None
+            };
             out.push(HirItem {
                 name: full_name(prefix, &f.name),
-                kind: HirItemKind::Fn(HirFnDecl { params, body }),
+                kind: HirItemKind::Fn(HirFnDecl {
+                    params,
+                    body,
+                    is_extern: f.is_extern,
+                    extern_sig,
+                }),
             });
         }
         AstItem::ConstDecl(c) => {
@@ -164,9 +210,11 @@ pub(crate) fn check_item(
                 check_item(ctx, inner, &new_prefix, out)?;
             }
         }
+        // actor：展开为状态初始化函数 + 方法函数 + dispatch handle + runtime extern 声明
+        AstItem::ActorDecl(a) => expand_actor(ctx, a, prefix, out)?,
         // use 导入在收集阶段（第一遍）已注册；其余项 MVP 阶段不生成 HIR
         AstItem::UseDecl(_) | AstItem::StructDecl(_) | AstItem::TraitDecl(_)
-        | AstItem::ImplBlock(_) | AstItem::EnumDecl(_) | AstItem::ActorDecl(_)
+        | AstItem::ImplBlock(_) | AstItem::EnumDecl(_)
         | AstItem::MacroDecl(_) | AstItem::Statement(_) => {}
     }
     Ok(())
@@ -190,6 +238,344 @@ fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Res
     ctx.generic_subst = saved_subst;
     ctx.insert_struct(full_name(prefix, &s.name), StructDef { fields });
     Ok(())
+}
+
+/// 收集 actor 定义（查重 + 字段/方法 MVP 限制校验 + 注册）。
+fn collect_actor(ctx: &mut TypeContext, a: &AstActorDecl, prefix: &str) -> Result<(), TypeError> {
+    let full = full_name(prefix, &a.name);
+    if ctx.structs.contains_key(&full)
+        || ctx.enum_defs.contains_key(&full)
+        || ctx.trait_defs.contains_key(&full)
+        || ctx.actors.contains_key(&full)
+    {
+        return Err(TypeError::Unsupported {
+            what: format!("重复定义 `{full}`（已存在同名 struct/enum/trait/actor）"),
+            span: a.span,
+        });
+    }
+
+    let saved_params = std::mem::take(&mut ctx.type_params);
+    let saved_subst = std::mem::take(&mut ctx.generic_subst);
+
+    // 字段：类型必须为 MVP 标量（i64/f64/bool/char），且必须有默认值（spawn 时初始化状态）
+    for f in &a.fields {
+        let ty = resolve_ast_type(ctx, &f.type_, f.span)?;
+        if !is_actor_scalar_type(&ty) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "actor 字段类型 {}（MVP 阶段仅支持标量 i64/f64/bool/char）",
+                    ty
+                ),
+                span: f.span,
+            });
+        }
+        if f.default.is_none() {
+            return Err(TypeError::Unsupported {
+                what: format!("actor 字段 `{}` 缺少默认值（spawn 时按默认值初始化状态）", f.name),
+                span: f.span,
+            });
+        }
+    }
+
+    // 方法：参数 ≤ 3（对应消息槽 a/b/c）且类型为 i64（MVP 消息槽整数协议）；
+    // 必须显式声明返回类型（MVP 为 i64，保证 dispatch handle 返回类型统一）
+    for m in &a.methods {
+        if m.params.len() > 3 {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "actor 方法 `{}` 参数超过 3 个（MVP 阶段消息协议仅 3 个参数槽）",
+                    m.name
+                ),
+                span: m.span,
+            });
+        }
+        for p in &m.params {
+            let ty = resolve_ast_type(ctx, &p.type_, p.span)?;
+            if !matches!(ty, Type::I64) {
+                return Err(TypeError::Unsupported {
+                    what: format!(
+                        "actor 方法参数类型 {}（MVP 阶段消息协议仅支持 i64 参数）",
+                        ty
+                    ),
+                    span: p.span,
+                });
+            }
+        }
+        let ret_ty = match &m.return_type {
+            Some(rt) => resolve_ast_type(ctx, rt, m.span)?,
+            None => {
+                return Err(TypeError::Unsupported {
+                    what: format!(
+                        "actor 方法 `{}` 缺少返回类型（MVP 阶段必须声明 `-> i64`）",
+                        m.name
+                    ),
+                    span: m.span,
+                })
+            }
+        };
+        if !matches!(ret_ty, Type::I64) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "actor 方法返回类型 {}（MVP 阶段仅支持 i64）",
+                    ret_ty
+                ),
+                span: m.span,
+            });
+        }
+    }
+
+    ctx.type_params = saved_params;
+    ctx.generic_subst = saved_subst;
+    ctx.actors.insert(full, a.clone());
+    Ok(())
+}
+
+/// MVP 阶段 actor 字段允许的标量类型。
+fn is_actor_scalar_type(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::I64 | Type::F64 | Type::Bool | Type::Char
+    )
+}
+
+/// actor 展开（check 阶段）：生成状态初始化函数 + 方法函数 + dispatch handle
+/// + `zeta_actor_*` runtime extern 声明，全部为普通 HirItem，
+/// 下游 MIR / LIR / codegen 复用现有机制。
+fn expand_actor(
+    ctx: &mut TypeContext,
+    a: &AstActorDecl,
+    prefix: &str,
+    out: &mut Vec<HirItem>,
+) -> Result<(), TypeError> {
+    let actor_full = full_name(prefix, &a.name);
+    let state_new = format!("{actor_full}::__state_new");
+    let handle = format!("{actor_full}::__handle");
+
+    // 1. runtime extern 声明（程序级去重）
+    emit_actor_runtime_externs(ctx, out);
+
+    // 2. 字段槽布局：名称 → 标量种类（状态结构体 = 槽数组）
+    let mut slots: Vec<(String, FieldScalar)> = Vec::new();
+    let mut field_tys: Vec<(String, Type)> = Vec::new();
+    for f in &a.fields {
+        let ty = resolve_ast_type(ctx, &f.type_, f.span)?;
+        let scalar = field_scalar_of(&ty);
+        slots.push((f.name.clone(), scalar));
+        field_tys.push((f.name.clone(), ty));
+    }
+
+    // 3. 状态初始化函数 `<actor>::__state_new() -> i64`
+    //    `let __s = alloc(N); set(__s, 0, v0); ...; __s`
+    let saved = std::mem::take(&mut ctx.variables);
+    let mut stmts = vec![HirStmt::Let {
+        name: "__s".to_string(),
+        init: HirExpr::Alloc { slots: slots.len() },
+        mutable: true,
+    }];
+    for (idx, f) in a.fields.iter().enumerate() {
+        let (v_hir, v_ty) = infer_expr(ctx, f.default.as_ref().unwrap())?;
+        if !v_ty.compatible_with(&field_tys[idx].1) {
+            return Err(TypeError::WrongType {
+                expected: field_tys[idx].1.to_string(),
+                found: v_ty.to_string(),
+                span: f.span,
+            });
+        }
+        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable("__s".to_string())),
+            index: idx,
+            value: Box::new(v_hir),
+            ty: slots[idx].1,
+        }));
+    }
+    ctx.variables = saved;
+    out.push(HirItem {
+        name: state_new.clone(),
+        kind: HirItemKind::Fn(HirFnDecl {
+            params: vec![],
+            body: Some(HirBlock {
+                stmts,
+                final_expr: Some(HirExpr::Variable("__s".to_string())),
+            }),
+            is_extern: false,
+            extern_sig: None,
+        }),
+    });
+
+    // 4. 方法函数 `<actor>::__m<i>(self, p0, p1, p2) -> i64`
+    //    签名固定 4 个 i64 参数（self = 状态指针 + 3 个消息槽），
+    //    handle 按位置传参；body 内 `self` 绑定状态指针、字段访问走 actor 分支。
+    for (i, m) in a.methods.iter().enumerate() {
+        let m_name = format!("{actor_full}::__m{i}");
+        let mut params = vec![HirParam {
+            name: "self".to_string(),
+        }];
+        for p in &m.params {
+            params.push(HirParam {
+                name: p.name.clone(),
+            });
+        }
+        for j in params.len()..4 {
+            params.push(HirParam {
+                name: format!("__p{j}"),
+            });
+        }
+        let body = check_actor_method_body(ctx, m, &actor_full)?;
+        out.push(HirItem {
+            name: m_name,
+            kind: HirItemKind::Fn(HirFnDecl {
+                params,
+                body: Some(body),
+                is_extern: false,
+                extern_sig: None,
+            }),
+        });
+    }
+
+    // 5. dispatch handle `<actor>::__handle(self, kind, a, b, c) -> i64`
+    //    按方法索引分发；未命中（kind 越界）返回 -1 = u64::MAX 崩溃信号。
+    out.push(HirItem {
+        name: handle.clone(),
+        kind: HirItemKind::Fn(HirFnDecl {
+            params: (0..5)
+                .map(|j| HirParam {
+                    name: ["self", "kind", "a", "b", "c"][j].to_string(),
+                })
+                .collect(),
+            body: Some(HirBlock {
+                stmts: vec![],
+                final_expr: Some(build_actor_dispatch(ctx, a, &actor_full, 0)),
+            }),
+            is_extern: false,
+            extern_sig: None,
+        }),
+    });
+
+    let _ = &state_new;
+    Ok(())
+}
+
+/// 递归构造 dispatch：`if kind == i { return m_i(self, a, b, c); } else { ... }`，
+/// 方法耗尽时尾表达式为 `-1`（未命中方法 → 崩溃信号 u64::MAX）。
+fn build_actor_dispatch(
+    ctx: &TypeContext,
+    a: &AstActorDecl,
+    actor_full: &str,
+    idx: usize,
+) -> HirExpr {
+    if idx >= a.methods.len() {
+        return HirExpr::IntLiteral(-1);
+    }
+    let m_name = format!("{actor_full}::__m{idx}");
+    let call = HirExpr::Call {
+        callee: m_name,
+        args: vec![
+            HirExpr::Variable("self".to_string()),
+            HirExpr::Variable("a".to_string()),
+            HirExpr::Variable("b".to_string()),
+            HirExpr::Variable("c".to_string()),
+        ],
+    };
+    let then_block = HirBlock {
+        stmts: vec![HirStmt::Semi(HirExpr::Return(Some(Box::new(call))))],
+        final_expr: None,
+    };
+    // else 分支以递归 if 为块尾表达式（值传递），
+    // 底层 `IntLiteral(-1)` 必须经 final_expr 产出，否则该路径无值 → MIR 生成 `ret void`。
+    let else_block = HirBlock {
+        stmts: vec![],
+        final_expr: Some(build_actor_dispatch(ctx, a, actor_full, idx + 1)),
+    };
+    HirExpr::If {
+        cond: Box::new(HirExpr::Binary(
+            HirBinaryOp::Eq,
+            Box::new(HirExpr::Variable("kind".to_string())),
+            Box::new(HirExpr::IntLiteral(idx as i128)),
+        )),
+        then_block: Box::new(then_block),
+        else_block: Some(Box::new(else_block)),
+    }
+}
+
+/// 检查 actor 方法体：`self` 隐式绑定状态指针（类型为 actor 名），
+/// 参数入作用域，检查块，返回类型一致性（方法与生成函数均返回 i64）。
+fn check_actor_method_body(
+    ctx: &mut TypeContext,
+    m: &AstFnDecl,
+    actor_full: &str,
+) -> Result<zeta_hir::HirBlock, TypeError> {
+    let saved = std::mem::take(&mut ctx.variables);
+    ctx.insert_variable(
+        "self".to_string(),
+        Type::Named(actor_full.to_string(), vec![]),
+    );
+    for p in &m.params {
+        let ty = resolve_ast_type(ctx, &p.type_, m.span)?;
+        ctx.insert_variable(p.name.clone(), ty);
+    }
+
+    // actor 方法必须有函数体（extern 声明不适用）
+    let body = m.body.as_ref().ok_or_else(|| TypeError::MissingFunctionBody {
+        name: format!("{actor_full}::{}", m.name),
+        span: m.span,
+    })?;
+    let (hir_body, body_ty) = check_block(ctx, body)?;
+
+    // 返回类型一致性（collect 阶段已限定 i64）
+    let return_type = fn_signature_with_self(ctx, m, None, m.span)?.return_type;
+    if body_ty != Type::Never && !body_ty.compatible_with(&return_type) {
+        ctx.variables = saved;
+        return Err(TypeError::WrongType {
+            expected: return_type.to_string(),
+            found: body_ty.to_string(),
+            span: m.span,
+        });
+    }
+
+    ctx.variables = saved;
+    Ok(hir_body)
+}
+
+/// 生成 `zeta_actor_*` runtime extern 声明（程序级去重，多 actor 只生成一份）。
+fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
+    let specs: &[(&str, &[&str], &str)] = &[
+        ("zeta_actor_spawn", &["String", "i64"], "i64"),
+        // supervised 的 factory 是符号名字符串（runtime 内部 dlsym 解析）
+        ("zeta_actor_spawn_supervised", &["String", "String", "i64"], "i64"),
+        ("zeta_actor_ask", &["i64", "i64", "i64", "i64", "i64"], "i64"),
+        // send 返回 i32（runtime 消息 ID）：extern_ret32 标记 → `declare i32` + sext
+        ("zeta_actor_send", &["i64", "i64", "i64", "i64", "i64"], "i32"),
+        ("zeta_actor_stop", &["i64"], "i64"),
+        ("zeta_actor_shutdown", &[], "i64"),
+    ];
+    for (name, args, ret) in specs {
+        if !ctx.generated_actor_externs.insert((*name).to_string()) {
+            continue;
+        }
+        // 用户源码已显式声明同名 extern → 跳过（避免 LLVM 重复 declare），
+        // 且用户声明已注册进函数表，源码内的显式调用可正常解析。
+        if ctx.lookup_fn_signature(name).is_some() {
+            continue;
+        }
+        out.push(HirItem {
+            name: (*name).to_string(),
+            kind: HirItemKind::Fn(HirFnDecl {
+                params: args
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| HirParam {
+                        name: format!("__a{i}"),
+                    })
+                    .collect(),
+                body: None,
+                is_extern: true,
+                extern_sig: Some((
+                    args.iter().map(|s| s.to_string()).collect(),
+                    (*ret).to_string(),
+                )),
+            }),
+        });
+    }
 }
 
 /// 收集枚举定义（变体 + 字段类型 + 对象槽数布局）。
@@ -464,8 +850,8 @@ pub(crate) fn check_fn_body_with_self(
     let body = match &f.body {
         Some(b) => b,
         None => {
-            // trait 抽象方法允许无函数体
-            if f.is_pub {
+            // trait 抽象方法 / extern 声明允许无函数体
+            if f.is_pub || f.is_extern {
                 return Ok(None);
             }
             return Err(TypeError::MissingFunctionBody {

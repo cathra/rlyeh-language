@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use zeta_hir::HirExpr;
 use zeta_lexer::Span;
 
-use zeta_ast::AstFnDecl;
+use zeta_ast::{AstActorDecl, AstFnDecl};
 
 use crate::error::TypeError;
 use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, TraitDef, Type};
@@ -56,6 +56,10 @@ pub struct TypeContext {
     pub use_aliases: HashMap<String, String>,
     /// 模块常量表（完整符号名 → (HIR 值, 类型)，如 `"math::MAX"`）
     pub constants: HashMap<String, (HirExpr, Type)>,
+    /// Actor 定义表（完整符号名 → 声明，如 `"Counter"` / `"math::Counter"`）
+    pub actors: HashMap<String, AstActorDecl>,
+    /// 已生成的 `zeta_actor_*` extern 声明名（actor 展开去重用）
+    pub generated_actor_externs: std::collections::HashSet<String>,
     /// 当前检查的模块前缀（顶层为空串，`mod math` 内为 `"math"`）
     pub module_prefix: String,
     /// 当前作用域的泛型参数名（如 `["T"]`）
@@ -118,20 +122,35 @@ impl TypeContext {
         self.constants.insert(name, (value, type_));
     }
 
-    /// 查找模块常量。
+    /// 查找模块常量（支持短名 → 完整名解析，与 struct/actor 一致：
+    /// 裸名查表，失败后回退 `use` 导入别名）。
     pub fn lookup_constant(&self, name: &str) -> Option<&(HirExpr, Type)> {
-        self.constants.get(name)
+        if let Some(v) = self.constants.get(name) {
+            return Some(v);
+        }
+        self.resolve_full_name(name)
+            .and_then(|full| self.constants.get(&full))
     }
 
     /// 将局部名解析为完整符号名。
     ///
-    /// 优先级：直接存在的符号名（函数 / 结构体）→ use 导入别名。
+    /// 优先级：直接存在的符号名（函数 / 结构体 / actor / 常量）→ use 导入别名。
     /// 无法解析时返回 `None`（由调用方决定如何报错）。
     pub fn resolve_full_name(&self, name: &str) -> Option<String> {
-        if self.structs.contains_key(name) || self.fn_signatures.contains_key(name) {
+        if self.structs.contains_key(name)
+            || self.fn_signatures.contains_key(name)
+            || self.actors.contains_key(name)
+            || self.constants.contains_key(name)
+        {
             return Some(name.to_string());
         }
         self.use_aliases.get(name).cloned()
+    }
+
+    /// 按名字查找 actor 定义（支持短名 → 完整名解析，与 struct 一致）。
+    pub fn lookup_actor(&self, name: &str) -> Option<&AstActorDecl> {
+        self.resolve_full_name(name)
+            .and_then(|full| self.actors.get(&full))
     }
 
     /// 解析一个具名类型（查结构体 / 枚举 / 别名 / 预置内置类型名）。

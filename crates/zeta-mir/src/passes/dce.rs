@@ -9,6 +9,10 @@ use std::collections::HashSet;
 /// 对程序执行死代码消除。
 pub fn dead_code_elimination(program: &mut MirProgram) {
     for f in &mut program.functions {
+        if f.is_extern {
+            // extern 声明无函数体，跳过（避免空 blocks 索引越界）
+            continue;
+        }
         remove_unreachable_blocks(f);
         remove_dead_assignments(f);
     }

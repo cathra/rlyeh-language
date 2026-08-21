@@ -48,8 +48,13 @@ pub enum HirItemKind {
 pub struct HirFnDecl {
     /// 参数列表（仅保留名称，类型在类型签名表）
     pub params: Vec<HirParam>,
-    /// 函数体（抽象方法为 `None`）
+    /// 函数体（抽象方法 / extern 声明为 `None`）
     pub body: Option<HirBlock>,
+    /// 是否为 extern 外部函数声明（无函数体，符号由链接器解析）
+    pub is_extern: bool,
+    /// extern 函数签名（参数类型名 + 返回类型名，LIR 侧解析为 `LirType`）；
+    /// 非 extern 为 `None`。
+    pub extern_sig: Option<(Vec<String>, String)>,
 }
 
 /// 函数参数。
@@ -342,6 +347,16 @@ pub enum HirBinaryOp {
     And,
     /// `||`
     Or,
+    /// `&`（位与）
+    BitAnd,
+    /// `|`（位或）
+    BitOr,
+    /// `^`（位异或）
+    BitXor,
+    /// `<<`（左移）
+    Shl,
+    /// `>>`（算术右移，有符号语义）
+    Shr,
 }
 
 /// HIR 一元运算符。

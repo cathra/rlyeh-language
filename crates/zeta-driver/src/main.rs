@@ -3,11 +3,17 @@
 //! ```text
 //! zeta run <file.zeta>                          # 编译并运行（增量缓存）
 //! zeta build <file.zeta> [-o <out>]             # 编译为可执行文件（增量缓存）
+//! zeta test [<tests-dir>]                       # 运行 tests/ 目录用例（默认 ./tests）
 //! zeta run|build <file> --force                 # 忽略缓存，强制全量编译
 //! zeta run|build <file> --cache-dir <dir>       # 指定缓存根目录（默认源文件所在目录）
 //! zeta run|build <file> --no-std                # 不注入标准库预置（core.zeta）
 //! zeta run|build <file> --verbose               # 打印缓存命中/未命中与统计
+//! zeta build <file> --target <triple>           # 交叉编译（如 arm64-apple-macosx / x86_64-apple-macosx）
 //! ```
+//!
+//! `zeta test` 扫描 `<tests-dir>/compile-pass|compile-fail|run-pass` 三个子目录：
+//! compile-pass 要求编译成功；compile-fail 要求编译失败（源内 `// expect:` 注释断言
+//! 错误消息片段）；run-pass 要求编译运行成功（同名 `.out` 文件作为期望输出对比）。
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -56,11 +62,65 @@ fn main() -> ExitCode {
             let out = opts.take_out().unwrap_or_else(|| PathBuf::from("zeta-out"));
             match build_file(file, &out, &opts) {
                 Ok(()) => {
-                    println!("编译完成: {}", out.display());
+                    match &opts.target {
+                        Some(t) => println!("编译完成: {}（目标 {t}）", out.display()),
+                        None => println!("编译完成: {}", out.display()),
+                    }
                     ExitCode::SUCCESS
                 }
                 Err(e) => {
                     eprintln!("错误: {e}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Some("test") => {
+            let dir = args
+                .get(2)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("tests"));
+            let summary = zeta_driver::test_runner::run_test_suite(&dir);
+            for r in &summary.results {
+                let mark = if r.passed { "通过" } else { "失败" };
+                println!("[{mark}] {:<26} {}", r.name, r.detail.lines().next().unwrap_or(""));
+                if !r.passed {
+                    for line in r.detail.lines().skip(1) {
+                        println!("       {line}");
+                    }
+                }
+            }
+            println!(
+                "测试汇总: 共 {} 用例, 通过 {}, 失败 {}",
+                summary.total, summary.passed, summary.failed
+            );
+            if summary.failed > 0 {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Some("fmt") => run_fmt(&args[2..]),
+        Some("doc") => run_doc(&args[2..]),
+        Some("bench") => run_bench(&args[2..]),
+        Some("check") => {
+            let Some(file) = args.get(2) else {
+                eprintln!("用法: zeta check <file.zeta>");
+                return ExitCode::from(2);
+            };
+            match zeta_driver::check_source_file(std::path::Path::new(file)) {
+                Ok(diags) if diags.is_empty() => {
+                    println!("{file}: ok");
+                    ExitCode::SUCCESS
+                }
+                Ok(diags) => {
+                    for d in &diags {
+                        eprintln!("{file}: {}", d.render());
+                    }
+                    eprintln!("{file}: {} 条诊断", diags.len());
+                    ExitCode::FAILURE
+                }
+                Err(e) => {
+                    eprintln!("zeta check: {e}");
                     ExitCode::FAILURE
                 }
             }
@@ -74,7 +134,12 @@ fn main() -> ExitCode {
                 "Zeta 编译器（MVP）\n\
                  用法:\n  \
                  zeta run <file.zeta> [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译并运行\n  \
-                 zeta build <file.zeta> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译为可执行文件\n  \
+                 zeta build <file.zeta> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
+                 zeta test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
+                 zeta fmt <file.zeta> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
+                 zeta check <file.zeta> 静态分析（未使用变量/恒常条件/冗余比较/不可达代码）\n  \
+                 zeta doc <file.zeta> [--out <file.md>] [--title <标题>] 提取 /// 注释生成 Markdown 文档\n  \
+                 zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N] 编译并基准计时\n  \
                  zeta --version 版本信息"
             );
             ExitCode::from(2)
@@ -82,13 +147,14 @@ fn main() -> ExitCode {
     }
 }
 
-/// CLI 选项（缓存目录 / 强制全量 / 禁用标准库 / 详细输出 / 自定义产物路径）。
+/// CLI 选项（缓存目录 / 强制全量 / 禁用标准库 / 详细输出 / 自定义产物路径 / 交叉编译目标）。
 struct CliOpts {
     cache_dir: PathBuf,
     force: bool,
     no_std: bool,
     verbose: bool,
     out: Option<PathBuf>,
+    target: Option<String>,
 }
 
 impl CliOpts {
@@ -103,6 +169,7 @@ impl CliOpts {
         let mut no_std = false;
         let mut verbose = false;
         let mut out = None;
+        let mut target = None;
 
         let mut i = 0;
         while i < args.len() {
@@ -115,6 +182,11 @@ impl CliOpts {
                 "--force" => force = true,
                 "--no-std" => no_std = true,
                 "--verbose" => verbose = true,
+                "--target" => {
+                    i += 1;
+                    let t = args.get(i).ok_or("--target 需要 LLVM 目标 triple（如 arm64-apple-macosx / wasm32-wasi）")?;
+                    target = Some(t.clone());
+                }
                 "-o" => {
                     i += 1;
                     let o = args.get(i).ok_or("-o 需要路径参数")?;
@@ -130,6 +202,7 @@ impl CliOpts {
             no_std,
             verbose,
             out,
+            target,
         })
     }
 
@@ -141,6 +214,12 @@ impl CliOpts {
 
 /// 增量编译运行入口文件（自动加载 `mod foo;` 外部模块）。
 fn run_file(path: &str, opts: &CliOpts) -> Result<String, DriverError> {
+    if opts.target.is_some() {
+        return Err(DriverError::Usage(
+            "`zeta run` 不支持 --target（交叉编译产物无法在本机运行，请用 `zeta build --target ...`）"
+                .to_string(),
+        ));
+    }
     let mut driver = new_driver(opts);
     let (stdout, outcome) = driver.run_source_file(Path::new(path))?;
     if opts.verbose {
@@ -164,6 +243,7 @@ fn new_driver(opts: &CliOpts) -> IncrementalDriver {
     IncrementalDriver::new(opts.cache_dir.clone())
         .with_force(opts.force)
         .with_no_std(opts.no_std)
+        .with_target(opts.target.clone())
 }
 
 /// 打印缓存命中/未命中与统计（`--verbose`）。
@@ -185,4 +265,283 @@ fn report(outcome: &zeta_driver::BuildOutcome) {
             String::new()
         }
     );
+}
+
+/// `zeta fmt`：格式化源码（默认 stdout；`--check` 检查是否已格式化；`-w` 写回）。
+fn run_fmt(args: &[String]) -> ExitCode {
+    let mut file: Option<String> = None;
+    let mut check = false;
+    let mut write = false;
+    let mut indent = 4;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--check" => check = true,
+            "-w" | "--write" => write = true,
+            "--indent" => {
+                i += 1;
+                let Some(v) = args.get(i) else {
+                    eprintln!("zeta fmt: --indent 需要数值参数");
+                    return ExitCode::from(2);
+                };
+                match v.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= 16 => indent = n,
+                    _ => {
+                        eprintln!("zeta fmt: 非法缩进宽度 '{v}'");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            s if s.starts_with('-') => {
+                eprintln!("zeta fmt: 未知选项 '{s}'");
+                return ExitCode::from(2);
+            }
+            s => {
+                if file.is_some() {
+                    eprintln!("zeta fmt: 仅支持单个输入文件");
+                    return ExitCode::from(2);
+                }
+                file = Some(s.to_string());
+            }
+        }
+        i += 1;
+    }
+    let Some(file) = file else {
+        eprintln!("用法: zeta fmt <file.zeta> [--check] [-w|--write] [--indent N]");
+        return ExitCode::from(2);
+    };
+
+    let src = match std::fs::read_to_string(&file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("zeta fmt: 无法读取 {file}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let opts = zeta_fmt::FmtOptions { indent_width: indent };
+    let formatted = match zeta_fmt::format_source_with_options(&src, &opts) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("zeta fmt: {file}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if check {
+        if formatted == src {
+            println!("{file}: 已格式化");
+            ExitCode::SUCCESS
+        } else {
+            eprintln!("{file}: 需要格式化");
+            ExitCode::from(1)
+        }
+    } else if write {
+        match std::fs::write(&file, &formatted) {
+            Ok(()) => {
+                println!("{file}: 已格式化");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("zeta fmt: 无法写入 {file}: {e}");
+                ExitCode::from(1)
+            }
+        }
+    } else {
+        print!("{formatted}");
+        ExitCode::SUCCESS
+    }
+}
+
+/// `zeta doc`：提取 `///` 文档注释生成 Markdown（默认 stdout，`--out` 写文件）。
+fn run_doc(args: &[String]) -> ExitCode {
+    let mut file: Option<String> = None;
+    let mut out: Option<PathBuf> = None;
+    let mut title: Option<String> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--out" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => out = Some(PathBuf::from(v)),
+                    None => {
+                        eprintln!("zeta doc: --out 缺少参数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--title" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => title = Some(v.clone()),
+                    None => {
+                        eprintln!("zeta doc: --title 缺少参数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            s if s.starts_with('-') => {
+                eprintln!("zeta doc: 未知选项 '{s}'");
+                return ExitCode::from(2);
+            }
+            s => {
+                if file.is_some() {
+                    eprintln!("zeta doc: 仅支持单个输入文件");
+                    return ExitCode::from(2);
+                }
+                file = Some(s.to_string());
+            }
+        }
+        i += 1;
+    }
+    let Some(file) = file else {
+        eprintln!("用法: zeta doc <file.zeta> [--out <file.md>] [--title <标题>]");
+        return ExitCode::from(2);
+    };
+
+    let options = zeta_doc::DocOptions {
+        title: title.or_else(|| {
+            Path::new(&file)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| format!("{s} — Zeta 文档"))
+        }),
+    };
+    let doc = match zeta_driver::doc_source_file(Path::new(&file), &options) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("zeta doc: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    match &out {
+        Some(p) => {
+            if let Err(e) = std::fs::write(p, &doc) {
+                eprintln!("zeta doc: 无法写入 {}: {e}", p.display());
+                return ExitCode::from(1);
+            }
+            println!("已生成: {}", p.display());
+            ExitCode::SUCCESS
+        }
+        None => {
+            print!("{doc}");
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+/// `zeta bench`：编译源码并基准计时（`--runs`/`--warmup` 控制轮数）。
+fn run_bench(args: &[String]) -> ExitCode {
+    let mut file: Option<String> = None;
+    let mut out: Option<PathBuf> = None;
+    let mut runs = 10usize;
+    let mut warmup = 2usize;
+    let mut force = false;
+    let mut cache_dir: Option<PathBuf> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => out = Some(PathBuf::from(v)),
+                    None => {
+                        eprintln!("zeta bench: -o 缺少参数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--runs" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<usize>().ok()) {
+                    Some(v) if v > 0 => runs = v,
+                    _ => {
+                        eprintln!("zeta bench: --runs 需要正整数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--warmup" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.parse::<usize>().ok()) {
+                    Some(v) => warmup = v,
+                    _ => {
+                        eprintln!("zeta bench: --warmup 需要非负整数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--cache-dir" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => cache_dir = Some(PathBuf::from(v)),
+                    None => {
+                        eprintln!("zeta bench: --cache-dir 缺少参数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--force" => force = true,
+            s if s.starts_with('-') => {
+                eprintln!("zeta bench: 未知选项 '{s}'");
+                return ExitCode::from(2);
+            }
+            s => {
+                if file.is_some() {
+                    eprintln!("zeta bench: 仅支持单个输入文件");
+                    return ExitCode::from(2);
+                }
+                file = Some(s.to_string());
+            }
+        }
+        i += 1;
+    }
+    let Some(file) = file else {
+        eprintln!("用法: zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N]");
+        return ExitCode::from(2);
+    };
+
+    let out = out.unwrap_or_else(|| PathBuf::from("zeta-out"));
+    let cache_dir = cache_dir.unwrap_or_else(|| {
+        Path::new(&file)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+    let opts = CliOpts {
+        cache_dir,
+        force,
+        no_std: false,
+        verbose: false,
+        out: None,
+        target: None,
+    };
+
+    if let Err(e) = build_file(&file, &out, &opts) {
+        eprintln!("zeta bench: 编译失败: {e}");
+        return ExitCode::from(1);
+    }
+
+    let bench_opts = zeta_bench::BenchOptions {
+        warmup,
+        runs,
+        quiet: false,
+    };
+    match zeta_bench::bench_executable(&out, &bench_opts) {
+        Ok(report) => {
+            println!("基准: {file}");
+            println!("产物: {}", out.display());
+            println!("{report}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("zeta bench: {e}");
+            ExitCode::from(1)
+        }
+    }
 }

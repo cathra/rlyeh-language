@@ -72,6 +72,13 @@ fn fold_binary(op: HirBinaryOp, lhs: &MirValue, rhs: &MirValue) -> Option<MirVal
             Le => Some(MirValue::Bool(a <= b)),
             Gt => Some(MirValue::Bool(a > b)),
             Ge => Some(MirValue::Bool(a >= b)),
+            // 位运算：&/|/^ 直接按 i128 位操作；移位位移量截断为 u32，
+            // 超出位宽由 wrapping_* 按 LLVM poison 语义（结果为 0 / 全 1）兜底。
+            BitAnd => Some(MirValue::Int(a & b)),
+            BitOr => Some(MirValue::Int(a | b)),
+            BitXor => Some(MirValue::Int(a ^ b)),
+            Shl => Some(MirValue::Int(a.wrapping_shl(*b as u32))),
+            Shr => Some(MirValue::Int(a.wrapping_shr(*b as u32))),
             And | Or => None, // 类型不匹配，保守不折叠
         },
         (MirValue::Bool(a), MirValue::Bool(b)) => match op {

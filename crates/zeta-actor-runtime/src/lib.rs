@@ -52,6 +52,7 @@ mod actor;
 mod builtin;
 mod envelope;
 mod error;
+mod ffi;
 mod runtime;
 mod scheduler;
 mod supervisor;

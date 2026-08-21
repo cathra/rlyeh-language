@@ -69,6 +69,8 @@ pub struct AstFnDecl {
     pub is_pub: bool,
     /// 是否为 `async`
     pub is_async: bool,
+    /// 是否为 `extern`（外部函数声明，无函数体）
+    pub is_extern: bool,
     /// 源码位置
     pub span: Span,
 }

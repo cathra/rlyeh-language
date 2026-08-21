@@ -237,10 +237,19 @@ impl RuntimeHandle {
                 let _ = state.on_stop();
                 return;
             };
-            handle.running.store(false, Ordering::Release);
-            handle.state = Some(state);
-            if crash.is_none() && stop_after {
-                handle.status.store(ActorStatus::Stopping.as_u8(), Ordering::Release);
+            if crash.is_some() {
+                // 崩溃：不放回旧 state（丢弃，由重启的新 state 替代），
+                // 并保持 running=true，防止其他 Worker 在 supervisor 重启
+                // 完成前取到旧 handle 处理后续消息（否则新消息会被旧 state
+                // 处理，重启语义失效）。重启完成后由 handle_crash 之后的
+                // 分支重置 running 并重新调度。
+                handle.state = None;
+            } else {
+                handle.running.store(false, Ordering::Release);
+                handle.state = Some(state);
+                if stop_after {
+                    handle.status.store(ActorStatus::Stopping.as_u8(), Ordering::Release);
+                }
             }
             drop(handle);
         }
@@ -250,6 +259,13 @@ impl RuntimeHandle {
 
         if let Some(e) = crash {
             self.handle_crash(id, e);
+            // 重启完成：新 handle（running=false）已就位。若邮箱仍有消息
+            // （崩溃前已入队或崩溃期间新入队且被 running=true 挡住），
+            // 重新调度该 Actor 处理。无 supervisor 的 Stop 分支已 remove_actor。
+            if self.actors.contains_key(&id) && !mailbox.is_empty() {
+                sched.pending_add();
+                sched.push_local(worker_id, id);
+            }
         } else if stop_after || stop_requested {
             self.remove_actor(id);
         } else if requeue {
