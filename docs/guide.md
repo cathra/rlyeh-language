@@ -118,9 +118,17 @@ loop {
     if done { break; }
     continue;
 }
+
+for i in 0..<10 {        // 数值区间循环：半开 [0, 10)，i 取 0..=9
+    println(i);          // 0 1 2 ... 9
+}
+
+for j in 1...3 {         // 双闭区间 [1, 3]
+    println(j);          // 1 2 3
+}
 ```
 
-`match` 用于枚举解构（见 §5.2）。
+`for` 支持数值区间（步长固定为 1）与 Vec / HashMap 容器迭代：`for x in vec`（见 §10.3）、`for (k, v) in map`（见 §10.4）；**数组迭代暂不支持**。`break` / `continue` 均可用。`match` 用于枚举解构（见 §5.2）。
 
 ### 3.4 注释
 
@@ -261,13 +269,17 @@ use math::square as sq;
 
 ### 8.1 L0：所有权与借用
 
-> **MVP 状态**：L0 仅实现了**移动语义**（值拷贝/移动）与**方法接收者** `&self` / `&mut self`。
-> `&x` 引用表达式、`&T` 参数类型、解引用 `*` 在 MVP 阶段**未实现**（typecheck 显式报 Unsupported），属规划特性。
+> **MVP 状态**：L0 已实现**移动语义**（值拷贝/移动）、**方法接收者** `&self` / `&mut self`，以及**引用类型与表达式**（G1 ✅）：`&T`/`&mut T` 类型、`&x`/`&mut x` 表达式、`*` 解引用、参数与返回引用。
+> 引用内存模型：标量 `&x` 存 `i8*` 值槽（`*p` 读写时按标量种类 bitcast），聚合引用拷贝对象指针；字段访问/方法调用自动剥掉引用层（`p.x` / `v.len()` 免显式解引用）。
+> 借用规则采用宽松版：`&mut T` 可传给 `&T` 参数；严格可变性互斥 / 悬垂 / 别名检查（borrowck）与 `ref` 模式仍规划中。
+> 用户顶层函数与 std 预置根函数重名时（如自定义 `fn read` 与 std extern `read`），用户侧声明自动以 `read@shadow<N>` 内部名注册，std 模块内部裸名调用仍绑定 std 版本，用户代码绑定自身版本，互不干扰。
 
 ```zeta
 let s = String::from("hello");
-let t = s;               // 移动：s 语义上不可再用（值拷贝语义）
-// let r = &t;           // MVP 不支持 & 表达式（规划）
+let t = s;               // 值拷贝：3 槽结构体复制，共享底层数据缓冲，s 仍可用
+let r = &t;              // 取不可变引用（标量/聚合均可）
+fn first_char_len(s: &String) -> i64 { s.len() }   // 参数引用，方法调用自动剥离引用层
+let n = *r;              // 显式解引用（标量）
 ```
 
 ### 8.2 L1：区域（Region）
@@ -370,50 +382,61 @@ print(x);                  // 同 println 但不换行
 
 ### 10.2 String
 
+> **注意**：String 类型的函数参数需用 `String::from("...")` 构造（裸字符串字面量仅在 `String::from` 与 `println` / `print` 内建等特判位置可用）。
+>
+> **`&str` 只读借用视图（G2）**：`s.as_str()` 返回对 String 内容的只读借用（零拷贝，运行时为指向 String 对象的瘦指针）；`&str` 支持 `len()` / 字节索引 `r[i]` / `substring`（拷贝）/ 内容比较，也可作为函数参数（`&String` 与 `&str` 均可传入）与返回值。`String::from` 三类参数：字面量（编译期长度）、运行期 `String` 变量（`≡ s.clone()` 深拷贝）、`&str` 视图（读 data/len 槽深拷贝）。
+
 ```zeta
 let s = String::from("Hello, Zeta");
-s.len                       // 字节长度
+s.len                       // 字节长度（.len 字段 / .len() 方法均可）
 s[0]                        // 按字节索引
 s.substring(0, 5)           // "Hello"
-s.contains("Zeta")          // true
-s.starts_with("Hello")      // true
-s.replace("Hello", "Hi")    // "Hi, Zeta"
+let r = s.as_str();         // &str 只读借用视图
+r.len()                     // 15
+r[1]                        // 101（'e'，按字节索引）
+String::from(r)             // 深拷贝 &str → 独立 String
+s.contains(String::from("Zeta"))                  // true
+s.starts_with(String::from("Hello"))              // true
+s.replace(String::from("Hello"), String::from("Hi"))   // "Hi, Zeta"
 s.to_upper() / s.to_lower() / s.trim()
-s.split(",")                // Vec<String>
+s.split(String::from(","))                        // Vec<String>
 s.repeat(3)
-s.strip_prefix("Hello")     // Option<String>
+s.strip_prefix(String::from("Hello"))             // Option<String>
 s.truncate(5)
 int_to_string(42)           // "42"
-string_to_int("42")         // 42
+string_to_int(String::from("42"))   // 42
 ```
 
 ### 10.3 Vec
 
 ```zeta
-let mut v = Vec::new();
+let mut v: Vec<i64> = Vec::new();   // 建议显式类型注解（`sort` 等泛型方法需要定型）
 v.push(10); v.push(20); v.push(30);
-v.len / v.is_empty / v.cap
-v[0] / v.get(i) / v.set(i, x)
-v.pop()                     // Option<T>
-v.contains(20)              // bool
-v.find(20)                  // 下标，未找到 -1
+v.len / v.cap                // 字段；v.is_empty() 为方法（需括号）
+v[0] / v.set(i, x)           // 索引读写
+v.get(i)                     // 按索引取值（返回 T 而非 Option；越界为未定义行为）
+v.pop()                      // Option<T>
+v.contains(20)               // bool
+v.find(20)                   // 下标，未找到 -1
 v.remove(i) / v.insert(i, x)
 v.sort() / v.reverse() / v.swap(i, j)
-v.first() / v.last()        // Option<T>
-v.binary_search(20)         // 最左下标，未找到 -1
+v.first() / v.last()         // Option<T>
+v.binary_search(20)          // 最左下标，未找到 -1
 v.clear()
+for x in v { }               // 容器迭代（仅 Vec / HashMap）
 ```
 
 ### 10.4 HashMap
 
 ```zeta
-let mut m = HashMap::new();
-m.insert("k", 42);
-m.contains_key("k")         // bool
-m.get("k")                  // Option<V>
-m.remove("k")               // Option<V>
-m.len / m.is_empty / m.cap
+let mut m: HashMap<String, i64> = HashMap::new();
+m.insert(String::from("k"), 42);
+m.contains_key(String::from("k"))   // bool
+m.get(String::from("k"))            // Option<V>
+m.remove(String::from("k"))         // Option<V>
+m.len / m.cap               // 字段；m.is_empty() 为方法（需括号）
 m.clear()
+for (k, v) in m { }         // 容器迭代
 ```
 
 ### 10.5 Option / Result
@@ -422,7 +445,7 @@ m.clear()
 let x = Some(10);
 x.is_some() / x.is_none()
 x.unwrap()                  // 10
-x.unwrap_or(0) / x.expect("msg")
+x.unwrap_or(0) / x.expect(String::from("msg"))
 
 let r: Result<i64, i64> = Ok(7);
 r.is_ok() / r.is_err()
@@ -432,10 +455,10 @@ r.unwrap() / r.unwrap_or(0)
 ### 10.6 文件 IO
 
 ```zeta
-let content = read_file("data.txt");       // 读整个文件；失败返回空串
-write_file("out.txt", content);            // 截断写；返回字节数，失败 -1
-append_file("log.txt", line);              // 追加；返回字节数，失败 -1
-let line = read_line();                    // 从 stdin 读一行（不含换行符）
+let content = read_file(String::from("data.txt"));   // 读整个文件；失败返回空串
+write_file(String::from("out.txt"), content);        // 截断写；返回字节数，失败 -1
+append_file(String::from("log.txt"), line);          // 追加；返回字节数，失败 -1
+let line = read_line();                              // 从 stdin 读一行（不含换行符）
 ```
 
 ### 10.7 网络
@@ -443,9 +466,9 @@ let line = read_line();                    // 从 stdin 读一行（不含换行
 ```zeta
 let host = hostname();                     // 本机主机名
 let pair = socketpair_stream();            // AF_UNIX SOCK_STREAM 全双工 fd 对
-send_all(fd, data);                        // 循环发满
+send_all(fd, data);                        // 循环发满（data 为 String 变量）
 let got = recv_some(fd, n);                // 接收（SOCK_STREAM 需循环收满）
-let fd = tcp_connect("127.0.0.1", 8080);   // TCP 连接；失败 -1
+let fd = tcp_connect(8080, 127, 0, 0, 1);  // TCP 连接（port, a, b, c, d）；失败 -1
 ```
 
 ### 10.8 同步原语
@@ -566,21 +589,22 @@ extern fn gethostname(name: String, len: i64) -> i64;
 | [actor-model.md](./actor-model.md) | Actor 并发模型规范 |
 | [std-lib.md](./std-lib.md) | 标准库 API 规范（含规划中模块） |
 | [development-plan.md](./development-plan.md) | 开发计划（阶段 A–F，权威执行记录） |
+| [mvp-gaps-plan.md](./mvp-gaps-plan.md) | 已知限制消解计划（阶段 G–L，承接 A–F 后） |
 
 ### 已知限制（MVP）
 
 **规划中 / 未实现**：
 - **宏系统**：`println!` / `vec!` / `format!` 等宏调用不支持（`!` 是 `not` 一元运算符）；打印用内建 `println(expr)`（0–1 参数，无 `{}` 格式化）。
-- **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self` / `&mut self` 可用。
+- **引用与借用**：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数类型、解引用 `*`、返回引用均已实现（G1 ✅，见 §8.1）；`&str` 只读借用视图已实现（G2 ✅：`String::as_str()` + `&str` 参数/返回/索引 + `String::from(&str)` 深拷贝，见 §10.2）；裸指针（`*const T`/`*mut T`）、`ref` 模式、严格借用检查仍规划中。
 - **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported（规划）。
 - **运算符**：`?` 错误传播、`dyn Trait`、函数指针未实现。
 - **所有权层级**：L2 `Rc<T>` / `Arc<T>`、L3 `Gc<T>` 未实现（规划）。
 - **并发**：`serde` / `fmt` / `async` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）。
-- **迭代器协议**：`for i in 0..<10` 数值区间可用；`Iterator` trait / `collect` 未实现。
+- **迭代器协议**：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` 容器迭代可用；**数组迭代不支持**；`Iterator` trait / `collect` 未实现。
 
 **实现约束**：
 - **std 模块化**：标准库位于 `zeta-std/zeta/`，`core.zeta` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `use` 重新导出，用户侧裸名即用。
 - **net**：`tcp_connect` 依赖平台特定 `sockaddr_in4` 布局（已由 `__zeta_target_os` 双布局化）；WASI 下网络不可用。
 - **Actor 运行时**：交叉编译 / WASM 目标下 actor 程序暂不支持（staticlib 为主机架构）。
-- **`String::from(s)`**：支持字符串字面量及绑定字面量的变量；非字面量 Str（运行期内容）长度表达未实现。
+- **`String::from(s)`**：✅ 支持字符串字面量（及绑定字面量的变量）、运行期 `String` 变量（desugar 为 `s.clone()` 深拷贝）与 `&str` 视图（读 data/len 槽深拷贝）；G2 已消除"非字面量长度表达未实现"。
 - **region 选项**：`adaptive` / `with_size (N)` 可用；`strategy (bump)` 等其余选项规划中。

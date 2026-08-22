@@ -435,6 +435,43 @@ impl MirLowerer {
                 });
                 Some(MirValue::Unit)
             }
+            HirExpr::Ref {
+                expr,
+                is_mut: _,
+                pointee,
+            } => {
+                // `&x` / `&mut x`：取引用（MVP 目标为变量）
+                let o = self.lower_expr(expr)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::AddrOf {
+                    target: tmp.clone(),
+                    operand: o,
+                    pointee: *pointee,
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::Deref { expr, ty } => {
+                // `*p` 读取：解引用（标量 load / 聚合指针拷贝）
+                let b = self.lower_expr(expr)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::DerefRead {
+                    target: tmp.clone(),
+                    base: b,
+                    ty: *ty,
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::DerefSet { base, value, ty } => {
+                // `*p = v`：解引用写入
+                let b = self.lower_expr(base)?;
+                let v = self.lower_expr(value)?;
+                self.emit(MirStmt::DerefWrite {
+                    base: b,
+                    value: v,
+                    ty: *ty,
+                });
+                Some(MirValue::Unit)
+            }
         }
     }
 

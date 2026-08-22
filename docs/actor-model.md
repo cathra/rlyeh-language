@@ -81,8 +81,8 @@ Actor 创建 → 初始化 → 处理消息循环 → 收到停止信号 → 清
 ### 3.1 发送消息
 
 ```zeta
-// 创建 Actor 实例
-let counter = Counter::new("my-counter");
+// 创建 Actor 实例（MVP：`new()` 不接受参数；受监督构造用 `new_supervised(strategy)`）
+let counter = Counter::new();
 
 // 发送消息（异步）
 let result = counter.increment(10).await;
@@ -110,7 +110,6 @@ Counter Actor:
 │                                 │
 │  Current State:                  │
 │    value = 15                    │
-│    name = "my-counter"           │
 └─────────────────────────────────┘
 ```
 

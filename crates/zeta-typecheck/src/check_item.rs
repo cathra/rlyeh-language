@@ -80,7 +80,26 @@ fn collect_item_decls(
                 );
             } else {
                 let sig = fn_signature(ctx, f, f.span)?;
-                ctx.insert_fn_signature(full_name(prefix, &f.name), sig);
+                let full = full_name(prefix, &f.name);
+                // 顶层裸名与已注册函数（std 预置根函数 / 用户先声明者）重名：
+                // 签名不同 → 后声明者 mangle 重命名（`read@shadow<N>`），先声明者保留原名。
+                // std 根函数（如 extern `read`）被用户顶层 `fn read` 遮蔽时，
+                // std 原名留在表中供 std 模块内部裸名调用绑定；用户顶层代码
+                // 经 `fn_shadow_of` 绑定自身版本；下游符号名因此唯一不冲突。
+                // 签名相同 → 视为无害重声明（FFI 惯用法：用户重复 extern 声明
+                // 同一符号，如 `extern fn __zeta_target_os() -> i32`），保留原名。
+                if prefix.is_empty()
+                    && ctx.fn_signatures.get(&full).is_some_and(|existing| existing != &sig)
+                {
+                    let seq = ctx.fn_shadow_seq.get(&f.name).copied().unwrap_or(0) + 1;
+                    ctx.fn_shadow_seq.insert(f.name.clone(), seq);
+                    let mangled = format!("{}@shadow{}", f.name, seq);
+                    ctx.fn_decl_shadow.insert((f.span.start, f.span.end), mangled.clone());
+                    ctx.fn_shadow_of.insert(f.name.clone(), mangled.clone());
+                    ctx.insert_fn_signature(mangled, sig);
+                } else {
+                    ctx.insert_fn_signature(full, sig);
+                }
             }
         }
         AstItem::EnumDecl(e) => collect_enum(ctx, e, prefix)?,
@@ -184,8 +203,15 @@ pub(crate) fn check_item(
             } else {
                 None
             };
+            // 被遮蔽重命名的声明按收集阶段的记录使用 mangle 名（两遍按 Span 对齐），
+            // 保证 HIR 符号名与 fn_signatures / 调用解析结果一致。
+            let item_name = ctx
+                .fn_decl_shadow
+                .get(&(f.span.start, f.span.end))
+                .cloned()
+                .unwrap_or_else(|| full_name(prefix, &f.name));
             out.push(HirItem {
-                name: full_name(prefix, &f.name),
+                name: item_name,
                 kind: HirItemKind::Fn(HirFnDecl {
                     params,
                     body,
@@ -339,7 +365,7 @@ fn is_actor_scalar_type(ty: &Type) -> bool {
 }
 
 /// actor 展开（check 阶段）：生成状态初始化函数 + 方法函数 + dispatch handle
-/// + `zeta_actor_*` runtime extern 声明，全部为普通 HirItem，
+/// 与 `zeta_actor_*` runtime extern 声明，全部为普通 HirItem，
 /// 下游 MIR / LIR / codegen 复用现有机制。
 fn expand_actor(
     ctx: &mut TypeContext,
@@ -458,7 +484,7 @@ fn expand_actor(
 /// 递归构造 dispatch：`if kind == i { return m_i(self, a, b, c); } else { ... }`，
 /// 方法耗尽时尾表达式为 `-1`（未命中方法 → 崩溃信号 u64::MAX）。
 fn build_actor_dispatch(
-    ctx: &TypeContext,
+    _ctx: &TypeContext,
     a: &AstActorDecl,
     actor_full: &str,
     idx: usize,
@@ -484,7 +510,7 @@ fn build_actor_dispatch(
     // 底层 `IntLiteral(-1)` 必须经 final_expr 产出，否则该路径无值 → MIR 生成 `ret void`。
     let else_block = HirBlock {
         stmts: vec![],
-        final_expr: Some(build_actor_dispatch(ctx, a, actor_full, idx + 1)),
+        final_expr: Some(build_actor_dispatch(_ctx, a, actor_full, idx + 1)),
     };
     HirExpr::If {
         cond: Box::new(HirExpr::Binary(

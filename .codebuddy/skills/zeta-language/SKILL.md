@@ -1,0 +1,63 @@
+---
+name: zeta-language
+description: Zeta 系统级编程语言技能（v0.1.0）。用于编写、阅读、审查、修复或迁移 Zeta 语言代码（.zeta 文件）；解释 Zeta 的语法、语义、分层内存模型与 Actor 并发模型；使用 zeta 工具链（build/run/test/check/fmt/bench/doc/lsp/profile）编译验证；以及在 zeta-language 仓库内开发编译器（zeta-lexer/parser/typecheck/codegen 等 crates）。当用户提到 Zeta 语言、zeta 代码、.zeta 文件、Zeta 编译错误、actor/region/比较链/in 表达式语法时触发。
+---
+
+# Zeta Language
+
+## Overview
+
+Zeta 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分层所有权）、编译速度对标 Go、Actor 并发一等公民、数学式比较链语法（`0 < x < 10`）。当前为 MVP（v0.1.0），bootstrap 编译器用 Rust 实现、代码生成走 LLVM IR。
+
+本技能使 LLM 能写出**可编译运行**的 Zeta 代码、准确审查既有代码、并利用工具链快速定位编译错误。MVP 有明确语法边界——不遵守会产出大量编译错误，务必先读 `references/pitfalls.md`。
+
+## 何时使用
+
+- 用户要求编写、修改、审查、调试 `.zeta` 文件或 Zeta 项目（`Zeta.toml` + `src/main.zeta`）
+- 需要解释 Zeta 语法、语义、内存模型、Actor 模型、标准库、工具链
+- 处理 Zeta 编译器 Rust 代码（`crates/` 下各 crate）或 `zeta-std` 标准库 `.zeta` 源码
+- 将其他语言（Rust/Go/Python）代码迁移到 Zeta
+
+## 核心工作流
+
+1. **写代码前**：通读 `references/pitfalls.md`（MVP 限制）与 `references/language.md`（语法速查），确认语法在 MVP 支持范围内。
+2. **写代码**：遵循 `references/language.md` 的语法与 `references/std-lib.md` 的 API 形态。标准语义细节见 `references/semantics.md`。
+3. **验证**：用下方工具链命令编译运行；错误按阶段定位（lexer 分词 / parser 语法 / typecheck 类型 / codegen-LLVM 链接）。
+4. **审查**：逐条对照 `references/pitfalls.md` 检查（宏、引用、闭包、位运算优先级、`fn main` 入口等）。
+5. **涉及编译器本身**：修改 `crates/` 后跑 `cargo test --workspace` 全量回归（集成测试用例在 `tests/` 与各 crate `tests/`）。
+
+## 验证命令
+
+在仓库根或 Zeta 项目内使用 `zeta` 二进制（开发期可 `cargo run -p zeta-driver -- <args>`）：
+
+| 命令 | 用途 |
+|------|------|
+| `zeta new <name> [--lib]` | 创建项目（`Zeta.toml` + `src/main.zeta` / `src/lib.zeta`） |
+| `zeta run <file.zeta>` | 编译并运行（快速验证首选） |
+| `zeta build <file.zeta> [-o out] [--target <triple>] [--profile <pgo>]` | 编译为可执行文件；`--target` 支持交叉编译 / `wasm32-wasi` |
+| `zeta check <file.zeta>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
+| `zeta fmt <file.zeta> [--check]` | 格式化（AST 重建） |
+| `zeta test` | 跑 `tests/compile-pass` `compile-fail` `run-pass` 用例 |
+| `zeta bench <file.zeta> [--runs N]` | 基准测试 |
+| `zeta doc <file.zeta> [--out dir]` | 从 `///` 注释生成 Markdown |
+| `zeta lsp` | LSP 服务器（stdio） |
+| `zeta profile <file.zeta_profile> [--out r.md]` | PGO 画像 → 区域大小预测报告 |
+
+调试提示：`zeta run` 的链接错误若提示 `_main` undefined，先确认源文件有 `fn main()`；LLVM 链接错误多为 extern 符号与 libc 不一致。
+
+## References
+
+| 文件 | 内容 | 何时加载 |
+|------|------|----------|
+| `references/language.md` | 完整语法速查（词法/类型/语句/表达式/比较链/in/region/actor/模块/FFI），含可运行示例 | 编写或审查代码时 |
+| `references/std-lib.md` | 标准库 API 速查（String/Vec/HashMap/Option/Result/io/net/sync/time/内建打印） | 涉及集合、IO、并发原语、时间时 |
+| `references/semantics.md` | 语义要点（所有权移动语义/比较链/in 语义/actor 崩溃协议/transfer/字符串别名陷阱） | 解释行为、调试运行时差异时 |
+| `references/pitfalls.md` | MVP 已知限制 + 大模型最常见的编写错误清单 | **每次写代码前必读** |
+
+## 与官方文档的关系
+
+Skill references 是 `docs/` 权威规范的提炼速查。深度问题回源：
+- 语法 EBNF：`docs/grammar.md`；语义：`docs/semantics.md`
+- 内存模型：`docs/memory-model.md`；Actor：`docs/actor-model.md`
+- 标准库规范：`docs/std-lib.md`；教程：`docs/guide.md`
+- 项目总纲与执行记录：`CODEBUDDY.md`

@@ -241,14 +241,14 @@ let c = v[lo..<hi];            // Vec 切片（std Vec::slice 泛型方法）
 | 特性 | 说明 |
 |------|------|
 | 宏调用 | `println!` / `vec!` / `format!` 等（`!` 是 `not` 一元运算符）；打印用内建 `println(expr)`（无 `{}` 格式化） |
-| 引用类型 | `&x` 表达式、`&T` 参数、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 |
+| 引用类型 | `&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、解引用 `*` 已实现（G1 ✅，标量存 `i8*` 槽、聚合拷贝指针、字段/方法自动剥引用层）；`str` 类型、裸指针（`*const T`/`*mut T`）、`ref` 模式、严格借用检查仍规划中 |
 | 闭包 | `\|x\| x + 1` 语法可解析，typecheck 报 Unsupported |
 | 运算符 | `?` 错误传播、`dyn Trait`、函数指针未实现 |
 | 所有权层级 | L2 `Rc<T>`/`Arc<T>`、L3 `Gc<T>` 未实现（规划） |
 | 并发 | `serde`/`fmt`/`async` 模块规划；actor 的 `async` 方法 + `.await`/`send` 已实现（§3.3） |
-| 迭代器 | `for i in 0..<10` 数值区间可用；`Iterator` trait/`collect` 未实现 |
+| 迭代器 | `for i in 0..<10` 数值区间、`for x in vec`/`for (k, v) in map` 容器迭代可用（数组迭代不支持）；`Iterator` trait/`collect` 未实现 |
 | region 选项 | `adaptive`/`with_size (N)` 可用；`strategy (bump)` 等规划中 |
-| `String::from(s)` | 支持字面量及绑定字面量的变量；非字面量 Str 长度表达未实现 |
+| `String::from(s)` | ✅ 支持字面量（及绑定字面量的变量）、运行期 `String` 变量（`≡ s.clone()` 深拷贝）、`&str` 视图（读 data/len 槽深拷贝）；G2 已消除长度表达限制 |
 
 ---
 
@@ -331,6 +331,8 @@ let c = v[lo..<hi];            // Vec 切片（std Vec::slice 泛型方法）
 > 本节记录新版开发计划（阶段 A–F，详见 [`docs/development-plan.md`](docs/development-plan.md)）的执行进度：
 > **阶段 A 全部完成（A1–A4 ✅），阶段 B 全部完成（B1–B5 ✅），阶段 C 全部完成（C1–C3 ✅），阶段 D 全部完成（D1–D3 ✅：zeta test / zeta fmt / zeta check / zeta doc / zeta bench），阶段 E 全部完成（E1 交叉编译 `--target` macOS 双架构 + `__zeta_target_os` 平台内建消除 `sockaddr_in4` 布局假设；E2 WASM 目标：`--target wasm32-wasi` 编译 + wasmtime 运行验证；E3 发布流程：zep publish 重复版本保护 + `zeta publish` CLI + release.yml 四平台 + CHANGELOG.md），阶段 F 全部完成（F1 LSP 服务器 MVP：`zeta lsp` + 新 crate `zeta-lsp`，文档同步 + 诊断推送；F2 PGO 数据回灌：`zeta profile` 命令 + `zeta build --profile` 编译期注入，`.zeta_profile` → 区域大小预测报告）**，E1 Windows/ARM 工具链（待对应环境）待做。
 
+- [x] **G2 `str` 切片与 String 补齐**（§3.8 `String::from` 行勾销 + 引用类型行更新；详见 [`docs/mvp-gaps-plan.md`](docs/mvp-gaps-plan.md) §4）：`String::from` 运行期内容（String 变量 → `s.clone()` 深拷贝；`&str` → 读 data/len 槽深拷贝；消除 §13 约束 4）+ `&str` 只读借用视图（`String::as_str()` → `HirExpr::Ref` 对象指针拷贝，运行时 = 指向 String 对象的瘦指针，复用 G1 聚合引用机制，MIR/LIR/codegen 布局零改动；`resolve_ast_type` 识别 `str` 类型关键字；方法/索引/切片对 `&str` 归一为 String 处理；`compatible_with` 允许 `&str` ↔ `&String` 互视与内容比较；`comparison.rs` 字符串比较纳入视图）。**设计决策**：`substring` 保持拷贝返回（避免破坏现有 API），零拷贝以 `as_str()` 借用视图体现。产出 `string_from_runtime_test.rs` 6 用例 + `str_ref_test.rs` 9 用例 + 全量 114 套件全绿 + clippy 0 警告）
+- [x] **G1 引用类型与表达式**（§3.8 引用类型行勾销；详见 [`docs/mvp-gaps-plan.md`](docs/mvp-gaps-plan.md) §4）：`&T`/`&mut T` 类型 + `&x`/`&mut x`/`*` 表达式全链路（parser → typecheck → HIR → MIR → LIR → LLVM）。标量引用存 `i8*` 值槽（`*p` 读写按标量种类 bitcast）、聚合引用拷贝对象指针；字段访问/方法调用自动 `peel_ref`（`p.x`/`v.len()` 免显式解引用）；`&mut T` 兼容 `&T` 参数（宽松规则，严格可变性互斥留给 borrowck）。关键修复：MIR inline 补 AddrOf/DerefRead/DerefWrite 映射、DCE 活跃性纳入 Deref* 读、codegen 指针拷贝 `%%` 转义、**顶层同名遮蔽**（用户 `fn read` vs std extern `read`：用户侧注册 `read@shadow<N>` mangle 名、std 原名保留，std 模块内部裸名绑定 extern 原版、用户顶层绑定自身版本；签名相同的重声明如 `extern fn __zeta_target_os()` 保留原名）；`reference_test.rs` 10 用例 + 全量 112 套件全绿）
 - [x] **标准库模块化拆分**（`zeta-std/zeta/core.zeta` 1323 行单文件 → 根模块 + 四个子模块文件：`time.zeta`（Duration/Instant）/ `io.zeta`（文件 IO/控制台 IO）/ `net.zeta`（socket/字节序/主机名）/ `sync.zeta`（pthread 锁）；driver `stdlib.rs::load_std_prelude` 改为复用 `load_combined_source` 模块展开（`mod io;` → 内联块，相对 `core.zeta` 所在目录解析）后注入，用户侧 API 不变；**约束**：① 编译器按全名特判 String/Vec/HashMap 构造器与 `alloc_bytes` 等 callee 名，② extern 的 LLVM `declare` 符号必须与 libc 一致（模块前缀会改名致链接失败）——故 String/Vec/Option/Result/HashMap、内建函数与**全部 extern 声明**留在根，子模块仅含自由函数与普通 struct；③ 兼容经 core.zeta 末尾 `mod time; mod io; mod net; mod sync;` + `use time::Duration; use io::read_file; ...` 重新导出（裸名即用，mod 声明置于文件尾符合类型顺序解析）；④ 子模块内自引用类型用全限定名（`time::Instant` / `sync::Mutex`，模块内裸名类型解析无前缀回退），配合 `check_struct_construct` 支持 use 别名/模块路径解析（1 处编译器修改，`resolve_full_name` 兜底）；io/net/time/sync/hashmap/std_prelude 子集测试 + 全量 111 套件全绿 + 跨模块冒烟（io 文件读写 + Duration 换算 + Mutex/RwLock + HashMap + 时间字面量））
 
 - [x] **F2 PGO 数据回灌（编译流程）**（`.zeta_profile` → 区域大小预测闭环：zeta-driver 接入 `zeta-region-alloc`（workspace 已注册，补 re-export `PgoAdvisor`/`CompilerInterface`/`RegionCompileInfo`/`ProfileCollector`）；新命令 `zeta profile <file.zeta_profile> [--out <report.md>]`（`run_profile`，加载 PGO 画像 JSON → `PgoAdvisor::recommend_size`（p95×1.1，下限 64KiB）→ `CompilerInterface` 报告：每区域 estimated=历史均值 / initial=PGO 建议 / max=建议×4 与峰值取大 / decision 附 p50/p95/mean/max 依据，区域按 ID 排序）；`zeta build --profile <file>` 编译期注入（构建完成后打印预测报告，加载失败仅告警不阻断构建——profile 为可选优化输入）；lib.rs 新增 `region_profile_report(path)`（文件读取 + 解析，`DriverError::Profile` 承载 JSON 错误）+ `build_region_report(data)`（纯函数可单测）；`profile_cmd_test.rs` 6 用例：报告元数据/建议与 advisor 一致 + 下限回退（大样本 p95×1.1>64KiB 采纳、小样本回落 64KiB）/文件往返/坏 JSON [profile] 错误/缺文件 I/O 错误/空数据 "(none registered)"；冒烟：手写 `.zeta_profile` → `zeta profile` 输出 worker_pool initial 858000（780000×1.1）与 tiny_region 65536（下限），`zeta build --profile` 编译完成 + 报告注入；语言级 region 接线后预测可直接回灌 `region 'r adaptive` 初始容量）

@@ -55,11 +55,14 @@ pub(crate) fn check_comparison_chain(
         //   `s1 < s2`  → `__c < 0 || (__c == 0 && __la < __lb)`
         //   `s1 > s2`  → `s2 < s1`（交换操作数）
         //   `s1 <= s2` → `!(s2 < s1)`，`s1 >= s2` → `!(s1 < s2)`
+        // `&str` 视图与 String 同内容语义（G2），一并纳入字符串比较
+        let lhs_str = is_string_type(ctx, &items[0].2) || is_str_view(&items[0].2);
+        let rhs_str = is_string_type(ctx, &items[1].2) || is_str_view(&items[1].2);
         if matches!(
             op,
             CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge
-        ) && is_string_type(ctx, &items[0].2)
-            && is_string_type(ctx, &items[1].2)
+        ) && lhs_str
+            && rhs_str
         {
             let (lhs, rhs) = (&items[0].1, &items[1].1);
             let hir = match op {
@@ -78,10 +81,7 @@ pub(crate) fn check_comparison_chain(
         check_comparison(&items[0].2, &items[1].2, op, span)?;
         // String 对象相等 / 不等：内容比较 desugar
         // `s1 == s2` → `s1.len == s2.len && bytes_eq(s1.data, s2.data, s1.len)`
-        if matches!(op, CompareOp::Eq | CompareOp::Ne)
-            && is_string_type(ctx, &items[0].2)
-            && is_string_type(ctx, &items[1].2)
-        {
+        if matches!(op, CompareOp::Eq | CompareOp::Ne) && lhs_str && rhs_str {
             let eq = string_eq_hir(ctx, &items[0].1, &items[1].1);
             let hir = if op == CompareOp::Ne {
                 HirExpr::Unary(HirUnaryOp::Not, Box::new(eq))
@@ -229,6 +229,14 @@ pub(crate) fn is_string_type(ctx: &TypeContext, ty: &Type) -> bool {
         return full == "String" && ctx.lookup_struct(&full).is_some();
     }
     false
+}
+
+/// 是否为 `&str` 视图（对字符串字面量类型的引用；G2）。
+///
+/// MVP 中 `&str` 是 String 对象的只读借用（瘦指针），其内容操作
+/// （比较 / 方法 / 索引 / 切片）与 String 一致。
+pub(crate) fn is_str_view(ty: &Type) -> bool {
+    matches!(ty, Type::Ref(inner, _) if matches!(**inner, Type::Str))
 }
 
 /// 判断类型是否为已定义的结构体对象（含 `Vec` / `HashMap` 等动态集合）。

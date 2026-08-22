@@ -25,10 +25,7 @@ pub fn run_stdio() -> io::Result<()> {
     let mut writer = stdout.lock();
     let mut server = server::Server::new();
 
-    loop {
-        let Some(body) = jsonrpc::read_frame(&mut reader)? else {
-            break;
-        };
+    while let Some(body) = jsonrpc::read_frame(&mut reader)? {
         let Ok(msg) = serde_json::from_slice::<serde_json::Value>(&body) else {
             // 非法 JSON：跳过（LSP 要求忽略坏帧而非终止）
             continue;

@@ -413,6 +413,94 @@ impl LlvmEmitter {
                     body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
                 }
             }
+            LirStmt::AddrOf {
+                target,
+                operand,
+                pointee,
+            } => {
+                if *pointee == FieldScalar::Ptr {
+                    // 聚合对象：对象指针即"地址"，拷贝值
+                    let v = self.operand_value(
+                        &LirOperand::Local(operand.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    // operand_value 返回带 `%` 前缀，store_to 内部会补 `%`
+                    self.store_to(target, &v[1..], body, f)?;
+                } else {
+                    // 标量：取变量存储槽地址，统一为 i8*
+                    let lt = llvm_type(local_type(f, operand))?;
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = bitcast {lt}* %{operand}.addr to i8*\n"));
+                    self.store_to(target, &r, body, f)?;
+                }
+            }
+            LirStmt::DerefRead { target, base, ty } => {
+                if *ty == FieldScalar::Ptr {
+                    // 聚合引用：指针拷贝
+                    let v = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    // operand_value 返回带 `%` 前缀，store_to 内部会补 `%`
+                    self.store_to(target, &v[1..], body, f)?;
+                } else {
+                    // 标量引用：bitcast 后 load
+                    let lt = field_scalar_llvm(*ty)?;
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* {b} to {lt}*\n"));
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
+                    self.store_to(target, &r, body, f)?;
+                }
+            }
+            LirStmt::DerefWrite { base, value, ty } => {
+                if *ty == FieldScalar::Ptr {
+                    // 聚合引用写入：写入对象指针
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let v = self.operand_value(
+                        &LirOperand::Local(value.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* {b} to i8**\n"));
+                    body.push_str(&format!("  store i8* {v}, i8** %{c}\n"));
+                } else {
+                    // 标量引用写入：bitcast 后 store
+                    let lt = field_scalar_llvm(*ty)?;
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let v = self.operand_value(
+                        &LirOperand::Local(value.clone()),
+                        field_scalar_lir(*ty),
+                        body,
+                        f,
+                    )?;
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* {b} to {lt}*\n"));
+                    body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
+                }
+            }
             // 区域标注指令：LLVM 后端 MVP 忽略
             LirStmt::RegionEnter { .. }
             | LirStmt::RegionExit

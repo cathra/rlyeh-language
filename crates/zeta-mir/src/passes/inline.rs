@@ -187,6 +187,27 @@ fn inline_stmt(
             ty: *ty,
             is_str: *is_str,
         }),
+        // 引用指令：参数/局部变量按 subst 重命名后保留。
+        // 实参 `&x` 的 AddrOf 指令在调用点已生成，内联副本直接复用其临时值。
+        MirStmt::AddrOf {
+            target,
+            operand,
+            pointee,
+        } => Some(MirStmt::AddrOf {
+            target: map_local(target, subst, counter),
+            operand: map_local(operand, subst, counter),
+            pointee: *pointee,
+        }),
+        MirStmt::DerefRead { target, base, ty } => Some(MirStmt::DerefRead {
+            target: map_local(target, subst, counter),
+            base: map_local(base, subst, counter),
+            ty: *ty,
+        }),
+        MirStmt::DerefWrite { base, value, ty } => Some(MirStmt::DerefWrite {
+            base: map_local(base, subst, counter),
+            value: map_local(value, subst, counter),
+            ty: *ty,
+        }),
         _ => None, // 区域操作已在上层排除
     }
 }

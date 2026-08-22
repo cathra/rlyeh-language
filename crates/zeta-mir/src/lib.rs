@@ -158,6 +158,36 @@ pub enum MirStmt {
         /// `true` 表示字符串索引
         is_str: bool,
     },
+    /// `target = addr_of(operand)`：取引用（`&x` / `&mut x`）。
+    /// 聚合对象（`pointee = Ptr`）的"地址"即其对象指针（拷贝值）；
+    /// 标量（`pointee = Int` 等）为变量存储槽的地址。
+    AddrOf {
+        /// 目标变量（引用值，LIR 层统一为指针）
+        target: Local,
+        /// 被引用变量
+        operand: Local,
+        /// 被引用值的标量种类（`Ptr` 表示聚合对象）
+        pointee: zeta_hir::FieldScalar,
+    },
+    /// `target = deref_read(base)`：解引用读取（`*p`）。
+    /// 聚合（`ty = Ptr`）为指针拷贝；标量为 load。
+    DerefRead {
+        /// 目标变量
+        target: Local,
+        /// 引用变量
+        base: Local,
+        /// 被指向值的标量种类
+        ty: zeta_hir::FieldScalar,
+    },
+    /// `deref_write(base, value)`：解引用写入（`*p = v`）。
+    DerefWrite {
+        /// 引用变量
+        base: Local,
+        /// 待写入的变量
+        value: Local,
+        /// 被指向值的标量种类
+        ty: zeta_hir::FieldScalar,
+    },
 }
 
 /// 右值（可内联进 `Assign` 的运算树）。

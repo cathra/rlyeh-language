@@ -285,6 +285,15 @@ impl BorrowChecker {
                 self.check_expr(index);
                 self.check_expr(value);
             }
+            // 引用 / 解引用：递归检查被引用 / 被解引用表达式
+            // （`&x` 不转移所有权；`*p = v` 的写入可变性互斥检查待引用
+            // 类型标注接入后启用——borrowck 已预留 BorrowConflict 等变体）
+            HirExpr::Ref { expr, .. } => self.check_expr(expr),
+            HirExpr::Deref { expr, .. } => self.check_expr(expr),
+            HirExpr::DerefSet { base, value, .. } => {
+                self.check_expr(base);
+                self.check_expr(value);
+            }
         }
     }
 }

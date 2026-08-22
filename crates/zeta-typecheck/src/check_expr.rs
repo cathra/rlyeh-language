@@ -214,11 +214,58 @@ pub(crate) fn infer_expr(
                     }
                     Ok((HirExpr::Unary(HirUnaryOp::Not, Box::new(o_hir)), Type::Bool))
                 }
-                UnaryOp::Deref | UnaryOp::AddrOf | UnaryOp::AddrOfMut => {
-                    Err(TypeError::Unsupported {
-                        what: "引用与解引用（& / *）在 MVP 阶段".to_string(),
-                        span,
-                    })
+                UnaryOp::Deref => {
+                    let inner = match &o_ty {
+                        Type::Ref(inner, _) => (**inner).clone(),
+                        other => {
+                            return Err(TypeError::Unsupported {
+                                what: format!(
+                                    "解引用 `*` 仅支持引用类型 `&T`，发现 `{other}`"
+                                ),
+                                span,
+                            })
+                        }
+                    };
+                    Ok((
+                        HirExpr::Deref {
+                            expr: Box::new(o_hir),
+                            ty: field_scalar_of(&inner),
+                        },
+                        inner,
+                    ))
+                }
+                UnaryOp::AddrOf | UnaryOp::AddrOfMut => {
+                    // MVP：`&` / `&mut` 仅支持变量目标
+                    // （`&obj.field` / `&arr[i]` 等取地址待 G 阶段扩展）
+                    if !matches!(*operand.kind, ExprKind::Ident(_)) {
+                        return Err(TypeError::Unsupported {
+                            what: "MVP 阶段 `&` / `&mut` 仅支持变量目标（`&obj.field` 等取地址待扩展）"
+                                .to_string(),
+                            span,
+                        });
+                    }
+                    // 引用再取引用（`&&T`）待扩展
+                    if matches!(o_ty, Type::Ref(_, _)) {
+                        return Err(TypeError::Unsupported {
+                            what: "MVP 阶段不支持对引用再取引用（`&&T`）".to_string(),
+                            span,
+                        });
+                    }
+                    let is_mut = matches!(op, UnaryOp::AddrOfMut);
+                    let m = if is_mut {
+                        Mutability::Mutable
+                    } else {
+                        Mutability::Immutable
+                    };
+                    let pointee = field_scalar_of(&o_ty);
+                    Ok((
+                        HirExpr::Ref {
+                            expr: Box::new(o_hir),
+                            is_mut,
+                            pointee,
+                        },
+                        Type::Ref(Box::new(o_ty), m),
+                    ))
                 }
             }
         }
@@ -320,6 +367,41 @@ pub(crate) fn infer_expr(
                             value: Box::new(v_hir),
                             elem,
                             is_str,
+                        },
+                        Type::Unit,
+                    ));
+                }
+                // 解引用赋值：`*p = v` / `*p += v`
+                HirExpr::Deref { expr: base, ty } => {
+                    if !matches!(op, AssignOp::Assign) {
+                        let hir_op = match op {
+                            AssignOp::AddAssign => HirBinaryOp::Add,
+                            AssignOp::SubAssign => HirBinaryOp::Sub,
+                            AssignOp::MulAssign => HirBinaryOp::Mul,
+                            AssignOp::DivAssign => HirBinaryOp::Div,
+                            AssignOp::Assign => unreachable!(),
+                        };
+                        return Ok((
+                            HirExpr::DerefSet {
+                                base: base.clone(),
+                                value: Box::new(HirExpr::Binary(
+                                    hir_op,
+                                    Box::new(HirExpr::Deref {
+                                        expr: base,
+                                        ty,
+                                    }),
+                                    Box::new(v_hir),
+                                )),
+                                ty,
+                            },
+                            Type::Unit,
+                        ));
+                    }
+                    return Ok((
+                        HirExpr::DerefSet {
+                            base,
+                            value: Box::new(v_hir),
+                            ty,
                         },
                         Type::Unit,
                     ));
@@ -1487,11 +1569,36 @@ fn check_call(
 }
 
 /// 将调用名解析为完整符号名（use 导入别名 / 模块路径 → 目标符号）。
+///
+/// 裸名解析优先级（同名遮蔽场景）：
+/// 1. 模块内函数引用：优先绑定当前模块内定义（`prefix::name`），
+///    避免子模块内部裸名调用被全局同名函数劫持；
+/// 2. 顶层用户代码：被遮蔽的用户声明（`read@shadow<N>`）优先——
+///    std 预置根函数被用户顶层函数遮蔽时原名保留在 `fn_signatures` 中
+///    （std 模块内部裸名调用仍绑定 std 版本），用户顶层裸名经
+///    `fn_shadow_of` 绑定自身版本；
+/// 3. 其余按裸名 / use 导入别名解析。
 fn resolve_callable(ctx: &TypeContext, name: &str) -> String {
+    // 模块内函数引用：优先绑定当前模块内定义（`prefix::name`），
+    // 避免子模块内部裸名调用被全局同名函数（含用户顶层覆盖）劫持。
+    // 例：std `io.zeta` 内部 `read(0, tmp, 256)` 必须绑定 `io::read`，
+    // 用户顶层 `fn read(p: &i64)` 只影响用户自己的裸名调用。
+    if !name.contains("::") && !ctx.module_prefix.is_empty() {
+        let full = format!("{}::{}", ctx.module_prefix, name);
+        if ctx.fn_signatures.contains_key(&full) {
+            return full;
+        }
+    }
+    // 顶层用户代码：被遮蔽的用户声明优先（std 原名保留供模块内部绑定）
+    if !name.contains("::") && ctx.module_prefix.is_empty() {
+        if let Some(m) = ctx.fn_shadow_of.get(name) {
+            return m.clone();
+        }
+    }
     if ctx.fn_signatures.contains_key(name) {
         return name.to_string();
     }
-    // 模块内函数引用：裸名回退到 `prefix::name`
+    // 兜底：模块前缀 + 裸名（模块内自由函数互相引用）
     if !name.contains("::") && !ctx.module_prefix.is_empty() {
         let full = format!("{}::{}", ctx.module_prefix, name);
         if ctx.fn_signatures.contains_key(&full) {
@@ -1530,6 +1637,10 @@ pub(crate) fn resolve_ast_type(
 ) -> Result<Type, TypeError> {
     match ty {
         AstType::Path(name, args) => {
+            // `str`：字符串类型关键字（`&str` 引用切片类型的一部分；G2）
+            if name == "str" && args.is_empty() {
+                return Ok(Type::Str);
+            }
             if args.is_empty() {
                 ctx.resolve_named_type(name, span)
             } else {
@@ -1940,11 +2051,13 @@ fn check_hashmap_construct(
     ))
 }
 
-/// `String::from("字面量")`：把字符串字面量拷贝到动态字节缓冲。
+/// `String::from(...)`：把字符串内容拷贝到动态字节缓冲。
 ///
-/// MVP 限制：参数必须是字符串字面量（编译器已知字节长度；非字面量 Str
-/// 的运行时长度表达后续版本支持）。展开为
-/// `data = alloc_bytes(len)` + `copy_bytes(data, s, len)` + 三槽构造（cap = len）。
+/// 支持两类参数（G2，消除 §13 约束 4 的"长度表达未实现"）：
+/// - 字符串字面量（或绑定字面量的变量）：编译期已知字节长度，展开为
+///   `data = alloc_bytes(len)` + `copy_bytes(data, s, len)` + 三槽构造（cap = len）；
+/// - 运行期 `String`：desugar 为 `s.clone()`（深拷贝，标准库逐字节拷贝，
+///   运行期从 len 槽读取长度——不再要求编译期已知内容）。
 fn check_string_from(
     ctx: &mut TypeContext,
     args: &[AstExpr],
@@ -1959,15 +2072,114 @@ fn check_string_from(
         });
     }
     let (s_hir, s_ty) = infer_expr(ctx, &args[0])?;
-    if s_ty != Type::Str {
-        return Err(TypeError::WrongType {
-            expected: "string literal".to_string(),
-            found: s_ty.to_string(),
-            span: args[0].span,
-        });
+    // 运行期 String → 深拷贝：`String::from(s)` ≡ `s.clone()`。
+    // clone 是 `&self` 方法（G1 方法调用自动剥引用层），经方法实例化注册
+    // 函数体后复用标准库实现；返回独立缓冲，原串不受影响。
+    if comparison::is_string_type(ctx, &s_ty) {
+        let impl_def = ctx
+            .find_impl_for_method(&s_ty, "clone")
+            .cloned()
+            .ok_or_else(|| TypeError::FunctionNotFound {
+                name: "String::clone".to_string(),
+                span,
+            })?;
+        let method_def = impl_def
+            .methods
+            .iter()
+            .find(|m| m.sig.name == "clone")
+            .cloned()
+            .ok_or_else(|| TypeError::FunctionNotFound {
+                name: "String::clone".to_string(),
+                span,
+            })?;
+        let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &HashMap::new(), span)?;
+        return Ok((
+            HirExpr::Call {
+                callee: fn_name,
+                args: vec![s_hir],
+            },
+            s_ty,
+        ));
+    }
+    // `&str`（String 对象的只读借用视图）→ 深拷贝：
+    // 运行期读 data/len 槽 → alloc_bytes(len+1) → copy_bytes → 三槽构造（cap = len）。
+    if let Type::Ref(inner, _) = &s_ty {
+        if matches!(**inner, Type::Str) {
+        let len_tmp = ctx.fresh_temp();
+        let data_tmp = ctx.fresh_temp();
+        let base = ctx.fresh_temp();
+        let len_plus1 = |var: String| {
+            HirExpr::Binary(
+                HirBinaryOp::Add,
+                Box::new(HirExpr::Variable(var)),
+                Box::new(HirExpr::IntLiteral(1)),
+            )
+        };
+        let stmts = vec![
+            HirStmt::Let {
+                name: len_tmp.clone(),
+                init: HirExpr::FieldGet {
+                    base: Box::new(s_hir.clone()),
+                    index: 1,
+                    ty: FieldScalar::Int,
+                },
+                mutable: false,
+            },
+            HirStmt::Let {
+                name: data_tmp.clone(),
+                init: HirExpr::FieldGet {
+                    base: Box::new(s_hir),
+                    index: 0,
+                    ty: FieldScalar::Ptr,
+                },
+                mutable: false,
+            },
+            HirStmt::Let {
+                name: base.clone(),
+                init: HirExpr::Call {
+                    callee: "alloc_bytes".to_string(),
+                    args: vec![len_plus1(len_tmp.clone())],
+                },
+                mutable: false,
+            },
+            HirStmt::Semi(HirExpr::Call {
+                callee: "copy_bytes".to_string(),
+                args: vec![
+                    HirExpr::Variable(base.clone()),
+                    HirExpr::Variable(data_tmp.clone()),
+                    len_plus1(len_tmp.clone()),
+                ],
+            }),
+            HirStmt::Semi(HirExpr::FieldSet {
+                base: Box::new(HirExpr::Variable(base.clone())),
+                index: 0,
+                value: Box::new(HirExpr::Variable(data_tmp)),
+                ty: FieldScalar::Ptr,
+            }),
+            HirStmt::Semi(HirExpr::FieldSet {
+                base: Box::new(HirExpr::Variable(base.clone())),
+                index: 1,
+                value: Box::new(HirExpr::Variable(len_tmp.clone())),
+                ty: FieldScalar::Int,
+            }),
+            HirStmt::Semi(HirExpr::FieldSet {
+                base: Box::new(HirExpr::Variable(base.clone())),
+                index: 2,
+                value: Box::new(HirExpr::Variable(len_tmp)),
+                ty: FieldScalar::Int,
+            }),
+        ];
+        return Ok((
+            HirExpr::Block(Box::new(HirBlock {
+                stmts,
+                final_expr: Some(HirExpr::Variable(base)),
+            })),
+            Type::Named("String".to_string(), vec![]),
+        ));
+        }
     }
     // 字面量直用；`let s = "..."` 绑定的变量经 local_inits 表追踪回字面量，
-    // 其余非字面量 Str（运行期才确定内容的字符串）暂不支持（长度表达未实现）
+    // 其余非字面量 Str（裸字面量类型）不支持（须先经 String::from/String 变量）
     let s = match &s_hir {
         HirExpr::StringLiteral(s) => Some(s.clone()),
         HirExpr::Variable(name) => match ctx.lookup_local_init(name) {
@@ -1977,7 +2189,7 @@ fn check_string_from(
         _ => None,
     }
     .ok_or_else(|| TypeError::Unsupported {
-        what: "String::from 暂仅支持字符串字面量（或绑定字面量的变量）；非字面量 Str 的长度表达未实现"
+        what: "String::from 支持字符串字面量（或绑定字面量的变量）与 String 变量；裸 Str 类型不支持"
             .to_string(),
         span: args[0].span,
     })?;
@@ -2128,15 +2340,18 @@ fn check_slice(
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     let (b_hir, b_ty) = infer_expr(ctx, expr)?;
-    // 支持 String / Vec<T> / 数组 [T; N] 三类切片对象：
+    // 支持 String / &str / Vec<T> / 数组 [T; N] 四类切片对象：
     // - String → 方法实例化 substring（现有路径）
+    // - &str  → 方法实例化 substring（接收者 &self，&str 即 String 对象的借用视图）
     // - Vec<T> → 方法实例化 slice（std 泛型方法，越界 clamp）
     // - 数组 [T; N] → 展开为 Vec 拷贝循环（动态切片，边界 clamp 到 [0, N]）
     let is_vec = matches!(&b_ty, Type::Named(n, _) if n == "Vec");
     let is_arr = matches!(&b_ty, Type::Array(_, _));
-    if !comparison::is_string_type(ctx, &b_ty) && !is_vec && !is_arr {
+    let is_str_view =
+        matches!(&b_ty, Type::Ref(inner, _) if matches!(**inner, Type::Str));
+    if !comparison::is_string_type(ctx, &b_ty) && !is_str_view && !is_vec && !is_arr {
         return Err(TypeError::Unsupported {
-            what: "范围切片（`s[lo..<hi]`）暂仅支持 String / Vec / 数组对象".to_string(),
+            what: "范围切片（`s[lo..<hi]`）暂仅支持 String / &str / Vec / 数组对象".to_string(),
             span,
         });
     }
@@ -2174,10 +2389,16 @@ fn check_slice(
     } else {
         hi_hir
     };
-    if comparison::is_string_type(ctx, &b_ty) {
-        // String → substring（非泛型，subst 为空）
+    if comparison::is_string_type(ctx, &b_ty) || is_str_view {
+        // String / &str → substring（非泛型，subst 为空；&str 接收者 &self，
+        // 方法体对 self.data/self.len 的 FieldGet 经对象指针生效）
+        let lookup_ty = if is_str_view {
+            Type::Named("String".to_string(), vec![])
+        } else {
+            b_ty.clone()
+        };
         let impl_def = ctx
-            .find_impl_for_method(&b_ty, "substring")
+            .find_impl_for_method(&lookup_ty, "substring")
             .cloned()
             .ok_or_else(|| TypeError::FunctionNotFound {
                 name: "String::substring".to_string(),
@@ -2439,6 +2660,24 @@ fn check_index(
             found: i_ty.to_string(),
             span: index.span,
         });
+    }
+    // `&str`（String 对象的只读借用）：索引前先取槽 0 的 data 指针（同 String 对象）
+    if let Type::Ref(inner, _) = &b_ty {
+        if matches!(**inner, Type::Str) {
+            return Ok((
+                HirExpr::Index {
+                    base: Box::new(HirExpr::FieldGet {
+                        base: Box::new(b_hir),
+                        index: 0,
+                        ty: FieldScalar::Ptr,
+                    }),
+                    index: Box::new(i_hir),
+                    elem: FieldScalar::Int,
+                    is_str: true,
+                },
+                Type::U8,
+            ));
+        }
     }
     match peel_ref(&b_ty) {
         Type::Array(elem_ty, _) => {
@@ -3040,7 +3279,26 @@ fn check_method_call(
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     let (recv_hir, recv_ty) = infer_expr(ctx, receiver)?;
-    let self_ty = peel_ref(&recv_ty);
+    // `String::as_str()` → `&str`：只读借用视图（G2）。
+    // desugar 为 HirExpr::Ref（聚合对象指针拷贝），返回 `Ref(Str)`；
+    // 调用方经 `&str` ↔ `&String` 兼容规则传递使用。
+    if method == "as_str" && comparison::is_string_type(ctx, &recv_ty) {
+        let pointee = field_scalar_of(&recv_ty);
+        return Ok((
+            HirExpr::Ref {
+                expr: Box::new(recv_hir),
+                is_mut: false,
+                pointee,
+            },
+            Type::Ref(Box::new(Type::Str), Mutability::Immutable),
+        ));
+    }
+    let mut self_ty = peel_ref(&recv_ty);
+    // `&str` 接收者：方法按 String impl 解析（MVP 中 `&str` 是 String 对象的
+    // 只读借用视图，String 的方法视图（len / substring / push_str 等）均可用）
+    if matches!(self_ty, Type::Str) && matches!(&recv_ty, Type::Ref(_, _)) {
+        self_ty = Type::Named("String".to_string(), vec![]);
+    }
     if matches!(self_ty, Type::Unit) {
         return Err(TypeError::Unsupported {
             what: format!("对单元类型调用方法 `{method}`"),

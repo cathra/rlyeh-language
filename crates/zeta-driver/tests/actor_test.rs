@@ -208,9 +208,9 @@ fn main() {
     assert_eq!(run_zeta(src), "6\n66\n-2\n1\n6602\n");
 }
 
-/// 6. Supervisor 恢复：语言级 `Boom::new_supervised(0)`（编译器自动生成
-/// `zeta_actor_spawn_supervised` extern 声明）→ 崩溃（返回 -1）→ 重启
-/// → `__state_new` 重建初始状态（不再依赖手工 extern 声明）。
+/// 6）Supervisor 恢复：语言级 `Boom::new_supervised(0)`（编译器自动生成
+/// `zeta_actor_spawn_supervised` extern 声明），崩溃（返回 -1）后重启，
+/// 由 `__state_new` 重建初始状态（不再依赖手工 extern 声明）。
 #[test]
 fn supervisor_restart() {
     let src = r#"
@@ -243,8 +243,8 @@ fn main() {
     assert_eq!(run_zeta(src), "12\n0\n10\n");
 }
 
-/// 7. 无监督崩溃：`new()`（无 supervisor）下方法返回 -1 →
-/// runtime 判定 Panic → 无 supervisor → actor 停止 →
+/// 7）无监督崩溃：`new()`（无 supervisor）下方法返回 -1，
+/// runtime 判定 Panic 且无 supervisor，actor 停止，
 /// 后续 ask 失败返回 0（非阻塞，避免 ask 干等满超时）。
 #[test]
 fn crash_without_supervisor_stops_actor() {
@@ -274,7 +274,7 @@ fn main() {
     assert_eq!(run_zeta(src), "7\n0\n0\n");
 }
 
-/// 8. send FIFO 顺序：连续 `send` 的消息按入队顺序处理，
+/// 8）send FIFO 顺序：连续 `send` 的消息按入队顺序处理，
 /// 之后立即 ask 能观察到全部累积效果（每 actor 互斥处理）。
 #[test]
 fn send_fifo_order() {
@@ -306,7 +306,7 @@ fn main() {
     assert_eq!(run_zeta(src), "6\n36\n");
 }
 
-/// 9. resolve 支持：`use` 导入模块内 actor 后，短名构造 / 方法调用 / send
+/// 9）resolve 支持：`use` 导入模块内 actor 后，短名构造 / 方法调用 / send
 /// 均经 `resolve_full_name`（`actors` 表 + use_aliases）正确解析到完整符号名
 /// `service::Counter`（`TypeContext.actors` + `lookup_actor`）。
 #[test]

@@ -132,6 +132,16 @@ fn remove_dead_assignments(f: &mut MirFunction) {
                     used.insert(index.clone());
                     used.insert(value.clone());
                 }
+                MirStmt::AddrOf { operand, .. } => {
+                    used.insert(operand.clone());
+                }
+                MirStmt::DerefRead { base, .. } => {
+                    used.insert(base.clone());
+                }
+                MirStmt::DerefWrite { base, value, .. } => {
+                    used.insert(base.clone());
+                    used.insert(value.clone());
+                }
                 _ => {}
             }
         }

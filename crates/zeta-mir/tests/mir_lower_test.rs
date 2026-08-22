@@ -196,6 +196,9 @@ fn main() -> u32 {
             MirStmt::FieldSet { .. } => "field_set",
             MirStmt::IndexGet { .. } => "index_get",
             MirStmt::IndexSet { .. } => "index_set",
+            MirStmt::AddrOf { .. } => "addr_of",
+            MirStmt::DerefRead { .. } => "deref_read",
+            MirStmt::DerefWrite { .. } => "deref_write",
         })
         .collect();
     // 顺序：RegionEnter → `_t0 = 5`（init 求值）→ AllocInRegion(_t0)

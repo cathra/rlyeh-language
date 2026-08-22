@@ -139,9 +139,31 @@ impl Type {
                         && aa.len() == ab.len()
                         && aa.iter().zip(ab).all(|(x, y)| x.compatible_with(y))
                 }
+                // 引用类型：内层兼容且可变性可接受
+                // （`&mut T` 可传给 `&T`——宽松规则，严格互斥检查留给 borrowck）
+                (Type::Ref(a, ma), Type::Ref(b, mb)) => {
+                    // `&str` ↔ `&String`：同一只读借用视图（G2，MVP 中 &str 是
+                    // String 对象的借用），内层类型可互视
+                    let inner_ok = a.compatible_with(b)
+                        || (matches!(**a, Type::Str) && is_named_string(b))
+                        || (is_named_string(a) && matches!(**b, Type::Str));
+                    inner_ok
+                        && matches!(
+                            (ma, mb),
+                            (_, Mutability::Immutable) | (Mutability::Mutable, Mutability::Mutable)
+                        )
+                }
+                // `&str` 视图与 String 值互用（G2：比较 `r == s`、`s == r`）
+                (Type::Ref(a, _), Type::Named(n, _)) => matches!(**a, Type::Str) && n == "String",
+                (Type::Named(n, _), Type::Ref(a, _)) => matches!(**a, Type::Str) && n == "String",
                 _ => self == other,
             }
     }
+}
+
+/// 是否为 `String` 命名类型（`&str` ↔ `&String` 互视规则用）。
+fn is_named_string(t: &Type) -> bool {
+    matches!(t, Type::Named(n, _) if n == "String")
 }
 
 impl fmt::Display for Type {

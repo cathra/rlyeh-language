@@ -150,6 +150,19 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                     }
                     // 索引写入不产生新类型信息
                     MirStmt::IndexSet { .. } => {}
+                    MirStmt::AddrOf { target, .. } => {
+                        // 引用值统一为指针
+                        changed |= set_type(&mut ty, target, LirType::Ptr)?;
+                    }
+                    MirStmt::DerefRead {
+                        target,
+                        ty: scalar_ty,
+                        ..
+                    } => {
+                        changed |= set_type(&mut ty, target, field_scalar_to_lir(*scalar_ty))?;
+                    }
+                    // 解引用写入不产生新类型信息
+                    MirStmt::DerefWrite { .. } => {}
                     // 区域指令不产生类型信息
                     MirStmt::RegionEnter { .. }
                     | MirStmt::RegionExit
@@ -211,6 +224,18 @@ fn collect_locals(f: &MirFunction) -> Vec<Local> {
                 MirStmt::IndexSet { base, index, value, .. } => {
                     names.push(base.clone());
                     names.push(index.clone());
+                    names.push(value.clone());
+                }
+                MirStmt::AddrOf { target, operand, .. } => {
+                    names.push(target.clone());
+                    names.push(operand.clone());
+                }
+                MirStmt::DerefRead { target, base, .. } => {
+                    names.push(target.clone());
+                    names.push(base.clone());
+                }
+                MirStmt::DerefWrite { base, value, .. } => {
+                    names.push(base.clone());
                     names.push(value.clone());
                 }
                 _ => {}
@@ -660,6 +685,31 @@ impl FunctionLowerer {
                     value: value.clone(),
                     ty: *ty,
                     is_str: *is_str,
+                });
+            }
+            MirStmt::AddrOf {
+                target,
+                operand,
+                pointee,
+            } => {
+                out.push(LirStmt::AddrOf {
+                    target: target.clone(),
+                    operand: operand.clone(),
+                    pointee: *pointee,
+                });
+            }
+            MirStmt::DerefRead { target, base, ty } => {
+                out.push(LirStmt::DerefRead {
+                    target: target.clone(),
+                    base: base.clone(),
+                    ty: *ty,
+                });
+            }
+            MirStmt::DerefWrite { base, value, ty } => {
+                out.push(LirStmt::DerefWrite {
+                    base: base.clone(),
+                    value: value.clone(),
+                    ty: *ty,
                 });
             }
         }

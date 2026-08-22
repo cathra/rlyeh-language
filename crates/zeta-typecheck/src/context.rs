@@ -74,6 +74,19 @@ pub struct TypeContext {
     pub generic_subst: HashMap<String, Type>,
     /// 临时变量名计数器
     pub temp_counter: usize,
+    /// 顶层裸名 fn 被遮蔽的重命名表（裸名 → mangle 名）。
+    ///
+    /// 用户顶层函数与 std 预置根函数重名时（如用户 `fn read` 与 std extern `read`），
+    /// 用户声明注册为 `read@shadow<N>`，std 原名保留——模块内部裸名调用仍绑定 std 版本，
+    /// 用户顶层代码经本表绑定用户自身版本；同时避免下游 MIR/LIR/codegen 同名符号冲突。
+    pub fn_shadow_of: HashMap<String, String>,
+    /// 被遮蔽声明的重命名记录（声明 Span(start,end) → mangle 名）。
+    ///
+    /// 收集阶段（第一遍）决定重命名并记录，检查阶段（第二遍）生成 HIR 项时
+    /// 按同一 Span 取出 mangle 名，保证两遍一致。
+    pub fn_decl_shadow: HashMap<(usize, usize), String>,
+    /// 同名遮蔽计数器（裸名 → 已遮蔽次数，用于生成唯一 mangle 名）。
+    pub fn_shadow_seq: HashMap<String, usize>,
 }
 
 impl TypeContext {

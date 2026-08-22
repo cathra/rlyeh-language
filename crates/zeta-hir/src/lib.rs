@@ -126,6 +126,32 @@ pub enum HirExpr {
     Binary(HirBinaryOp, Box<HirExpr>, Box<HirExpr>),
     /// 一元运算
     Unary(HirUnaryOp, Box<HirExpr>),
+    /// 引用表达式（`&x` / `&mut x`）：求值为被引用对象的指针
+    /// （聚合对象 = 对象指针本身；标量 = 其存储槽地址）。
+    Ref {
+        /// 被引用的表达式（MVP 仅限变量）
+        expr: Box<HirExpr>,
+        /// 是否可变引用（`&mut`）
+        is_mut: bool,
+        /// 被引用值的标量种类（`Ptr` 表示聚合对象，取址即对象指针）
+        pointee: FieldScalar,
+    },
+    /// 解引用表达式（`*p`，读取）：对标量引用为 load，对聚合引用为指针拷贝
+    Deref {
+        /// 被解引用的引用表达式
+        expr: Box<HirExpr>,
+        /// 被指向值的标量种类
+        ty: FieldScalar,
+    },
+    /// 解引用赋值（`*p = v` / `*p += v`）
+    DerefSet {
+        /// 被解引用的引用表达式
+        base: Box<HirExpr>,
+        /// 待写入的值
+        value: Box<HirExpr>,
+        /// 被指向值的标量种类
+        ty: FieldScalar,
+    },
     /// 集合成员查找（`x in (0..<10)` 展开结果，
     /// 元素较多时编译器生成查找表 / 二分，HIR 层面保留成员列表）
     SetLookup {
