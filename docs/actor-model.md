@@ -1,7 +1,14 @@
 # Zeta Actor 并发模型规范
 
 > 版本：v2.0  
-> 最后更新：2026-08-20
+> 最后更新：2026-08-22
+
+> **⚠️ 实现状态**：本文为**目标规范**。MVP 已实现子集：`actor` 声明（字段/默认值/方法）、
+> `Counter::new()` 普通 spawn、`Counter::new_supervised(n)` 监督 spawn（n=0/1/2 对应 OneForOne/
+> AllForOne/RestartForOne）、方法调用 `.await`（ask 往返）、`send`（fire-and-forget）、返回 -1 触发
+> 崩溃协议（无监督停止 / 监督重启）。**未实现（规划）**：`supervisor {}` 块、`ActorRef<T>`、
+> `panic!`/`format!`/`println!` 宏（`!` 为 `not` 运算符）、`dyn Trait` actor 字段、channel、
+> `ExitSignal` 监控 API。可运行示例见 [`guide.md`](./guide.md) §9。
 
 ## 相关文档
 
@@ -79,7 +86,7 @@ let counter = Counter::new("my-counter");
 
 // 发送消息（异步）
 let result = counter.increment(10).await;
-println!("Counter value: {}", result);
+println(result);
 
 // 链式调用
 let value = counter.increment(5).await;
@@ -161,7 +168,10 @@ struct LockFreeMailbox {
 
 ---
 
-## 5. Supervisor 模型
+## 5. Supervisor 模型（规划）
+
+> **MVP 现状**：`new_supervised(0|1|2)` + 返回 -1 崩溃协议已实现（runtime 经 `__state_new` 重建初始
+> 状态并重启，见 [`CODEBUDDY.md`](../CODEBUDDY.md) §3.3）；下述 `supervisor {}` 声明式语法为规划。
 
 ### 5.1 基本语法
 
@@ -287,7 +297,8 @@ match actor.risky_operation().await {
 ```zeta
 actor UnstableActor {
     pub async fn boom() {
-        panic!("Something went wrong!");
+        // MVP：方法返回 -1 触发崩溃协议（panic! 宏未实现，属规划）
+        return -1;
         // Actor 崩溃，Supervisor 决定是否重启
     }
 }
@@ -389,7 +400,10 @@ actor FileWriter {
 
 ---
 
-## 10. 完整示例
+## 10. 完整示例（目标示例，含规划语法）
+
+> 下述 `ActorRef`/`supervisor {}`/`format!` 等为规划语法；MVP 可运行版本见
+> [`guide.md`](./guide.md) §9.2（监督计数示例）。
 
 ```zeta
 // Chat Room 示例

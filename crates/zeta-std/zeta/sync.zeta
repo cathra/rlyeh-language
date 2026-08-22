@@ -1,0 +1,76 @@
+// ===== sync 模块（B4，2026-08）：pthread 互斥锁 / 读写锁 =====
+// 基于 extern FFI 绑定 pthread 家族（extern 声明于根模块 core.zeta 的
+// extern 集中区）；原语对象（pthread_mutex_t / pthread_rwlock_t）承载于
+// malloc 缓冲，句柄（i64 指针）存于结构体字段。
+// 注意：malloc 缓冲无显式释放（MVP 无析构函数），进程退出时由 OS 回收。
+// trylock 系列 C 侧返回 int，声明为 `-> i32`：编译器对 ret32 extern 生成
+// `declare i32` + 调用后 sext 清洗（extern_ret32），返回值可靠
+// （0 = 成功 / EBUSY = 失败）。
+// 分配用 `calloc` 而非 `malloc`：内建 alloc_array/alloc_bytes 已按
+// `i8* @malloc(i64)` 声明 malloc，再以 i64 返回声明会触发 LLVM
+// "invalid redefinition of function 'malloc'"；calloc 符号无内建冲突。
+
+// 互斥锁（非递归；p 为 pthread_mutex_t*）。
+// macOS pthread_mutex_t = 64 字节，Linux glibc = 40 字节，calloc(1, 64) 双平台安全。
+struct Mutex { p: i64 }
+
+impl Mutex {
+    fn new() -> sync::Mutex {
+        let p = calloc(1, 64);
+        let _ = pthread_mutex_init(p, 0);   // attr = NULL
+        sync::Mutex { p: p }
+    }
+    // 加锁（无竞争者时立即返回；已持锁线程重复加锁为未定义行为）
+    fn lock(self) {
+        let _ = pthread_mutex_lock(self.p);
+    }
+    fn unlock(self) {
+        let _ = pthread_mutex_unlock(self.p);
+    }
+    // 尝试加锁：成功返回 true，已被占用返回 false（不阻塞）
+    fn try_lock(self) -> bool {
+        let r = pthread_mutex_trylock(self.p);
+        r == 0
+    }
+}
+
+// 读写锁（读-读共享，写-写/读-写互斥；p 为 pthread_rwlock_t*）。
+// macOS pthread_rwlock_t = 200 字节（__opaque[192] + __sig），Linux glibc = 56 字节，
+// calloc(1, 256) 双平台安全。
+struct RwLock { p: i64 }
+
+impl RwLock {
+    fn new() -> sync::RwLock {
+        let p = calloc(1, 256);
+        let _ = pthread_rwlock_init(p, 0);
+        sync::RwLock { p: p }
+    }
+    // 读锁（可多个读者并发持有）
+    fn read_lock(self) {
+        let _ = pthread_rwlock_rdlock(self.p);
+    }
+    // 写锁（与任何其他锁互斥）
+    fn write_lock(self) {
+        let _ = pthread_rwlock_wrlock(self.p);
+    }
+    fn unlock(self) {
+        let _ = pthread_rwlock_unlock(self.p);
+    }
+    fn try_read_lock(self) -> bool {
+        let r = pthread_rwlock_tryrdlock(self.p);
+        r == 0
+    }
+    fn try_write_lock(self) -> bool {
+        let r = pthread_rwlock_trywrlock(self.p);
+        r == 0
+    }
+}
+
+// Condvar / Barrier：骨架声明（待线程创建支持后启用）。
+// MVP 语言无函数指针，无法调用 pthread_create；条件变量的 wait/signal
+// 协作与屏障的 count>1 语义均需多线程，单线程不可验证，故暂不绑定。
+//   extern fn pthread_cond_init(c: i64, attr: i64) -> i32;
+//   extern fn pthread_cond_wait(c: i64, m: i64) -> i32;
+//   extern fn pthread_cond_signal(c: i64) -> i32;
+//   extern fn pthread_barrier_init(b: i64, attr: i64, count: i64) -> i32;
+//   extern fn pthread_barrier_wait(b: i64) -> i32;

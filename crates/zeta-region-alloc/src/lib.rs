@@ -59,8 +59,10 @@ pub mod size_advisor;
 pub mod static_sizer;
 
 pub use allocator::SmartRegion;
+pub use compiler_interface::{CompilerInterface, RegionCompileInfo};
 pub use error::AllocError;
-pub use profile::PgoData;
+pub use pgo_advisor::PgoAdvisor;
+pub use profile::{PgoData, ProfileCollector};
 pub use region::Region;
 pub use size_advisor::SizeAdvisor;
 pub use stats::RegionStats;

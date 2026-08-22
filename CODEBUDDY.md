@@ -29,6 +29,7 @@ Zeta 是一门面向未来十年基础设施的**系统级编程语言**，设�
 ```
 zeta-language/
 ├── CODEBUDDY.md              ← 本文件（项目总纲）
+├── CHANGELOG.md              ← 版本变更记录
 ├── Cargo.toml                ← Rust 工作区配置
 ├── README.md                 ← 项目介绍
 │
@@ -46,7 +47,8 @@ zeta-language/
 │   ├── zeta-driver/          ← 编译器驱动（CLI 入口）
 │   ├── zeta-std/             ← 标准库（Zeta 源码）
 │   ├── zeta-actor-runtime/   ← Actor 运行时
-│   └── zeta-region-alloc/    ← 区域分配器（bump + 智能）
+│   ├── zeta-region-alloc/    ← 区域分配器（bump + 智能）
+│   └── zeta-lsp/             ← 语言服务器（LSP over stdio）
 │
 ├── tools/                    ← 工具链
 │   ├── zeta-fmt/             ← 代码格式化
@@ -59,11 +61,12 @@ zeta-language/
 │   └── src/
 │
 ├── docs/                     ← 语言规范 + 开发计划文档
-│   ├── grammar.md            ← 完整语法规范（EBNF）
-│   ├── semantics.md          ← 语义规则
-│   ├── memory-model.md       ← 分层内存管理规范
-│   ├── actor-model.md        ← Actor 并发模型规范
-│   ├── std-lib.md            ← 标准库 API 规范
+│   ├── guide.md              ← 语言教程（示例均可运行）
+│   ├── grammar.md            ← 完整语法规范（EBNF，含规划标注）
+│   ├── semantics.md          ← 语义规则（含规划标注）
+│   ├── memory-model.md       ← 分层内存管理规范（含规划标注）
+│   ├── actor-model.md        ← Actor 并发模型规范（含规划标注）
+│   ├── std-lib.md            ← 标准库 API 规范（已实现 / 规划）
 │   ├── development-plan.md   ← 新版开发计划（阶段 A–F，权威副本）
 │   └── design/               ← 早期设计稿归档（映射见 design/README.md）
 │
@@ -123,7 +126,7 @@ if x in 0..<10 {}  // 0 <= x < 10   [0, 10)
 if x in 0...10 {}  // 0 <= x <= 10  [0, 10]
 if x in 0<..10 {}  // 0 < x <= 10   (0, 10]
 
-// 时间字面量
+// 时间字面量（分钟单位：9am = 540，6pm = 1080；hour 取分钟值）
 if hour in (9am...6pm) {}
 if hour not in (6am..<10pm) {}  // 跨午夜
 ```
@@ -221,7 +224,31 @@ let arr2: [i64; 4] = [1, 2, 3, 4];  // 类型注解保留长度
 let x = arr[0];                // 索引读取（越界编译期可查）
 arr[1] = 99;                   // 索引写入（别名共享，互相可见）
 let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
+
+// 动态切片（数组 / Vec / String 通用，元素按值拷贝返回全新缓冲）
+let a = arr[1..<3];            // 半开 [1,3)：[20, 30]
+let b = arr[lo...hi];          // 双闭；c = arr[lo<..hi] 不含下界
+let c = v[lo..<hi];            // Vec 切片（std Vec::slice 泛型方法）
+// 越界自动 clamp 到 [0, len]，start >= end 返回空
 ```
+
+---
+
+### 3.8 MVP 已知限制（规划中特性）
+
+以下语法可解析但 MVP **未实现**（typecheck 显式报 Unsupported），详见 [`docs/guide.md`](docs/guide.md) §13：
+
+| 特性 | 说明 |
+|------|------|
+| 宏调用 | `println!` / `vec!` / `format!` 等（`!` 是 `not` 一元运算符）；打印用内建 `println(expr)`（无 `{}` 格式化） |
+| 引用类型 | `&x` 表达式、`&T` 参数、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 |
+| 闭包 | `\|x\| x + 1` 语法可解析，typecheck 报 Unsupported |
+| 运算符 | `?` 错误传播、`dyn Trait`、函数指针未实现 |
+| 所有权层级 | L2 `Rc<T>`/`Arc<T>`、L3 `Gc<T>` 未实现（规划） |
+| 并发 | `serde`/`fmt`/`async` 模块规划；actor 的 `async` 方法 + `.await`/`send` 已实现（§3.3） |
+| 迭代器 | `for i in 0..<10` 数值区间可用；`Iterator` trait/`collect` 未实现 |
+| region 选项 | `adaptive`/`with_size (N)` 可用；`strategy (bump)` 等规划中 |
+| `String::from(s)` | 支持字面量及绑定字面量的变量；非字面量 Str 长度表达未实现 |
 
 ---
 
@@ -285,7 +312,7 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 
 | 命令 | 功能 | 状态 |
 |------|------|------|
-| `zeta new <name>` | 创建新项目 | 🔲 待实现 |
+| `zeta new <name>` | 创建新项目（`--lib` 库项目；生成 Zeta.toml + src/main.zeta 或 lib.zeta） | ✅ 可用（委托 zep 脚手架） |
 | `zeta build` | 编译项目 | ✅ 可用（MVP；`--target <triple>` 交叉编译，macOS 双架构已验证） |
 | `zeta run` | 编译并运行 | ✅ 可用（MVP） |
 | `zeta test` | 运行测试 | ✅ 可用（D1：`tests/` 目录 compile-pass/compile-fail/run-pass） |
@@ -293,15 +320,23 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 | `zeta check` | 静态分析 | ✅ 可用（D2：未使用变量/恒常条件/冗余比较/不可达代码） |
 | `zeta bench` | 基准测试 | ✅ 可用（D3：编译 + 多次计时统计，`--runs`/`--warmup`） |
 | `zeta doc` | 生成文档 | ✅ 可用（D3：`///` 注释提取 → Markdown，`--out`/`--title`） |
-| `zeta publish` | 发布包 | 🔲 待实现 |
+| `zeta publish` | 发布包 | ✅ 可用（E3：委托 zep 打包发布，`--registry`/`--verbose`；重复版本拦截） |
+| `zeta lsp` | 语言服务器 | ✅ 可用（F1：LSP over stdio，full 文档同步 + 诊断推送，复用 zeta-check 静态分析） |
+| `zeta profile` | PGO 回灌报告 | ✅ 可用（F2：`.zeta_profile` → 区域大小预测报告；`zeta build --profile` 编译期注入） |
 
 ---
 
 ## 5.5 编译器加固与标准库扩展（新版开发计划执行记录，2026-08）
 
 > 本节记录新版开发计划（阶段 A–F，详见 [`docs/development-plan.md`](docs/development-plan.md)）的执行进度：
-> **阶段 A 已完成（A1/A2/A4），阶段 B 全部完成（B1–B5 ✅），阶段 C 全部完成（C1–C3 ✅），阶段 D 全部完成（D1–D3 ✅：zeta test / zeta fmt / zeta check / zeta doc / zeta bench），阶段 E 的 E1 大部分完成（交叉编译 `--target` macOS 双架构 + `__zeta_target_os` 平台内建消除 `sockaddr_in4` 布局假设）**，A3 待决策，E1 Windows/ARM 工具链、E2/E3 与阶段 F 待做。
+> **阶段 A 全部完成（A1–A4 ✅），阶段 B 全部完成（B1–B5 ✅），阶段 C 全部完成（C1–C3 ✅），阶段 D 全部完成（D1–D3 ✅：zeta test / zeta fmt / zeta check / zeta doc / zeta bench），阶段 E 全部完成（E1 交叉编译 `--target` macOS 双架构 + `__zeta_target_os` 平台内建消除 `sockaddr_in4` 布局假设；E2 WASM 目标：`--target wasm32-wasi` 编译 + wasmtime 运行验证；E3 发布流程：zep publish 重复版本保护 + `zeta publish` CLI + release.yml 四平台 + CHANGELOG.md），阶段 F 全部完成（F1 LSP 服务器 MVP：`zeta lsp` + 新 crate `zeta-lsp`，文档同步 + 诊断推送；F2 PGO 数据回灌：`zeta profile` 命令 + `zeta build --profile` 编译期注入，`.zeta_profile` → 区域大小预测报告）**，E1 Windows/ARM 工具链（待对应环境）待做。
 
+- [x] **标准库模块化拆分**（`zeta-std/zeta/core.zeta` 1323 行单文件 → 根模块 + 四个子模块文件：`time.zeta`（Duration/Instant）/ `io.zeta`（文件 IO/控制台 IO）/ `net.zeta`（socket/字节序/主机名）/ `sync.zeta`（pthread 锁）；driver `stdlib.rs::load_std_prelude` 改为复用 `load_combined_source` 模块展开（`mod io;` → 内联块，相对 `core.zeta` 所在目录解析）后注入，用户侧 API 不变；**约束**：① 编译器按全名特判 String/Vec/HashMap 构造器与 `alloc_bytes` 等 callee 名，② extern 的 LLVM `declare` 符号必须与 libc 一致（模块前缀会改名致链接失败）——故 String/Vec/Option/Result/HashMap、内建函数与**全部 extern 声明**留在根，子模块仅含自由函数与普通 struct；③ 兼容经 core.zeta 末尾 `mod time; mod io; mod net; mod sync;` + `use time::Duration; use io::read_file; ...` 重新导出（裸名即用，mod 声明置于文件尾符合类型顺序解析）；④ 子模块内自引用类型用全限定名（`time::Instant` / `sync::Mutex`，模块内裸名类型解析无前缀回退），配合 `check_struct_construct` 支持 use 别名/模块路径解析（1 处编译器修改，`resolve_full_name` 兜底）；io/net/time/sync/hashmap/std_prelude 子集测试 + 全量 111 套件全绿 + 跨模块冒烟（io 文件读写 + Duration 换算 + Mutex/RwLock + HashMap + 时间字面量））
+
+- [x] **F2 PGO 数据回灌（编译流程）**（`.zeta_profile` → 区域大小预测闭环：zeta-driver 接入 `zeta-region-alloc`（workspace 已注册，补 re-export `PgoAdvisor`/`CompilerInterface`/`RegionCompileInfo`/`ProfileCollector`）；新命令 `zeta profile <file.zeta_profile> [--out <report.md>]`（`run_profile`，加载 PGO 画像 JSON → `PgoAdvisor::recommend_size`（p95×1.1，下限 64KiB）→ `CompilerInterface` 报告：每区域 estimated=历史均值 / initial=PGO 建议 / max=建议×4 与峰值取大 / decision 附 p50/p95/mean/max 依据，区域按 ID 排序）；`zeta build --profile <file>` 编译期注入（构建完成后打印预测报告，加载失败仅告警不阻断构建——profile 为可选优化输入）；lib.rs 新增 `region_profile_report(path)`（文件读取 + 解析，`DriverError::Profile` 承载 JSON 错误）+ `build_region_report(data)`（纯函数可单测）；`profile_cmd_test.rs` 6 用例：报告元数据/建议与 advisor 一致 + 下限回退（大样本 p95×1.1>64KiB 采纳、小样本回落 64KiB）/文件往返/坏 JSON [profile] 错误/缺文件 I/O 错误/空数据 "(none registered)"；冒烟：手写 `.zeta_profile` → `zeta profile` 输出 worker_pool initial 858000（780000×1.1）与 tiny_region 65536（下限），`zeta build --profile` 编译完成 + 报告注入；语言级 region 接线后预测可直接回灌 `region 'r adaptive` 初始容量）
+- [x] **遗留修复：动态切片 + `zeta new` + `String::from` 字面量变量**（`Vec<T>` 动态切片 `v[lo..<hi]`/`v[lo...hi]`/`v[lo<..hi]`：std 泛型方法 `Vec::slice`（越界 clamp 到 [0, len]、start>=end 空、返回全新缓冲，元素按值拷贝）+ `check_slice` 三路分支实例化（String→substring / Vec→slice / 数组→展开）；数组 `[T; N]` 动态切片：typecheck 展开为 Vec 拷贝循环（`let __base` 绑定防重复求值 + Vec::new cap 4 三槽构造 + 计数器/上界 + 边界 clamp 到 [0, N] + `while __i < __hi { __out.push(__base[__i]); __i += 1 }`，push 经 `instantiate_impl_method` 泛型实例化，支持 i64/f64/bool/u8 元素）；`String::from(s)` 支持绑定字面量的变量（`TypeContext.local_inits` 表记录 `let` 初始化表达式，`check_string_from` 对 `Variable` 追踪回字面量；非字面量 Str 的长度表达仍待实现）；`zeta new <name> [--lib]` 命令（委托 zep `cmd_new` 生成 Zeta.toml + src/main.zeta|lib.zeta）；`dynamic_slice_test.rs` 7 用例全绿 + 全量回归 111 套件）
+- [x] **F1 LSP 服务器（MVP）**（新 crate `crates/zeta-lsp` + `zeta lsp` CLI 命令：JSON-RPC 2.0 over stdio（Content-Length 帧，自研轻量 `jsonrpc.rs` 无外部 LSP 依赖）+ full 文本同步（didOpen/didChange/didClose）+ 诊断推送（复用 zeta-check 静态分析：parse-error 与 unused-variable 等 lint 规则映射为 LSP Diagnostic，0 起始 range/severity/source/code，行覆盖锚点）；`initialize` 声明 capabilities（textDocumentSync=1），shutdown/exit 生命周期，未知请求 -32601；`server.rs::handle` 为纯函数入口便于单测（11 单测：帧编解码/生命周期/诊断映射）+ `lsp_e2e_test.rs` 2 进程测试（spawn `CARGO_BIN_EXE_zeta-lsp` 完整协议往返：initialize→didOpen 告警→didChange 语法错误→didClose 清空→shutdown→exit）；冒烟 `zeta lsp` 返回 capabilities；zeta-driver 全量回归绿；MVP 诊断仅覆盖语法 + lint（typecheck 级诊断后续迭代））
+- [x] **A3 String 拼接拷贝语义**（消除共享缓冲别名隐患：原 `a + b` desugar 为 `let __s = a; __s.push_str(b)`——3 槽值拷贝共享 data 缓冲，拼接结果与左操作数互相污染（实测：`s.push_str` 使 `a` 变长、`a` 扩容后 `s` 内容被改）；修复为 `let __s = a.clone(); __s.push_str(b)`：std `String::clone()` 深拷贝（`String::new()` + 逐字节 `push_byte`，复用 substring 模式）+ typecheck desugar 改为调用 clone；`string_concat_test.rs` 9 用例（原 6 + 新增 result_isolation/lhs_isolation/clone_direct），`concat_grow` cap 预期 24→16（clone 从 cap 0 起 0→8→16 翻倍））
 - [x] **用户级 match 解构具体实例化枚举聚合载荷**（修复 `expected String, found T`：`check_pattern` Enum 分支原仅用 `ctx.generic_subst` 替换字段类型，用户级 match（非泛型方法体）subst 为空导致 `T` 未定型；修复为合并「当前 generic_subst + 由 `pat_ty` 类型参数与 `enum_def.type_params` 建立的新映射」，嵌套泛型 `Option<Vec<T>>`/`Result<Option<String>, i64>` 递归生效；`option_result_test.rs::user_level_match_string_payload` 8 断言覆盖 Some/None/Ok/Err/嵌套/方法链）
 - [x] **Infer 枚举自动定型**（修复裸 `Result::Err(7).unwrap_or(100)` 返回 `_`：`check_method_call` 参数检查时对含 `_` 的期望类型用实参 unify 回填 subst（`unify` 新增 `Type::Infer` 分支：替换 subst 中所有 Infer 条目），回填后重算签名再实例化方法；`option_result_test.rs::bare_enum_infer` 5 断言覆盖裸 Ok/Err/Some + 聚合载荷 + 算术链）
 - [x] **通用 FFI：`extern fn` 声明**（打通 parser→typecheck→HIR→MIR→LIR→LLVM→链接全链路：AST `AstFnDecl.is_extern` + parser 识别 `extern` 前缀；typecheck 允许无 body 并序列化签名（`type_to_extern_name`，标量 i8/i16/i32/i64/isize/u8/u16/u32/u64/usize/f32/f64/bool/char/()/&T）；HIR `HirFnDecl.is_extern` + `extern_sig`；MIR `MirFunction.is_extern` + `extern_sig`（空 CFG，DCE pass 跳过）；LIR `LirFunction.is_extern` + `parse_extern_type`（未知名→Ptr），extern 跳过类型推断/重算循环；codegen 对 extern 生成 `declare` 而非 `define`（`llvm_global_name`）；`ffi_extern_test.rs` 3 用例：i64（libc labs）/f64+void（fabs、srand）/嵌套+循环+运算（labs、llabs）——extern 符号由链接器解析，为 io/net 绑定层接线扫清障碍）
@@ -360,8 +395,9 @@ let ch = s[0];                 // 字符串按字符索引（步长 1 字节）
 - [x] **M2.3** 增量编译引擎（源码/接口哈希 + LLVM IR 产物缓存 + 依赖图 + 多文件模块编译缓存）
 - [ ] **M2.4** LSP 服务器（IDE 支持）
 - [x] **M2.5 部分完成** 标准库核心模块：P009 完成 `Option<T>`/`Result<T,E>` 纯 Zeta 实现 + 编译器标准库搜索路径注入（`--no-std`/缓存键覆盖）+ NIO/sendfile 绑定层；**collections 已落地 `Vec<T>` + `String` + `HashMap<K,V>`**（`Vec<T>`：`new`/`with_capacity` + `push`/`pop`/`get`/`set`/`len`/`cap`/`is_empty` + `v[i]` 索引读写（`check_index` 解 `Vec<T>` 类型参数，步长 8）+ `for x in v` 容器迭代 + 自动扩容 + `contains`/`remove`/`insert`/`clear`/`find`/`sort` 常用操作 + 内建 `alloc_array`/`array_copy`/`array_free`，`vec_test.rs` 6 用例 + `vec_for_test.rs` 6 用例 + `vec_common_ops_test.rs` 6 用例 + `vec_find_sort_test.rs` 6 用例；`String`：UTF-8 字节缓冲（3 槽布局）+ `String::from("字面量")`/`new`/`with_capacity` + `println(String)`（`%.*s`）+ `len`/`cap`/`is_empty`/`get`/`push_byte`/`push_str` + `a + b` 拼接运算符 + 字节级 `s[i]` 索引（步长 1）+ `s1 == s2`/`!=` 内容相等比较（len 短路 + `bytes_eq` 内建 = `memcmp == 0`）+ `s1 < s2`/`>`/`<=`/`>=` 字典序比较（`bytes_cmp` 内建 = `memcmp` 有符号扩展 i64，desugar 为前缀 memcmp + 长度兜底）+ `substring(start, end)` 子串截取（[start, end) 字节区间 + 越界 clamp）+ `find(sub)`/`contains(sub)` 子串查找（朴素滑动窗口，未命中 -1 / 空子串 0）+ 范围切片语法 `s[lo..<hi]`/`s[lo...hi]`/`s[lo<..hi]`（typecheck 层 `check_slice` desugar 为 `String::substring`：`..<` 直通、`...` 闭区间 end+1、`<..` 左开 start+1，仅 String）/ + `to_upper`/`to_lower` 大小写转换（比较链区间 ±32，非 ASCII 不转换）+ `trim` 首尾空白剥离（双扫描 + substring）+ `starts_with`/`ends_with` 前后缀判断（逐字节比较 + 空前缀恒真 + 长于自身恒假）+ `replace` 子串替换（滑动窗口 + 空 old 特判防死循环）+ 顶层 `int_to_string`/`string_to_int` 数值互转（位权除法逐位输出 / 逐字符累加 + 负号 + 遇非数字停止）+ `split` 分割返回 `Vec<String>`（滑动窗口 + 空 sep 特判）/ `repeat` 重复拼接 / `pad_start`/`pad_end` 字节填充 / `strip_prefix`/`strip_suffix` 前后缀剥离返回 `Option<String>` / `truncate` 截断 / + 内建 `alloc_bytes`/`copy_bytes`/`bytes_eq`/`bytes_cmp`/`print_string`/`println_string`，`string_test.rs` 6 用例 + `string_eq_test.rs` 6 用例 + `string_concat_test.rs` 6 用例 + `string_cmp_test.rs` 6 用例 + `string_slice_test.rs` 6 用例 + `string_slice_syntax_test.rs` 6 用例 + `string_case_trim_test.rs` 6 用例 + `string_common_ops_test.rs` 6 用例 + `string_conv_test.rs` 6 用例 + `string_split_pad_test.rs` 6 用例 + `string_strip_trunc_test.rs` 6 用例；`HashMap<K,V>`：开放寻址线性探测 + 墓碑删除 + 翻倍 rehash（负载 1/2）+ 6 槽布局（keys/vals/states/len/used/cap）+ 内建 `hash_value`（整数键 Knuth 乘法散列 / String 键 djb2 内容哈希）+ 构造器特判展开 + `for (k, v) in m` 元组模式迭代 + `keys()`/`values()` 键值集收集 + `clear()` 完全重置（容量不变），`hashmap_test.rs` 6 用例 + `hashmap_for_test.rs` 6 用例 + `hashmap_string_key_test.rs` 7 用例 + `hashmap_keys_clear_test.rs` 6 用例 + `hashmap_len_test.rs` 4 用例，`len`/`is_empty` 已固化（见 5.5/B5））；**补充（见 5.5）**：`Vec<T>` 新增 `first`/`last`/`reverse`/`swap`/`binary_search`（`vec_more_ops_test.rs` 5 用例）；新增 `Duration`/`Instant` 时间模块（libc `clock()` extern 驱动，`time_test.rs` 3 用例）；**io 模块 ✅（B2）**：libc stdio 文件 IO + `read_file`/`write_file`/`append_file`/`read_line`（`io_file_test.rs` 9 用例）；**net 模块 ✅（B3）**：`hostname()` + `htons` + `socketpair_stream`/`fd_at`/`send_all`/`recv_some`/`sockaddr_in4`/`tcp_connect`（依赖本轮位运算全链路，`net_socket_test.rs` 6 用例，见 5.5）；**sync 模块 ✅（B4）**：`Mutex`/`RwLock`（pthread extern + calloc 承载，`sync_test.rs` 6 用例），Condvar/Barrier 待线程创建支持（见 5.5）
-- [ ] **M2.6** 交叉编译（macOS, Windows, ARM）
-- [ ] **M2.7** WASM 目标支持
+- [x] **M2.6 完成（E1）** 交叉编译：`zeta build --target <triple>` 全链路；macOS 双架构已验证（`arm64-apple-macosx` / `x86_64-apple-macosx` 均以本机 clang 直链 SDK 编译运行）；`__zeta_target_os` 平台内建（linux=1/macos=2/windows=3/freebsd=4）驱动 `sockaddr_in4` 双布局（macOS `sin_len` 头 vs Linux 无）；driver 编译目标归一化（`arm64` 前缀统一为 `arm64-apple-macosx`）；Windows/ARM 工具链待环境
+- [x] **M2.7 完成（E2）** WASM 目标：`zeta build --target wasm32-wasi` 编译 Zeta 源码为 `.wasm` 并经 wasmtime（WASI preview1）运行验证；`is_wasm_triple`/`assemble_wasm` 支持；`wasm_target_test.rs` 3 用例（triple 判定 + hello world + std 特性数组/String/位运算）全绿，工具缺失时优雅跳过。关键适配（均集中在 driver 的 wasm 链接层，codegen 零改动）：① WASI 入口适配——Zeta 无参 `@main` 重命名为 `__main_argc_argv(i32, i8**)`（wasi-libc `__main_void` 调用约定）；② `-nostdlib` 手动链接 `crt1.o` + `libc.a`（绕开 clang 默认 compiler-rt builtins 缺失：`libclang_rt.builtins-wasm32.a` 不在 Xcode CLT/brew llvm 内，Zeta 的 i64/f64 运算为 wasm 原生指令无需软件例程）；③ wasi-libc 33 多目标布局（`lib/wasm32-wasi/`，旧版 `lib/`）自动探测；④ malloc/memcmp 参数位宽适配——`i64`→`i32`（常量直接降宽、`%` 值前置插 `trunc` 指令），规避 wasm import 签名不匹配（signature_mismatch/malloc_bitcast_invalid trap）。工具链：`brew install lld wasmtime wasi-libc`
+- [x] **E3 完成 发布流程**：① `zep publish` 重复版本保护（发布前 `PackageIndex::find` 命中即报错「已存在于注册表，请提升版本号后再发布」，阻止静默覆盖；实测：0.1.0 首次发布成功 → 重复发布报错 → 提升 0.2.0 再发布成功，本地注册表索引累积两版本含 checksum/size）；② `.github/workflows/release.yml` 增加 Windows x86_64（`x86_64-pc-windows-msvc` + `.exe` 后缀 + `shell: bash` 跨平台拷贝），矩阵扩至 macOS ARM64/x86_64 + Linux x86_64 + Windows x86_64 共 4 平台；③ `zeta publish` CLI（`zeta-driver` 依赖 zep lib，`Ctx::new` + `cmd_publish` 委托，`--registry`/`--verbose`；实测：`zeta publish --registry <path>` 发布成功 + 重复版本拦截 exit=1）；④ `CHANGELOG.md` v0.1.0 首个版本记录（语言核心/标准库/工具链/包管理/多目标/CI）
 - [x] **M2.8 分配器侧完成** 智能区域（P010：静态大小推断 + PGO 画像/推荐 + EWMA 自适应扩容 + 碎片/事件统计 + 编译器集成报告）；PGO 数据回灌编译流程待完成
 
 ### 已完成语言特性（无编号任务）

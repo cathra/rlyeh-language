@@ -31,7 +31,7 @@ Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
 | 设计目标 | 对标 | 落地形态 |
 |----------|------|----------|
 | 内存安全、零 GC | Rust | 分层内存模型（L0 所有权 → L1 区域 → L2 Rc → L3 GC） |
-| 编译速度极快 | Go | 模块级缓存、函数级并行（规划中） |
+| 编译速度极快 | Go | 模块级缓存（增量编译，已实现）、函数级并行（规划中） |
 | 并发模型一等公民 | Erlang / Akka | `actor` 语言级构造 + 运行时监督 |
 | 数学式语法直觉 | Python / MATLAB | 比较链 `0 < x < 10`、集合判断 `x in (1, 3, 5)` |
 
@@ -64,13 +64,17 @@ zeta test                       # 运行 tests/ 目录 compile-pass/compile-fail
 
 | 命令 | 功能 |
 |------|------|
-| `zeta build <file> [-o <out>] [--target <triple>]` | 编译为可执行文件（`--target` 交叉编译 / WASM） |
+| `zeta new <name> [--lib]` | 创建新项目脚手架（Zeta.toml + src/main.zeta 或 lib.zeta） |
+| `zeta build <file> [-o <out>] [--target <triple>]` | 编译为可执行文件（`--target` 交叉编译 / WASM / `--profile` 注入 PGO） |
 | `zeta run <file>` | 编译并运行 |
 | `zeta test` | 运行测试目录用例 |
 | `zeta fmt <file>` | 代码格式化（`--check` / `-w` / `--indent`） |
 | `zeta check <file>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
 | `zeta bench <file>` | 基准测试（`--runs` / `--warmup`） |
 | `zeta doc <file>` | 从 `///` 注释生成 Markdown 文档 |
+| `zeta publish [--registry] [--verbose]` | 打包发布到 zep 注册表（重复版本拦截） |
+| `zeta lsp` | 语言服务器（LSP over stdio，诊断推送） |
+| `zeta profile <file.zeta_profile>` | PGO 画像 → 区域大小预测报告（`--out`） |
 
 ---
 
@@ -257,10 +261,13 @@ use math::square as sq;
 
 ### 8.1 L0：所有权与借用
 
+> **MVP 状态**：L0 仅实现了**移动语义**（值拷贝/移动）与**方法接收者** `&self` / `&mut self`。
+> `&x` 引用表达式、`&T` 参数类型、解引用 `*` 在 MVP 阶段**未实现**（typecheck 显式报 Unsupported），属规划特性。
+
 ```zeta
 let s = String::from("hello");
-let t = s;               // 移动：s 不可再用
-let r = &t;              // 不可变借用
+let t = s;               // 移动：s 语义上不可再用（值拷贝语义）
+// let r = &t;           // MVP 不支持 & 表达式（规划）
 ```
 
 ### 8.2 L1：区域（Region）
@@ -481,6 +488,24 @@ let byte = (port >> 8) & 0xFF;       // 解包取高字节
 
 > 注意优先级：`*` > `+` > `<<` > `&` > `^` > `|`，且比较 `>` 位运算，裸 `x & 3 == 2` 会按 bool 处理，需要括号 `(x & 3) == 2`。
 
+### 10.11 动态切片（数组 / Vec）
+
+`v[lo..<hi]`（半开）、`v[lo...hi]`（双闭）、`v[lo<..hi]`（不含下界）返回**全新缓冲**（元素按值拷贝），越界自动 clamp，`start >= end` 返回空：
+
+```zeta
+let arr = [10, 20, 30, 40, 50];
+let a = arr[1..<3];              // [20, 30]
+let b = arr[lo..<hi];            // 动态边界（运行时变量）
+
+let mut v: Vec<i64> = Vec::new();
+v.push(1); v.push(2); v.push(3); v.push(4);
+let sub = v[1..<3];              // [2, 3]；原 Vec 不受影响
+let c = v[-3..<2];               // clamp 到 [0, 2) → [1, 2]
+let d = v[4..<1];                // start >= end → 空
+```
+
+字符串切片 `s[lo..<hi]` 同理（按字节）。
+
 ---
 
 ## 11. 编译目标与工具链
@@ -544,8 +569,18 @@ extern fn gethostname(name: String, len: i64) -> i64;
 
 ### 已知限制（MVP）
 
-- **未实现**：L2 `Rc`/`Arc`、L3 `Gc`、函数指针、`pthread_create`（Condvar/Barrier 语义需多线程）、`serde`/`async`/`fmt` 模块（std-lib.md 中为规划）。
-- **std 单文件**：MVP 标准库集中于 `zeta-std/zeta/core.zeta`，模块化拆分待后续。
-- **net**：`tcp_connect` 需平台特定 `sockaddr_in4` 布局（已由 `__zeta_target_os` 双布局化）；WASI 下网络不可用。
-- **Actor 运行时**：交叉编译/WASM 目标下 actor 程序暂不支持（staticlib 为主机架构）。
-- **`zeta new` / `zeta publish`**：待实现。
+**规划中 / 未实现**：
+- **宏系统**：`println!` / `vec!` / `format!` 等宏调用不支持（`!` 是 `not` 一元运算符）；打印用内建 `println(expr)`（0–1 参数，无 `{}` 格式化）。
+- **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self` / `&mut self` 可用。
+- **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported（规划）。
+- **运算符**：`?` 错误传播、`dyn Trait`、函数指针未实现。
+- **所有权层级**：L2 `Rc<T>` / `Arc<T>`、L3 `Gc<T>` 未实现（规划）。
+- **并发**：`serde` / `fmt` / `async` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）。
+- **迭代器协议**：`for i in 0..<10` 数值区间可用；`Iterator` trait / `collect` 未实现。
+
+**实现约束**：
+- **std 模块化**：标准库位于 `zeta-std/zeta/`，`core.zeta` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `use` 重新导出，用户侧裸名即用。
+- **net**：`tcp_connect` 依赖平台特定 `sockaddr_in4` 布局（已由 `__zeta_target_os` 双布局化）；WASI 下网络不可用。
+- **Actor 运行时**：交叉编译 / WASM 目标下 actor 程序暂不支持（staticlib 为主机架构）。
+- **`String::from(s)`**：支持字符串字面量及绑定字面量的变量；非字面量 Str（运行期内容）长度表达未实现。
+- **region 选项**：`adaptive` / `with_size (N)` 可用；`strategy (bump)` 等其余选项规划中。

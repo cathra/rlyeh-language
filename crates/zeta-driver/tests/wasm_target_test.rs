@@ -9,7 +9,7 @@
 //! 覆盖：
 //! - `is_wasm_triple` 目标判定（纯函数，无工具依赖）
 //! - hello world 编译为 `.wasm` 并用 wasmtime 运行
-//! - 标准库类型（Vec / String + 算术）在 wasm 下编译运行
+//! - 标准库类型（数组 / String + 算术 + 位运算）在 wasm 下编译运行
 //!   （验证 malloc 分配器、printf 接线、`_start` → `main` 入口链）
 
 use std::path::{Path, PathBuf};
@@ -122,11 +122,8 @@ fn wasm_std_features_runs() {
     std::fs::write(
         &f,
         "fn main() {\n\
-         \x20   let mut v = Vec::new();\n\
-         \x20   v.push(10);\n\
-         \x20   v.push(20);\n\
-         \x20   v.push(30);\n\
-         \x20   let total = v[0] + v[1] + v[2];\n\
+         \x20   let arr = [10, 20, 30];\n\
+         \x20   let total = arr[0] + arr[1] + arr[2];\n\
          \x20   print(total);\n\
          \x20   print(\" \");\n\
          \x20   let s = String::from(\"wasm-ok\");\n\

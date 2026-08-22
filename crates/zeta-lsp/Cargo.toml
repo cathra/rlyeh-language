@@ -1,0 +1,17 @@
+[package]
+name = "zeta-lsp"
+version.workspace = true
+edition.workspace = true
+description = "Zeta 语言服务器（LSP over stdio）：文档同步 + 诊断推送（复用 zeta-check 静态分析）"
+
+[dependencies]
+zeta-check = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "zeta-lsp"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"

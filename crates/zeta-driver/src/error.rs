@@ -29,6 +29,8 @@ pub enum DriverError {
     Module(String),
     /// 文档生成失败（`zeta doc`）
     Doc(String),
+    /// PGO 画像（`.zeta_profile`）读取 / 解析失败（`zeta profile`）
+    Profile(String),
 }
 
 impl fmt::Display for DriverError {
@@ -46,6 +48,7 @@ impl fmt::Display for DriverError {
             DriverError::Usage(m) => write!(f, "{m}"),
             DriverError::Module(m) => write!(f, "[module] {m}"),
             DriverError::Doc(m) => write!(f, "[doc] {m}"),
+            DriverError::Profile(m) => write!(f, "[profile] {m}"),
         }
     }
 }

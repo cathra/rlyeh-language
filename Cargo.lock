@@ -1302,6 +1302,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "zep",
  "zeta-actor-runtime",
  "zeta-ast",
  "zeta-bench",
@@ -1311,8 +1312,10 @@ dependencies = [
  "zeta-doc",
  "zeta-fmt",
  "zeta-lir",
+ "zeta-lsp",
  "zeta-mir",
  "zeta-parser",
+ "zeta-region-alloc",
  "zeta-regionck",
  "zeta-typecheck",
 ]
@@ -1345,6 +1348,15 @@ dependencies = [
  "zeta-hir",
  "zeta-mir",
  "zeta-typecheck",
+]
+
+[[package]]
+name = "zeta-lsp"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "zeta-check",
 ]
 
 [[package]]

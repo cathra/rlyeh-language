@@ -13,7 +13,7 @@
 | 里程碑 | 状态 | 说明 |
 |--------|------|------|
 | M1 编译器 MVP | ✅ 100% | M1.1–M1.9 全部完成（词法/语法/AST→HIR/类型检查/借用检查/区域系统/MIR+优化/LLVM 后端/hello-world） |
-| M2 生产可用 | 🔧 约 72% | M2.1 Actor 运行时、模块系统、M2.2 Zep、M2.3 增量编译、M2.5 标准库主体、M2.8 分配器侧 已完成；M2.6 交叉编译 macOS 双架构 + 平台内建已完成（Windows/ARM 待补）；M2.4 LSP、M2.7 WASM 未开始；M2.8 PGO 回灌未完成 |
+| M2 生产可用 | 🔧 约 96% | M2.1 Actor 运行时、模块系统、M2.2 Zep、M2.3 增量编译、M2.5 标准库主体、M2.8 分配器侧 已完成；M2.4 LSP（F1）、M2.6 交叉编译 macOS 双架构 + 平台内建（E1）、M2.7 WASM（E2）、M2.8 PGO 回灌（F2）已完成；剩余 Windows/ARM 工具链（待对应环境）与 M3 生态 |
 | M3 生态繁荣 | ⏳ 0% | 未开始 |
 
 ### 1.2 遗留问题清单（13 项）
@@ -22,7 +22,7 @@
 |---|---------|---------|------|
 | 1 | 用户级 match 解构具体实例化枚举聚合载荷失败（`expected String, found T`） | A1 | ✅ 已修复 |
 | 2 | 裸 `Result::Err(7).unwrap_or(100)` 返回 `_`（`Infer` 占位未定型） | A2 | ✅ 已修复 |
-| 3 | `String` 拼接 `+` 为原地追加 + 共享缓冲，存在别名隐患（需评审改拷贝语义） | A3 | ⏳ 待决策 |
+| 3 | `String` 拼接 `+` 为原地追加 + 共享缓冲，存在别名隐患（需评审改拷贝语义） | A3 | ✅ 已修复 |
 | 4 | 无通用 FFI，io/net 绑定层（NIO/sendfile 已有 Rust 侧但接不进 Zeta）无法接线 | A4 | ✅ 已修复 |
 | 5 | 标准库 time 模块缺失（`Duration`/`Instant`） | B1 | ✅ 已完成 |
 | 6 | 标准库 io 模块缺失（File 读写、stdin/stdout、`read_to_string` 等） | B2 | ✅ 已完成（stdio 方案） |
@@ -31,8 +31,9 @@
 | 9 | `Vec<T>`/`HashMap` 常用方法缺失（`first`/`last`/`reverse`/`swap`/`binary_search`；`len`/`is_empty` 重复定义与固化） | B5 | ✅ 已完成 |
 | 10 | `zeta test` 子命令未实现（测试目前经 `cargo test` 驱动） | D | ✅ 已完成（D1，13 用例 + cargo 矩阵） |
 | 11 | 语言级 `actor`/`spawn` 语法与标准库集成未接线（`zeta-actor-runtime` 已就绪） | C | ✅ 已完成 |
-| 12 | M2.4 LSP 服务器、M2.8 PGO 数据回灌编译流程 | F | ⏳ 延后 |
-| 13 | M2.6 交叉编译、M2.7 WASM、工具链其余命令（fmt/check/doc/bench/publish）、M3 生态（数据库/HTTP/序列化/嵌入式/GPU/教程） | E 及后续 | ⏳ 待开始 |
+| 12 | M2.4 LSP 服务器、M2.8 PGO 数据回灌编译流程 | F | ✅ 已完成（F1 `zeta lsp` + zeta-lsp crate；F2 `zeta profile` + `zeta build --profile`） |
+| 13 | M2.6 交叉编译、M2.7 WASM、工具链其余命令（fmt/check/doc/bench/publish）、M3 生态（数据库/HTTP/序列化/嵌入式/GPU/教程） | E 及后续 | 🔧 大部分完成（E1 macOS 双架构 + 平台内建、E2 WASM、E3 发布流程 + fmt/check/doc/bench/publish/new 命令已完成；Windows/ARM 工具链待环境；M3 生态未开始） |
+| 14 | `String::from` 暂仅支持字面量（非字面量 Str 长度表达未实现）、范围切片仅支持 String（数组/Vec 动态切片待实现） | A/B 遗留 | ✅ 已修复（local_inits 追踪字面量绑定；`Vec<T>` slice 方法 + 数组切片展开；`dynamic_slice_test.rs` 7 用例） |
 
 ---
 
@@ -40,15 +41,14 @@
 
 | 阶段 | 主题 | 状态 |
 |------|------|------|
-| **A** | 编译器加固（泛型/Infer/FFI/字符串语义） | ✅ A1/A2/A4 完成；A3 待决策 |
+| **A** | 编译器加固（泛型/Infer/FFI/字符串语义） | ✅ A1–A4 全部完成 |
 | **B** | 标准库完善（time/io/net/sync/collections） | ✅ 全部完成（B1–B5） |
-| **C** | Actor 语言级接线（`actor`/`spawn`/`.await`） | ⏳ 待开始 |
+| **C** | Actor 语言级接线（`actor`/`spawn`/`.await`） | ✅ 全部完成（C1–C3） |
 | **D** | 工具链（`zeta test`/`fmt`/`check`/`doc`/`bench`） | ✅ D1–D3 全部完成 |
-| **E** | 多目标与发布（交叉编译/WASM/发布流程） | 🔧 E1 大部分完成（macOS 双架构 + 平台内建）；E2/E3 待做 |
-| **F** | 编译器深度（LSP、PGO 回灌） | ⏳ 延后 |
+| **E** | 多目标与发布（交叉编译/WASM/发布流程） | ✅ E1 大部分完成（macOS 双架构 + 平台内建；Windows/ARM 待环境）；E2 完成；E3 完成 |
+| **F** | 编译器深度（LSP、PGO 回灌） | ✅ F1–F2 全部完成 |
 
-> **执行优先级**：A（已优先完成）→ B 的 B2/B3（FFI 打通后的下一推荐方向）→ C → D → E/F。
-> A3 为独立决策项，随时可插入执行。
+> **执行优先级**：A（已全部完成）→ B → C → D → E → F（已完成）。
 
 ---
 
@@ -60,7 +60,7 @@
 |------|------|------|
 | A1 | 用户级 match 解构具体实例化枚举聚合载荷：`check_pattern` Enum 分支合并「当前 generic_subst + `pat_ty` 类型参数 ↔ `enum_def.type_params` 新映射」，嵌套泛型 `Option<Vec<T>>` 等递归定型 | ✅ 完成 |
 | A2 | Infer 枚举自动定型：`check_method_call` 参数检查时对含 `_` 的期望类型用实参 unify 回填 subst（`unify` 新增 `Type::Infer` 分支），回填后重算签名再实例化 | ✅ 完成 |
-| A3 | `String` 拼接 `+` 语义评审：当前为原地追加 + 共享缓冲的别名隐患，评估改为拷贝语义（`let __s = a; __s.push_str(b)` 形态） | ⏳ 待决策 |
+| A3 | `String` 拼接 `+` 语义评审：当前为原地追加 + 共享缓冲的别名隐患，评估改为拷贝语义（`let __s = a; __s.push_str(b)` 形态） | ✅ 完成（拷贝语义：`let __s = a.clone(); __s.push_str(b)`） |
 | A4 | 通用 FFI `extern fn` 声明：打通 parser→typecheck→HIR→MIR→LIR→LLVM→链接全链路，codegen 生成 `declare` 而非 `define`，符号由链接器解析 | ✅ 完成 |
 
 ### 阶段 B — 标准库完善
@@ -123,15 +123,15 @@
 | 任务 | 内容 | 状态 |
 |------|------|------|
 | E1 | 交叉编译：macOS / Windows / ARM 目标（消除平台相关假设） | 🔧 大部分完成（`--target` 注入 clang + 双架构验证 + 平台内建消除 `sockaddr_in4` 布局假设；Windows/ARM 链接器与库路径待补） |
-| E2 | WASM 目标支持（M2.7） | ⏳ 待开始 |
-| E3 | 发布流程：`zep` 注册表版本信息、CI 多平台产物（`.github/workflows/release.yml`） | ⏳ 待开始 |
+| E2 | WASM 目标支持（M2.7） | ✅ 完成（`wasm_target_test.rs` 3 用例全绿：triple 判定 + hello world + std 特性数组/String/位运算；工具链 wasm-ld/wasmtime/wasi-libc 已装；`zeta build --target wasm32-wasi` → wasmtime 运行与主机目标输出一致） |
+| E3 | 发布流程：`zep` 注册表版本信息、CI 多平台产物（`.github/workflows/release.yml`） | ✅ 完成（`zep publish` 重复版本保护 + `zeta publish` CLI + release.yml 四平台矩阵 + `CHANGELOG.md` v0.1.0） |
 
-### 阶段 F — 编译器深度（延后）
+### 阶段 F — 编译器深度
 
 | 任务 | 内容 | 状态 |
 |------|------|------|
-| F1 | LSP 服务器（M2.4）：IDE 支持 | ⏳ 延后 |
-| F2 | PGO 数据回灌编译流程（M2.8 后半）：`.zeta_profile` → 区域大小预测 | ⏳ 延后 |
+| F1 | LSP 服务器（M2.4）：IDE 支持 | ✅ 完成（MVP：新 crate `zeta-lsp`，JSON-RPC over stdio + full 文档同步 + 诊断推送；`zeta lsp` 命令） |
+| F2 | PGO 数据回灌编译流程（M2.8 后半）：`.zeta_profile` → 区域大小预测 | ✅ 完成（`zeta profile` 命令 + `zeta build --profile` 编译期注入：加载画像 → PgoAdvisor p95×1.1 建议 → CompilerInterface 报告；语言级 region 接线后可回灌 `region 'r adaptive` 初始容量） |
 
 ---
 
@@ -148,8 +148,13 @@
 - [x] **位运算全链路**（B3 前置依赖）：HIR `HirBinaryOp` 5 新变体 + typecheck 真正映射（原为 placeholder 显式 Unsupported）+ MIR const_fold 折叠 + LIR 类型推断统一 I64 + codegen `and`/`or`/`xor`/`shl`/`ashr`；`bitwise_test.rs` 6 用例
 - [x] **B3** net 模块：`hostname()` + `htons` + `socketpair_stream`/`fd_at`/`send_all`/`recv_some`/`sockaddr_in4`/`tcp_connect`（`send`/`recv` 为 actor 保留字，extern 用 `r#` 原始标识符）；`net_socket_test.rs` 6 用例
 - [x] **B4** sync 模块：`Mutex`/`RwLock`（pthread extern + `calloc` 承载，`trylock` 系列返回 `int` 依赖编译器 extern `i32` 返回支持）；顺带修复内联 pass 局部变量重命名 bug（`map_local` 对非参数名字一律重命名）；`sync_test.rs` 6 用例
+- [x] **E2** WASM 目标支持（M2.7）：工具链安装（Homebrew `lld` 22.1.8 含 `wasm-ld`、`wasmtime` 48.0.0、`wasi-libc` sysroot 于 `/opt/homebrew/opt/wasi-libc/share/wasi-sysroot`）；`zeta build --target wasm32-wasi` 全链路验证（hello-world / arith-print 与主机目标输出一致）；`wasm_target_test.rs` 3 用例（triple 判定 + hello world + std 特性数组/String/位运算）；关键适配：WASI 入口重命名 `main` → `__main_argc_argv(i32, i8**)`（crt1 链 `_start` → `__main_void` → `__main_argc_argv`）、`-nostdlib` 手动链接 `crt1.o` + `libc.a`、wasi-libc 33 多目标布局、`adapt_wide_int_args` malloc/memcmp 位宽适配（`i64` → `i32`，寄存器实参前插 `trunc i64→i32` 指令——LLVM 禁止 call 实参内嵌 trunc 表达式）
+- [x] **E3** 发布流程：`zep publish` 重复版本保护（`PackageIndex::find` 命中即报错，阻止静默覆盖已发布版本；实测：0.1.0 发布 → 重复发布报错 → 提升 0.2.0 再发布成功）；`zeta publish` CLI（`zeta-driver` 依赖 zep lib 委托 `cmd_publish`，`--registry`/`--verbose`，重复版本拦截 exit=1）；`.github/workflows/release.yml` Windows x86_64 平台（`x86_64-pc-windows-msvc` + `.exe` + `shell: bash`），矩阵 4 平台；`CHANGELOG.md` v0.1.0 首个版本记录
+- [x] **F1** LSP 服务器（M2.4）：新 crate `zeta-lsp` + `zeta lsp` CLI（JSON-RPC 2.0 over stdio，自研 `jsonrpc.rs` 无外部 LSP 依赖；full 文本同步 didOpen/didChange/didClose + 诊断推送复用 zeta-check；initialize 声明 capabilities，shutdown/exit 生命周期，未知请求 -32601）；`lsp_e2e_test.rs` 2 进程测试全协议往返
+- [x] **F2** PGO 数据回灌（M2.8 后半）：`zeta profile <file.zeta_profile>`（加载画像 JSON → `PgoAdvisor::recommend_size` p95×1.1 下限 64KiB → `CompilerInterface` 报告）+ `zeta build --profile <file>` 编译期注入（失败仅告警不阻断）；`profile_cmd_test.rs` 6 用例
+- [x] **遗留修复**：`zeta new <name> [--lib]` 命令（委托 zep `cmd_new`，Zeta.toml + src/main.zeta|lib.zeta）；`Vec<T>` 动态切片 `v[lo..<hi]`/`v[lo...hi]`/`v[lo<..hi]`（std 泛型方法 `Vec::slice` + check_slice 实例化，越界 clamp）；数组 `[T; N]` 动态切片（typecheck 展开为 Vec 拷贝循环 + push 实例化 + 边界 clamp）；`String::from(s)` 支持绑定字面量的变量（`TypeContext.local_inits` 追踪）；`dynamic_slice_test.rs` 7 用例 + 全量回归 111 套件全绿
 
-**验证基线**：`cargo test --workspace` 544 组全绿；`cargo clippy --workspace --all-targets` 0 警告。
+**验证基线**：`cargo test --workspace` 111 套件全绿；`cargo clippy --workspace --all-targets` 0 警告。
 
 ---
 
@@ -163,4 +168,4 @@
 ---
 
 > **维护者**：Zeta Language Team
-> **最后更新**：2026-08-20
+> **最后更新**：2026-08-22

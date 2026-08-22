@@ -134,6 +134,63 @@ fn main() {
 "#,
     );
     // "start:" 6 字节 + 10 个 'x' = 16；
-    // cap 0 → 8 → 16 翻倍（from 初始 cap 6，第 7 字节 grow 到 12，第 13 字节 grow 到 24）
-    assert_eq!(out, "16\n24\nstart:xxxxxxxxxx\n");
+    // A3 后为拷贝语义：每轮 `s = s.clone() + "x"`，clone 从 cap 0 开始逐字节
+    // push_byte（0 → 8 → 16 翻倍）：第 3 轮（len 8 → 9）grow 到 16，此后 16 足够
+    // → 最终 len 16 / cap 16（旧共享语义为 from cap 6 → 12 → 24）
+    assert_eq!(out, "16\n16\nstart:xxxxxxxxxx\n");
+}
+
+/// A3 回归：拼接结果为深拷贝——修改拼接结果不影响左操作数。
+#[test]
+fn concat_alias_result_isolation() {
+    let out = run(
+        r#"
+fn main() {
+    let a = String::from("hello");
+    let s = a + String::from("!");
+    s.push_str(String::from("!!"));
+    println(a);
+    println(s);
+}
+"#,
+    );
+    // 共享缓冲 bug：s.push_str 会污染 a（输出 hello!!!/hello!!!）
+    assert_eq!(out, "hello\nhello!!!\n");
+}
+
+/// A3 回归：拼接结果为深拷贝——左操作数扩容（realloc）不影响拼接结果。
+#[test]
+fn concat_alias_lhs_isolation() {
+    let out = run(
+        r#"
+fn main() {
+    let a = String::from("hello");
+    let s = a + String::from("!");
+    a.push_str(String::from(" world"));
+    println(s);
+    println(s.len());
+    println(a);
+}
+"#,
+    );
+    // 共享缓冲 bug：a 扩容后 s 内容被污染（hello! world / 12）
+    assert_eq!(out, "hello!\n6\nhello world\n");
+}
+
+/// `String::clone` 深拷贝直接调用：内容相等、互不影响。
+#[test]
+fn clone_direct() {
+    let out = run(
+        r#"
+fn main() {
+    let a = String::from("clone me");
+    let b = a.clone();
+    a.push_str(String::from("!"));
+    println(b);
+    println(b == String::from("clone me"));
+    println(a);
+}
+"#,
+    );
+    assert_eq!(out, "clone me\ntrue\nclone me!\n");
 }

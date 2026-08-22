@@ -1,7 +1,12 @@
 # Zeta 语言语法规范 (EBNF)
 
 > 版本：v2.0  
-> 最后更新：2026-08-20
+> 最后更新：2026-08-22
+
+> **⚠️ 实现状态**：本文为**目标语法规范**（EBNF），其中部分语法为规划特性，MVP 编译器尚未实现：
+> 宏调用（`name!`，`!` 为 `not` 运算符）、闭包 `|x| ...`（typecheck 报 Unsupported）、引用类型 `&T`/`str`
+> （仅方法接收者 `&self`/`&mut self` 可用）、裸指针 `*T`、`dyn Trait`、`?` 运算符、生命周期参数 `'a`、
+> `macro_rules` 等。**已实现子集的教程与可运行示例见 [`guide.md`](./guide.md)，已知限制见其 §13。**
 
 ## 相关文档
 
@@ -409,16 +414,16 @@ if hour in 9am...6pm {}            //  9:00 ≤ hour ≤ 18:00
 ```zeta
 // hello-world.zeta
 fn main() {
-    println!("Hello, Zeta!");
+    println("Hello, Zeta!");
 }
 
 // 比较链
 fn check_range(x: i32) {
     if 0 < x < 10 {
-        println!("x is in 0..<10");
+        println("x is in 0..<10");
     }
     if 0 > x > 10 {
-        println!("x is outside 0...10");
+        println("x is outside 0...10");
     }
 }
 
@@ -432,7 +437,7 @@ fn process_data() {
     region 'r adaptive {
         for i in 0..<10000 {
             let item = Item::new(i) in 'r;
-            process(&item);
+            process(item);
         }
     }
 }

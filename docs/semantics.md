@@ -1,7 +1,12 @@
 # Zeta 语言语义规则
 
 > 版本：v2.0  
-> 最后更新：2026-08-20
+> 最后更新：2026-08-22
+
+> **⚠️ 实现状态**：本文为**目标语义规范**，其中所有权/借用/生命周期（§1）、`?` 运算符（§6）、
+> 闭包（§10）、引用类型等为规划特性。**MVP 实际为值拷贝/移动语义**：`&self`/`&mut self` 仅作方法
+> 接收者；`&x`/`&T`/`*T`/闭包/`?` 未实现（typecheck 显式报 Unsupported）。
+> 已实现语义的教程见 [`guide.md`](./guide.md)，已知限制见其 §13。
 
 ## 相关文档
 
@@ -15,7 +20,11 @@
 
 ## 1. 所有权与借用
 
-### 1.1 所有权规则
+> **MVP 状态**：本节为**目标语义（规划）**。MVP 实现了简化语义：`let s2 = s1` 为值拷贝（对象为堆数据
+> 拷贝，见 §8 聚合对象），对象修改需 `let mut`；`&self`/`&mut self` 仅限方法接收者；
+> `Copy` trait、`&`/`&mut` 借用、生命周期规则均**未实现**。
+
+### 1.1 所有权规则（目标）
 
 1. 每个值有且只有一个所有者（owner）。
 2. 当所有者离开作用域时，值被自动销毁（调用 `Drop`）。
@@ -24,27 +33,28 @@
 
 ```zeta
 let s1 = String::from("hello");
-let s2 = s1;       // s1 所有权转移给 s2，s1 不再有效
-// println!(s1);    // 编译错误
-
-let x = 42;        // i32 实现了 Copy
+let s2 = s1;       // 目标：s1 所有权转移给 s2，s1 不再有效（MVP：值拷贝，s1 仍可读）
+let x = 42;        // 目标：i32 实现了 Copy
 let y = x;         // x 被拷贝，x 仍然有效
-println!("{}", x); // OK
+println(x);        // MVP 内建打印（无宏 / 无格式化占位符）
 ```
 
-### 1.2 借用规则
+### 1.2 借用规则（规划）
+
+> MVP 未实现 `&` 引用表达式与 `&T` 参数类型，本示例为规划示意：
 
 1. 同一时刻，要么有**多个不可变引用**，要么有**一个可变引用**。
 2. 引用必须始终有效（生命周期 ≤ 被引用对象的生命周期）。
 
 ```zeta
-let mut data = vec![1, 2, 3];
+// 目标语法（MVP 未实现）：
+let mut data = vec![1, 2, 3];    // MVP：用 Vec::new() + push 构造
 
 let r1 = &data;     // 不可变引用
 let r2 = &data;     // 另一个不可变引用，OK
 // let r3 = &mut data; // 错误：已有不可变引用
 
-println!("{} {}", r1[0], r2[0]);
+println(r1[0]);     // 打印（MVP 内建）
 
 let r3 = &mut data;  // OK，r1 和 r2 不再被使用
 r3.push(4);
@@ -290,9 +300,12 @@ supervisor {
 
 ## 6. 错误处理语义
 
-### 6.1 Result 传播
+> **MVP 状态**：`Option`/`Result` 枚举与 `unwrap/unwrap_or/expect` 等已实现；`?` 运算符、
+> `Into::into()` 自动转换、`std::fs` 模块为**规划**（MVP 用 `read_file` 自由函数）。
 
-`?` 运算符自动传播错误：
+### 6.1 Result 传播（规划）
+
+`?` 运算符自动传播错误（目标语法，MVP 未实现）：
 
 ```zeta
 fn read_config() -> Result<Config, IoError> {
@@ -314,7 +327,7 @@ fn read_config() -> Result<Config, IoError> {
 }
 ```
 
-### 6.2 自动错误类型转换
+### 6.2 自动错误类型转换（规划）
 
 `?` 会自动调用 `Into::into()` 进行错误类型转换：
 
@@ -488,7 +501,10 @@ struct RawPointer(*mut u8);  // 不实现 Send 和 Sync
 └─────────────────────┘
 ```
 
-### 10.3 异步执行
+### 10.3 异步执行（规划）
+
+> **MVP 状态**：本小节为规划。actor 方法的 `async` 关键字 + `.await`/`send` 已实现（消息往返语义，
+> 见 [`guide.md`](./guide.md) §9）；`Future` trait、执行器、`join_all` 未实现。
 
 `async fn` 返回 `Future`，由执行器（executor）调度：
 

@@ -254,6 +254,15 @@ pub fn cmd_publish(ctx: &Ctx, registry_url: Option<String>) -> Result<()> {
     let mut index = registry
         .get_index(&name)?
         .unwrap_or_else(|| PackageIndex::new(&name));
+    // 阻止重复版本：已发布的版本不可覆盖（cargo publish 语义），
+    // 需提升版本号后再发布。
+    if let Some(existing) = index.find(&version.to_string()) {
+        return Err(ZepError::Registry(format!(
+            "{name} {} 已存在于注册表（{} 字节），请提升版本号后再发布",
+            version,
+            existing.size.unwrap_or(0)
+        )));
+    }
     let mut deps = std::collections::HashMap::new();
     for (dep, req) in &manifest.dependencies {
         deps.insert(dep.clone(), req.clone());

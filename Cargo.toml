@@ -15,6 +15,7 @@ members = [
     "crates/zeta-std",
     "crates/zeta-actor-runtime",
     "crates/zeta-region-alloc",
+    "crates/zeta-lsp",
     "tools/zeta-fmt",
     "tools/zeta-check",
     "tools/zeta-doc",
@@ -47,10 +48,12 @@ zeta-driver = { path = "crates/zeta-driver" }
 zeta-std = { path = "crates/zeta-std" }
 zeta-actor-runtime = { path = "crates/zeta-actor-runtime" }
 zeta-region-alloc = { path = "crates/zeta-region-alloc" }
+zeta-lsp = { path = "crates/zeta-lsp" }
 zeta-fmt = { path = "tools/zeta-fmt" }
 zeta-check = { path = "tools/zeta-check" }
 zeta-doc = { path = "tools/zeta-doc" }
 zeta-bench = { path = "tools/zeta-bench" }
+zep = { path = "zep" }
 
 # 外部依赖
 anyhow = "1"

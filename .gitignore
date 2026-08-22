@@ -4,3 +4,4 @@ release/
 examples/.zeta_cache/
 target/debug/.fingerprint/criterion-plot-7bae2173b5a3b021/lib-criterion_plot
 zeta-out
+**/.zeta_cache/

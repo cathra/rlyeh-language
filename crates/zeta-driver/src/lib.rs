@@ -123,6 +123,55 @@ pub fn doc_source_file(path: &Path, options: &zeta_doc::DocOptions) -> Result<St
     zeta_doc::doc_source(&source, options).map_err(DriverError::Doc)
 }
 
+/// 读取 PGO 画像文件并生成区域大小预测报告（`zeta profile`，阶段 F2 数据回灌消费侧）。
+///
+/// `.zeta_profile` 为 JSON 格式（见 `zeta_region_alloc::profile`）：
+/// 运行时按区域记录的分配量统计（p50/p90/p95/mean/max 等）。
+/// 本函数加载画像 → 以 p95×安全系数预测初始区域大小 → 输出编译决策报告
+/// （复用 `zeta_region_alloc::PgoAdvisor` / `CompilerInterface`）。
+/// 语言级 region 接线后，该预测可直接回灌 `region 'r adaptive` 的初始容量。
+pub fn region_profile_report(path: &Path) -> Result<String, DriverError> {
+    let text = std::fs::read_to_string(path).map_err(DriverError::Io)?;
+    let data: zeta_region_alloc::PgoData = serde_json::from_str(&text)
+        .map_err(|e| DriverError::Profile(format!("解析 `.zeta_profile` 失败: {e}")))?;
+    Ok(build_region_report(&data))
+}
+
+/// 依据 PGO 数据生成区域分配决策报告（纯函数，便于单元测试）。
+///
+/// 每个区域：`estimated_size` = 历史平均分配量（静态基线）、
+/// `initial_size` = PGO 推荐（p95×安全系数，下限 64KiB）、
+/// `max_size` = 推荐×4 与历史峰值取大、`decision` 描述依据。
+pub fn build_region_report(data: &zeta_region_alloc::PgoData) -> String {
+    let advisor = zeta_region_alloc::PgoAdvisor::from_data(data.clone());
+    let mut interface =
+        zeta_region_alloc::CompilerInterface::new().with_pgo_data(data.clone());
+    let mut ids = data.region_ids();
+    ids.sort_unstable();
+    for id in &ids {
+        let region = data
+            .region_profile(id)
+            .expect("region id from region_ids() must exist");
+        let initial = advisor
+            .recommend_size(id)
+            .unwrap_or(region.size_stats.mean);
+        let max = (initial * 4).max(region.size_stats.max);
+        let decision = format!(
+            "PGO p95 {}B × safety 1.1（下限 64KiB）；p50 {}B / mean {}B / max {}B",
+            region.size_stats.p95, region.size_stats.p50, region.size_stats.mean,
+            region.size_stats.max
+        );
+        interface = interface.register_region(zeta_region_alloc::RegionCompileInfo {
+            region_id: id.to_string(),
+            estimated_size: region.size_stats.mean,
+            initial_size: initial,
+            max_size: max,
+            decision,
+        });
+    }
+    interface.generate_report()
+}
+
 /// 增量编译驱动：源码哈希命中时跳过完整流水线，直接复用缓存 LLVM IR。
 ///
 /// 缓存目录为 `<cache_dir>/.zeta_cache`；`--force` 语义下强制全量重编译。
@@ -405,11 +454,87 @@ fn assemble_wasm(
                 .to_string(),
         )
     })?;
+    // wasi-libc 33 起为多目标布局 `lib/wasm32-wasi/`（含 crt1.o/libc.a）；旧版直接位于 `lib/`。
+    let lib_dir = {
+        let multi = sysroot.join("lib").join("wasm32-wasi");
+        if multi.join("crt1.o").exists() {
+            multi
+        } else {
+            sysroot.join("lib")
+        }
+    };
     let clang = clang_path();
+    // WASI 入口适配：wasi-libc 的 `__main_void`（crt1 链）调用
+    // `__main_argc_argv(int argc, char **argv)`，而 Zeta 生成的是无参 `@main`。
+    // 将 IR 中的 main 定义重命名为 `__main_argc_argv` 并补齐 ABI 参数，
+    // 使 crt1.o 能解析入口；同时避免 clang 为无参 main 生成额外包装符号。
+    let mut ll = std::fs::read_to_string(ll_path).map_err(DriverError::Io)?;
+    // wasm32 指针/尺寸位宽适配：wasi-libc 的 malloc(size_t)/memcmp(size_t)
+    // 为 32 位参数，而 Zeta 的 IR 按 64 位（isize）声明调用；将声明与调用的
+    // 参数位宽降为 i32（值用 trunc 包装），避免 import 签名不匹配 trap。
+    fn adapt_wide_int_args(src: &str, marker: &str) -> String {
+        let mut out = String::with_capacity(src.len());
+        let mut rest = src;
+        let mut counter = 0;
+        while let Some(idx) = rest.find(marker) {
+            out.push_str(&rest[..idx + marker.len()]);
+            rest = &rest[idx + marker.len()..];
+            let end = rest.find(')').unwrap_or(rest.len());
+            let arg = &rest[..end];
+            if let Some(inner) = arg.strip_prefix("i64 ") {
+                let inner = inner.trim();
+                if inner.starts_with('%') {
+                    // trunc 是 instruction 不能内联在 call 参数位：在 call 行前
+                    // 插入 trunc 定义，参数改用新寄存器。
+                    let tmp = format!("%zeta.wasm32.{counter}");
+                    counter += 1;
+                    if let Some(nl) = out.rfind('\n') {
+                        out.insert_str(
+                            nl + 1,
+                            &format!("  {tmp} = trunc i64 {inner} to i32\n"),
+                        );
+                    }
+                    out.push_str(&format!("i32 {tmp}"));
+                } else {
+                    out.push_str(&format!("i32 {inner}"));
+                }
+            } else {
+                out.push_str(arg);
+            }
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
+    }
+    ll = ll.replace("declare i8* @malloc(i64)", "declare i8* @malloc(i32)");
+    ll = ll.replace(
+        "declare i32 @memcmp(i8*, i8*, i64)",
+        "declare i32 @memcmp(i8*, i8*, i32)",
+    );
+    // 注意：marker 止于 `(`，参数区从 `i64 ` 开始解析。
+    ll = adapt_wide_int_args(&ll, "call i8* @malloc(");
+    ll = adapt_wide_int_args(&ll, "call i32 @memcmp(i8*, i8*, ");
+    // WASI 入口适配：wasi-libc 的 `__main_void`（crt1 链）调用
+    // `__main_argc_argv(int argc, char **argv)`，而 Zeta 生成的是无参 `@main`。
+    // 将 IR 中的 main 定义重命名为 `__main_argc_argv` 并补齐 ABI 参数，
+    // 使 crt1.o 能解析入口；同时避免 clang 为无参 main 生成额外包装符号。
+    if ll.contains("define i32 @main()") {
+        ll = ll.replace(
+            "define i32 @main() {",
+            "define i32 @__main_argc_argv(i32 %argc, i8** %argv) {",
+        );
+    }
+    std::fs::write(ll_path, ll).map_err(DriverError::Io)?;
     let mut cmd = Command::new(&clang);
     cmd.arg(format!("--target={target}"));
     cmd.arg(format!("--sysroot={}", sysroot.display()));
+    // 关闭 clang 默认的 compiler-rt builtins 链接（wasm32 的 libclang_rt.builtins.a
+    // 不在 Xcode CLT / brew llvm 内），改由 wasi-libc 的 crt1.o + libc.a 提供入口与库函数。
+    // Zeta 的 i64/f64 运算在 wasm32 均为原生指令，不依赖 software-intrinsic。
+    cmd.arg("-nostdlib");
     cmd.arg(ll_path);
+    cmd.arg(lib_dir.join("crt1.o"));
+    cmd.arg(lib_dir.join("libc.a"));
     cmd.arg("-o").arg(out_path);
     // wasm-ld 不在 PATH（Homebrew lld keg-only 时）则注入其 bin 目录，
     // clang 链接 wasm 目标时按名查找 `wasm-ld`。

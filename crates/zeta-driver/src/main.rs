@@ -60,11 +60,25 @@ fn main() -> ExitCode {
                 }
             };
             let out = opts.take_out().unwrap_or_else(|| PathBuf::from("zeta-out"));
+            let profile = opts.profile.take();
             match build_file(file, &out, &opts) {
                 Ok(()) => {
                     match &opts.target {
                         Some(t) => println!("编译完成: {}（目标 {t}）", out.display()),
                         None => println!("编译完成: {}", out.display()),
+                    }
+                    // F2：PGO 数据回灌——构建期注入 `.zeta_profile` 预测区域大小
+                    if let Some(p) = profile {
+                        match zeta_driver::region_profile_report(&p) {
+                            Ok(report) => {
+                                println!("\n区域大小预测（{}）:", p.display());
+                                print!("{report}");
+                            }
+                            Err(e) => eprintln!(
+                                "zeta: 警告: 忽略 --profile（{}）: {e}",
+                                p.display()
+                            ),
+                        }
                     }
                     ExitCode::SUCCESS
                 }
@@ -102,6 +116,16 @@ fn main() -> ExitCode {
         Some("fmt") => run_fmt(&args[2..]),
         Some("doc") => run_doc(&args[2..]),
         Some("bench") => run_bench(&args[2..]),
+        Some("profile") => run_profile(&args[2..]),
+        Some("new") => run_new(&args[2..]),
+        Some("publish") => run_publish(&args[2..]),
+        Some("lsp") => match zeta_lsp::run_stdio() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("zeta lsp: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("check") => {
             let Some(file) = args.get(2) else {
                 eprintln!("用法: zeta check <file.zeta>");
@@ -140,6 +164,10 @@ fn main() -> ExitCode {
                  zeta check <file.zeta> 静态分析（未使用变量/恒常条件/冗余比较/不可达代码）\n  \
                  zeta doc <file.zeta> [--out <file.md>] [--title <标题>] 提取 /// 注释生成 Markdown 文档\n  \
                  zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N] 编译并基准计时\n  \
+                 zeta new <name> [--lib] 创建新项目脚手架（Zeta.toml + src/main.zeta 或 lib.zeta）\n  \
+                 zeta publish [--registry <URL>] [--verbose] 打包发布到 zep 注册表\n  \
+                 zeta lsp 启动语言服务器（LSP over stdio，诊断推送）\n  \
+                 zeta profile <file.zeta_profile> [--out <report.md>] PGO 画像 → 区域大小预测报告\n  \
                  zeta --version 版本信息"
             );
             ExitCode::from(2)
@@ -155,6 +183,7 @@ struct CliOpts {
     verbose: bool,
     out: Option<PathBuf>,
     target: Option<String>,
+    profile: Option<PathBuf>,
 }
 
 impl CliOpts {
@@ -170,10 +199,16 @@ impl CliOpts {
         let mut verbose = false;
         let mut out = None;
         let mut target = None;
+        let mut profile = None;
 
         let mut i = 0;
         while i < args.len() {
             match args[i].as_str() {
+                "--profile" => {
+                    i += 1;
+                    let p = args.get(i).ok_or("--profile 需要 .zeta_profile 路径")?;
+                    profile = Some(PathBuf::from(p));
+                }
                 "--cache-dir" => {
                     i += 1;
                     let dir = args.get(i).ok_or("--cache-dir 需要目录参数")?;
@@ -203,6 +238,7 @@ impl CliOpts {
             verbose,
             out,
             target,
+            profile,
         })
     }
 
@@ -433,6 +469,70 @@ fn run_doc(args: &[String]) -> ExitCode {
     }
 }
 
+/// `zeta profile`：读取 PGO 画像（`.zeta_profile`）生成区域大小预测报告（阶段 F2 数据回灌）。
+///
+/// 用法: `zeta profile <file.zeta_profile> [--out <report.md>]`
+/// 默认输出到 stdout；`--out` 写文件。
+fn run_profile(args: &[String]) -> ExitCode {
+    let mut file: Option<String> = None;
+    let mut out: Option<PathBuf> = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--out" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => out = Some(PathBuf::from(v)),
+                    None => {
+                        eprintln!("zeta profile: --out 缺少参数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            s if s.starts_with('-') => {
+                eprintln!("zeta profile: 未知选项 '{s}'");
+                return ExitCode::from(2);
+            }
+            s => {
+                if file.is_some() {
+                    eprintln!("zeta profile: 仅支持单个画像文件");
+                    return ExitCode::from(2);
+                }
+                file = Some(s.to_string());
+            }
+        }
+        i += 1;
+    }
+    let Some(file) = file else {
+        eprintln!("用法: zeta profile <file.zeta_profile> [--out <report.md>]");
+        return ExitCode::from(2);
+    };
+
+    let report = match zeta_driver::region_profile_report(Path::new(&file)) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("zeta profile: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    match &out {
+        Some(p) => {
+            if let Err(e) = std::fs::write(p, &report) {
+                eprintln!("zeta profile: 无法写入 {}: {e}", p.display());
+                return ExitCode::from(1);
+            }
+            println!("已生成: {}", p.display());
+            ExitCode::SUCCESS
+        }
+        None => {
+            print!("{report}");
+            ExitCode::SUCCESS
+        }
+    }
+}
+
 /// `zeta bench`：编译源码并基准计时（`--runs`/`--warmup` 控制轮数）。
 fn run_bench(args: &[String]) -> ExitCode {
     let mut file: Option<String> = None;
@@ -520,6 +620,7 @@ fn run_bench(args: &[String]) -> ExitCode {
         verbose: false,
         out: None,
         target: None,
+        profile: None,
     };
 
     if let Err(e) = build_file(&file, &out, &opts) {
@@ -541,6 +642,86 @@ fn run_bench(args: &[String]) -> ExitCode {
         }
         Err(e) => {
             eprintln!("zeta bench: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// `zeta new`：创建新项目脚手架（委托 zep 的 `cmd_new`）。
+///
+/// 用法: `zeta new <name> [--lib]`
+/// 生成 `Zeta.toml` 清单 + `src/main.zeta`（可执行项目）或 `src/lib.zeta`（库项目，
+/// `--lib`）。目录已存在或包名非法时报错。
+fn run_new(args: &[String]) -> ExitCode {
+    let mut name: Option<String> = None;
+    let mut lib = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--lib" => lib = true,
+            s if s.starts_with('-') => {
+                eprintln!("zeta new: 未知选项 '{s}'");
+                return ExitCode::from(2);
+            }
+            s => {
+                if name.is_some() {
+                    eprintln!("zeta new: 仅支持单个项目名");
+                    return ExitCode::from(2);
+                }
+                name = Some(s.to_string());
+            }
+        }
+        i += 1;
+    }
+    let Some(name) = name else {
+        eprintln!("用法: zeta new <name> [--lib]");
+        return ExitCode::from(2);
+    };
+    let ctx = zep::commands::Ctx::new(false);
+    match zep::commands::cmd_new(&ctx, &name, lib) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("错误: {e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// `zeta publish`：将当前目录项目打包发布到 zep 注册表。
+///
+/// 用法: `zeta publish [--registry <URL>] [--verbose]`
+/// 发布前置检查（Zeta.toml 版本号、重复版本拦截）由 zep 完成。
+fn run_publish(args: &[String]) -> ExitCode {
+    let mut verbose = false;
+    let mut registry: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--registry" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => registry = Some(v.clone()),
+                    None => {
+                        eprintln!("zeta publish: --registry 缺少参数");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "--verbose" => verbose = true,
+            other => {
+                eprintln!("zeta publish: 未知参数: {other}");
+                eprintln!("用法: zeta publish [--registry <URL>] [--verbose]");
+                return ExitCode::from(2);
+            }
+        }
+        i += 1;
+    }
+    let mut ctx = zep::commands::Ctx::new(verbose);
+    ctx.registry = registry;
+    match zep::commands::cmd_publish(&ctx, None) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("错误: {e}");
             ExitCode::from(1)
         }
     }

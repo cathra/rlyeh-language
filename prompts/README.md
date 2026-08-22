@@ -1,6 +1,10 @@
 # Zeta CodeBuddy Prompt 索引
 
 > 本目录包含 13 个可独立执行的 Prompt 文件，每个对应编译器/工具链的一个核心模块。
+>
+> **✅ P001–P013 已全部完成**（MVP 可用）。P001–P013 覆盖编译器基础链路（词法→语法→类型→区域→借用→MIR/LIR→LLVM）；
+> 阶段 A–F（模块系统、io/net、FFI、actor、标准库扩展、交叉编译/WASM/发布、LSP、PGO 回灌等）的执行记录见
+> [`../docs/development-plan.md`](../docs/development-plan.md)，工具链命令总览见 [`../CODEBUDDY.md`](../CODEBUDDY.md) 与 [`../docs/guide.md`](../docs/guide.md)。
 
 ---
 
@@ -128,12 +132,15 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 项目总纲 | [../CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
-| 语法规范 | [../docs/grammar.md](../docs/grammar.md) | EBNF 语法 |
+| 项目总纲 | [../CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 + 工具链命令 + 执行记录 |
+| 语言教程 | [../docs/guide.md](../docs/guide.md) | 面向读者的教程（示例均可运行） |
+| 语法规范 | [../docs/grammar.md](../docs/grammar.md) | EBNF 语法（目标规范，含规划） |
 | 语义规则 | [../docs/semantics.md](../docs/semantics.md) | 类型/求值规则 |
 | 内存模型 | [../docs/memory-model.md](../docs/memory-model.md) | 分层内存 |
 | Actor 模型 | [../docs/actor-model.md](../docs/actor-model.md) | 并发规范 |
-| 标准库 API | [../docs/std-lib.md](../docs/std-lib.md) | API 规范 |
+| 标准库 API | [../docs/std-lib.md](../docs/std-lib.md) | API 规范（已实现 / 规划） |
+| 开发计划 | [../docs/development-plan.md](../docs/development-plan.md) | 阶段 A–F 执行记录 + 遗留清单 |
+| 快速开始 | [QUICKSTART.md](./QUICKSTART.md) | 5 分钟上手 + 快速验证 |
 
 ---
 

@@ -1,19 +1,56 @@
 # Zeta 标准库 API 规范
 
 > 版本：v2.0  
-> 最后更新：2026-08-20
+> 最后更新：2026-08-22
+
+> **⚠️ 实现状态**：本文为**目标标准库规范**（含规划中 API）。MVP 已实现部分位于
+> `crates/zeta-std/zeta/`（**模块化拆分**：`core.zeta` 根模块 + `time.zeta` / `io.zeta` /
+> `net.zeta` / `sync.zeta` 子模块，driver 加载时经模块展开 + use 重新导出合入，用户侧裸名即用）。
+> 根模块保留 String / Vec / HashMap / Option / Result 等编译器特判类型；未实现章节属规划（详见下方总览）。
+> 教程与可运行示例见 [`guide.md`](./guide.md)；实际 API 以各模块源码为准。
+
+## MVP 实现状态总览
+
+| 章节 | 状态 | MVP 实际形态 |
+|------|------|--------------|
+| §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 |
+| §2.3 Iterator | 📋 规划 | `for i in 0..<10` 数值区间可用，trait 未实现 |
+| §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（核心 API） | 含 `Vec::slice` 动态切片、`String::from`（字面量/变量） |
+| §4.1 File | 📋 规划（自由函数已实现） | `read_file/write_file/append_file`（libc stdio 封装） |
+| §4.2 标准输入输出 | 🔧 部分 | `read_line()`（stdin）已实现 |
+| §4.3 路径与文件系统 / §4.4 NIO / §4.5 sendfile | 📋 规划 | — |
+| §5.1 TCP | 🔧 部分 | `tcp_connect/socketpair_stream/send_all/recv_some/hostname` 已实现 |
+| §5.2 HTTP | 📋 规划 | — |
+| §6.1 Mutex | ✅ 已实现 | `Mutex`/`RwLock` 裸 `lock/unlock/try_*`（非 guard 语义） |
+| §6.2 Channel | 📋 规划 | — |
+| §7 时间 | ✅ 已实现 | `Duration`/`Instant`（libc `clock()` extern） |
+| §8 格式化与打印 | 🔧 部分 | 内建 `println(expr)`/`print(expr)`（0–1 参数，无 `{}`）；`Display`/`format!` 规划 |
+| §9 序列化 | 📋 规划 | — |
+| §10 异步运行时 | 📋 规划 | actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制） |
+| §11 智能指针 | 📋 规划 | Rc/Arc/Box 未实现 |
+| §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；`?` 运算符规划 |
+
+> 状态标记：✅ 已实现　🔧 部分实现（注明差异）　📋 规划中（目标 API，MVP 未实现）
+
+---
 
 ## 相关文档
 
 | 类型 | 文档 | 说明 |
 |------|------|------|
 | 项目总纲 | [CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
-| 设计文档 | [10_标准库规划](../design/10_标准库规划.md) | 模块规划 |
+| 设计文档 | [10_标准库规划](../design/10_标准库规划.md) | 模块规划（目标架构） |
 | 实现任务 | [P009](../prompts/P009_标准库核心模块.md) | 标准库实现 |
 
 ---
 
 ## 1. 标准库架构
+
+> **实现状态（2026-08-22）**：已完成模块化拆分。实际布局为 `zeta-std/zeta/core.zeta`（根模块：
+> String / Vec / HashMap / Option / Result + 全部 extern 声明 + `mod` 声明 + use 重新导出）+ 子模块
+> 文件 `time.zeta`（Duration / Instant）、`io.zeta`（文件 IO / 控制台）、`net.zeta`（socket /
+> 字节序）、`sync.zeta`（pthread 锁）。下述为**目标架构**（规划：按 crate 目录 + 各类型独立文件 +
+> `pub use` 重导出）。
 
 ```
 zeta-std/
@@ -614,8 +651,22 @@ impl Instant {
 
 ## 8. 格式化与打印
 
+> **MVP 现状**：`Display`/`Debug` trait 与 `println!`/`format!`/`dbg!` 宏为**规划 API**（Zeta 无宏调用语法，`!` 是 `not` 运算符）。
+> 当前打印用**内建函数** `println(expr)` / `print(expr)`（0–1 参数，自动按类型输出，不支持 `{}` 占位符）。
+
 ```zeta
-/// 格式化 trait
+println("Hello, Zeta!");     // 字符串字面量
+println(42);                 // 整型
+println(3.14);               // 浮点
+println(true);               // bool
+println();                   // 空行
+print(x);                    // 不换行
+```
+
+以下为目标 API（规划）：
+
+```zeta
+/// 格式化 trait（规划）
 trait Display {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError>;
 }
@@ -624,13 +675,13 @@ trait Debug {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError>;
 }
 
-/// 打印宏
+/// 打印宏（规划）
 println!("Hello, {}!", name);       // 输出 + 换行
 print!("Progress: {}%", pct);       // 输出不换行
 eprintln!("Error: {}", msg);        // 输出到 stderr
 dbg!(value);                        // 调试输出（带位置信息）
 
-/// 格式化字符串
+/// 格式化字符串（规划）
 let s = format!("{} + {} = {}", a, b, a + b);
 ```
 

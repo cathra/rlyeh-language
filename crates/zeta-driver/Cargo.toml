@@ -20,6 +20,9 @@ zeta-fmt = { workspace = true }
 zeta-check = { workspace = true }
 zeta-doc = { workspace = true }
 zeta-bench = { workspace = true }
+zeta-lsp = { workspace = true }
+zeta-region-alloc = { workspace = true }
+zep = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

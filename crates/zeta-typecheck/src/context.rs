@@ -40,6 +40,12 @@ pub struct TypeContext {
     pub mono_items: Vec<zeta_hir::HirItem>,
     /// 局部变量表（变量名 → 类型）
     pub variables: HashMap<String, Type>,
+    /// 局部变量初始化表达式表（变量名 → 初始化 HIR）。
+    ///
+    /// 供 `String::from(s)` 在 `s` 为字面量绑定的变量时追踪字面量值
+    /// （`String::from` 的展开需要编译期字符串内容；非字面量 Str 的长度
+    /// 表达尚未实现）。与 `variables` 表同节奏维护。
+    pub local_inits: HashMap<String, HirExpr>,
     /// 结构体定义表
     pub structs: HashMap<String, StructDef>,
     /// 枚举定义表
@@ -84,6 +90,16 @@ impl TypeContext {
     /// 查找变量的类型。
     pub fn lookup_variable(&self, name: &str) -> Option<&Type> {
         self.variables.get(name)
+    }
+
+    /// 记录一个变量绑定的初始化表达式。
+    pub fn insert_local_init(&mut self, name: String, init: HirExpr) {
+        self.local_inits.insert(name, init);
+    }
+
+    /// 查找变量绑定的初始化表达式。
+    pub fn lookup_local_init(&self, name: &str) -> Option<&HirExpr> {
+        self.local_inits.get(name)
     }
 
     /// 记录一个函数签名。

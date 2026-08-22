@@ -44,6 +44,8 @@ pub(crate) fn check_stmt(
                 AstPattern::Ident(name) => {
                     let bind_ty = anno_ty.clone().unwrap_or_else(|| ty.clone());
                     ctx.insert_variable(name.clone(), bind_ty);
+                    // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
+                    ctx.insert_local_init(name.clone(), h_init.clone());
                     Ok((
                         HirStmt::Let {
                             name: name.clone(),

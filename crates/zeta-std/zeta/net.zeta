@@ -1,0 +1,106 @@
+// ===== net 模块（B3 完成，2026-08）：socket 字节流 + 字节序工具 =====
+// 位运算全链路打通（& | ^ << >>）后启用：
+// - sockaddr_in 经 String 缓冲逐字节打包（sockaddr_in4）
+// - socketpair 的 fd 数组经 String 缓冲字节解释（fd_at，小端 int32）
+// - socket/connect/close 返回 int，以 `-> i32` 声明（extern_ret32 sext 清洗）
+// - send/recv 返回 ssize_t（i64 承载），buf 为 String（codegen 取 data 指针）
+// 注意：sockaddr_in4 按 macOS 布局（offset 0 = sin_len）；Linux 无 sin_len
+// （offset 0-1 = sin_family），移植时需调整（条件编译待 cfg 支持）。
+// 底层 extern（socketpair/socket/connect/close/r#send/r#recv/
+// __zeta_target_os/gethostname）声明于根模块 core.zeta 的 extern 集中区。
+
+// 主机字节序 → 网络字节序（大端）。纯位运算实现（不依赖 htons extern）。
+fn htons(v: i64) -> i64 {
+    ((v & 0xFF) << 8) | ((v >> 8) & 0xFF)
+}
+
+// 创建全双工字节流套接字对（AF_UNIX SOCK_STREAM，无需 sockaddr）。
+// 返回承载 fd 数组的 8 字节缓冲（两个 int32）；经 fd_at 读取。
+fn socketpair_stream() -> String {
+    let fds = String::with_capacity(8);
+    let _ = socketpair(1, 1, 0, fds);
+    fds
+}
+
+// 读取 fd 数组缓冲中第 k 个 int（k = 0 / 1），小端字节解释（x86-64 布局：
+// int32 低字节在前，fd 为小正整数，符号位不触发）。
+fn fd_at(fds: String, k: i64) -> i64 {
+    let base = k * 4;
+    fds.data[base] | (fds.data[base + 1] << 8) | (fds.data[base + 2] << 16) | (fds.data[base + 3] << 24)
+}
+
+// 发送整段内容（len 字节）；返回实际发送字节数。
+fn send_all(fd: i64, buf: String) -> i64 {
+    r#send(fd, buf, buf.len, 0)
+}
+
+// 接收至多 cap 字节；返回按实际字节数设 len 的内容。
+fn recv_some(fd: i64, cap: i64) -> String {
+    let mut buf = String::with_capacity(cap);
+    let n = r#recv(fd, buf, cap, 0);
+    buf.len = n;
+    buf
+}
+
+// 构造 IPv4 sockaddr_in（16 字节）。a.b.c.d 点分四字节，port 为主机字节序。
+// has_sin_len 选择平台布局（由 __zeta_target_os 决定）：
+//   macOS（true）： 0 = sin_len(16)，1 = AF_INET(2)
+//   Linux（false）：0-1 = sin_family（uint16 小端 0x0002 → 2, 0），无 sin_len
+// 之后 2-3 = 端口（大端/网络序），4-7 = IP（大端/网络序），8-15 = sin_zero。
+// 注意：sin_port/sin_addr 直接按大端布局拆字节（高字节在前），
+// 不经过 htons 数值转换——htons 返回字节交换后的数值，若再按高字节先存
+// 会把字节序反向（8080 会错成 0x901F 布局）。
+fn sockaddr_in4_with_layout(has_sin_len: bool, port: i64, a: i64, b: i64, c: i64, d: i64) -> String {
+    let mut sa = String::with_capacity(16);
+    if has_sin_len {
+        sa.push_byte(16);               // sin_len（macOS 特有）
+        sa.push_byte(2);                // AF_INET
+    } else {
+        sa.push_byte(2);                // sin_family 低字节（小端 0x0002）
+        sa.push_byte(0);                // sin_family 高字节
+    }
+    sa.push_byte((port >> 8) & 0xFF);  // 端口高字节（大端）
+    sa.push_byte(port & 0xFF);         // 端口低字节
+    sa.push_byte(a); sa.push_byte(b); sa.push_byte(c); sa.push_byte(d);
+    sa.push_byte(0); sa.push_byte(0); sa.push_byte(0); sa.push_byte(0);
+    sa.push_byte(0); sa.push_byte(0); sa.push_byte(0); sa.push_byte(0);
+    sa
+}
+
+// 平台自适应 sockaddr_in4（按目标 OS 选布局）。
+fn sockaddr_in4(port: i64, a: i64, b: i64, c: i64, d: i64) -> String {
+    sockaddr_in4_with_layout(__zeta_target_os() == 2, port, a, b, c, d)
+}
+
+// TCP 连接（阻塞）：成功返回 fd（>0），失败返回 -1（已 close 释放）。
+fn tcp_connect(port: i64, a: i64, b: i64, c: i64, d: i64) -> i64 {
+    let fd = socket(2, 1, 0);   // AF_INET=2, SOCK_STREAM=1
+    if fd < 0 {
+        return -1;
+    }
+    let sa = sockaddr_in4(port, a, b, c, d);
+    let r = connect(fd, sa, 16);
+    if r != 0 {
+        let _ = close(fd);
+        return -1;
+    }
+    fd
+}
+
+// 本机主机名。
+// gethostname 返回 int（i32），以 i64 声明时高位未定义，故不依赖返回值，
+// 仅扫描缓冲内首个 NUL 定位实际长度（成功时 gethostname 保证 NUL 结尾）。
+fn hostname() -> String {
+    let mut buf = String::with_capacity(256);
+    let _r = gethostname(buf, 256);
+    // 定位 NUL 终止位置作为实际长度（找不到则回退 255）
+    let mut i = 0;
+    while i < 256 {
+        if buf.data[i] == 0 {
+            break;
+        }
+        i = i + 1;
+    }
+    buf.len = i;
+    buf
+}
