@@ -27,7 +27,7 @@
 | §8 格式化与打印 | 🔧 部分 | 内建 `println(expr)`/`print(expr)`（0–1 参数，无 `{}`）；`Display`/`format!` 规划 |
 | §9 序列化 | 📋 规划 | — |
 | §10 异步运行时 | 📋 规划 | actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制） |
-| §11 智能指针 | 🔧 部分 | `Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）编译器内建已实现；`Gc<T>`（K4）规划 |
+| §11 智能指针 | 🔧 部分 | `Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）编译器内建已实现；`Gc<T>`（K4）✅ 已实现（MVP，见 §11） |
 | §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；`?` 运算符规划 |
 
 > 状态标记：✅ 已实现　🔧 部分实现（注明差异）　📋 规划中（目标 API，MVP 未实现）
@@ -750,12 +750,16 @@ mod sync {
 
 ## 11. 智能指针
 
-> **实现状态（2026-08-22）**：`Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）为**编译器内建**
+> **实现状态（2026-08-23）**：`Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）为**编译器内建**
 > （typecheck 特判，零新增 IR 节点，无 std 结构体定义）。`Rc<T>` 布局 = 堆 `RcInner` 的
 > `T` 值区自堆首槽起（与 `Box<T>` 同构，剥层零差异）+ 尾部两计数槽（strong = 值区槽数、
 > weak = +1）；`Rc<T>` 栈上 1 槽指向 RcInner，分配 `(n+2)` 个 8 字节槽。支持
 > `clone`/`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade` 及 `*` 解引用、
-> 字段/方法/索引自动剥层。`Gc<T>`（K4）规划中。以下为目标 API 参考。
+> 字段/方法/索引自动剥层。`Gc<T>`（K4）✅ 已实现（MVP）：`Gc::new` 编译器内建 +
+> `gc_region` 块生命周期（`zeta_gc_region_begin`/`zeta_gc_alloc`/`zeta_gc_escape`/
+> `zeta_gc_collect`，保守标记-清除运行时 `zeta-gc-runtime`），逃逸对象 root 登记、嵌套块
+> 存活链式提升、字段/方法/索引自动剥层与 `Box` 同构；块外对象永不回收（MVP 泄漏语义）。
+> 以下为目标 API 参考。
 
 ```zeta
 /// 堆分配（唯一所有权）

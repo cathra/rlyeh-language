@@ -73,6 +73,26 @@ impl<'src> Parser<'src> {
             if self.at_eof() {
                 return Err(self.unexpected("'>'"));
             }
+            // 生命周期参数 `'a`（G4）：解析后丢弃（MVP 语法接受，borrowck 严格检查规划中）
+            if matches!(self.current(), Some(Token::Lifetime(_))) {
+                self.bump(); // `'a`
+                // 可选 `: 'b` bound
+                if self.eat(&Token::Colon) {
+                    while !self.check(&Token::Comma) && !self.check(&Token::Gt) {
+                        if self.at_eof() {
+                            return Err(self.unexpected("'>'"));
+                        }
+                        self.bump();
+                    }
+                }
+                if self.eat(&Token::Gt) {
+                    break;
+                }
+                if !self.eat(&Token::Comma) {
+                    return Err(self.unexpected("',' or '>'"));
+                }
+                continue;
+            }
             let n = self.expect_ident()?;
             names.push(n);
             // 跳过 `: Bound [+ Bound]`

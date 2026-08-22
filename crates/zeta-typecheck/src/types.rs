@@ -60,6 +60,10 @@ pub enum Type {
     Infer,
     /// 引用类型
     Ref(Box<Type>, Mutability),
+    /// 裸指针类型（`*const T` / `*mut T`）
+    RawPtr(Box<Type>, bool),
+    /// trait 对象类型（`dyn Trait`）：数据指针 + vtable 指针的胖指针，占 2 槽
+    Dyn(String),
     /// 数组类型
     Array(Box<Type>, usize),
     /// 元组类型
@@ -158,6 +162,16 @@ impl Type {
                 // `&str` 视图与 String 值互用（G2：比较 `r == s`、`s == r`）
                 (Type::Ref(a, _), Type::Named(n, _)) => matches!(**a, Type::Str) && n == "String",
                 (Type::Named(n, _), Type::Ref(a, _)) => matches!(**a, Type::Str) && n == "String",
+                // 裸指针（G3）：`*mut T` 可降级为 `*const T`；反向不可
+                (Type::RawPtr(a, ma), Type::RawPtr(b, mb)) => {
+                    a.compatible_with(b) && (!(*ma && !*mb))
+                }
+                // 引用 ↔ 裸指针互视（G3 宽松规则，借用安全性留给 borrowck）：
+                // `&T`/`&mut T` 与 `*const T`/`*mut T` 内层兼容即可互传——FFI 场景
+                // （`let p: *const T = &x;`、`fn f(p: *const T)` 传 `&x`），
+                // codegen 布局同为 i8* 槽，双向转换零成本
+                (Type::RawPtr(a, _), Type::Ref(b, _))
+                | (Type::Ref(a, _), Type::RawPtr(b, _)) => a.compatible_with(b),
                 // 函数类型：参数逐个兼容且返回类型兼容
                 (Type::Fn(a), Type::Fn(b)) => {
                     a.params.len() == b.params.len()
@@ -204,6 +218,14 @@ impl fmt::Display for Type {
                 Mutability::Immutable => write!(f, "&{t}"),
                 Mutability::Mutable => write!(f, "&mut {t}"),
             },
+            Type::RawPtr(t, m) => {
+                if *m {
+                    write!(f, "*mut {t}")
+                } else {
+                    write!(f, "*const {t}")
+                }
+            }
+            Type::Dyn(name) => write!(f, "dyn {name}"),
             Type::Array(t, n) => write!(f, "[{t}; {n}]"),
             Type::Tuple(ts) => {
                 let inner = ts
@@ -332,11 +354,13 @@ pub fn field_scalar_of(ty: &Type) -> zeta_hir::FieldScalar {
         Type::Bool => FieldScalar::Bool,
         Type::Char => FieldScalar::Char,
         Type::Str => FieldScalar::Str,
-        // 聚合类型 / 引用 / 数组 / 元组均以指针形式存储；函数指针为指针
+        // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象均以指针形式存储；函数指针为指针
         Type::Ref(..)
+        | Type::RawPtr(..)
         | Type::Array(..)
         | Type::Tuple(..)
         | Type::Named(..)
+        | Type::Dyn(..)
         | Type::Fn(..) => FieldScalar::Ptr,
         Type::Unit => FieldScalar::Int,
         _ => FieldScalar::Int,
@@ -361,6 +385,11 @@ pub fn type_mono_key(ty: &Type) -> String {
         Type::Ref(t, m) => format!(
             "ref{}_{}",
             if *m == Mutability::Mutable { "mut" } else { "imm" },
+            type_mono_key(t)
+        ),
+        Type::RawPtr(t, m) => format!(
+            "rawptr{}_{}",
+            if *m { "mut" } else { "const" },
             type_mono_key(t)
         ),
         Type::Tuple(ts) => {

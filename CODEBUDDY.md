@@ -249,7 +249,42 @@ let inc: fn(i64) -> i64 = |x| x + 1;     // fn 注解绑定闭包
 let r4 = inc(41);                        // 42：经函数值间接调用
 ```
 
-> H2 无捕获闭包约束：参数无类型注解，需 fn 类型上下文驱动推断（fn 形参实参 / `let f: fn(..) = |..| ..` 注解）；闭包体仅可引用参数与字面量（引用外部变量报错——捕获闭包 H3 规划中）；参数模式仅支持简单标识符与 `_`；返回闭包的函数（`fn make() -> fn(..) { |x| .. }`）暂不支持。
+// H3 捕获闭包（IIFE）：`(|x| body)(args)` 立即调用，body 引用外层变量按值捕获
+let factor = 3;
+let r5 = (|x| x * factor)(14);                 // 42：捕获 factor，desugar 为 __closure_N(factor, x)
+let name = String::from("zeta");
+let r6 = (|s| s + name)(String::from("hi "));  // hi zeta：捕获 name
+
+> H2 无捕获闭包约束：参数无类型注解，需 fn 类型上下文驱动推断（fn 形参实参 / `let f: fn(..) = |..| ..` 注解）；闭包体仅可引用参数与字面量；参数模式仅支持简单标识符与 `_`；返回闭包的函数（`fn make() -> fn(..) { |x| .. }`）暂不支持。
+> H3 捕获闭包（IIFE MVP）：`(|x| body)(args)` 立即调用时 body 中引用的外层变量按值捕获，desugar 为匿名函数 `__closure_N(cap..., x)`（捕获变量作前置参数、参数名保留原名）+ 普通函数调用，零新增 IR 节点；字符串字面量实参自动升级为 String 语义；`move` 关键字 MVP 忽略（所有权宽松）；`let f = |x| ..; f(..)` 闭包值对象（匿名结构体 + `call` 方法）与按引用捕获规划中。
+
+```zeta
+// H4 trait 对象（dyn Trait）：&T 强制转换 + vtable 间接分派（2 槽胖指针）
+trait Shape {
+    fn area(&self) -> f64;
+    fn sides(&self) -> i64;
+}
+struct Circle { radius: f64 }
+impl Shape for Circle {
+    fn area(&self) -> f64 { 3.14 * self.radius * self.radius }
+    fn sides(&self) -> i64 { 0 }
+}
+struct Rect { w: f64, h: f64 }
+impl Shape for Rect {
+    fn area(&self) -> f64 { self.w * self.h }
+    fn sides(&self) -> i64 { 4 }
+}
+let c = Circle { radius: 2.0 };
+let r = Rect { w: 3.0, h: 4.0 };
+let d1: dyn Shape = &c;          // &T → dyn Trait 强制转换
+let d2: dyn Shape = &r;
+println(d1.area());              // 12.56：vtable 分派到 Circle::area
+println(d2.area());              // 12.0：分派到 Rect::area（多态）
+let d3 = d1;                     // 胖指针拷贝共享同一 vtable
+println(d3.sides());             // 0
+```
+
+> H4 `dyn Trait` 约束：trait 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用；vtable 的 drop/size/align 槽 MVP 置 0（显式释放语义与 `Box`/`Rc` 一致）。
 
 ---
 
@@ -260,11 +295,11 @@ let r4 = inc(41);                        // 42：经函数值间接调用
 | 特性 | 说明 |
 |------|------|
 | 宏调用 | ✅ 已实现：`macro_rules!` 声明式宏（`$x:expr`/`$x:ident`/`$x:ty`/`$x:tt` 元变量 + `$(`...`)` 重复 `*`/`+`/`?`，parse 期递归展开为 AST）+ 内置格式化宏 `println!`/`print!`/`format!`/`dbg!`（`{}` 值占位、`{:?}` 同构、`{{`/`}}` 转义；typecheck desugar 为 String 拼接 + 内建打印）；`!` 保留 `not` 一元运算符语义。限制：`$x:expr` 匹配原子 token（单 token 或定界组，`a > b`/`-1` 等多 token 表达式不支持）、无卫生宏（hygiene）、`vec!`/`println!(r#"...")` 等未实现 |
-| 引用类型 | `&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、解引用 `*` 已实现（G1 ✅，标量存 `i8*` 槽、聚合拷贝指针、字段/方法自动剥引用层）；`str` 类型、裸指针（`*const T`/`*mut T`）、`ref` 模式、严格借用检查仍规划中 |
-| 闭包 | ✅ H2 无捕获闭包已实现（§3.8）：`\|x, y\| expr` desugar 为匿名函数（`__closure_N`）+ 函数指针（typecheck `check_closure_expected` 按预期 fn 签名检查闭包体，注入全局 HirItem，零运行时开销）；需 fn 类型上下文（fn 形参实参 / fn 注解绑定），捕获闭包（H3，引用外部变量）、返回闭包的函数、`move` 语义规划中 |
+| 引用类型 | `&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、解引用 `*` 已实现（G1 ✅，标量存 `i8*` 槽、聚合拷贝指针、字段/方法自动剥引用层）；裸指针（G3 ✅）：`*const T`/`*mut T` 类型 + `*p` 读写 + `&T`↔`*const T` 互视（宽松）+ `*mut` 降级 `*const`；生命周期标注（G4 ✅ MVP 语法接受）：`<'a>` 与 `&'a T` 解析后丢弃（宽松检查）；`str` 类型、`ref` 模式、严格借用检查（含生命周期验证）规划中 |
+| 闭包 | ✅ H2 无捕获闭包已实现（§3.8）：`\|x, y\| expr` desugar 为匿名函数（`__closure_N`）+ 函数指针（typecheck `check_closure_expected` 按预期 fn 签名检查闭包体，注入全局 HirItem，零运行时开销）；需 fn 类型上下文（fn 形参实参 / fn 注解绑定）。✅ H3 捕获闭包（IIFE MVP）：`(\|x\| body)(args)` 立即调用按值捕获（迭代收集捕获变量 + 类型快照，desugar 为匿名函数 + 捕获变量前置调用，零新增 IR 节点）；`move` 忽略、闭包值对象（`let f = \|x\| ..`）、返回闭包的函数规划中 |
 | 函数指针 | ✅ 已实现（H1）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用（typecheck `Type::Fn` → HIR/MIR/LIR `CallIndirect` → LLVM `i8*` 槽 + 按签名 `bitcast` + 间接 `call`）；函数值可作实参、返回值、重新绑定、类型注解；`&T` 已实现见上 |
-| 运算符 | `?` 错误传播已实现（K1 ✅）：`expr?` 在 Option/Result 上下文 desugar 为 `match { Some(__v) => __v, None => return Option::None }`（Result：`Err(__e) => return Result::Err(__e)`），复用 check_match 的 if-else 链 + tag 比较，零新增 HIR 节点；支持表达式中间嵌套 `?`（如 `Some(a? + b?)`）；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报 Unsupported；`dyn Trait` 未实现 |
-| 所有权层级 | K2 `Box<T>` + K3 `Rc<T>`/`Arc<T>` ✅（§3.11）：堆分配 + `*` 解引用 + 字段/方法/索引自动剥层 + 引用计数（clone/强弱计数/弱引用/`try_unwrap`）；L3 `Gc<T>`（K4）规划 |
+| 运算符 | `?` 错误传播已实现（K1 ✅）：`expr?` 在 Option/Result 上下文 desugar 为 `match { Some(__v) => __v, None => return Option::None }`（Result：`Err(__e) => return Result::Err(__e)`），复用 check_match 的 if-else 链 + tag 比较，零新增 HIR 节点；支持表达式中间嵌套 `?`（如 `Some(a? + b?)`）；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报 Unsupported。`dyn Trait` ✅ 已实现（H4，§3.8）：trait 对象（`dyn Trait` 类型 + `&T` 强制转换 → vtable + 2 槽胖指针 + 方法调用 vtable 间接分派），MVP 限制：非泛型 trait/impl、含 `Self` 签名方法不可经 dyn 调用 |
+| 所有权层级 | K2 `Box<T>` + K3 `Rc<T>`/`Arc<T>` + K4 `Gc<T>` ✅（§3.11）：堆分配 + `*` 解引用 + 字段/方法/索引自动剥层 + 引用计数（clone/强弱计数/弱引用/`try_unwrap`）+ 可选 GC（`gc_region` 块 + 逃逸 root + 保守标记-清除，`zeta-gc-runtime`） |
 | 并发 | `serde`/`fmt`/`async` 模块规划；actor 的 `async` 方法 + `.await`/`send` 已实现（§3.3） |
 | 迭代器 | ✅ J1–J3 已实现（§3.10）：`for x in arr` 数组迭代（索引遍历，长度编译期已知）+ 自定义迭代器接入 `for`（存在 `next() -> Option<T>` 方法，inherent/trait impl，desugar 为 `loop { match it.next() { Some(x) => body, None => break } }`）+ 适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip`（数组/Vec/迭代器接收者，经 H2 闭包，返回 `Vec<T>` 可链式）；数值区间、`for x in vec`/`for (k, v) in map` 亦可用；`Iterator` trait 定义（std-lib §2.3）为规划 API（适配器为编译器内建） |
 | region 选项 | `adaptive`/`with_size (N)` 可用；`strategy (bump)` 等规划中 |
@@ -310,7 +345,7 @@ MVP 约束：适配器参数必须是 H2 无捕获闭包（`|x| ..`，捕获外�
 
 ---
 
-### 3.11 堆分配与引用计数 `Box<T>` / `Rc<T>` / `Arc<T>`（K2–K3）
+### 3.11 堆分配 / 引用计数 / 可选 GC `Box<T>` / `Rc<T>` / `Arc<T>` / `Gc<T>`（K2–K4）
 
 ```zeta
 // K2 Box::new 堆分配 + * 解引用（标量 load / 聚合指针拷贝，与 &T 同构）
@@ -363,9 +398,37 @@ match r.clone().try_unwrap() {
 let a = Arc::new(7);
 let a2 = a.clone();
 println(a.strong_count());  // 2
+
+// K4 Gc<T> 追踪 GC（MVP 保守标记-清除，zeta-gc-runtime）：
+// gc_region 块内分配，块结束触发 GC 周期（未逃逸对象回收）
+gc_region {
+    let a = Gc::new(42);
+    println(*a);            // 42
+}
+
+// 逃逸对象：块返回值存活到块外（zeta_gc_escape 登记为 root）
+let g = gc_region { let inner = Gc::new(100); inner };
+println(*g);                // 100
+
+// 字段 / 方法 / 索引自动剥层（与 Box / Rc 同构）
+let gp = gc_region { Gc::new(Point { x: 5, y: 6 }) };
+println(gp.x + gp.y);       // 11
+
+// 嵌套 gc_region：内层逃逸对象在外层块内仍活跃（存活链式提升）
+let outer = gc_region {
+    let o = Gc::new(1000);
+    let saved = gc_region { Gc::new(2000) };
+    o
+};
+println(*saved);            // 2000
+println(*outer);            // 1000
+
+// 块外分配（epoch 0，永不回收——MVP 泄漏语义，仍可用）
+let leaky = Gc::new(999);
+gc_region { println(*leaky + *Gc::new(1)); }  // 1000
 ```
 
-MVP 约束：`Box<T>`/`Rc<T>`/`Arc<T>`/`Weak<T>` 为编译器内建（无 std 结构体定义，typecheck 特判）；`Box<T>` 布局 = 栈上 1 指针槽 + 堆上 `slot_count(T)` 个 8 字节槽；`Rc<T>` 布局 = 堆 `RcInner` 的 `T` 值区自堆首槽起（与 Box 同构）+ 尾部两计数槽（strong = 值区槽数、weak = +1），`Rc<T>` 栈上 1 槽指向 RcInner（详见 memory-model.md §4 MVP 注记）；聚合 T 装箱整槽区 memcpy（浅拷贝）；无自动 drop（计数只增不减，显式释放语义规划，与 `Vec`/`String` 一致）；`Gc<T>`（K4）规划中。
+MVP 约束：`Box<T>`/`Rc<T>`/`Arc<T>`/`Weak<T>`/`Gc<T>` 为编译器内建（无 std 结构体定义，typecheck 特判）；`Box<T>` 布局 = 栈上 1 指针槽 + 堆上 `slot_count(T)` 个 8 字节槽；`Rc<T>` 布局 = 堆 `RcInner` 的 `T` 值区自堆首槽起（与 Box 同构）+ 尾部两计数槽（strong = 值区槽数、weak = +1），`Rc<T>` 栈上 1 槽指向 RcInner（详见 memory-model.md §4 MVP 注记）；`Gc<T>` 栈上 1 槽指向堆 1-槽包装（槽 0 存 `GcInner` 基址），对象与 `Box` 同构（详见 memory-model.md §5 MVP 注记）；聚合 T 装箱整槽区 memcpy（浅拷贝）；无自动 drop（计数只增不减，显式释放语义规划，与 `Vec`/`String` 一致）；`gc_region` 块 desugar 为 `zeta_gc_region_begin`/`zeta_gc_alloc`/`zeta_gc_escape`/`zeta_gc_collect`，块外对象永不回收、跨块逃逸对象引用图泄漏至程序结束，多线程 / 增量回收 / write barrier 规划中。
 
 ---
 
@@ -448,6 +511,10 @@ MVP 约束：`Box<T>`/`Rc<T>`/`Arc<T>`/`Weak<T>` 为编译器内建（无 std �
 > 本节记录新版开发计划（阶段 A–F，详见 [`docs/development-plan.md`](docs/development-plan.md)）的执行进度：
 > **阶段 A 全部完成（A1–A4 ✅），阶段 B 全部完成（B1–B5 ✅），阶段 C 全部完成（C1–C3 ✅），阶段 D 全部完成（D1–D3 ✅：zeta test / zeta fmt / zeta check / zeta doc / zeta bench），阶段 E 全部完成（E1 交叉编译 `--target` macOS 双架构 + `__zeta_target_os` 平台内建消除 `sockaddr_in4` 布局假设；E2 WASM 目标：`--target wasm32-wasi` 编译 + wasmtime 运行验证；E3 发布流程：zep publish 重复版本保护 + `zeta publish` CLI + release.yml 四平台 + CHANGELOG.md），阶段 F 全部完成（F1 LSP 服务器 MVP：`zeta lsp` + 新 crate `zeta-lsp`，文档同步 + 诊断推送；F2 PGO 数据回灌：`zeta profile` 命令 + `zeta build --profile` 编译期注入，`.zeta_profile` → 区域大小预测报告）**，E1 Windows/ARM 工具链（待对应环境）待做。
 
+- [x] **H4 `dyn Trait` trait 对象**（§3.9 运算符行更新；mvp-gaps-plan.md §4；guide.md §13 更新）：`dyn Trait` 类型 + `&T` 强制转换 + vtable 间接分派全链路（parser `ty.rs` `dyn` 分支 + AST `AstType::Dyn` + typecheck `Type::Dyn`）。**布局**：2 槽胖指针（槽 0 = 数据指针、槽 1 = vtable 指针）。**转换 `coerce_to_dyn`**：`let d: dyn Shape = &c;` desugar 为 HIR 块——`Alloc(3+N)` vtable（槽 0–2 = drop/size/align，MVP 置 0；槽 3.. = `FnPtr("Trait::method")` 按 trait 声明序）+ `Alloc(2)` 胖指针（数据指针 + vtable 指针）。**调用**：`check_method_call` Dyn 分支读 `FieldGet(obj,0)` 数据指针 + `FieldGet(obj,1)` vtable 指针 + `Index(__vtp, 3+idx)` 取方法函数指针 + `CallIndirect`——同一签名分派到不同 impl（多态）。MVP 限制：trait/impl 均须非泛型；方法签名含 `Self` 不可经 dyn 调用。产出 `tests/run-pass/dyn_trait.{zeta,out}`（6 输出）+ 全量 40 用例全绿 + cargo test 全绿。
+- [x] **G3 裸指针 / G4 生命周期标注**（§3.9 引用类型行更新；mvp-gaps-plan.md §4；guide.md §13 更新）：**G3** `*const T`/`*mut T` 类型 + `*p` 读写（parser `Token::Star` 分支、AST `AstType::RawPtr`、typecheck `Type::RawPtr`、Deref 分支扩展）+ 引用↔裸指针互视宽松规则（`compatible_with` 双向——参数检查是实参×形参方向，与 let 声明相反，单方向规则会在函数调用处失效）+ `*mut` 降级 `*const`；codegen 与引用同为 `i8*` 槽零改动；zeta-fmt/zeta-doc `fmt_type` 补分支。**G4** 生命周期标注 MVP 语法接受：`parse_generics` 跳过 `'a`（含 `: 'b` bound）、`parse_type` 的 `&` 分支跳过 `&'a T`，typecheck 解析后丢弃（宽松检查）；borrowck 生命周期验证规划中。产出 `tests/run-pass/raw_ptr.{zeta,out}`（7 输出）+ `tests/run-pass/lifetime.{zeta,out}`（4 输出）+ 全量 38 用例全绿。
+- [x] **H3 捕获闭包（IIFE MVP）**（§3.8 扩写 + §3.9 闭包行更新；mvp-gaps-plan.md §4；guide.md §13 更新）：`(|x, y| body)(args)` 立即调用时 body 引用的外层变量按值捕获，desugar 为匿名函数 `__closure_N(cap1, cap2, x, y)`（捕获变量作前置参数、参数名保留原名）+ 调用点普通函数调用，零新增 IR 节点。实现：`check_call` 的 `_ =>` 分支拦截 `ExprKind::Closure` callee → `check_capture_closure_iife`；**捕获收集迭代重查法**（环境 = 已发现捕获 + 闭包参数，逐轮把 UndefinedVariable 中存在于外层环境的名称收为捕获并重查，循环收敛）；字符串字面量实参经 `check_string_from` 升级 String 语义（与 `let s = "..."` 绑定一致，槽数匹配）。MVP 约束：仅 IIFE（闭包值对象 = 匿名结构体 + call 方法规划中）、`move` 忽略、嵌套捕获不支持、参数遮蔽捕获（Rust 语义）。产出 `tests/run-pass/capture_closure.{zeta,out}`（8 输出，含 H2 回归/参数遮蔽/for 循环内 IIFE）+ 全量 39 用例全绿 + cargo test 全绿。
+- [x] **K4 `Gc<T>` 追踪 GC（MVP 保守标记-清除）**（§3.9 所有权层级行更新、§3.11 扩写；guide.md §8.4/§13 更新；memory-model.md §5 MVP 注记；std-lib.md §11 更新）：编译器内建（`check_gc_new`/`check_gc_region`）+ 独立运行时 crate `zeta-gc-runtime`。**布局**：`Gc<T>` 栈上 1 槽（Ptr）指向堆 1-槽包装（`Alloc{slots:1}`，槽 0 存 `GcInner` 基址）；对象 = `slot_count(T)` 个 8 字节槽连续堆块，与 `Box<T>` 完全同构（解引用/剥层零差异，`heap_ptr_hir` 统一 Box/Rc/Arc/Gc）。**生命周期协议**：`gc_region` 块 desugar 为 `zeta_gc_region_begin()`（`epoch += 1`）→ `zeta_gc_alloc(n)`（malloc + 注册块表 + 记录 epoch）→ `zeta_gc_escape(ptr)`（块返回值登记逃逸 root，空指针空操作）→ `zeta_gc_collect()`（从逃逸 root 标记 → 清除 `epoch` 匹配未标记对象 → 存活对象提升为 root → `epoch -= 1`）；块外对象 epoch 恒小 → 永不回收（MVP 泄漏语义）；跨块存活引用链经"存活提升"连续保护。**关键教训**：① `zeta_gc_escape` 参数必须传**对象 base**（`heap_ptr_hir` 解包装槽 0）——初版传 `Variable(esc)`（包装指针）致 `mark` 线性查找（`header.base == root.base`）失配、对象被误回收（悬垂读取）；② `collect` 存活提升条件须为**所有被标记对象**（`marked`）而非 `marked && epoch == s.epoch`——嵌套块 collect 释放全部旧 root 节点，仅提升本块对象会使外层逃逸对象（`epoch < s.epoch` 存活但未标记可达）失去保护、后续外层 collect 误回收；③ 调试必须 `--force`（增量缓存命中跳过 typecheck）。**运行时加固**：全部动态内存只用 `libc::malloc`/`free`（对象块 + header/root 链表），不用 Rust 堆分配与 `realloc`——macOS C 主程序环境实测 `RawVec`/`realloc` 在 `libc::malloc` 之后触发 `libsystem_malloc` `mfm_alloc` 崩溃（`_os_unfair_lock_unowned_abort` / SIGKILL）；全局状态 `SyncUnsafeCell` 单线程无锁（MVP 编译产物单线程串行调用约定，无 Mutex）。产出 `tests/run-pass/gc_region.{zeta,out}`（15 输出）+ `tests/compile-fail/gc_bad.zeta`（`Gc::new()` 参数个数断言）+ 全量 36 用例全绿 + cargo test 全绿。
 - [x] **K3 `Rc<T>`/`Arc<T>` 引用计数装箱**（§3.9 所有权层级行更新、§3.11 扩写；guide.md §13 更新；memory-model.md §4 MVP 注记）：编译器内建（typecheck 特判，零新增 IR 节点）。布局：堆 `RcInner` 的 `T` 值区自堆首槽起（与 `Box<T>` 同构）+ 尾部计数槽（strong = `slot_count(T)`、weak = +1），`Rc<T>` 栈上 1 槽（Ptr）指向 RcInner。内建：`Rc::new`/`Arc::new`（值区写 + `FieldSet` 计数初始化 1/0）、`clone`（强计数 +1 指针共享）、`strong_count`/`weak_count`（返回 `Type::USize`）、`downgrade`（弱计数 +1 → `Weak<T>`）、`try_unwrap`（强计数 == 1 → `Ok(T)` / `Err(Rc<T>)`）、`Weak::upgrade`（强计数 > 0 → `Some(Rc<T>)` / `None`）。接线：`check_rc_method` 在 `heap_ptr_hir` 改写前分派（内建需原始 Rc 对象）；`heap_ptr_hir` 统一 Box/Rc/Arc（槽 0 即值区首槽）；`Rc::new`/`Arc::new`/`Weak::upgrade` 静态路径特判；Deref 分支扩展 Rc/Arc；`peel_refs_and_heap` 剥层。关键教训：`DerefSet` base 是地址、`FieldGet` 是 load 槽值，计数写必须用 `FieldSet`（GEP+store）；`try_unwrap` else 分支曾漏写 Err payload 槽致 match 读未初始化内存崩溃；`zeta run` 缓存 key 不含编译器版本，改编译器后须 `--force`。产出 `tests/run-pass/rc_new.{zeta,out}`（17 输出）+ `tests/compile-pass/rc_ty.zeta` + `tests/compile-fail/rc_bad.zeta` + 全量 33 用例全绿 + cargo test 全绿 + clippy 0 警告。
 - [x] **K2 `Box<T>` 堆分配装箱**（§3.9 所有权层级行勾销、新增 §3.11；guide.md §13 更新）：`Box::new(v)` 编译器内建（typecheck 特判，无 std 结构体定义）+ `*` 解引用 + 字段/方法/索引自动剥层。布局：`Box<T>` 栈上 1 槽（Ptr）存堆指针，堆上分配 `slot_count(T)` 个 8 字节槽连续对象区（与对象槽区同构）。核心：`check_box_new`（`alloc_bytes(8*n)` + 标量 `DerefSet` 写堆首槽 / 聚合 `array_copy` 整槽区 memcpy 浅拷贝 + 1 槽 `Alloc` 返回）+ `type_slot_count`（槽数计算：标量 1 / struct 字段数 / enum `slot_count` / 数组长度 / 元组元素数 / 引用·Fn·内嵌 Box 1 槽）+ `peel_box`/`peel_refs_and_boxes`/`box_ptr_hir`（Box 表达式 → 堆对象指针 `FieldGet(box, 0, Ptr)`）。接线五处：Deref 分支加 Box（标量 load / 聚合指针拷贝，与 `&T` 同构）、字段访问剥层+base 改写、方法调用 receiver 改写（`Box<String>` len/索引、`Box<Vec<i64>>` push、`as_str` 特判）、索引 base 改写。`Vec::with_capacity` 无上下文返回 `Vec<Infer>`，测试经 `Box<Vec<i64>>` 注解统一。嵌套 `Box<Box<i64>>`（`**bb`）与 Box 赋值指针共享可用；无自动 drop（与 Vec/String 一致）。产出 `tests/run-pass/box_new.{zeta,out}`（15 输出）+ `tests/compile-pass/box_ty.zeta` + `tests/compile-fail/box_bad.zeta` + 全量 30 用例全绿 + cargo test 全绿 + clippy 0 警告。
 - [x] **J1–J3 迭代器与集合协议**（§3.9 迭代器行勾销；guide.md §13 更新）：

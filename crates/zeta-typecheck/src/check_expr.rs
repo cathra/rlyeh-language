@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use zeta_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, ExprKind, UnaryOp};
+use zeta_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, ExprKind, UnaryOp};
 use zeta_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirFnDecl, HirItem, HirItemKind,
     HirParam, HirRegionOptions, HirStmt, HirUnaryOp,
@@ -43,6 +43,138 @@ pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         // HashMap 键散列：Knuth 乘法混合散列（MVP 仅支持整数键），返回非负散列值
         "hash_value" => Some((vec![Type::Infer], Type::I64)),
         _ => None,
+    }
+}
+
+/// H4 `dyn Trait` 转换：把具体类型的数据指针转成 trait 对象胖指针。
+///
+/// 生成 HIR 块（vtable 运行时构造 + 2 槽胖指针）：
+/// ```text
+/// let __vt = Alloc(3 + N);              // N = trait 方法数；槽 0-2 为 drop/size/align（MVP = 0）
+/// FieldSet(__vt, 0, 0); FieldSet(__vt, 1, 0); FieldSet(__vt, 2, 0);
+/// let __m0 = FnPtr("Circle::area");   FieldSet(__vt, 3, __m0);
+/// let __m1 = FnPtr("Circle::describe"); FieldSet(__vt, 4, __m1);
+/// let __dyn = Alloc(2);                 // 胖指针：槽 0 = 数据指针，槽 1 = vtable 指针
+/// FieldSet(__dyn, 0, data_ptr); FieldSet(__dyn, 1, __vt);
+/// final: __dyn
+/// ```
+///
+/// 后续 `dyn_obj.method(args)` 经 `check_method_call` 的 `Type::Dyn` 分支
+/// 从 vtable 槽 `3 + 方法索引` 读函数指针并间接调用。
+/// MVP 限制：trait 与 impl 均须非泛型；转换源为具体类型（非泛型参数）。
+pub(crate) fn coerce_to_dyn(
+    ctx: &mut TypeContext,
+    data_ptr: HirExpr,
+    concrete: &Type,
+    trait_name: &str,
+    span: Span,
+) -> Result<HirExpr, TypeError> {
+    let trait_def = ctx.trait_defs.get(trait_name).cloned().ok_or_else(|| {
+        TypeError::UndefinedType {
+            name: trait_name.to_string(),
+            span,
+        }
+    })?;
+    if !trait_def.type_params.is_empty() {
+        return Err(TypeError::Unsupported {
+            what: format!("`dyn {trait_name}`：泛型 trait 实例化（trait 对象泛型参数规划中）"),
+            span,
+        });
+    }
+    // 找 `impl Trait for 具体类型`（MVP：trait/impl 均非泛型，直接按 self_type 精确匹配）
+    let impl_def = ctx
+        .impl_defs
+        .iter()
+        .find(|d| d.trait_name.as_deref() == Some(trait_name) && d.self_type == *concrete)
+        .cloned()
+        .ok_or_else(|| TypeError::Unsupported {
+            what: format!(
+                "类型 `{concrete}` 未实现 trait `{trait_name}`，无法转换为 `dyn {trait_name}`"
+            ),
+            span,
+        })?;
+    if !impl_def.type_params.is_empty() {
+        return Err(TypeError::Unsupported {
+            what: format!("`dyn {trait_name}`：泛型 impl（`impl<T> {trait_name} for ...`）规划中"),
+            span,
+        });
+    }
+    let n = trait_def.methods.len();
+    let mut stmts = Vec::new();
+    // 1) vtable 数组：3 元槽（drop/size/align，MVP = 0）+ N 方法槽
+    let vt = ctx.fresh_temp();
+    stmts.push(HirStmt::Let {
+        name: vt.clone(),
+        init: HirExpr::Alloc { slots: 3 + n },
+        mutable: false,
+    });
+    for i in 0..3 {
+        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(vt.clone())),
+            index: i,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }));
+    }
+    // 2) 方法表：按 trait 方法声明顺序填充具体 impl 方法函数指针
+    let subst = HashMap::new();
+    for (i, m) in trait_def.methods.iter().enumerate() {
+        let impl_method = impl_def.methods.iter().find(|im| im.sig.name == m.name).ok_or_else(|| {
+            TypeError::Unsupported {
+                what: format!(
+                    "`{trait_name}` 的 impl for `{concrete}` 缺少方法 `{}`",
+                    m.name
+                ),
+                span,
+            }
+        })?;
+        let fn_name = instantiate_impl_method(ctx, &impl_def, impl_method, &subst, span)?;
+        let m_var = ctx.fresh_temp();
+        stmts.push(HirStmt::Let {
+            name: m_var.clone(),
+            init: HirExpr::FnPtr(fn_name),
+            mutable: false,
+        });
+        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(vt.clone())),
+            index: 3 + i,
+            value: Box::new(HirExpr::Variable(m_var)),
+            ty: FieldScalar::Ptr,
+        }));
+    }
+    // 3) 胖指针：槽 0 = 数据指针，槽 1 = vtable 指针
+    let dyn_var = ctx.fresh_temp();
+    stmts.push(HirStmt::Let {
+        name: dyn_var.clone(),
+        init: HirExpr::Alloc { slots: 2 },
+        mutable: false,
+    });
+    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+        index: 0,
+        value: Box::new(data_ptr),
+        ty: FieldScalar::Ptr,
+    }));
+    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+        index: 1,
+        value: Box::new(HirExpr::Variable(vt)),
+        ty: FieldScalar::Ptr,
+    }));
+    Ok(HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(dyn_var)),
+    })))
+}
+
+/// H4 辅助：类型是否引用了 `Self`。trait 方法签名含关联类型（`Self`）时，
+/// trait 对象调用无法确定具体类型，MVP 报 Unsupported。
+fn type_mentions_self(ty: &Type) -> bool {
+    match ty {
+        Type::Generic(n) => n == "Self",
+        Type::Ref(t, _) | Type::RawPtr(t, _) | Type::Array(t, _) => type_mentions_self(t),
+        Type::Named(_, ps) | Type::Tuple(ps) => ps.iter().any(type_mentions_self),
+        _ => false,
     }
 }
 
@@ -242,13 +374,13 @@ pub(crate) fn infer_expr(
                 }
                 UnaryOp::Deref => {
                     let inner = match &o_ty {
-                        Type::Ref(inner, _) => (**inner).clone(),
+                        Type::Ref(inner, _) | Type::RawPtr(inner, _) => (**inner).clone(),
                         _ => match heap_wrapper_inner(&o_ty) {
                             Some(t) => t,
                             None => {
                                 return Err(TypeError::Unsupported {
                                     what: format!(
-                                        "解引用 `*` 仅支持引用类型 `&T` 或堆装箱 `Box<T>`/`Rc<T>`/`Arc<T>`/`Gc<T>`，发现 `{o_ty}`"
+                                        "解引用 `*` 仅支持引用类型 `&T`、裸指针 `*const T`/`*mut T` 或堆装箱 `Box<T>`/`Rc<T>`/`Arc<T>`/`Gc<T>`，发现 `{o_ty}`"
                                     ),
                                     span,
                                 })
@@ -2241,6 +2373,12 @@ fn check_call(
         // 模块路径调用：`math::add(...)`
         ExprKind::Path(segments) => segments.join("::"),
         _ => {
+            // H3 捕获闭包 IIFE：`(|x, y| body)(args)` 立即调用——
+            // callee 为闭包表达式时走捕获闭包路径（body 中引用的外层变量
+            // 按值捕获，desugar 为匿名函数 + 捕获变量前置调用）
+            if let ExprKind::Closure { params, body, capture } = &*callee.kind {
+                return check_capture_closure_iife(ctx, params, body, capture, args, span);
+            }
             // 函数值调用（函数指针）：`fns[i](x)` / `get_fn()(x)`
             let (callee_hir, callee_ty) = infer_expr(ctx, callee)?;
             let signature = match &callee_ty {
@@ -2572,6 +2710,147 @@ fn check_call(
     ))
 }
 
+/// H3 捕获闭包（IIFE）：`(|x, y| body)(args)` 立即调用。
+///
+/// 捕获闭包不能表示为 fn 指针（无捕获环境），MVP 仅支持**立即调用**形式：
+/// 闭包体中引用的外层变量按值捕获，desugar 为匿名函数
+/// `__closure_N(cap1, cap2, x, y) -> ret { body }`（捕获变量作为前置参数，
+/// 参数名保留外层原名），调用点展开为普通函数调用
+/// `__closure_N(cap1, cap2, arg1, arg2)`。零新增 IR 节点。
+///
+/// MVP 约束：
+/// 1. 仅支持 IIFE（闭包表达式紧跟实参括号）；`let f = |x| ..; f(..)` 闭包值
+///    （desugar 为匿名结构体 + `call` 方法）规划中。
+/// 2. 按值捕获（捕获变量类型快照）；`move` 关键字 MVP 忽略（所有权宽松）。
+/// 3. 闭包参数无类型注解，类型从实参推断（IIFE 无 fn 类型上下文）。
+/// 4. 捕获变量名与闭包参数同名时参数遮蔽捕获（Rust 语义）。
+/// 5. 嵌套捕获闭包（闭包体内再捕获）不支持。
+fn check_capture_closure_iife(
+    ctx: &mut TypeContext,
+    params: &[AstPattern],
+    body: &AstExpr,
+    _capture: &CaptureMode,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if params.len() != args.len() {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "<捕获闭包>".to_string(),
+            expected: params.len(),
+            found: args.len(),
+            span,
+        });
+    }
+    // 闭包参数名（Ident / Wildcard）
+    let mut names = Vec::with_capacity(params.len());
+    for (i, p) in params.iter().enumerate() {
+        match p {
+            AstPattern::Ident(n) => names.push(n.clone()),
+            AstPattern::Wildcard => names.push(format!("__arg{i}")),
+            other => {
+                return Err(TypeError::Unsupported {
+                    what: format!("闭包参数模式 `{other:?}`（H3 仅支持简单标识符参数）"),
+                    span,
+                })
+            }
+        }
+    }
+    // 实参检查（外层环境）：闭包参数类型从实参推断
+    let mut arg_hirs = Vec::with_capacity(args.len());
+    let mut arg_tys = Vec::with_capacity(args.len());
+    for a in args {
+        let (h, t) = infer_expr(ctx, a)?;
+        if matches!(t, Type::Str) {
+            // 字符串字面量实参升级为 String 语义（与 `let s = "..."` 绑定一致）：
+            // 展开 `String::from` 深拷贝（data/len/cap 三槽），使闭包体内
+            // 拼接 / 方法调用按 String 对象解析（槽数匹配）
+            let (h2, t2) = check_string_from(ctx, &[a.clone()], a.span)?;
+            arg_hirs.push(h2);
+            arg_tys.push(t2);
+        } else {
+            arg_hirs.push(h);
+            arg_tys.push(t);
+        }
+    }
+    // 迭代检查闭包体：逐轮收集"未定义"变量——若其在外层变量环境中有类型
+    // （保存的 saved_vars），即为捕获变量（按值捕获类型快照）；否则报真未定义。
+    // 每轮至少新增一个捕获变量，循环收敛。
+    let mut captures: Vec<String> = Vec::new();
+    let mut capture_tys: Vec<Type> = Vec::new();
+    let body_result = loop {
+        let saved_vars = std::mem::take(&mut ctx.variables);
+        let saved_inits = std::mem::take(&mut ctx.local_inits);
+        for (nm, ty) in captures.iter().zip(capture_tys.clone()) {
+            ctx.insert_variable(nm.clone(), ty);
+        }
+        for (nm, ty) in names.iter().zip(arg_tys.clone()) {
+            ctx.insert_variable(nm.clone(), ty);
+        }
+        let r = infer_expr(ctx, body);
+        ctx.variables = saved_vars;
+        ctx.local_inits = saved_inits;
+        match r {
+            Ok(v) => break Ok(v),
+            Err(TypeError::UndefinedVariable { name, .. }) if !captures.contains(&name) => {
+                // 环境已恢复为外层——在外层变量环境中能找到类型者即为捕获变量
+                if let Some(ty) = ctx.variables.get(&name).cloned() {
+                    captures.push(name);
+                    capture_tys.push(ty);
+                    continue;
+                }
+                break Err(TypeError::UndefinedVariable { name, span });
+            }
+            Err(e) => break Err(e),
+        }
+    };
+    let (body_hir, body_ty) = match body_result {
+        Ok(v) => v,
+        Err(e) => return Err(e),
+    };
+    // 匿名函数：参数 = [捕获变量（外层原名）, 闭包参数]
+    let name = format!("__closure_{}", ctx.closure_seq);
+    ctx.closure_seq += 1;
+    let mut fn_params = capture_tys.clone();
+    fn_params.extend(arg_tys.clone());
+    let mut fn_names = captures.clone();
+    fn_names.extend(names.clone());
+    ctx.insert_fn_signature(
+        name.clone(),
+        FnSignature {
+            params: fn_params,
+            return_type: body_ty.clone(),
+        },
+    );
+    ctx.mono_items.push(HirItem {
+        name: name.clone(),
+        kind: HirItemKind::Fn(HirFnDecl {
+            params: fn_names
+                .iter()
+                .map(|n| HirParam { name: n.clone() })
+                .collect(),
+            body: Some(HirBlock {
+                stmts: vec![],
+                final_expr: Some(body_hir),
+            }),
+            is_extern: false,
+            extern_sig: None,
+        }),
+    });
+    // 调用：捕获变量（外层环境变量引用，按名字 resolve）+ 实参
+    let mut call_args: Vec<HirExpr> = captures
+        .iter()
+        .map(|c| HirExpr::Variable(c.clone()))
+        .collect();
+    call_args.extend(arg_hirs);
+    Ok((
+        HirExpr::Call {
+            callee: name,
+            args: call_args,
+        },
+        body_ty,
+    ))
+}
+
 /// 检查通过函数值（函数指针）间接调用：`let f = add; f(1, 2)`。
 ///
 /// 参数 / 返回类型按 [`type_to_extern_name`] 序列化为类型名字符串透传到
@@ -2841,6 +3120,32 @@ pub(crate) fn resolve_ast_type(
                 Mutability::Immutable
             };
             Ok(Type::Ref(Box::new(inner), m))
+        }
+        AstType::RawPtr(inner, is_mut) => {
+            let inner = resolve_ast_type(ctx, inner, span)?;
+            Ok(Type::RawPtr(Box::new(inner), *is_mut))
+        }
+        // trait 对象（H4）：`dyn Trait` → `Type::Dyn(完整 trait 名)`。
+        // 布局为 2 槽胖指针（数据指针 + vtable 指针），转换与调用见
+        // `coerce_to_dyn` / `check_method_call` 的 Dyn 分支。
+        AstType::Dyn(name) => {
+            let full = if ctx.trait_defs.contains_key(name) {
+                name.clone()
+            } else {
+                // use 导入别名（`use shape::Shape` 后 `dyn Shape`）
+                ctx.use_aliases
+                    .get(name)
+                    .filter(|f| ctx.trait_defs.contains_key(*f))
+                    .cloned()
+                    .unwrap_or_else(|| name.clone())
+            };
+            if !ctx.trait_defs.contains_key(&full) {
+                return Err(TypeError::UndefinedType {
+                    name: name.clone(),
+                    span,
+                });
+            }
+            Ok(Type::Dyn(full))
         }
         AstType::Tuple(ts) => {
             let mut resolved = Vec::with_capacity(ts.len());
@@ -5325,6 +5630,125 @@ fn check_method_call(
     // 须在堆指针改写前分派（内建需要原始 Rc 对象取 RcInner 指针）
     if let Some(r) = check_rc_method(ctx, method, &recv_ty, recv_hir.clone(), args, span) {
         return r;
+    }
+    // H4 `dyn Trait` 接收者：方法经 vtable 间接调用（类型擦除后的多态分派）。
+    // 布局：2 槽胖指针（槽 0 = 数据指针，槽 1 = vtable 指针）。
+    // desugar 为：
+    //   let __obj = <recv>;                       // 胖指针对象（1 指针槽）
+    //   let __data = FieldGet(__obj, 0, Ptr);     // 数据指针
+    //   let __vtp  = FieldGet(__obj, 1, Ptr);     // vtable 指针
+    //   let __m    = Index(__vtp, 3+idx, Ptr);    // vtable[3+idx] 方法函数指针
+    //   final: CallIndirect { callee: __m, args: [__data, ...实参], param_names, ret_name }
+    if let Type::Dyn(trait_name) = &recv_ty {
+        let trait_def = ctx
+            .trait_defs
+            .get(trait_name)
+            .cloned()
+            .ok_or_else(|| TypeError::UndefinedType {
+                name: trait_name.clone(),
+                span,
+            })?;
+        let idx = trait_def
+            .methods
+            .iter()
+            .position(|m| m.name == method)
+            .ok_or_else(|| TypeError::FunctionNotFound {
+                name: format!("dyn {trait_name}::{method}"),
+                span,
+            })?;
+        let sig = &trait_def.methods[idx];
+        // MVP 限制：trait 方法签名含 `Self`（关联返回类型 / 参数）时无法确定
+        // 具体类型，不支持经 dyn 调用
+        if sig.params.iter().skip(1).any(type_mentions_self) || type_mentions_self(&sig.return_type) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "`dyn {trait_name}::{method}`：签名含 `Self` 的方法（关联类型 MVP 不支持 trait 对象调用）"
+                ),
+                span,
+            });
+        }
+        if args.len() + 1 != sig.params.len() {
+            return Err(TypeError::UnexpectedArgumentCount {
+                name: format!("dyn {trait_name}::{method}"),
+                expected: sig.params.len() - 1,
+                found: args.len(),
+                span,
+            });
+        }
+        // 实参类型检查 + 组装（self → 数据指针）
+        let mut hir_args = Vec::with_capacity(args.len() + 1);
+        let mut param_names = vec![type_to_extern_name(&sig.params[0])];
+        for (i, a) in args.iter().enumerate() {
+            let (h, t) = infer_expr(ctx, a)?;
+            let pty = substitute(&sig.params[i + 1], &HashMap::new());
+            if !t.compatible_with(&pty) {
+                return Err(TypeError::ArgumentTypeMismatch {
+                    name: format!("dyn {trait_name}::{method}"),
+                    index: i + 1,
+                    expected: pty.to_string(),
+                    found: t.to_string(),
+                    span: a.span,
+                });
+            }
+            hir_args.push(h);
+            param_names.push(type_to_extern_name(&pty));
+        }
+        // 构造调用块
+        let obj = ctx.fresh_temp();
+        let data = ctx.fresh_temp();
+        let vtp = ctx.fresh_temp();
+        let m = ctx.fresh_temp();
+        let stmts = vec![
+            HirStmt::Let {
+                name: obj.clone(),
+                init: recv_hir,
+                mutable: false,
+            },
+            HirStmt::Let {
+                name: data.clone(),
+                init: HirExpr::FieldGet {
+                    base: Box::new(HirExpr::Variable(obj.clone())),
+                    index: 0,
+                    ty: FieldScalar::Ptr,
+                },
+                mutable: false,
+            },
+            HirStmt::Let {
+                name: vtp.clone(),
+                init: HirExpr::FieldGet {
+                    base: Box::new(HirExpr::Variable(obj)),
+                    index: 1,
+                    ty: FieldScalar::Ptr,
+                },
+                mutable: false,
+            },
+            HirStmt::Let {
+                name: m.clone(),
+                init: HirExpr::Index {
+                    base: Box::new(HirExpr::Variable(vtp)),
+                    index: Box::new(HirExpr::IntLiteral((3 + idx) as i128)),
+                    elem: FieldScalar::Ptr,
+                    is_str: false,
+                },
+                mutable: false,
+            },
+        ];
+        let mut call_args = vec![HirExpr::Variable(data)];
+        call_args.extend(hir_args);
+        let ret_ty = sig.return_type.clone();
+        let call = HirExpr::CallIndirect {
+            callee: Box::new(HirExpr::Variable(m)),
+            args: call_args,
+            param_names,
+            ret_name: type_to_extern_name(&ret_ty),
+        };
+        return Ok((
+            HirExpr::Block(Box::new(HirBlock {
+                stmts,
+                final_expr: Some(call),
+            })),
+            ret_ty,
+        ));
     }
     // `Box<T>` 接收者：receiver 改写为堆对象指针（槽 0），使方法按 `T` 解析
     // 且 `&self` 参数收到 `T` 对象指针（K2；`Rc<T>`/`Arc<T>` 取值区槽 2）

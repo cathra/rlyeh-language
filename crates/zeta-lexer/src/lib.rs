@@ -810,6 +810,7 @@ fn keyword_or_ident(text: &str) -> Token {
         "use" => Token::Use,
         "as" => Token::As,
         "extern" => Token::Extern,
+        "dyn" => Token::Dyn,
         _ => Token::Ident(text.to_string()),
     }
 }

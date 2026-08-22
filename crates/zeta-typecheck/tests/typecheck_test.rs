@@ -10,13 +10,16 @@ fn check(source: &str) -> Result<zeta_hir::HirProgram, TypeError> {
     typecheck(&program)
 }
 
-/// 提取第一个函数的函数体。
+/// 提取第一个含函数体的函数体（跳过注入的 extern 内建声明）。
 fn first_fn_body(program: &zeta_hir::HirProgram) -> &HirBlock {
-    let item = program.items.first().expect("expected at least one item");
-    match &item.kind {
-        HirItemKind::Fn(f) => f.body.as_ref().expect("expected function body"),
-        _ => panic!("expected a function item"),
-    }
+    program
+        .items
+        .iter()
+        .find_map(|item| match &item.kind {
+            HirItemKind::Fn(f) => f.body.as_ref(),
+            _ => None,
+        })
+        .expect("expected a function with body")
 }
 
 /// 提取函数体中最外层 if 表达式的条件。
@@ -318,10 +321,10 @@ fn test_let_type_annotation_mismatch() {
 
 #[test]
 fn test_typecheck_source() {
-    // 便捷入口：源码 → HIR
+    // 便捷入口：源码 → HIR（items 含注入的 extern 内建，取含函数体的 main 断言）
     let program = zeta_typecheck::typecheck_source("fn main() { let x = 5; if x in 0..<10 {} }")
         .expect("should typecheck");
-    assert_eq!(program.items.len(), 1);
+    assert_eq!(first_fn_body(&program).stmts.len(), 1);
 }
 
 #[test]

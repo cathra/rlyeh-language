@@ -14,13 +14,33 @@ impl<'src> Parser<'src> {
         match self.current().cloned() {
             Some(Token::BitAnd) => {
                 self.bump();
+                // 生命周期标注 `&'a T`（G4）：MVP 解析后丢弃（严格借用检查规划中）
+                if matches!(self.current(), Some(Token::Lifetime(_))) {
+                    self.bump();
+                }
                 let is_mut = self.eat(&Token::Mut);
                 let inner = self.parse_type()?;
                 Ok(AstType::Ref(Box::new(inner), is_mut))
             }
+            // 裸指针 `*const T` / `*mut T`
+            Some(Token::Star) => {
+                self.bump();
+                let is_mut = self.eat(&Token::Mut);
+                if !is_mut {
+                    self.expect(&Token::Const, "'const'")?;
+                }
+                let inner = self.parse_type()?;
+                Ok(AstType::RawPtr(Box::new(inner), is_mut))
+            }
             Some(Token::LParen) => self.parse_tuple_type(),
             Some(Token::LBracket) => self.parse_array_type(),
             Some(Token::Fn) => self.parse_fn_type(),
+            // trait 对象 `dyn Trait`（H4）：`dyn` 后跟 trait 路径名
+            Some(Token::Dyn) => {
+                self.bump();
+                let name = self.expect_ident()?;
+                Ok(AstType::Dyn(name))
+            }
             Some(Token::SelfKw) => {
                 self.bump();
                 Ok(AstType::Path("Self".to_string(), Vec::new()))

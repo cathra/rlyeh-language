@@ -395,11 +395,12 @@ struct Node {
 
 ---
 
-## 5. L3：可选 GC（规划）
+## 5. L3：可选 GC
 
-> **实现状态**：❌ 未实现（规划）。`Gc<T>` 为插件式目标 API。
+> **实现状态**：✅ MVP 已实现（K4，`zeta-gc-runtime` 保守标记-清除）。
+> 目标设计（Immix 增量标记-清除 + 复制、write barrier、逃逸限制）见下，MVP 注记见 §5.3。
 
-### 5.1 设计
+### 5.1 设计（目标）
 
 - 采用 Immix 算法（增量标记-清除 + 复制）
 - 仅在显式启用的代码块中可用
@@ -414,10 +415,29 @@ gc_region {
 }
 ```
 
-### 5.2 安全边界
+### 5.2 安全边界（目标）
 
 - GC 管理的对象不能包含非 GC 管理的指针
 - GC 对象与区域对象之间的引用需要 write barrier
+
+### 5.3 MVP 注记（K4，2026-08）
+
+当前实现为**保守标记-清除**（非增量、非复制），目标 API 与设计细节见上。
+
+**布局与生命周期协议**（与编译器内建 `Gc<T>` 一致，实现见 `zeta-gc-runtime`）：
+
+- `Gc<T>` 栈上 1 槽（Ptr）指向堆 **1-槽包装**（`Alloc{slots:1}`，槽 0 存 `GcInner` 基址）；对象 = `slot_count(T)` 个 8 字节槽的连续堆块，`T` 值区自堆首槽起，与 `Box<T>` 完全同构（解引用 / 字段 / 方法 / 索引剥层零差异）。
+- `gc_region` 块 desugar 为固定调用序列：`zeta_gc_region_begin()`（`epoch += 1`）→ `zeta_gc_alloc(n)`（malloc 对象 + 注册块表 + 记录当前 epoch）→ `zeta_gc_escape(ptr)`（块返回值登记逃逸 root，空指针空操作）→ `zeta_gc_collect()`（从逃逸 root 标记 → 清除 `epoch` 匹配的未标记对象 → 存活对象提升为 root → `epoch -= 1`）。
+- **epoch 分层**：块外分配对象 `epoch` 恒小于任何块 → 永不回收（MVP 泄漏语义）；块内对象仅回收本块未标记的；跨块存活的引用链经"存活提升"连续保护（内层逃逸对象在后续块 collect 中为 root）。
+- **保守扫描**：值区内任意槽位值等于已注册对象基址即视为引用（线性查找），标量误判为安全漏回收。
+
+**已知限制**（与目标设计的差距）：
+
+- 非增量（stop-the-world）、单线程无锁（全局状态 `SyncUnsafeCell`，编译产物为单线程串行调用约定）；多线程 GC（全局锁 / 线程局部堆）规划中。
+- 递归标记（DFS），深引用图可能爆栈。
+- `gc_region` 结束后块内对象失效（逃逸限制，无悬空指针防护）；跨块逃逸对象及其引用图泄漏至程序结束。
+- 无 write barrier（保守扫描规避精确性要求）。
+- 分配器约束：运行时全部动态内存**只用 `libc::malloc` / `libc::free`**（对象块 + 元数据链表），不用 Rust 堆分配与 `realloc`——macOS C 主程序环境实测 `RawVec` / `realloc` 在 `libc::malloc` 之后调用触发 `libsystem_malloc` 的 `mfm_alloc` 崩溃（`_os_unfair_lock_unowned_abort` / SIGKILL），详见 `zeta-gc-runtime` 模块头注释。
 
 ---
 

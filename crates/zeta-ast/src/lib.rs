@@ -773,6 +773,10 @@ pub enum AstType {
     Path(String, Vec<AstType>),
     /// 引用类型（`&T` / `&mut T`）
     Ref(Box<AstType>, bool),
+    /// 裸指针类型（`*const T` / `*mut T`）
+    RawPtr(Box<AstType>, bool),
+    /// trait 对象类型（`dyn Trait`：数据指针 + vtable 胖指针）
+    Dyn(String),
     /// 元组类型 `(A, B)`
     Tuple(Vec<AstType>),
     /// 数组类型 `[T; N]`

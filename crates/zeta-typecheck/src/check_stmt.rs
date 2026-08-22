@@ -3,7 +3,7 @@
 use zeta_ast::{AstPattern, AstStmt, ExprKind};
 use zeta_hir::{HirExpr, HirStmt};
 
-use crate::check_expr::{check_closure_expected, infer_expr, resolve_ast_type};
+use crate::check_expr::{check_closure_expected, coerce_to_dyn, infer_expr, resolve_ast_type};
 use crate::context::TypeContext;
 use crate::error::TypeError;
 use crate::types::Type;
@@ -23,7 +23,7 @@ pub(crate) fn check_stmt(
             let span = init.span;
             // H2 无捕获闭包 + fn 类型注解：按预期签名检查（闭包参数无类型注解，
             // 无 fn 上下文无法推断参数类型）。非 fn 注解则走常规推断 + 一致性检查。
-            let (h_init, ty) =
+            let (mut h_init, mut ty) =
                 if type_anno.is_some() && matches!(&*init.kind, ExprKind::Closure { .. }) {
                     let at = resolve_ast_type(ctx, type_anno.as_ref().unwrap(), span)?;
                     if !matches!(&at, Type::Fn(_)) {
@@ -43,6 +43,13 @@ pub(crate) fn check_stmt(
             let anno_ty = match type_anno {
                 Some(anno) => {
                     let at = resolve_ast_type(ctx, anno, span)?;
+                    // H4 `dyn Trait` 转换：注解为 `dyn Trait`、init 为 `&T`
+                    // （T 实现了该 trait）时，把 init 转成 trait 对象胖指针，
+                    // 并同步绑定类型，使后续 `at.compatible_with(&ty)` 一致。
+                    if let (Type::Dyn(trait_name), Type::Ref(inner, _)) = (&at, &ty) {
+                        h_init = coerce_to_dyn(ctx, h_init, inner, trait_name, span)?;
+                        ty = at.clone();
+                    }
                     if !at.compatible_with(&ty) {
                         return Err(TypeError::WrongType {
                             expected: at.to_string(),

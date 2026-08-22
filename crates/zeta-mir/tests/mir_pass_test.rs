@@ -10,11 +10,27 @@ fn lower(src: &str) -> MirProgram {
     lower_program(&hir)
 }
 
+/// 第一个含函数体的用户函数（跳过注入的 extern 内建空 CFG）。
+fn first_fn(p: &MirProgram) -> &zeta_mir::MirFunction {
+    p.functions
+        .iter()
+        .find(|f| !f.is_extern && !f.blocks.is_empty())
+        .expect("至少有一个含函数体的用户函数")
+}
+
+/// 按名查找用户函数。
+fn find_fn<'a>(p: &'a MirProgram, name: &str) -> &'a zeta_mir::MirFunction {
+    p.functions
+        .iter()
+        .find(|f| f.name == name && !f.is_extern)
+        .expect("函数存在")
+}
+
 #[test]
 fn test_const_fold_arithmetic() {
     let mut m = lower("fn main() -> u32 { 1 + 2 * 3 }");
     constant_fold(&mut m);
-    let f = &m.functions[0];
+    let f = first_fn(&m);
     // `_t0 = 7`（常量折叠后）
     assert_eq!(
         f.blocks[0].stmts[0],
@@ -29,7 +45,7 @@ fn test_const_fold_arithmetic() {
 fn test_const_fold_div_by_zero_preserved() {
     let mut m = lower("fn main() -> u32 { 1 / 0 }");
     constant_fold(&mut m);
-    let f = &m.functions[0];
+    let f = first_fn(&m);
     // 除零不折叠（保留运算）
     assert!(matches!(
         f.blocks[0].stmts[0],
@@ -45,7 +61,7 @@ fn test_const_fold_cond_and_dce() {
     let mut m = lower("fn main() -> u32 { if 1 < 2 { 10 } else { 20 } }");
     constant_fold(&mut m);
     dead_code_elimination(&mut m);
-    let f = &m.functions[0];
+    let f = first_fn(&m);
     // 条件折叠为 Jump，else 分支不可达被删除：entry / then / merge = 3 块
     assert_eq!(f.blocks.len(), 3);
     assert_eq!(f.blocks[0].terminator, Some(MirTerminator::Jump(1)));
@@ -63,7 +79,7 @@ fn test_const_fold_cond_and_dce() {
 fn test_dce_keeps_live_assignments() {
     let mut m = lower("fn main() -> u32 { let a = 1; let b = a + 1; b }");
     dead_code_elimination(&mut m);
-    let f = &m.functions[0];
+    let f = first_fn(&m);
     // a、b 均被后续使用，应保留
     let targets: Vec<&str> = f.blocks[0]
         .stmts
@@ -92,8 +108,8 @@ fn main() -> u32 {
 "#,
     );
     inline_small_functions(&mut m);
-    let f = &m.functions[1]; // main
-                             // Call 被替换为内联体
+    let f = find_fn(&m, "main"); // main
+                                 // Call 被替换为内联体
     let has_call = f.blocks[0]
         .stmts
         .iter()
@@ -126,7 +142,7 @@ fn main() -> u32 {
     );
     inline_small_functions(&mut m);
     // fact 不是单块函数（if 生成多块）→ 不可内联，调用保留
-    let f = &m.functions[1];
+    let f = find_fn(&m, "main");
     assert!(f.blocks[0]
         .stmts
         .iter()
@@ -147,7 +163,7 @@ fn main() -> u32 {
 "#,
     );
     optimize(&mut m);
-    let f = &m.functions[0];
+    let f = first_fn(&m);
     // 流水线不破坏循环 CFG（entry/head/body/after 仍 4 块）
     assert_eq!(f.blocks.len(), 4);
     assert!(matches!(

@@ -172,11 +172,14 @@ pub extern "C" fn zeta_gc_collect() {
             let next = (*h).next;
             let alive = (*h).marked || (*h).epoch < s.epoch;
             if alive {
-                // 所有被标记对象提升为逃逸 root（含 epoch 更小的外层逃逸对象）：
+                // 所有存活对象提升为逃逸 root（含 epoch 更小的外层对象）：
                 // 嵌套块 collect 会释放全部旧 root 节点，若仅提升本块（epoch 匹配）
-                // 对象，外层逃逸对象（epoch < s.epoch 存活但未标记可达）将失去
-                // root 保护，在后续外层 collect 中因未标记且 epoch 匹配被误回收。
-                if (*h).marked {
+                // 已标记对象，外层对象（epoch < s.epoch 存活、但在本块内被外层
+                // 变量引用、未从 root 可达）将失去 root 保护——外层块 collect 时
+                // 因未标记且 epoch 匹配被误回收（如嵌套块中 `let o2 = o;` 引用
+                // 的外层 `o`）。epoch 更小的对象本就不会被本块回收，提升它们为
+                // root 只增保护不增回收（MVP 泄漏语义，见 memory-model.md §5）。
+                if (*h).marked || (*h).epoch < s.epoch {
                     let node = libc::malloc(std::mem::size_of::<RootNode>()) as *mut RootNode;
                     assert!(!node.is_null(), "zeta-gc: root 节点 malloc 失败");
                     (*node).base = (*h).base;

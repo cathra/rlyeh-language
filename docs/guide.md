@@ -141,7 +141,73 @@ fn main() {
 }
 ```
 
-MVP 约束（见 §13）：闭包体仅可引用参数与字面量（捕获闭包 H3 规划中）；参数模式仅支持简单标识符与 `_`；返回闭包的函数暂不支持。
+MVP 约束（见 §13）：闭包体仅可引用参数与字面量；参数模式仅支持简单标识符与 `_`；返回闭包的函数暂不支持。
+
+##### 捕获闭包（H3，IIFE MVP）
+
+捕获闭包 `(|x, y| 表达式)(实参)` 以**立即调用**形式使用：闭包体引用的外层变量**按值捕获**，desugar 为匿名函数（捕获变量作前置参数、参数名保留原名）+ 普通函数调用，零新增 IR 节点：
+
+```zeta
+fn main() {
+    // 单捕获：闭包体引用外层变量 factor
+    let factor = 3;
+    let r1 = (|x| x * factor)(14);              // 42
+
+    // 多捕获 + 字符串拼接（String 语义）
+    let name = String::from("zeta");
+    let r2 = (|s| s + name)(String::from("hi "));  // hi zeta
+
+    // 参数遮蔽捕获（同名参数优先）
+    let v = 100;
+    let r3 = (|v| v + 1)(7);                    // 8
+
+    // 捕获数组变量做索引
+    let base = [1, 2, 3];
+    let r4 = (|i| base[i] * 2)(1);              // 4
+}
+```
+
+MVP 约束（见 §13）：仅支持立即调用形式（`let f = |x| ..; f(..)` 闭包值对象 = 匿名结构体 + `call` 方法，规划中）；按值捕获（`move` 关键字 MVP 忽略，所有权宽松）；闭包参数无类型注解（类型从实参推断）；不支持嵌套捕获闭包。
+
+##### trait 对象（H4，`dyn Trait`）
+
+`dyn Trait` 是 trait 对象类型：**2 槽胖指针**（数据指针 + vtable 指针），`&T`（具体类型引用）可强制转换为 `dyn Trait`——desugar 为运行时构造 vtable（drop/size/align 槽 MVP 置 0 + 方法表）+ 胖指针。方法调用经 vtable 间接分派，同一签名可分派到不同 impl：
+
+```zeta
+trait Shape {
+    fn area(&self) -> f64;
+    fn sides(&self) -> i64;
+}
+
+struct Circle { radius: f64 }
+impl Shape for Circle {
+    fn area(&self) -> f64 { 3.14 * self.radius * self.radius }
+    fn sides(&self) -> i64 { 0 }
+}
+
+struct Rect { w: f64, h: f64 }
+impl Shape for Rect {
+    fn area(&self) -> f64 { self.w * self.h }
+    fn sides(&self) -> i64 { 4 }
+}
+
+fn main() {
+    let c = Circle { radius: 2.0 };
+    let r = Rect { w: 3.0, h: 4.0 };
+
+    let d1: dyn Shape = &c;          // &T → dyn Trait 强制转换
+    let d2: dyn Shape = &r;
+    println(d1.area());              // 12.56（vtable 分派到 Circle::area）
+    println(d2.area());              // 12.0（分派到 Rect::area）
+    println(d1.sides());             // 0
+    println(d2.sides());             // 4
+
+    let d3 = d1;                     // 胖指针拷贝共享同一 vtable
+    println(d3.area());              // 12.56
+}
+```
+
+MVP 约束（见 §13）：trait 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用；vtable 的 drop/size/align 槽置 0（显式释放语义与 `Box`/`Rc` 一致）。
 
 ##### `?` 错误传播运算符（K1）
 
@@ -450,7 +516,38 @@ match r.clone().try_unwrap() {
 
 ### 8.4 L3
 
-`Gc<T>`（可选 GC，K4）为规划中特性，MVP 未实现。
+`Gc<T>`（可选 GC，K4）已实现（MVP，`zeta-gc-runtime` 保守标记-清除）：
+
+```zeta
+// gc_region 块内分配，块结束触发 GC 周期（未逃逸对象回收）
+gc_region {
+    let a = Gc::new(42);
+    println(*a); // 42
+    let b = Gc::new(7);
+    println(*a + *b); // 49
+}
+
+// 逃逸对象：块返回值存活到块外（zeta_gc_escape 登记为 root）
+let g = gc_region { let inner = Gc::new(100); inner };
+println(*g); // 100
+
+// 字段 / 方法 / 索引自动剥层（与 Box / Rc 同构）
+let gp = gc_region { Gc::new(Point { x: 5, y: 6 }) };
+println(gp.x + gp.y); // 11
+let gs = gc_region { Gc::new(String::from("hello")) };
+println(gs.len()); // 5
+
+// 嵌套 gc_region：内层逃逸对象在外层块内仍活跃（存活链式提升）
+let outer = gc_region {
+    let o = Gc::new(1000);
+    let saved = gc_region { Gc::new(2000) };
+    o
+};
+println(*saved); // 2000
+println(*outer); // 1000
+```
+
+布局与生命周期协议：`Gc<T>` 栈上 1 槽指向堆 1-槽包装（槽 0 存 `GcInner` 基址）；对象 = `slot_count(T)` 个 8 字节槽，与 `Box<T>` 完全同构（解引用/剥层零差异）。`gc_region` 块 desugar 为 `zeta_gc_region_begin()` → `zeta_gc_alloc(n)` → `zeta_gc_escape(ptr)`（块返回值登记逃逸 root）→ `zeta_gc_collect()`（标记-清除 + 存活提升）。MVP 限制：stop-the-world 保守标记-清除、单线程无锁（`SyncUnsafeCell`，全程无锁）、递归标记（深引用图可能爆栈）、块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束；多线程 GC（全局锁/线程局部堆）、增量回收、write barrier 规划中（memory-model.md §5）。
 
 ---
 
@@ -736,11 +833,11 @@ extern fn gethostname(name: String, len: i64) -> i64;
 
 **规划中 / 未实现**：
 - **宏系统**：已实现 `macro_rules!` 声明式宏（`$x:expr`/`$x:ident`/`$x:ty`/`$x:tt` + `$(`...`)` 重复 `*`/`+`/`?`，parse 期 AST 展开）与内置格式化宏 `println!` / `print!` / `format!` / `dbg!`（`{}` 占位、`{:?}` 同构、`{{`/`}}` 转义，typecheck desugar 为 String 拼接 + 内建打印）。限制：`$x:expr` 只匹配原子 token（`a > b`、`-1` 等多 token 表达式不支持）、无卫生宏；`vec!` 等其它内置宏与 `println!` 多参数可变长度仍走内建打印 `println(expr)`（无 `{}` 格式化）。
-- **引用与借用**：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数类型、解引用 `*`、返回引用均已实现（G1 ✅，见 §8.1）；`&str` 只读借用视图已实现（G2 ✅：`String::as_str()` + `&str` 参数/返回/索引 + `String::from(&str)` 深拷贝，见 §10.2）；裸指针（`*const T`/`*mut T`）、`ref` 模式、严格借用检查仍规划中。
-- **闭包**：✅ 无捕获闭包已实现（H2，见 §3.2）：`|x, y| expr` desugar 为匿名函数 + 函数指针（零运行时开销），需 fn 类型上下文（fn 形参实参 / `let f: fn(..) = |..| ..` 注解绑定）驱动参数类型推断；参数模式仅支持简单标识符与 `_`。捕获闭包（引用外部变量，H3 规划）、返回闭包的函数（可 `let f: fn(..) = |..| ..; f` 转接）、`move` 语义仍规划中。
+- **引用与借用**：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数类型、解引用 `*`、返回引用均已实现（G1 ✅，见 §8.1）；`&str` 只读借用视图已实现（G2 ✅：`String::as_str()` + `&str` 参数/返回/索引 + `String::from(&str)` 深拷贝，见 §10.2）；裸指针已实现（G3 ✅：`*const T`/`*mut T` 类型 + `*p` 读写 + `&T`↔`*const T` 互视 + `*mut` 降级 `*const`，见 §8.2）；生命周期标注已实现（G4 ✅ MVP 语法接受：`<'a>` 与 `&'a T` 解析后丢弃，宽松检查）；`ref` 模式、严格借用检查（含生命周期验证）仍规划中。
+- **闭包**：✅ 无捕获闭包已实现（H2，见 §3.2）：`|x, y| expr` desugar 为匿名函数 + 函数指针（零运行时开销），需 fn 类型上下文（fn 形参实参 / `let f: fn(..) = |..| ..` 注解绑定）驱动参数类型推断；参数模式仅支持简单标识符与 `_`。捕获闭包已实现（H3 IIFE MVP，见 §3.2）：`(|x| body)(args)` 立即调用按值捕获（desugar 为匿名函数 + 捕获变量前置调用）；`let f = |x| ..; f(..)` 闭包值对象（匿名结构体 + call 方法）、按引用捕获、`move` 所有权语义仍规划中。
 - **函数指针**：✅ 已实现（H1，见 §3.2）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用；函数值可作实参、返回值、重新绑定、类型注解。
-- **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。`dyn Trait` 未实现。
-- **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）未实现（规划）。
+- **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。`dyn Trait` ✅ 已实现（H4，见 §3.2）：trait 对象（`dyn Trait` 类型 + `&T` 强制转换 + vtable 间接分派）；MVP 限制：trait/impl 非泛型、含 `Self` 签名方法不可经 dyn 调用。
+- **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）✅ 已实现（MVP，见 §8.4）：`Gc::new` 编译器内建 + `gc_region` 块（desugar 为 `zeta_gc_region_begin`/`zeta_gc_alloc`/`zeta_gc_escape`/`zeta_gc_collect`）+ 逃逸对象 root 登记 + 嵌套块存活链式提升 + 字段/方法/索引自动剥层；保守标记-清除运行时（`zeta-gc-runtime`，纯 `libc::malloc`/`free` 链表元数据，单线程无锁）。MVP 限制：块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束、stop-the-world 非增量、递归标记；多线程/增量/write barrier 规划中。
 - **并发**：`serde` / `fmt` / `async` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）。
 - **迭代器协议**：✅ J1–J3 已实现（见 §3.2 迭代器与适配器小节）：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` / `for x in arr`（数组迭代）容器迭代可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 可用（返回 `Vec<T>` 可链式）。`Iterator` trait 定义（std-lib §2.3）仍为规划 API（适配器为编译器内建 desugar，非 trait 实现）。
 

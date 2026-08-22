@@ -11,7 +11,12 @@ fn lower(src: &str) -> MirProgram {
 }
 
 fn first_fn(p: &MirProgram) -> &zeta_mir::MirFunction {
-    &p.functions[0]
+    // 跳过注入的 extern 内建（`print`/`exit` 等，空 CFG），
+    // 取第一个含函数体的用户函数（测试均以 `fn main` 为对象）。
+    p.functions
+        .iter()
+        .find(|f| !f.is_extern && !f.blocks.is_empty())
+        .expect("至少有一个含函数体的用户函数")
 }
 
 #[test]
@@ -296,10 +301,11 @@ fn main() -> u32 {
 }
 "#,
     );
-    // add 被降低为独立函数（add 在前、main 在后）
-    assert_eq!(m.functions.len(), 2);
-    assert_eq!(m.functions[0].name, "add");
-    let main = &m.functions[1];
+    // add 被降低为独立函数（过滤注入的 extern 内建后：add 在前、main 在后）
+    let user_fns: Vec<_> = m.functions.iter().filter(|f| !f.is_extern).collect();
+    assert_eq!(user_fns.len(), 2);
+    assert_eq!(user_fns[0].name, "add");
+    let main = user_fns[1];
     assert_eq!(main.name, "main");
     assert!(main.blocks[0].stmts.iter().any(|s| matches!(
         s,

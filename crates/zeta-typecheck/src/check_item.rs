@@ -261,6 +261,15 @@ fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Res
     let mut fields = Vec::with_capacity(s.fields.len());
     for field in &s.fields {
         let ty = resolve_ast_type(ctx, &field.type_, field.span)?;
+        // H4 MVP 限制：`dyn Trait` 暂不支持作为 struct 字段（2 槽胖指针字段布局规划中）
+        if matches!(&ty, Type::Dyn(_)) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "`{ty}` 作为 struct 字段（H4 MVP 仅支持局部变量绑定）"
+                ),
+                span: field.span,
+            });
+        }
         fields.push((field.name.clone(), ty));
     }
     ctx.type_params = saved_params;
@@ -892,6 +901,27 @@ pub(crate) fn fn_signature_with_self(
         Some(t) => resolve_ast_type(ctx, t, span)?,
         None => Type::Unit,
     };
+    // H4 MVP 限制：`dyn Trait` 为 2 槽胖指针，暂不支持作为函数/方法参数与返回值
+    // （LIR 参数/返回为标量槽，无法表达胖指针；局部变量 + vtable 调用为主路径）。
+    for p in &params {
+        if matches!(p, Type::Dyn(_)) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "`{}` 作为函数/方法参数（H4 MVP 仅支持 `let d: dyn Trait = &obj;` 局部变量）",
+                    p
+                ),
+                span,
+            });
+        }
+    }
+    if matches!(&return_type, Type::Dyn(_)) {
+        return Err(TypeError::Unsupported {
+            what: format!(
+                "`{return_type}` 作为函数/方法返回类型（H4 MVP 仅支持局部变量绑定）"
+            ),
+            span,
+        });
+    }
 
     ctx.type_params = saved_params;
     Ok(FnSignature {

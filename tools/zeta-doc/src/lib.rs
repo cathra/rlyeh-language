@@ -571,6 +571,15 @@ pub fn fmt_type(t: &AstType) -> String {
                 format!("&{base}")
             }
         }
+        AstType::RawPtr(inner, is_mut) => {
+            let base = fmt_type(inner);
+            if *is_mut {
+                format!("*mut {base}")
+            } else {
+                format!("*const {base}")
+            }
+        }
+        AstType::Dyn(name) => format!("dyn {name}"),
         AstType::Tuple(ts) => format!("({})", ts.iter().map(fmt_type).collect::<Vec<_>>().join(", ")),
         AstType::Array(inner, len) => match len {
             Some(_) => format!("[{}; ...]", fmt_type(inner)),

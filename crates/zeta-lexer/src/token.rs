@@ -93,6 +93,8 @@ pub enum Token {
     As,
     /// `extern`
     Extern,
+    /// `dyn`
+    Dyn,
 
     // 标识符和字面量
     /// 标识符

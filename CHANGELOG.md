@@ -5,6 +5,19 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased] - 2026-08-23
+
+### 新增
+
+- **可选 GC `Gc<T>`（K4，MVP 保守标记-清除）**：`Gc::new` 编译器内建 + `gc_region` 生命周期块（desugar 为 `zeta_gc_region_begin`/`zeta_gc_alloc`/`zeta_gc_escape`/`zeta_gc_collect`）+ 逃逸对象 root 登记 + 嵌套块存活链式提升 + 字段/方法/索引自动剥层（与 `Box` 同构）；独立运行时 crate `zeta-gc-runtime`（对象 = `slot_count(T)` 个 8 字节槽连续堆块，`T` 值区自堆首槽起，与 `Box<T>` 同构布局；epoch 分层块生命周期，块外对象永不回收——MVP 泄漏语义）。测试 `tests/run-pass/gc_region.zeta`（15 行输出）+ `tests/compile-fail/gc_bad.zeta`（`Gc::new()` 参数个数断言）；全量 36 用例全绿 + cargo test 全绿。
+- **trait 对象 `dyn Trait`（H4，MVP）**：`dyn Trait` 类型（parser `dyn` 关键字分支 + AST `AstType::Dyn` + typecheck `Type::Dyn`）+ `&T` → `dyn Trait` 强制转换（`coerce_to_dyn`：运行时构造 vtable——drop/size/align 槽 MVP 置 0 + 方法表按 trait 声明序入表，+ 2 槽胖指针 = 数据指针 + vtable 指针）+ 方法调用 vtable 间接分派（`FieldGet` 数据/表指针 + `Index(3+idx)` + `CallIndirect`，同一签名分派到不同 impl）；`dyn Trait` 作形参/局部/胖指针拷贝可用；MVP 限制：trait/impl 非泛型、含 `Self` 签名方法不可经 dyn 调用。测试 `tests/run-pass/dyn_trait.zeta`（6 输出：转换/多态分派/胖指针拷贝/带参方法）；全量 40 用例全绿 + cargo test 全绿。
+
+### 修复
+
+- **`zeta-gc-runtime` 在 C 主程序环境的崩溃（SIGKILL / `_os_unfair_lock_unowned_abort`）**：运行时全部动态内存改用 `libc::malloc`/`libc::free`（对象块 + header/root 元数据链表），弃用 Rust 堆分配（`RawVec`/`Vec` 扩容）与 `libc::realloc`——macOS 实测这些分配在先前 `libc::malloc` 之后调用会触发 `libsystem_malloc` 的 `mfm_alloc` 内部锁崩溃；全局状态由 Mutex 改为 `SyncUnsafeCell` 单线程无锁调用约定。
+- **`zeta_gc_escape` 传参错误致逃逸对象被误回收**（编译器 `check_gc_region`）：escape 参数由 Gc 包装指针改为经 `heap_ptr_hir` 解包装的对象基址（与 `zeta_gc_alloc` 注册一致），修复 `mark` 线性查找失配导致的悬垂读取。
+- **嵌套 `gc_region` 中外层逃逸对象被误回收**（`collect` 存活提升）：提升条件由 `marked && epoch == s.epoch` 改为全部被标记对象，确保嵌套块释放旧 root 后外层逃逸对象（`epoch < s.epoch` 存活但未标记可达）仍受保护。
+
 ## [0.1.0] - 2026-08-22
 
 首个公开版本。Zeta 编译器、标准库与工具链的里程碑能力汇总。

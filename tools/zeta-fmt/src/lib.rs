@@ -928,6 +928,11 @@ fn fmt_type(t: &AstType) -> String {
             let m = if *mut_ { "&mut " } else { "&" };
             format!("{}{}", m, fmt_type(inner))
         }
+        AstType::RawPtr(inner, is_mut) => {
+            let m = if *is_mut { "*mut " } else { "*const " };
+            format!("{}{}", m, fmt_type(inner))
+        }
+        AstType::Dyn(name) => format!("dyn {name}"),
         AstType::Tuple(ts) => format!(
             "({})",
             ts.iter().map(fmt_type).collect::<Vec<_>>().join(", ")
