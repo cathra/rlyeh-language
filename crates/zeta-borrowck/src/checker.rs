@@ -218,6 +218,15 @@ impl BorrowChecker {
                     self.check_expr(a);
                 }
             }
+            // 函数地址值：无所有权转移
+            HirExpr::FnPtr(_) => {}
+            // 间接调用：callee 与实参均视为使用
+            HirExpr::CallIndirect { callee, args, .. } => {
+                self.check_expr(callee);
+                for a in args {
+                    self.check_expr(a);
+                }
+            }
             HirExpr::While { cond, body } => {
                 self.check_expr(cond);
                 self.scopes.push(Scope::default());

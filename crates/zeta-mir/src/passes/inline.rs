@@ -208,6 +208,22 @@ fn inline_stmt(
             value: map_local(value, subst, counter),
             ty: *ty,
         }),
+        // 间接调用：函数指针参数映射到实参临时（`f` → 调用点已构造的 `add` 指针槽），
+        // 签名类型名透传；此前缺失此分支导致内联后整个 CallIndirect 被丢弃，
+        // 返回值临时从未被写入，调用点读到未初始化栈垃圾值。
+        MirStmt::CallIndirect {
+            target,
+            callee,
+            args,
+            param_names,
+            ret_name,
+        } => Some(MirStmt::CallIndirect {
+            target: target.as_ref().map(|t| map_local(t, subst, counter)),
+            callee: map_local(callee, subst, counter),
+            args: args.iter().map(|a| map_local(a, subst, counter)).collect(),
+            param_names: param_names.clone(),
+            ret_name: ret_name.clone(),
+        }),
         _ => None, // 区域操作已在上层排除
     }
 }

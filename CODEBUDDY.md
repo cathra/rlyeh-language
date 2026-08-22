@@ -232,23 +232,140 @@ let c = v[lo..<hi];            // Vec 切片（std Vec::slice 泛型方法）
 // 越界自动 clamp 到 [0, len]，start >= end 返回空
 ```
 
+### 3.8 函数一等值（函数指针）
+
+```zeta
+fn add(a: i64, b: i64) -> i64 { a + b }     // 尾部表达式返回
+fn apply(f: fn(i64, i64) -> i64, x: i64, y: i64) -> i64 { f(x, y) }
+
+let f = add;                    // 函数值绑定（类型推断为 fn(i64, i64) -> i64）
+let r1 = f(3, 4);               // 通过函数值间接调用：7
+let r2 = apply(add, 10, 20);    // 函数值作实参传递：30
+let g: fn(i64, i64) -> i64 = add;  // 显式类型注解
+
+// H2 无捕获闭包：`|a, b| expr` desugar 为匿名函数 + 函数指针（零运行时开销）
+let r3 = apply(|a, b| a + b, 10, 20);    // 30：闭包作 fn 形参实参
+let inc: fn(i64) -> i64 = |x| x + 1;     // fn 注解绑定闭包
+let r4 = inc(41);                        // 42：经函数值间接调用
+```
+
+> H2 无捕获闭包约束：参数无类型注解，需 fn 类型上下文驱动推断（fn 形参实参 / `let f: fn(..) = |..| ..` 注解）；闭包体仅可引用参数与字面量（引用外部变量报错——捕获闭包 H3 规划中）；参数模式仅支持简单标识符与 `_`；返回闭包的函数（`fn make() -> fn(..) { |x| .. }`）暂不支持。
+
 ---
 
-### 3.8 MVP 已知限制（规划中特性）
+### 3.9 MVP 已知限制（规划中特性）
 
 以下语法可解析但 MVP **未实现**（typecheck 显式报 Unsupported），详见 [`docs/guide.md`](docs/guide.md) §13：
 
 | 特性 | 说明 |
 |------|------|
-| 宏调用 | `println!` / `vec!` / `format!` 等（`!` 是 `not` 一元运算符）；打印用内建 `println(expr)`（无 `{}` 格式化） |
+| 宏调用 | ✅ 已实现：`macro_rules!` 声明式宏（`$x:expr`/`$x:ident`/`$x:ty`/`$x:tt` 元变量 + `$(`...`)` 重复 `*`/`+`/`?`，parse 期递归展开为 AST）+ 内置格式化宏 `println!`/`print!`/`format!`/`dbg!`（`{}` 值占位、`{:?}` 同构、`{{`/`}}` 转义；typecheck desugar 为 String 拼接 + 内建打印）；`!` 保留 `not` 一元运算符语义。限制：`$x:expr` 匹配原子 token（单 token 或定界组，`a > b`/`-1` 等多 token 表达式不支持）、无卫生宏（hygiene）、`vec!`/`println!(r#"...")` 等未实现 |
 | 引用类型 | `&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、解引用 `*` 已实现（G1 ✅，标量存 `i8*` 槽、聚合拷贝指针、字段/方法自动剥引用层）；`str` 类型、裸指针（`*const T`/`*mut T`）、`ref` 模式、严格借用检查仍规划中 |
-| 闭包 | `\|x\| x + 1` 语法可解析，typecheck 报 Unsupported |
-| 运算符 | `?` 错误传播、`dyn Trait`、函数指针未实现 |
-| 所有权层级 | L2 `Rc<T>`/`Arc<T>`、L3 `Gc<T>` 未实现（规划） |
+| 闭包 | ✅ H2 无捕获闭包已实现（§3.8）：`\|x, y\| expr` desugar 为匿名函数（`__closure_N`）+ 函数指针（typecheck `check_closure_expected` 按预期 fn 签名检查闭包体，注入全局 HirItem，零运行时开销）；需 fn 类型上下文（fn 形参实参 / fn 注解绑定），捕获闭包（H3，引用外部变量）、返回闭包的函数、`move` 语义规划中 |
+| 函数指针 | ✅ 已实现（H1）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用（typecheck `Type::Fn` → HIR/MIR/LIR `CallIndirect` → LLVM `i8*` 槽 + 按签名 `bitcast` + 间接 `call`）；函数值可作实参、返回值、重新绑定、类型注解；`&T` 已实现见上 |
+| 运算符 | `?` 错误传播已实现（K1 ✅）：`expr?` 在 Option/Result 上下文 desugar 为 `match { Some(__v) => __v, None => return Option::None }`（Result：`Err(__e) => return Result::Err(__e)`），复用 check_match 的 if-else 链 + tag 比较，零新增 HIR 节点；支持表达式中间嵌套 `?`（如 `Some(a? + b?)`）；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报 Unsupported；`dyn Trait` 未实现 |
+| 所有权层级 | K2 `Box<T>` + K3 `Rc<T>`/`Arc<T>` ✅（§3.11）：堆分配 + `*` 解引用 + 字段/方法/索引自动剥层 + 引用计数（clone/强弱计数/弱引用/`try_unwrap`）；L3 `Gc<T>`（K4）规划 |
 | 并发 | `serde`/`fmt`/`async` 模块规划；actor 的 `async` 方法 + `.await`/`send` 已实现（§3.3） |
-| 迭代器 | `for i in 0..<10` 数值区间、`for x in vec`/`for (k, v) in map` 容器迭代可用（数组迭代不支持）；`Iterator` trait/`collect` 未实现 |
+| 迭代器 | ✅ J1–J3 已实现（§3.10）：`for x in arr` 数组迭代（索引遍历，长度编译期已知）+ 自定义迭代器接入 `for`（存在 `next() -> Option<T>` 方法，inherent/trait impl，desugar 为 `loop { match it.next() { Some(x) => body, None => break } }`）+ 适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip`（数组/Vec/迭代器接收者，经 H2 闭包，返回 `Vec<T>` 可链式）；数值区间、`for x in vec`/`for (k, v) in map` 亦可用；`Iterator` trait 定义（std-lib §2.3）为规划 API（适配器为编译器内建） |
 | region 选项 | `adaptive`/`with_size (N)` 可用；`strategy (bump)` 等规划中 |
 | `String::from(s)` | ✅ 支持字面量（及绑定字面量的变量）、运行期 `String` 变量（`≡ s.clone()` 深拷贝）、`&str` 视图（读 data/len 槽深拷贝）；G2 已消除长度表达限制 |
+
+---
+
+### 3.10 迭代器与适配器（J1–J3）
+
+```zeta
+// J1 数组迭代：`for x in arr`（索引遍历，长度编译期已知）
+let arr: [i64; 4] = [1, 2, 3, 4];
+let mut sum = 0;
+for x in arr {
+    sum += x;
+}  // sum = 10
+
+// J2 自定义迭代器接入 for：存在 `next() -> Option<T>` 方法的类型
+struct Counter { limit: i64, pos: i64 }
+impl Counter {
+    fn new(limit: i64) -> Counter { Counter { limit: limit, pos: 0 } }
+    fn next(&mut self) -> Option<i64> {   // inherent 或 trait impl 均可
+        if self.pos >= self.limit { return None; }
+        let v = self.pos;
+        self.pos += 1;
+        Some(v)
+    }
+}
+let mut s = 0;
+for v in Counter::new(5) { s += v; }  // 0+1+2+3+4 = 10
+
+// J3 适配器（数组 / Vec / 迭代器接收者，经 H2 无捕获闭包，返回 Vec<T> 可链式）
+let d = [1, 2, 3, 4].map(|x| x * 2);          // Vec: [2, 4, 6, 8]
+let e = [1, 2, 3, 4, 5].filter(|x| x % 2 == 1); // Vec: [1, 3, 5]
+let t = [1, 2, 3, 4].fold(0, |acc, x| acc + x); // 10
+let c = [7, 8, 9].collect();                  // Vec: [7, 8, 9]
+let tk = [1, 2, 3, 4, 5].take(3);             // Vec: [1, 2, 3]
+let sk = [1, 2, 3, 4, 5].skip(2);             // Vec: [3, 4, 5]
+let chained = Counter::new(6).filter(|x| x > 1).map(|x| x * x); // Vec: [4, 9, 16, 25]
+```
+
+MVP 约束：适配器参数必须是 H2 无捕获闭包（`|x| ..`，捕获外部变量报错）；适配器返回 `Vec<T>`（急切求值，非惰性迭代器），结果 Vec 可作下一适配器源；`Iterator` trait 定义（std-lib §2.3）为规划 API（适配器为编译器内建 desugar）。
+
+---
+
+### 3.11 堆分配与引用计数 `Box<T>` / `Rc<T>` / `Arc<T>`（K2–K3）
+
+```zeta
+// K2 Box::new 堆分配 + * 解引用（标量 load / 聚合指针拷贝，与 &T 同构）
+let b = Box::new(42);
+println(*b);                // 42
+
+// 显式类型注解 / 嵌套装箱
+let bi: Box<i64> = Box::new(7);
+let bb = Box::new(Box::new(10));
+println(**bb);              // 10
+
+// 聚合 T：字段 / 方法 / 索引自动剥 Box 层
+struct Point { x: i64, y: i64 }
+let bp = Box::new(Point { x: 10, y: 20 });
+println(bp.x + bp.y);       // 30（字段剥层）
+let p = *bp;                // 聚合解引用（指针拷贝）
+println(p.x);               // 10
+
+let bs = Box::new(String::from("hello"));
+println(bs.len());          // 5（方法剥层）
+println(bs[0]);             // 104（索引剥层）
+
+let mut bv: Box<Vec<i64>> = Box::new(Vec::with_capacity(2));
+bv.push(5);
+println(bv.len());          // 2（&mut self 方法经 Box）
+
+let b2 = b;                 // Box 赋值 = 指针共享（浅拷贝，MVP 语义）
+
+// K3 Rc<T> 引用计数：clone 共享同一 RcInner，强/弱计数可查
+let r = Rc::new(42);
+let r2 = r.clone();
+println(r.strong_count());  // 2
+println(*r2);               // 42
+
+// 弱引用：downgrade → Weak<T>，upgrade 强计数 > 0 返回 Some(Rc)
+let w = r.downgrade();
+println(r.weak_count());    // 1
+match w.upgrade() {
+    Option::Some(rc) => println(*rc),   // 42
+    Option::None => println(0),
+}
+
+// try_unwrap：强计数 == 1 → Ok(T)，否则 Err(Rc<T>)
+match r.clone().try_unwrap() {
+    Result::Ok(x) => println(x),
+    Result::Err(rc) => println(*rc),    // 42（Err 分支）
+}
+
+// Arc 与 Rc 同构（计数槽原子性规划中）
+let a = Arc::new(7);
+let a2 = a.clone();
+println(a.strong_count());  // 2
+```
+
+MVP 约束：`Box<T>`/`Rc<T>`/`Arc<T>`/`Weak<T>` 为编译器内建（无 std 结构体定义，typecheck 特判）；`Box<T>` 布局 = 栈上 1 指针槽 + 堆上 `slot_count(T)` 个 8 字节槽；`Rc<T>` 布局 = 堆 `RcInner` 的 `T` 值区自堆首槽起（与 Box 同构）+ 尾部两计数槽（strong = 值区槽数、weak = +1），`Rc<T>` 栈上 1 槽指向 RcInner（详见 memory-model.md §4 MVP 注记）；聚合 T 装箱整槽区 memcpy（浅拷贝）；无自动 drop（计数只增不减，显式释放语义规划，与 `Vec`/`String` 一致）；`Gc<T>`（K4）规划中。
 
 ---
 
@@ -331,8 +448,19 @@ let c = v[lo..<hi];            // Vec 切片（std Vec::slice 泛型方法）
 > 本节记录新版开发计划（阶段 A–F，详见 [`docs/development-plan.md`](docs/development-plan.md)）的执行进度：
 > **阶段 A 全部完成（A1–A4 ✅），阶段 B 全部完成（B1–B5 ✅），阶段 C 全部完成（C1–C3 ✅），阶段 D 全部完成（D1–D3 ✅：zeta test / zeta fmt / zeta check / zeta doc / zeta bench），阶段 E 全部完成（E1 交叉编译 `--target` macOS 双架构 + `__zeta_target_os` 平台内建消除 `sockaddr_in4` 布局假设；E2 WASM 目标：`--target wasm32-wasi` 编译 + wasmtime 运行验证；E3 发布流程：zep publish 重复版本保护 + `zeta publish` CLI + release.yml 四平台 + CHANGELOG.md），阶段 F 全部完成（F1 LSP 服务器 MVP：`zeta lsp` + 新 crate `zeta-lsp`，文档同步 + 诊断推送；F2 PGO 数据回灌：`zeta profile` 命令 + `zeta build --profile` 编译期注入，`.zeta_profile` → 区域大小预测报告）**，E1 Windows/ARM 工具链（待对应环境）待做。
 
-- [x] **G2 `str` 切片与 String 补齐**（§3.8 `String::from` 行勾销 + 引用类型行更新；详见 [`docs/mvp-gaps-plan.md`](docs/mvp-gaps-plan.md) §4）：`String::from` 运行期内容（String 变量 → `s.clone()` 深拷贝；`&str` → 读 data/len 槽深拷贝；消除 §13 约束 4）+ `&str` 只读借用视图（`String::as_str()` → `HirExpr::Ref` 对象指针拷贝，运行时 = 指向 String 对象的瘦指针，复用 G1 聚合引用机制，MIR/LIR/codegen 布局零改动；`resolve_ast_type` 识别 `str` 类型关键字；方法/索引/切片对 `&str` 归一为 String 处理；`compatible_with` 允许 `&str` ↔ `&String` 互视与内容比较；`comparison.rs` 字符串比较纳入视图）。**设计决策**：`substring` 保持拷贝返回（避免破坏现有 API），零拷贝以 `as_str()` 借用视图体现。产出 `string_from_runtime_test.rs` 6 用例 + `str_ref_test.rs` 9 用例 + 全量 114 套件全绿 + clippy 0 警告）
-- [x] **G1 引用类型与表达式**（§3.8 引用类型行勾销；详见 [`docs/mvp-gaps-plan.md`](docs/mvp-gaps-plan.md) §4）：`&T`/`&mut T` 类型 + `&x`/`&mut x`/`*` 表达式全链路（parser → typecheck → HIR → MIR → LIR → LLVM）。标量引用存 `i8*` 值槽（`*p` 读写按标量种类 bitcast）、聚合引用拷贝对象指针；字段访问/方法调用自动 `peel_ref`（`p.x`/`v.len()` 免显式解引用）；`&mut T` 兼容 `&T` 参数（宽松规则，严格可变性互斥留给 borrowck）。关键修复：MIR inline 补 AddrOf/DerefRead/DerefWrite 映射、DCE 活跃性纳入 Deref* 读、codegen 指针拷贝 `%%` 转义、**顶层同名遮蔽**（用户 `fn read` vs std extern `read`：用户侧注册 `read@shadow<N>` mangle 名、std 原名保留，std 模块内部裸名绑定 extern 原版、用户顶层绑定自身版本；签名相同的重声明如 `extern fn __zeta_target_os()` 保留原名）；`reference_test.rs` 10 用例 + 全量 112 套件全绿）
+- [x] **K3 `Rc<T>`/`Arc<T>` 引用计数装箱**（§3.9 所有权层级行更新、§3.11 扩写；guide.md §13 更新；memory-model.md §4 MVP 注记）：编译器内建（typecheck 特判，零新增 IR 节点）。布局：堆 `RcInner` 的 `T` 值区自堆首槽起（与 `Box<T>` 同构）+ 尾部计数槽（strong = `slot_count(T)`、weak = +1），`Rc<T>` 栈上 1 槽（Ptr）指向 RcInner。内建：`Rc::new`/`Arc::new`（值区写 + `FieldSet` 计数初始化 1/0）、`clone`（强计数 +1 指针共享）、`strong_count`/`weak_count`（返回 `Type::USize`）、`downgrade`（弱计数 +1 → `Weak<T>`）、`try_unwrap`（强计数 == 1 → `Ok(T)` / `Err(Rc<T>)`）、`Weak::upgrade`（强计数 > 0 → `Some(Rc<T>)` / `None`）。接线：`check_rc_method` 在 `heap_ptr_hir` 改写前分派（内建需原始 Rc 对象）；`heap_ptr_hir` 统一 Box/Rc/Arc（槽 0 即值区首槽）；`Rc::new`/`Arc::new`/`Weak::upgrade` 静态路径特判；Deref 分支扩展 Rc/Arc；`peel_refs_and_heap` 剥层。关键教训：`DerefSet` base 是地址、`FieldGet` 是 load 槽值，计数写必须用 `FieldSet`（GEP+store）；`try_unwrap` else 分支曾漏写 Err payload 槽致 match 读未初始化内存崩溃；`zeta run` 缓存 key 不含编译器版本，改编译器后须 `--force`。产出 `tests/run-pass/rc_new.{zeta,out}`（17 输出）+ `tests/compile-pass/rc_ty.zeta` + `tests/compile-fail/rc_bad.zeta` + 全量 33 用例全绿 + cargo test 全绿 + clippy 0 警告。
+- [x] **K2 `Box<T>` 堆分配装箱**（§3.9 所有权层级行勾销、新增 §3.11；guide.md §13 更新）：`Box::new(v)` 编译器内建（typecheck 特判，无 std 结构体定义）+ `*` 解引用 + 字段/方法/索引自动剥层。布局：`Box<T>` 栈上 1 槽（Ptr）存堆指针，堆上分配 `slot_count(T)` 个 8 字节槽连续对象区（与对象槽区同构）。核心：`check_box_new`（`alloc_bytes(8*n)` + 标量 `DerefSet` 写堆首槽 / 聚合 `array_copy` 整槽区 memcpy 浅拷贝 + 1 槽 `Alloc` 返回）+ `type_slot_count`（槽数计算：标量 1 / struct 字段数 / enum `slot_count` / 数组长度 / 元组元素数 / 引用·Fn·内嵌 Box 1 槽）+ `peel_box`/`peel_refs_and_boxes`/`box_ptr_hir`（Box 表达式 → 堆对象指针 `FieldGet(box, 0, Ptr)`）。接线五处：Deref 分支加 Box（标量 load / 聚合指针拷贝，与 `&T` 同构）、字段访问剥层+base 改写、方法调用 receiver 改写（`Box<String>` len/索引、`Box<Vec<i64>>` push、`as_str` 特判）、索引 base 改写。`Vec::with_capacity` 无上下文返回 `Vec<Infer>`，测试经 `Box<Vec<i64>>` 注解统一。嵌套 `Box<Box<i64>>`（`**bb`）与 Box 赋值指针共享可用；无自动 drop（与 Vec/String 一致）。产出 `tests/run-pass/box_new.{zeta,out}`（15 输出）+ `tests/compile-pass/box_ty.zeta` + `tests/compile-fail/box_bad.zeta` + 全量 30 用例全绿 + cargo test 全绿 + clippy 0 警告。
+- [x] **J1–J3 迭代器与集合协议**（§3.9 迭代器行勾销；guide.md §13 更新）：
+  - **J1 数组迭代**（§3.10）：`for x in arr` desugar 为索引遍历循环（数组以指针存储、长度编译期已知，元素读取复用 `HirExpr::Index` 步长 8 / u8 按字节）；`check_for` 分派加 `Type::Array` 分支（`check_for_array`）。
+  - **J2 自定义迭代器接入 for**（§3.10）：接收者类型存在 `next() -> Option<Item>` 方法（inherent / trait impl）→ `check_for_iterator` 构造 AST `let mut __for_it = it; loop { match __for_it.next() { Some(__elem) => { let pat = __elem; body }, None => break } }`（复用 check_method_call / check_match 全链路）；配套修复 parser `stmt_terminator` 补 `,`（`match { None => break, }` 臂体）。
+  - **J3 适配器**（§3.10）：`map`/`filter`/`fold`/`collect`/`take`/`skip` 内建 desugar（`check_method_call` 特判，接收者为数组 / `Vec<T>` / 自定义迭代器）：新增 `closure_return_ty`（闭包实际返回类型预推断 → 收集容器类型注解，避免 `Vec<Infer>`）、`ty_to_ast`、`try_check_adapter`/`check_iterator_adapter`。闭包经 `check_closure_expected` 按 `fn(T...) -> U` 注入匿名函数（H2，返回函数指针）；收集容器 `let mut __out: Vec<U> = Vec::new();`；循环复用现有分派（数组/Vec 走 for，迭代器走 loop + next）；apply 语义 map/filter/fold/take/skip/collect（take 计数 break、skip 计数 push）；结果 Vec 可链式。
+  - 产出 `tests/run-pass/array_for.{zeta,out}`（5 输出）+ `tests/run-pass/iterator_for.{zeta,out}`（6 输出）+ `tests/run-pass/adapters.{zeta,out}`（13 输出，含链式）+ `tests/compile-fail/adapter-badargs.zeta`（非闭包参数断言）+ 全量 27 用例全绿 + cargo test 全绿 + clippy 0 警告。
+- [x] **K1 `?` 错误传播运算符**（§3.9 运算符行勾销；guide.md §13 更新）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回，零新增 HIR 节点（复用 check_match 的 if-else 链 + tag 比较）。typecheck：拆分 `check_match_with_scrutinee`（预推断 scrutinee，防内嵌闭包重复 desugar）+ `check_question`（infer inner → `Type::Named("Option"/"Result")` 特判 → 构造 AST MatchArm `Some(__v) => __v` / `None => return Option::None`、`Err(__e) => return Result::Err(__e)` 失败变体经完整路径构造 → `check_match_with_scrutinee`）；非 Option/Result 类型报 Unsupported。配套：parser 后缀循环 `?`（`ExprKind::Question`）；裸无参变体值表达式（`return None;`）经 infer_expr Ident 分支 `split_variant_path` 兜底；zeta-fmt（PREC_POSTFIX）/zeta-check（walk_expr）补分支。产出 `tests/run-pass/question.{zeta,out}`（5 输出，含表达式中间嵌套双 `?`）+ `tests/compile-pass/question_result.zeta` + `tests/compile-fail/question-nonoption.zeta` + 全量 23 用例全绿 + clippy 0 警告）
+- [x] **H2 无捕获闭包**（§3.8 闭包行勾销；guide.md §13 更新）：`|x, y| expr` desugar 为匿名函数 + 函数指针，零运行时开销（typecheck `check_closure_expected`：按预期 fn 签名取参数类型、`std::mem::take` 清空变量环境实现无捕获隔离、body 尾部表达式兼容返回类型、注册 `fn_signatures` + `ctx.mono_items` 注入 `HirItem::Fn(__closure_N)`，复用 H1 函数指针全链路）。三处接线：`check_call` 与 `check_indirect_call` 实参循环（形参 `Type::Fn` + 实参 `ExprKind::Closure` → 预期签名检查）、`check_stmt` Let 分支（fn 注解 + 闭包 init）；捕获检测：body 引用外部变量（`UndefinedVariable`）改写为 Unsupported「闭包捕获外部变量（H3 规划）」。MVP 约束：参数无类型注解需 fn 上下文、仅标识符/`_` 参数模式、不支持返回闭包的函数（可 `let f: fn(..) = |..| ..; f` 转接）。产出 `tests/run-pass/closure.{zeta,out}`（7 输出）+ `tests/compile-pass/closure.zeta`（含 fn 参数闭包 `twice`）+ `tests/compile-fail/closure-capture.zeta`（捕获报错断言）+ 全量 20 用例全绿 + clippy 0 警告）
+- [x] **H1 函数一等值（函数指针）**（§3.8 新增特性小节；§3.9 运算符行勾销函数指针；guide.md §13 更新）：`fn(T) -> R` 函数类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用全链路（parser → typecheck `Type::Fn` 签名 + `infer_expr` 函数值推断 + `check_indirect_call` 兜底 → HIR `HirExpr::FnPtr`/`CallIndirect` → MIR `MirStmt::CallIndirect` → LIR → LLVM：函数指针统一存 `i8*` 槽，存储前按签名 `bitcast i64(...)* @fn to i8*`，调用时 `bitcast` 回 `{ret}({params})*` 后间接 `call`）。函数值支持：作实参传递、作返回值（`choose`）、重新绑定、显式类型注解。**关键修复**：① MIR DCE 活跃性收集漏算 `CallIndirect` 实参（`remove_dead_assignments` 缺分支导致实参临时赋值被误删 → 未初始化栈读取产生非确定性垃圾值；`clang` 直接编译 IR + `/tmp/fp_min.ll` 纯 LLVM 最小复现逐层排除）；② MIR inline pass 缺失 `CallIndirect` 分支（内联后整个间接调用指令被丢弃，返回值临时从未写入）；③ borrowck/regionck 补 `HirExpr::FnPtr`/`CallIndirect` 分支；④ `mir_lower_test.rs` match 补 `call_indirect` arm。产出 `tests/compile-pass/fn_ptr.zeta` + `tests/run-pass/fn_ptr.{zeta,out}`（5 输出精确对比）+ 全量 17 用例全绿 + cargo test 全绿 + clippy 0 警告）
+- [x] **宏系统：声明式宏 + 内置格式化宏**（§3.9 宏调用行勾销；`docs/grammar.md` §2.14 实现标注；guide.md §13 更新）：新 crate `crates/zeta-macro`（matcher/transcriber token 解析、匹配 `$x:expr`/`ident`/`ty`/`tt` 四类元变量 + `$(`...`)` 重复 `*`/`+`/`?`，`MacroError(String)`）；lexer 新增 `$`/`?` token（`Dollar`/`Question`，`!` 保留 `not` 一元运算符语义）；parser 集成——`macro_rules!` 定义注册（`parse_macro_rules` + `collect_group_content` 深度计数定界组收集，`AstMacroDecl` 占位节点）、`name!` 调用（内置宏 → `MacroCall` AST；用户宏 → `expand_macro` 递归展开 + 子 Parser `from_tokens` 再解析，`MAX_MACRO_DEPTH=64` 防爆栈、多余 token 报错）；AST 新增 `ExprKind::MacroCall`；typecheck 格式化引擎——`parse_format_string`（`{}` 值占位 / `{:?}` 同构 / `{{` `}}` 转义 / 占位符数量检测）+ `value_to_string_for_ty`（i64→`int_to_string`、bool→If 三元、String/&str/Str→`String::from`）+ `check_format_macro`（`+` 拼接复用 A3 clone+push_str 语义 → 内建 `println`）+ `check_dbg_macro`（`let __tmp` + println + 返回 `HirExpr::Block`）。**关键修复**：① matcher 路径 `expect(LParen)` 提前消费导致 `collect_group_content` 双重 bump 吞掉首个 `$` token（移除预消费）；② `dbg!` 先推断参数类型再按预推断类型构造 String 转换（`value_to_string_for_ty` 拆分），避免未绑定 `__tmp` 报 UndefinedVariable。产出 zeta-macro 12 单测 + `tests/compile-pass/macro.zeta` + `tests/run-pass/macro.{zeta,out}`（输出精确对比）+ 全量 116 套件全绿 + clippy 0 警告）
+- [x] **G2 `str` 切片与 String 补齐**（§3.9 `String::from` 行勾销 + 引用类型行更新；详见 [`docs/mvp-gaps-plan.md`](docs/mvp-gaps-plan.md) §4）：`String::from` 运行期内容（String 变量 → `s.clone()` 深拷贝；`&str` → 读 data/len 槽深拷贝；消除 §13 约束 4）+ `&str` 只读借用视图（`String::as_str()` → `HirExpr::Ref` 对象指针拷贝，运行时 = 指向 String 对象的瘦指针，复用 G1 聚合引用机制，MIR/LIR/codegen 布局零改动；`resolve_ast_type` 识别 `str` 类型关键字；方法/索引/切片对 `&str` 归一为 String 处理；`compatible_with` 允许 `&str` ↔ `&String` 互视与内容比较；`comparison.rs` 字符串比较纳入视图）。**设计决策**：`substring` 保持拷贝返回（避免破坏现有 API），零拷贝以 `as_str()` 借用视图体现。产出 `string_from_runtime_test.rs` 6 用例 + `str_ref_test.rs` 9 用例 + 全量 114 套件全绿 + clippy 0 警告）
+- [x] **G1 引用类型与表达式**（§3.9 引用类型行勾销；详见 [`docs/mvp-gaps-plan.md`](docs/mvp-gaps-plan.md) §4）：`&T`/`&mut T` 类型 + `&x`/`&mut x`/`*` 表达式全链路（parser → typecheck → HIR → MIR → LIR → LLVM）。标量引用存 `i8*` 值槽（`*p` 读写按标量种类 bitcast）、聚合引用拷贝对象指针；字段访问/方法调用自动 `peel_ref`（`p.x`/`v.len()` 免显式解引用）；`&mut T` 兼容 `&T` 参数（宽松规则，严格可变性互斥留给 borrowck）。关键修复：MIR inline 补 AddrOf/DerefRead/DerefWrite 映射、DCE 活跃性纳入 Deref* 读、codegen 指针拷贝 `%%` 转义、**顶层同名遮蔽**（用户 `fn read` vs std extern `read`：用户侧注册 `read@shadow<N>` mangle 名、std 原名保留，std 模块内部裸名绑定 extern 原版、用户顶层绑定自身版本；签名相同的重声明如 `extern fn __zeta_target_os()` 保留原名）；`reference_test.rs` 10 用例 + 全量 112 套件全绿）
 - [x] **标准库模块化拆分**（`zeta-std/zeta/core.zeta` 1323 行单文件 → 根模块 + 四个子模块文件：`time.zeta`（Duration/Instant）/ `io.zeta`（文件 IO/控制台 IO）/ `net.zeta`（socket/字节序/主机名）/ `sync.zeta`（pthread 锁）；driver `stdlib.rs::load_std_prelude` 改为复用 `load_combined_source` 模块展开（`mod io;` → 内联块，相对 `core.zeta` 所在目录解析）后注入，用户侧 API 不变；**约束**：① 编译器按全名特判 String/Vec/HashMap 构造器与 `alloc_bytes` 等 callee 名，② extern 的 LLVM `declare` 符号必须与 libc 一致（模块前缀会改名致链接失败）——故 String/Vec/Option/Result/HashMap、内建函数与**全部 extern 声明**留在根，子模块仅含自由函数与普通 struct；③ 兼容经 core.zeta 末尾 `mod time; mod io; mod net; mod sync;` + `use time::Duration; use io::read_file; ...` 重新导出（裸名即用，mod 声明置于文件尾符合类型顺序解析）；④ 子模块内自引用类型用全限定名（`time::Instant` / `sync::Mutex`，模块内裸名类型解析无前缀回退），配合 `check_struct_construct` 支持 use 别名/模块路径解析（1 处编译器修改，`resolve_full_name` 兜底）；io/net/time/sync/hashmap/std_prelude 子集测试 + 全量 111 套件全绿 + 跨模块冒烟（io 文件读写 + Duration 换算 + Mutex/RwLock + HashMap + 时间字面量））
 
 - [x] **F2 PGO 数据回灌（编译流程）**（`.zeta_profile` → 区域大小预测闭环：zeta-driver 接入 `zeta-region-alloc`（workspace 已注册，补 re-export `PgoAdvisor`/`CompilerInterface`/`RegionCompileInfo`/`ProfileCollector`）；新命令 `zeta profile <file.zeta_profile> [--out <report.md>]`（`run_profile`，加载 PGO 画像 JSON → `PgoAdvisor::recommend_size`（p95×1.1，下限 64KiB）→ `CompilerInterface` 报告：每区域 estimated=历史均值 / initial=PGO 建议 / max=建议×4 与峰值取大 / decision 附 p50/p95/mean/max 依据，区域按 ID 排序）；`zeta build --profile <file>` 编译期注入（构建完成后打印预测报告，加载失败仅告警不阻断构建——profile 为可选优化输入）；lib.rs 新增 `region_profile_report(path)`（文件读取 + 解析，`DriverError::Profile` 承载 JSON 错误）+ `build_region_report(data)`（纯函数可单测）；`profile_cmd_test.rs` 6 用例：报告元数据/建议与 advisor 一致 + 下限回退（大样本 p95×1.1>64KiB 采纳、小样本回落 64KiB）/文件往返/坏 JSON [profile] 错误/缺文件 I/O 错误/空数据 "(none registered)"；冒烟：手写 `.zeta_profile` → `zeta profile` 输出 worker_pool initial 858000（780000×1.1）与 tiny_region 65536（下限），`zeta build --profile` 编译完成 + 报告注入；语言级 region 接线后预测可直接回灌 `region 'r adaptive` 初始容量）

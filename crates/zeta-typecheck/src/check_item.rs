@@ -125,7 +125,7 @@ fn collect_item_decls(
 
 /// 将 typecheck 类型序列化为 extern 签名类型名（LIR 侧解析为 `LirType`）。
 /// MVP 仅支持标量类型与单元类型；引用参数视为标量指针（按值传递数字）。
-fn type_to_extern_name(ty: &Type) -> String {
+pub(crate) fn type_to_extern_name(ty: &Type) -> String {
     match ty {
         Type::I8 => "i8".into(),
         Type::I16 => "i16".into(),
@@ -173,6 +173,9 @@ pub(crate) fn check_item(
     prefix: &str,
     out: &mut Vec<HirItem>,
 ) -> Result<(), TypeError> {
+    // K4：GC 运行时 extern 声明（程序级去重，有 item 即生成；
+    // `Gc::new` / `gc_region` 依赖，未使用也无 harm——LLVM declare 未引用符号不报错）
+    emit_gc_runtime_externs(ctx, out);
     match item {
         AstItem::FnDecl(f) => {
             // 泛型函数仅在调用点实例化（无调用则不生成代码）
@@ -592,6 +595,44 @@ fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
                     .map(|(i, _)| HirParam {
                         name: format!("__a{i}"),
                     })
+                    .collect(),
+                body: None,
+                is_extern: true,
+                extern_sig: Some((
+                    args.iter().map(|s| s.to_string()).collect(),
+                    (*ret).to_string(),
+                )),
+            }),
+        });
+    }
+}
+
+/// 生成 `zeta_gc_*` runtime extern 声明（程序级去重，K4 追踪 GC）。
+///
+/// 类型名：`Ptr` 经 LIR `parse_extern_type` 解析为指针（未知名默认 Ptr）；
+/// `zeta_gc_alloc` 返回堆块基址（指针），`zeta_gc_escape` 接收 Gc 对象指针。
+fn emit_gc_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
+    let specs: &[(&str, &[&str], &str)] = &[
+        ("zeta_gc_alloc", &["i64"], "Ptr"),
+        ("zeta_gc_region_begin", &[], "()"),
+        ("zeta_gc_escape", &["Ptr"], "()"),
+        ("zeta_gc_collect", &[], "()"),
+    ];
+    for (name, args, ret) in specs {
+        if !ctx.generated_gc_externs.insert((*name).to_string()) {
+            continue;
+        }
+        // 用户源码已显式声明同名 extern → 跳过（避免 LLVM 重复 declare）
+        if ctx.lookup_fn_signature(name).is_some() {
+            continue;
+        }
+        out.push(HirItem {
+            name: (*name).to_string(),
+            kind: HirItemKind::Fn(HirFnDecl {
+                params: args
+                    .iter()
+                    .enumerate()
+                    .map(|(i, _)| HirParam { name: format!("__a{i}") })
                     .collect(),
                 body: None,
                 is_extern: true,

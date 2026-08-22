@@ -66,6 +66,8 @@ pub struct TypeContext {
     pub actors: HashMap<String, AstActorDecl>,
     /// 已生成的 `zeta_actor_*` extern 声明名（actor 展开去重用）
     pub generated_actor_externs: std::collections::HashSet<String>,
+    /// 已生成的 `zeta_gc_*` extern 声明名（K4 追踪 GC 展开去重用）
+    pub generated_gc_externs: std::collections::HashSet<String>,
     /// 当前检查的模块前缀（顶层为空串，`mod math` 内为 `"math"`）
     pub module_prefix: String,
     /// 当前作用域的泛型参数名（如 `["T"]`）
@@ -74,6 +76,8 @@ pub struct TypeContext {
     pub generic_subst: HashMap<String, Type>,
     /// 临时变量名计数器
     pub temp_counter: usize,
+    /// H2 无捕获闭包匿名函数名计数器（`__closure_{n}` 全局唯一）
+    pub closure_seq: usize,
     /// 顶层裸名 fn 被遮蔽的重命名表（裸名 → mangle 名）。
     ///
     /// 用户顶层函数与 std 预置根函数重名时（如用户 `fn read` 与 std extern `read`），

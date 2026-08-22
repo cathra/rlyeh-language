@@ -387,24 +387,27 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     }
 
     let clang = clang_path();
-    // Actor 运行时 C ABI（staticlib）：Zeta 程序经 `extern fn zeta_actor_*` 调用。
-    // 链接器按需提取对象——不含 actor 的程序不受影响（库可缺失则跳过）。
-    // 交叉编译到其他架构时，本机 staticlib 无法链接，跳过并提示。
-    let runtime_lib = if is_cross_target(target) {
+    // 运行时 C ABI（staticlib）：Zeta 程序经 `extern fn zeta_actor_*` /
+    // `extern fn zeta_gc_*` 调用。链接器按需提取对象——不含相应特性的程序不受影响
+    // （库可缺失则跳过）。交叉编译到其他架构时本机 staticlib 无法链接，跳过并提示。
+    let runtime_libs: Vec<PathBuf> = if is_cross_target(target) {
         eprintln!(
-            "zeta: 提示: 交叉编译目标 `{}` 与主机架构不同，跳过 Actor 运行时库（actor 程序暂不支持交叉编译）",
+            "zeta: 提示: 交叉编译目标 `{}` 与主机架构不同，跳过 Actor / GC 运行时库（相关特性暂不支持交叉编译）",
             target.unwrap_or_default()
         );
-        None
+        Vec::new()
     } else {
-        actor_runtime_lib_path()
+        [actor_runtime_lib_path(), gc_runtime_lib_path()]
+            .into_iter()
+            .flatten()
+            .collect()
     };
     let mut cmd = Command::new(&clang);
     if let Some(t) = target {
         cmd.arg(format!("--target={t}"));
     }
     cmd.arg(&ll_path);
-    if let Some(lib) = runtime_lib {
+    for lib in &runtime_libs {
         if let Some(parent) = lib.parent() {
             cmd.arg("-L").arg(parent);
         }
@@ -412,7 +415,7 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
             lib.file_name()
                 .and_then(|n| n.to_str())
                 .map(|n| n.trim_start_matches("lib").trim_end_matches(".a"))
-                .unwrap_or("zeta_actor_runtime"),
+                .unwrap_or("zeta_runtime"),
         );
     }
     cmd.arg("-o").arg(out_path);
@@ -605,6 +608,18 @@ fn actor_runtime_lib_path() -> Option<PathBuf> {
         .join("../../target")
         .join(profile)
         .join("libzeta_actor_runtime.a");
+    lib.exists().then_some(lib)
+}
+
+/// 定位 GC 运行时静态库（K4 追踪 GC，staticlib 产物）；缺失返回 `None`
+/// （无 `gc_region` / `Gc::new` 的程序不受影响）。
+fn gc_runtime_lib_path() -> Option<PathBuf> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let lib = manifest
+        .join("../../target")
+        .join(profile)
+        .join("libzeta_gc_runtime.a");
     lib.exists().then_some(lib)
 }
 

@@ -195,6 +195,22 @@ pub enum HirExpr {
         /// 实参
         args: Vec<HirExpr>,
     },
+    /// 函数地址值：引用具名函数（解析后的完整符号名），
+    /// 用于 `let f = my_func;` 等函数一等值场景。
+    FnPtr(String),
+    /// 间接调用：通过函数指针值调用（`f(args)`，f 为函数值）。
+    /// 签名以类型名字符串透传（与 extern 签名序列化同一约定，
+    /// LIR 层用 `parse_extern_type` 解析为 `LirType`）。
+    CallIndirect {
+        /// 被调用的函数值表达式
+        callee: Box<HirExpr>,
+        /// 实参
+        args: Vec<HirExpr>,
+        /// 参数类型名（`type_to_extern_name` 渲染）
+        param_names: Vec<String>,
+        /// 返回类型名
+        ret_name: String,
+    },
     /// while 循环（`while cond { body }`）
     While {
         /// 条件表达式

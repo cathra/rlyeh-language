@@ -1,9 +1,9 @@
 //! 语句类型检查。
 
-use zeta_ast::{AstPattern, AstStmt};
+use zeta_ast::{AstPattern, AstStmt, ExprKind};
 use zeta_hir::{HirExpr, HirStmt};
 
-use crate::check_expr::{infer_expr, resolve_ast_type};
+use crate::check_expr::{check_closure_expected, infer_expr, resolve_ast_type};
 use crate::context::TypeContext;
 use crate::error::TypeError;
 use crate::types::Type;
@@ -21,7 +21,22 @@ pub(crate) fn check_stmt(
             mutable,
         } => {
             let span = init.span;
-            let (h_init, ty) = infer_expr(ctx, init)?;
+            // H2 无捕获闭包 + fn 类型注解：按预期签名检查（闭包参数无类型注解，
+            // 无 fn 上下文无法推断参数类型）。非 fn 注解则走常规推断 + 一致性检查。
+            let (h_init, ty) =
+                if type_anno.is_some() && matches!(&*init.kind, ExprKind::Closure { .. }) {
+                    let at = resolve_ast_type(ctx, type_anno.as_ref().unwrap(), span)?;
+                    if !matches!(&at, Type::Fn(_)) {
+                        return Err(TypeError::WrongType {
+                            expected: at.to_string(),
+                            found: "闭包".to_string(),
+                            span,
+                        });
+                    }
+                    check_closure_expected(ctx, init, &at, span)?
+                } else {
+                    infer_expr(ctx, init)?
+                };
 
             // 类型标注一致性检查；标注存在时以标注类型作为绑定类型，
             // 以便统一 init 中残留的 `_`（Infer）占位（如 `Vec::with_capacity` 返回 `Vec<_>`）

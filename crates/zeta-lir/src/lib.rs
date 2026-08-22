@@ -153,6 +153,19 @@ pub enum LirStmt {
         /// 实参（局部变量）
         args: Vec<Local>,
     },
+    /// `[target =] *callee(args)`：通过函数指针（函数值）间接调用。
+    CallIndirect {
+        /// 返回值变量（无返回值为 `None`）
+        target: Option<Local>,
+        /// 函数指针变量（LIR 层统一为 `i8*` 槽）
+        callee: Local,
+        /// 实参（局部变量）
+        args: Vec<Local>,
+        /// 参数类型（按被调函数签名解析）
+        param_tys: Vec<LirType>,
+        /// 返回类型
+        ret_ty: LirType,
+    },
     /// 区域进入（后端可忽略）
     RegionEnter {
         /// 区域名（匿名区域为 `None`）
@@ -281,6 +294,8 @@ pub enum LirOperand {
     Unit,
     /// 局部变量引用
     Local(Local),
+    /// 函数地址（具名函数符号）
+    FnPtr(String),
 }
 
 impl LirOperand {
@@ -301,7 +316,7 @@ impl LirOperand {
             LirOperand::Char(_) => Some(LirType::Char),
             LirOperand::Bool(_) => Some(LirType::Bool),
             LirOperand::Unit => Some(LirType::Unit),
-            LirOperand::Local(_) => None,
+            LirOperand::Local(_) | LirOperand::FnPtr(_) => None,
         }
     }
 

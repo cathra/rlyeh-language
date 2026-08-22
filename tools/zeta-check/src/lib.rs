@@ -483,6 +483,7 @@ impl Checker {
                 options: _,
                 body,
             } => self.walk_block(body),
+            ExprKind::GcRegion { body } => self.walk_block(body),
             ExprKind::Transfer { expr, .. } => self.walk_expr(expr),
             ExprKind::Call { callee, args } => {
                 self.walk_expr(callee);
@@ -530,6 +531,7 @@ impl Checker {
             }
             ExprKind::Cast { expr, target_type: _ } => self.walk_expr(expr),
             ExprKind::Await(inner) => self.walk_expr(inner),
+            ExprKind::Question(inner) => self.walk_expr(inner),
             ExprKind::Return(Some(v)) => self.walk_expr(v),
             ExprKind::Return(None) | ExprKind::Break(None) | ExprKind::Continue => {}
             ExprKind::Break(Some(v)) => self.walk_expr(v),
@@ -539,6 +541,11 @@ impl Checker {
                 method: _,
             } => {
                 self.walk_expr(actor);
+                for a in args {
+                    self.walk_expr(a);
+                }
+            }
+            ExprKind::MacroCall { args, .. } => {
                 for a in args {
                     self.walk_expr(a);
                 }

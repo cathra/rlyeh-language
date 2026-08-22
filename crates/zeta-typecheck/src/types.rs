@@ -66,6 +66,8 @@ pub enum Type {
     Tuple(Vec<Type>),
     /// 具名类型（结构体 / 枚举 / trait 等）
     Named(String, Vec<Type>),
+    /// 函数类型（`fn(A, B) -> C`），即函数指针类型
+    Fn(Box<FnSignature>),
     /// 泛型占位
     Generic(String),
 }
@@ -156,6 +158,15 @@ impl Type {
                 // `&str` 视图与 String 值互用（G2：比较 `r == s`、`s == r`）
                 (Type::Ref(a, _), Type::Named(n, _)) => matches!(**a, Type::Str) && n == "String",
                 (Type::Named(n, _), Type::Ref(a, _)) => matches!(**a, Type::Str) && n == "String",
+                // 函数类型：参数逐个兼容且返回类型兼容
+                (Type::Fn(a), Type::Fn(b)) => {
+                    a.params.len() == b.params.len()
+                        && a.params
+                            .iter()
+                            .zip(&b.params)
+                            .all(|(x, y)| x.compatible_with(y))
+                        && a.return_type.compatible_with(&b.return_type)
+                }
                 _ => self == other,
             }
     }
@@ -215,6 +226,15 @@ impl fmt::Display for Type {
                 }
             }
             Type::Generic(name) => write!(f, "{name}"),
+            Type::Fn(sig) => {
+                let inner = sig
+                    .params
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "fn({inner}) -> {}", sig.return_type)
+            }
         }
     }
 }
@@ -312,8 +332,12 @@ pub fn field_scalar_of(ty: &Type) -> zeta_hir::FieldScalar {
         Type::Bool => FieldScalar::Bool,
         Type::Char => FieldScalar::Char,
         Type::Str => FieldScalar::Str,
-        // 聚合类型 / 引用 / 数组 / 元组均以指针形式存储
-        Type::Ref(..) | Type::Array(..) | Type::Tuple(..) | Type::Named(..) => FieldScalar::Ptr,
+        // 聚合类型 / 引用 / 数组 / 元组均以指针形式存储；函数指针为指针
+        Type::Ref(..)
+        | Type::Array(..)
+        | Type::Tuple(..)
+        | Type::Named(..)
+        | Type::Fn(..) => FieldScalar::Ptr,
         Type::Unit => FieldScalar::Int,
         _ => FieldScalar::Int,
     }
@@ -342,6 +366,15 @@ pub fn type_mono_key(ty: &Type) -> String {
         Type::Tuple(ts) => {
             let inner = ts.iter().map(type_mono_key).collect::<Vec<_>>().join("_");
             format!("tup_{inner}")
+        }
+        Type::Fn(sig) => {
+            let inner = sig
+                .params
+                .iter()
+                .map(type_mono_key)
+                .collect::<Vec<_>>()
+                .join("_");
+            format!("fn_{inner}->{}", type_mono_key(&sig.return_type))
         }
         _ => ty.to_string(),
     }

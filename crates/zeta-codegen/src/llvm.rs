@@ -208,6 +208,20 @@ impl LlvmEmitter {
                     let r = self.reg();
                     body.push_str(&format!("  %{r} = load {lt_src}, {lt_src}* %{src}.addr\n"));
                     body.push_str(&format!("  store {lt_src} %{r}, {lt}* %{target}.addr\n"));
+                } else if let LirOperand::FnPtr(name) = value {
+                    // 函数地址：按被调函数签名 bitcast 为 i8* 存入指针槽（统一函数指针表示）
+                    let r = self.reg();
+                    let (pt, rt, _, _) =
+                        self.sigs
+                            .get(name)
+                            .cloned()
+                            .ok_or_else(|| CodegenError::UndefinedFunction {
+                                name: name.clone(),
+                            })?;
+                    let fnty = fn_llvm_type(&pt, rt)?;
+                    let gn = llvm_global_name(name);
+                    body.push_str(&format!("  %{r} = bitcast {fnty} @{gn} to i8*\n"));
+                    body.push_str(&format!("  store i8* %{r}, {lt}* %{target}.addr\n"));
                 } else {
                     let lit = self.literal(value, ty, body)?;
                     body.push_str(&format!("  store {lt} {lit}, {lt}* %{target}.addr\n"));
@@ -257,6 +271,15 @@ impl LlvmEmitter {
                 args,
             } => {
                 self.emit_call(target.as_ref(), callee, args, body, f)?;
+            }
+            LirStmt::CallIndirect {
+                target,
+                callee,
+                args,
+                param_tys,
+                ret_ty,
+            } => {
+                self.emit_call_indirect(target.as_ref(), callee, args, param_tys, *ret_ty, body, f)?;
             }
             LirStmt::Alloc { target, slots } => {
                 // 堆上分配 slots*8 字节（槽 0 为枚举 tag），返回 i8*
@@ -580,6 +603,60 @@ impl LlvmEmitter {
         Ok(())
     }
 
+    /// 生成函数指针间接调用：`call {ret} %cast(args)`。
+    ///
+    /// 函数指针统一存储为 `i8*`（槽式存储），调用前按被调函数签名
+    /// `bitcast` 为 `{ret}({params})*` 再做间接调用。
+    #[allow(clippy::too_many_arguments)]
+    fn emit_call_indirect(
+        &mut self,
+        target: Option<&Local>,
+        callee: &Local,
+        args: &[Local],
+        param_tys: &[LirType],
+        ret_ty: LirType,
+        body: &mut String,
+        f: &LirFunction,
+    ) -> Result<(), CodegenError> {
+        // 函数指针变量：load i8*
+        let fp = self.operand_value(
+            &LirOperand::Local(callee.clone()),
+            LirType::Ptr,
+            body,
+            f,
+        )?;
+        // bitcast i8* → {ret}({params})*
+        let fnty = fn_llvm_type(param_tys, ret_ty)?;
+        let cast = self.reg();
+        body.push_str(&format!("  %{cast} = bitcast i8* {fp} to {fnty}\n"));
+        // 实参（不特判 extern String：间接调用目标为 Zeta 函数，
+        // String 参数是结构体指针，签名类型名解析一致）
+        let mut arg_v = Vec::with_capacity(args.len());
+        for (arg, pt) in args.iter().zip(param_tys) {
+            arg_v.push(self.operand_value(&LirOperand::Local(arg.clone()), *pt, body, f)?);
+        }
+        let arg_str = arg_v
+            .iter()
+            .zip(param_tys)
+            .map(|(v, pt)| format!("{} {v}", llvm_type(*pt).unwrap()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if ret_ty == LirType::Unit {
+            body.push_str(&format!("  call void %{cast}({arg_str})\n"));
+        } else {
+            let r = self.reg();
+            body.push_str(&format!(
+                "  %{r} = call {} %{cast}({arg_str})\n",
+                llvm_type(ret_ty)?
+            ));
+            if let Some(t) = target {
+                let lt = llvm_type(ret_ty)?;
+                body.push_str(&format!("  store {lt} %{r}, {lt}* %{t}.addr\n"));
+            }
+        }
+        Ok(())
+    }
+
     /// 生成内建调用：
     /// `print` / `println` → `printf`；`alloc_array` → `malloc`；
     /// `array_copy` → `llvm.memcpy`；`array_free` → `free`。
@@ -874,6 +951,11 @@ impl LlvmEmitter {
                 ty,
                 context: "意外的局部变量操作数".to_string(),
             }),
+            // 函数地址仅在 Assign 中处理（需被调函数签名做 bitcast）
+            LirOperand::FnPtr(_) => Err(CodegenError::UnsupportedType {
+                ty,
+                context: "意外的函数地址操作数".to_string(),
+            }),
         }
     }
 
@@ -971,6 +1053,17 @@ fn llvm_type(ty: LirType) -> Result<&'static str, CodegenError> {
             context: "单元类型不能作为存储 / 参数 / 运算类型".to_string(),
         }),
     }
+}
+
+/// 生成 LLVM 函数指针类型：`{ret}({param})*`。
+fn fn_llvm_type(param_tys: &[LirType], ret_ty: LirType) -> Result<String, CodegenError> {
+    let params = param_tys
+        .iter()
+        .map(|t| llvm_type(*t).map(ToString::to_string))
+        .collect::<Result<Vec<_>, _>>()?
+        .join(", ");
+    let ret = llvm_type(ret_ty)?;
+    Ok(format!("{ret}({params})*"))
 }
 
 /// 二元运算指令映射。

@@ -419,6 +419,11 @@ impl Printer {
                 self.with_indent(|p| p.print_block_body(body));
                 self.line(&format!("}}{}", suffix));
             }
+            ExprKind::GcRegion { body } => {
+                self.line("gc_region {");
+                self.with_indent(|p| p.print_block_body(body));
+                self.line(&format!("}}{}", suffix));
+            }
             ExprKind::Region {
                 name,
                 options,
@@ -467,6 +472,7 @@ fn is_block_like(e: &AstExpr) -> bool {
             | ExprKind::While { .. }
             | ExprKind::Loop { .. }
             | ExprKind::Region { .. }
+            | ExprKind::GcRegion { .. }
     )
 }
 
@@ -567,7 +573,8 @@ fn fmt_expr(e: &AstExpr) -> String {
         | ExprKind::For { .. }
         | ExprKind::While { .. }
         | ExprKind::Loop { .. }
-        | ExprKind::Region { .. } => fmt_expr_compact_block(e),
+        | ExprKind::Region { .. }
+        | ExprKind::GcRegion { .. } => fmt_expr_compact_block(e),
         ExprKind::Transfer { expr, region } => {
             format!("transfer {} out of '{}", fmt_expr(expr), region)
         }
@@ -575,6 +582,10 @@ fn fmt_expr(e: &AstExpr) -> String {
             let c = fmt_operand(callee, PREC_POSTFIX, false);
             let a = args.iter().map(fmt_expr).collect::<Vec<_>>().join(", ");
             format!("{}({})", c, a)
+        }
+        ExprKind::MacroCall { name, args } => {
+            let a = args.iter().map(fmt_expr).collect::<Vec<_>>().join(", ");
+            format!("{}({})", name, a)
         }
         ExprKind::MethodCall {
             receiver,
@@ -643,6 +654,7 @@ fn fmt_expr(e: &AstExpr) -> String {
             fmt_operand(inner, PREC_POSTFIX, false)
         ),
         ExprKind::Block(b) => fmt_block_compact(b),
+        ExprKind::Question(inner) => format!("{}?", fmt_operand(inner, PREC_POSTFIX, false)),
         ExprKind::Return(Some(v)) => format!("return {}", fmt_operand(v, PREC_ASSIGN, false)),
         ExprKind::Return(None) => "return".to_string(),
         ExprKind::Break(Some(v)) => format!("break {}", fmt_operand(v, PREC_ASSIGN, false)),
@@ -715,6 +727,9 @@ fn fmt_expr_compact_block(e: &AstExpr) -> String {
                 head.push_str(" adaptive");
             }
             format!("{} {}", head, fmt_block_compact(body))
+        }
+        ExprKind::GcRegion { body } => {
+            format!("gc_region {}", fmt_block_compact(body))
         }
         _ => fmt_expr(e),
     }
@@ -796,6 +811,7 @@ fn bin_prec(op: BinaryOp) -> usize {
 fn prec(e: &AstExpr) -> usize {
     match e.kind.as_ref() {
         ExprKind::Assign { .. } | ExprKind::Return(_) | ExprKind::Break(_) => PREC_ASSIGN,
+        ExprKind::Question(_) => PREC_POSTFIX,
         ExprKind::Binary { op, .. } => bin_prec(*op),
         ExprKind::ComparisonChain { .. }
         | ExprKind::InSet { .. }

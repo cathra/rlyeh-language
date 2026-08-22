@@ -257,9 +257,9 @@ fn test_peek_at_eof() {
 
 #[test]
 fn test_invalid_char() {
-    let mut lexer = Lexer::new("let $ = 1;");
+    let mut lexer = Lexer::new("let # = 1;");
     let err = lexer.tokenize().unwrap_err();
-    assert!(matches!(err, LexError::InvalidChar { ch: '$', .. }));
+    assert!(matches!(err, LexError::InvalidChar { ch: '#', .. }));
 }
 
 #[test]

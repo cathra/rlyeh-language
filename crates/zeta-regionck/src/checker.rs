@@ -190,6 +190,15 @@ impl RegionChecker {
                     self.check_expr(a);
                 }
             }
+            // 函数地址值：无区域归属
+            HirExpr::FnPtr(_) => {}
+            // 间接调用：callee 与实参递归检查
+            HirExpr::CallIndirect { callee, args, .. } => {
+                self.check_expr(callee);
+                for a in args {
+                    self.check_expr(a);
+                }
+            }
             HirExpr::Return(e) | HirExpr::Break(e) => {
                 if let Some(e) = e {
                     self.check_expr(e);

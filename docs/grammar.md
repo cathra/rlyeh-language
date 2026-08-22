@@ -4,10 +4,12 @@
 > 最后更新：2026-08-22
 
 > **⚠️ 实现状态**：本文为**目标语法规范**（EBNF），其中部分语法为规划特性，MVP 编译器尚未实现：
-> 宏调用（`name!`，`!` 为 `not` 运算符）、闭包 `|x| ...`（typecheck 报 Unsupported）、引用类型 `&T` 已实现
+> 宏系统（§2.14 `macro_rules!` 已实现：`$x:expr`/`ident`/`ty`/`tt` + `$(`...`)` 重复，parse 期 AST 展开；
+> 内置格式化宏 `println!`/`print!`/`format!`/`dbg!` 已实现，`vec!` 等其它内置宏仍规划）、
+> 闭包 `|x| ...`（typecheck 报 Unsupported）、引用类型 `&T` 已实现
 > （G1 ✅：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、`*` 解引用；`&str` 只读借用视图已实现
 > （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*T` 仍规划）、
-> `dyn Trait`、`?` 运算符、生命周期参数 `'a`、`macro_rules` 等。
+> `dyn Trait`、`?` 运算符、生命周期参数 `'a` 等。
 > **已实现子集的教程与可运行示例见 [`guide.md`](./guide.md)，已知限制见其 §13。**
 
 ## 相关文档

@@ -199,6 +199,7 @@ fn main() -> u32 {
             MirStmt::AddrOf { .. } => "addr_of",
             MirStmt::DerefRead { .. } => "deref_read",
             MirStmt::DerefWrite { .. } => "deref_write",
+            MirStmt::CallIndirect { .. } => "call_indirect",
         })
         .collect();
     // 顺序：RegionEnter → `_t0 = 5`（init 求值）→ AllocInRegion(_t0)

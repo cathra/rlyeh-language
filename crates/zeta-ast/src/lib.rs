@@ -432,6 +432,12 @@ pub enum ExprKind {
         body: AstBlock,
     },
 
+    /// gc_region 表达式（`gc_region { ... }`，K4 追踪 GC 生命周期作用域）
+    GcRegion {
+        /// 块体（结束触发 GC 周期）
+        body: AstBlock,
+    },
+
     /// transfer 表达式（`transfer data out of 'r`）
     Transfer {
         /// 被转移的表达式
@@ -445,6 +451,17 @@ pub enum ExprKind {
         /// 被调用的表达式（标识符或路径）
         callee: AstExpr,
         /// 实参
+        args: Vec<AstExpr>,
+    },
+
+    /// 宏调用（`println!(...)` / `format!(...)` 等内置格式化宏）。
+    ///
+    /// 声明式宏（`macro_rules!`）在 parse 阶段展开为普通 AST，不产生本节点；
+    /// 内置格式化宏由 typecheck 层 desugar（I2 格式化引擎）。
+    MacroCall {
+        /// 宏名（含 `!`，如 `"println!"`）
+        name: String,
+        /// 实参（表达式列表）
         args: Vec<AstExpr>,
     },
 
@@ -511,6 +528,11 @@ pub enum ExprKind {
 
     /// return 语句
     Return(Option<AstExpr>),
+
+    /// `?` 错误传播运算符（K1）：`expr?`，在 Option/Result 上下文中解包，
+    /// 失败时从当前函数早返回失败值。typecheck 层 desugar 为
+    /// `match expr { Some(v) => v, None => return None }`（Result 类似）。
+    Question(Box<AstExpr>),
 
     /// break 语句
     Break(Option<AstExpr>),

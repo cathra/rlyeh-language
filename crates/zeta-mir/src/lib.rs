@@ -77,6 +77,20 @@ pub enum MirStmt {
         /// 实参（局部变量）
         args: Vec<Local>,
     },
+    /// `[target =] *callee(args)`：通过函数指针（函数值）间接调用。
+    /// 签名以类型名字符串透传（与 `extern_sig` 同一约定，LIR 层解析为 `LirType`）。
+    CallIndirect {
+        /// 返回值变量（无返回值为 `None`）
+        target: Option<Local>,
+        /// 函数指针变量
+        callee: Local,
+        /// 实参（局部变量）
+        args: Vec<Local>,
+        /// 参数类型名列表
+        param_names: Vec<String>,
+        /// 返回类型名
+        ret_name: String,
+    },
     /// 区域进入（携带区域选项，供分配器使用）
     RegionEnter {
         /// 区域名（匿名区域为 `None`）
@@ -207,6 +221,8 @@ pub enum MirValue {
     Unit,
     /// 复制局部变量
     Place(Local),
+    /// 函数地址（具名函数符号引用）
+    FnRef(String),
     /// 二元运算
     Binary {
         /// 运算符

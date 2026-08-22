@@ -61,6 +61,8 @@ pub enum Token {
     SelfKw,
     /// `region`
     Region,
+    /// `gc_region`
+    GcRegion,
     /// `in`
     In,
     /// `transfer`
@@ -208,6 +210,10 @@ pub enum Token {
     // 特殊
     /// `@`（属性/宏）
     At,
+    /// `$`（声明式宏元变量前缀，如 `$x:expr`）
+    Dollar,
+    /// `?`（声明式宏重复操作符 `?`；`?` 错误传播运算符仍规划中）
+    Question,
     /// `not in` 组合
     NotIn,
 

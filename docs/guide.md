@@ -102,6 +102,111 @@ fn main() {
 }
 ```
 
+#### 函数一等值（函数指针，H1）
+
+函数可以像值一样绑定、传递与调用：
+
+```zeta
+fn apply(f: fn(i64, i64) -> i64, x: i64, y: i64) -> i64 {
+    f(x, y)                      // 通过函数值间接调用
+}
+
+fn main() {
+    let f = add;                 // 函数值绑定（推断为 fn(i64, i64) -> i64）
+    let r1 = f(3, 4);            // 7
+    let r2 = apply(add, 10, 20); // 函数值作实参：30
+
+    let g: fn(i64, i64) -> i64 = add;  // 显式类型注解
+    let r3 = g(5, 6);            // 11：注解变量间接调用
+
+    let f2 = f;                  // 重新绑定
+    let r4 = f2(7, 8);           // 15
+}
+```
+
+##### 无捕获闭包（H2）
+
+闭包 `|x, y| 表达式` desugar 为匿名函数 + 函数指针（零运行时开销），参数类型由 fn 上下文推断：
+
+```zeta
+fn apply(f: fn(i64, i64) -> i64, x: i64, y: i64) -> i64 {
+    f(x, y)                      // 通过函数值间接调用
+}
+
+fn main() {
+    let r1 = apply(|a, b| a + b, 10, 20);  // 30：闭包作 fn 形参实参
+    let inc: fn(i64) -> i64 = |x| x + 1;   // fn 注解绑定闭包
+    let r2 = inc(41);            // 42：经函数值间接调用
+    let r3 = apply(|a, b| a * 2 + b * 3, 1, 2);  // 8
+}
+```
+
+MVP 约束（见 §13）：闭包体仅可引用参数与字面量（捕获闭包 H3 规划中）；参数模式仅支持简单标识符与 `_`；返回闭包的函数暂不支持。
+
+##### `?` 错误传播运算符（K1）
+
+`expr?` 在 `Option<T>` / `Result<T, E>` 上下文解包成功值，失败时从当前函数早返回失败值：
+
+```zeta
+fn try_div(x: i64, y: i64) -> Option<i64> {
+    if y == 0 {
+        return None;
+    }
+    Some(x / y)
+}
+
+fn chain(a: i64, b: i64, c: i64) -> Option<i64> {
+    let q = try_div(a, b)?;        // 解包；失败则 `return None`
+    let r = try_div(q, c)?;
+    Some(r + 1)
+}
+
+fn sum_all(a: i64, b: i64, c: i64) -> Option<i64> {
+    Some(try_div(a, b)? + try_div(c, 2)?)   // 表达式中间嵌套 ? 也可
+}
+```
+
+- `Option<T>`：desugar 为 `match expr { Some(v) => v, None => return Option::None }`
+- `Result<T, E>`：desugar 为 `match expr { Ok(v) => v, Err(e) => return Result::Err(e) }`
+- 裸无参变体值可用：`return None;` 与 `Option::None` 等价
+- MVP 约束：`?` 用于非 Option/Result 类型报错；返回类型兼容性检查与现有 `return` 语义一致（宽松）
+
+##### 迭代器与适配器（J1–J3）
+
+```zeta
+// J1 数组迭代：for x in arr（索引遍历，长度编译期已知）
+let arr: [i64; 4] = [1, 2, 3, 4];
+let mut sum = 0;
+for x in arr {
+    sum += x;
+}
+
+// J2 自定义迭代器接入 for：类型存在 `next() -> Option<T>` 方法即可
+struct Counter { limit: i64, pos: i64 }
+impl Counter {
+    fn new(limit: i64) -> Counter { Counter { limit: limit, pos: 0 } }
+    fn next(&mut self) -> Option<i64> {
+        if self.pos >= self.limit { return None; }
+        let v = self.pos;
+        self.pos += 1;
+        Some(v)
+    }
+}
+for v in Counter::new(5) { /* 0, 1, 2, 3, 4 */ }
+
+// J3 适配器（数组 / Vec / 迭代器接收者，经 H2 无捕获闭包，返回 Vec<T>）
+let d = [1, 2, 3].map(|x| x * 2);            // Vec: [2, 4, 6]
+let e = [1, 2, 3, 4, 5].filter(|x| x % 2 == 1); // Vec: [1, 3, 5]
+let t = [1, 2, 3, 4].fold(0, |acc, x| acc + x); // 10
+let c = [7, 8, 9].collect();                  // Vec: [7, 8, 9]
+let tk = [1, 2, 3, 4, 5].take(3);             // Vec: [1, 2, 3]
+let sk = [1, 2, 3, 4, 5].skip(2);             // Vec: [3, 4, 5]
+let chained = Counter::new(6).filter(|x| x > 1).map(|x| x * x); // Vec: [4, 9, 16, 25]
+```
+
+- 适配器语义（内建 desugar）：`map` 变换元素、`filter` 保留满足谓词的元素、`fold(init, |acc, x| ..)` 归约返回 `acc`、`collect` 原样收集、`take(n)` 取前 n 个、`skip(n)` 跳过前 n 个
+- MVP 约束：适配器参数必须是无捕获闭包（捕获外部变量报错，H3 规划）；适配器返回 `Vec<T>`（急切求值），结果 Vec 可作下一适配器源（链式）；`Iterator` trait 定义（std-lib §2.3）为规划 API（适配器为编译器内建）
+
 ### 3.3 控制流
 
 ```zeta
@@ -307,9 +412,45 @@ region 'r adaptive {
 }
 ```
 
-### 8.3 L2 / L3
+### 8.3 堆分配：`Box<T>` / `Rc<T>` / `Arc<T>`（K2–K3 ✅）
 
-`Rc<T>` / `Arc<T>`（引用计数）与 `Gc<T>`（可选 GC）为规划中特性，MVP 未实现。
+`Box<T>` / `Rc<T>` / `Arc<T>` 为编译器内建智能指针：构造 + `*` 解引用 + 字段/方法/索引自动剥层。
+
+```zeta
+let b = Box::new(42);                 // 标量装箱
+println(*b);                          // 42（解引用 load）
+
+struct Point { x: i64, y: i64 }
+let bp = Box::new(Point { x: 10, y: 20 });
+println(bp.x + bp.y);                 // 30（字段访问自动剥 Box）
+
+let bs = Box::new(String::from("hi"));
+println(bs.len());                    // 2（方法调用自动剥 Box）
+
+let bb = Box::new(Box::new(7));
+println(**bb);                        // 7（嵌套装箱）
+
+// K3 引用计数：clone 共享、强弱计数、弱引用升级、try_unwrap
+let r = Rc::new(42);
+let r2 = r.clone();
+println(r.strong_count());            // 2
+let w = r.downgrade();
+println(r.weak_count());              // 1
+match w.upgrade() {
+    Option::Some(rc) => println(*rc), // 42
+    Option::None => println(0),
+}
+match r.clone().try_unwrap() {
+    Result::Ok(x) => println(x),
+    Result::Err(rc) => println(*rc),  // 42（强计数 > 1 走 Err 分支）
+}
+```
+
+布局：`Box<T>` 栈上 1 指针槽，堆上 `slot_count(T)` 个 8 字节槽（标量 1 / struct 字段数 / enum tag+字段 / 数组长度 / 元组元素数 / 引用·Fn·内嵌 Box 1 槽）；`Rc<T>` 栈上 1 槽指向堆 `RcInner`（`T` 值区自堆首槽起 + 尾部 strong/weak 计数槽，见 memory-model.md §4 MVP 注记）；聚合 T 装箱为整槽区浅拷贝。三者均可作为函数参数与返回值类型（§13）。MVP 无自动 drop（计数只增不减，与 `Vec`/`String` 一致，显式释放语义规划中）。
+
+### 8.4 L3
+
+`Gc<T>`（可选 GC，K4）为规划中特性，MVP 未实现。
 
 ---
 
@@ -594,13 +735,14 @@ extern fn gethostname(name: String, len: i64) -> i64;
 ### 已知限制（MVP）
 
 **规划中 / 未实现**：
-- **宏系统**：`println!` / `vec!` / `format!` 等宏调用不支持（`!` 是 `not` 一元运算符）；打印用内建 `println(expr)`（0–1 参数，无 `{}` 格式化）。
+- **宏系统**：已实现 `macro_rules!` 声明式宏（`$x:expr`/`$x:ident`/`$x:ty`/`$x:tt` + `$(`...`)` 重复 `*`/`+`/`?`，parse 期 AST 展开）与内置格式化宏 `println!` / `print!` / `format!` / `dbg!`（`{}` 占位、`{:?}` 同构、`{{`/`}}` 转义，typecheck desugar 为 String 拼接 + 内建打印）。限制：`$x:expr` 只匹配原子 token（`a > b`、`-1` 等多 token 表达式不支持）、无卫生宏；`vec!` 等其它内置宏与 `println!` 多参数可变长度仍走内建打印 `println(expr)`（无 `{}` 格式化）。
 - **引用与借用**：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数类型、解引用 `*`、返回引用均已实现（G1 ✅，见 §8.1）；`&str` 只读借用视图已实现（G2 ✅：`String::as_str()` + `&str` 参数/返回/索引 + `String::from(&str)` 深拷贝，见 §10.2）；裸指针（`*const T`/`*mut T`）、`ref` 模式、严格借用检查仍规划中。
-- **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported（规划）。
-- **运算符**：`?` 错误传播、`dyn Trait`、函数指针未实现。
-- **所有权层级**：L2 `Rc<T>` / `Arc<T>`、L3 `Gc<T>` 未实现（规划）。
+- **闭包**：✅ 无捕获闭包已实现（H2，见 §3.2）：`|x, y| expr` desugar 为匿名函数 + 函数指针（零运行时开销），需 fn 类型上下文（fn 形参实参 / `let f: fn(..) = |..| ..` 注解绑定）驱动参数类型推断；参数模式仅支持简单标识符与 `_`。捕获闭包（引用外部变量，H3 规划）、返回闭包的函数（可 `let f: fn(..) = |..| ..; f` 转接）、`move` 语义仍规划中。
+- **函数指针**：✅ 已实现（H1，见 §3.2）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用；函数值可作实参、返回值、重新绑定、类型注解。
+- **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。`dyn Trait` 未实现。
+- **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）未实现（规划）。
 - **并发**：`serde` / `fmt` / `async` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）。
-- **迭代器协议**：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` 容器迭代可用；**数组迭代不支持**；`Iterator` trait / `collect` 未实现。
+- **迭代器协议**：✅ J1–J3 已实现（见 §3.2 迭代器与适配器小节）：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` / `for x in arr`（数组迭代）容器迭代可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 可用（返回 `Vec<T>` 可链式）。`Iterator` trait 定义（std-lib §2.3）仍为规划 API（适配器为编译器内建 desugar，非 trait 实现）。
 
 **实现约束**：
 - **std 模块化**：标准库位于 `zeta-std/zeta/`，`core.zeta` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `use` 重新导出，用户侧裸名即用。

@@ -39,8 +39,9 @@ impl<'src> Parser<'src> {
                     | ExprKind::While { .. }
                     | ExprKind::Loop { .. }
                     | ExprKind::Region { .. }
+                    | ExprKind::GcRegion { .. }
             ) {
-                // 语句式 if / match / for / while / loop / region：无分号时，
+                // 语句式 if / match / for / while / loop / region / gc_region：无分号时，
                 // 若块到此结束则作为块尾表达式，否则按语句处理（允许后续继续跟语句）
                 if self.check(&Token::RBrace) {
                     final_expr = Some(expr);

@@ -117,7 +117,7 @@ impl<'src> Lexer<'src> {
                 Token::At
             }
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | ';' | '.' | '+' | '-' | '*' | '/'
-            | '%' | '=' | '<' | '>' | '!' | '&' | '|' | '^' => self.read_operator(),
+            | '%' | '=' | '<' | '>' | '!' | '&' | '|' | '^' | '$' | '?' => self.read_operator(),
             c => return Err(LexError::InvalidChar { ch: c, line, col }),
         };
 
@@ -752,6 +752,8 @@ impl<'src> Lexer<'src> {
                     ';' => Token::Semicolon,
                     '.' => Token::Dot,
                     '@' => Token::At,
+                    '$' => Token::Dollar,
+                    '?' => Token::Question,
                     // 主循环已过滤非法字符，此处不可达
                     other => unreachable!("unexpected char {other:?} in read_operator"),
                 }
@@ -792,6 +794,7 @@ fn keyword_or_ident(text: &str) -> Token {
         "where" => Token::Where,
         "Self" => Token::SelfKw,
         "region" => Token::Region,
+        "gc_region" => Token::GcRegion,
         "in" => Token::In,
         "transfer" => Token::Transfer,
         "out" => Token::Out,

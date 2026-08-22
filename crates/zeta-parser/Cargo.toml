@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 zeta-lexer = { workspace = true }
+zeta-macro = { workspace = true }
 zeta-ast = { workspace = true }
 thiserror = { workspace = true }
 

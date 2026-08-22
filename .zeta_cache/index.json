@@ -400,6 +400,15 @@
           "compiled_at": "@1787200756"
         }
       }
+    },
+    "tmp_guide_q_smoke.zeta": {
+      "versions": {
+        "b4afb551e42369c7ed94231ea93f5908be9cf07a210d62a9461e828cfd98d995": {
+          "interface_hash": "ea2f76cd3714c7a2d5fc50079202215ef4b57e7ebd54f7d2e24f9bacba29b132",
+          "llvm": "artifacts/b4afb551e42369c7ed94231ea93f5908be9cf07a210d62a9461e828cfd98d995.ll",
+          "compiled_at": "@1787410947"
+        }
+      }
     }
   }
 }

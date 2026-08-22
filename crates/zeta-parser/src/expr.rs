@@ -1,9 +1,10 @@
 //! 表达式解析（Pratt 解析器）。
 
 use crate::error::ParseError;
-use crate::parser::Parser;
+use crate::parser::{Parser, MAX_MACRO_DEPTH};
 use zeta_ast::{AssignOp, AstBlock, AstExpr, BinaryOp, CaptureMode, CompareOp, ExprKind, UnaryOp};
-use zeta_lexer::{Span, Token};
+use zeta_lexer::{LocatedToken, Span, Token};
+use zeta_macro::expand as expand_macro;
 
 /// 运算符优先级（数值越大优先级越高）。
 ///
@@ -74,6 +75,14 @@ impl<'src> Parser<'src> {
                 let rb = self.expect(&Token::RBracket, "']'")?;
                 let span = self.merge_span(start, rb.span);
                 lhs = AstExpr::new(ExprKind::Index { expr: lhs, index }, span);
+                continue;
+            }
+            // `?` 错误传播（K1）：后缀运算符，优先级同其他后缀
+            if self.check(&Token::Question) {
+                let start = lhs.span;
+                self.bump();
+                let span = self.span_until_current(start);
+                lhs = AstExpr::new(ExprKind::Question(Box::new(lhs)), span);
                 continue;
             }
             if self.check(&Token::In) {
@@ -492,6 +501,7 @@ impl<'src> Parser<'src> {
             Some(Token::Loop) => self.parse_loop_expr(),
             Some(Token::For) => self.parse_for_expr(),
             Some(Token::Region) => self.parse_region_expr(),
+            Some(Token::GcRegion) => self.parse_gc_region_expr(),
             Some(Token::Transfer) => self.parse_transfer_expr(),
             Some(Token::Return) => self.parse_return_expr(),
             Some(Token::Break) => self.parse_break_expr(),
@@ -539,6 +549,13 @@ impl<'src> Parser<'src> {
             segments.push(seg);
         }
         let span = self.span_until_current(start);
+        // 宏调用：`name!`（内置格式化宏 / 用户 macro_rules!）。
+        // `!` 为 not 一元运算符（前缀形式），此处是标识符后的 postfix 位置，
+        // 二者不冲突：`!x` 走一元分支，`foo!(...)` 走本分支。
+        if segments.len() == 1 && self.check(&Token::NotNot) {
+            let name = segments.pop().expect("non-empty segments");
+            return self.parse_macro_call(name, start);
+        }
         // 结构体字面量构造：`Point { x: 3, y: 4 }`
         // （需 lookahead 确认，避免与 `match s { ... }` 的 scrutinee 块歧义）
         if self.looks_like_struct_ctor() {
@@ -572,6 +589,102 @@ impl<'src> Parser<'src> {
         } else {
             Ok(AstExpr::new(ExprKind::Path(segments), span))
         }
+    }
+
+    /// 解析宏调用 `name!(...)` / `name![...]` / `name!{...}`（I1）。
+    ///
+    /// - 内置格式化宏（`println!`/`print!`/`format!`/`dbg!`）：收集定界内容，
+    ///   参数按表达式列表解析，产出 `ExprKind::MacroCall`（由 typecheck 层 I2
+    ///   desugar 为字符串拼接 + 打印内建）；
+    /// - 用户 `macro_rules!`：收集定界内容 token 流 → `zeta-macro` 展开 →
+    ///   子 Parser 递归解析为表达式（展开发生在 parse 阶段、typecheck 之前）；
+    /// - 未知宏：报错。
+    fn parse_macro_call(&mut self, name: String, start: Span) -> Result<AstExpr, ParseError> {
+        self.bump(); // `!`
+        let close = if self.check(&Token::LParen) {
+            Token::RParen
+        } else if self.check(&Token::LBracket) {
+            Token::RBracket
+        } else if self.check(&Token::LBrace) {
+            Token::RBrace
+        } else {
+            return Err(self.unexpected("宏调用的定界符 '('/'['/'{'"));
+        };
+        let tokens = self.collect_group_content(&close)?;
+        // 内置格式化宏：参数 = 表达式列表
+        if is_builtin_macro(&name) {
+            let mut wrapped = Vec::with_capacity(tokens.len() + 2);
+            wrapped.push(LocatedToken::new(Token::LParen, start));
+            for t in tokens {
+                wrapped.push(LocatedToken::new(t, start));
+            }
+            wrapped.push(LocatedToken::new(Token::RParen, start));
+            let mut sub = Parser::from_tokens(wrapped, self.macros.clone(), self.macro_depth);
+            let (args, _) = sub.parse_call_args()?;
+            if !sub.at_eof() {
+                return Err(ParseError::Macro {
+                    msg: format!("宏 `{name}` 的参数解析后有多余 token"),
+                    line: start.line,
+                    col: start.col,
+                });
+            }
+            let span = self.span_until_current(start);
+            return Ok(AstExpr::new(
+                ExprKind::MacroCall {
+                    name: format!("{name}!"),
+                    args,
+                },
+                span,
+            ));
+        }
+        // 用户宏：token 流展开 → 递归解析
+        if self.macro_depth >= MAX_MACRO_DEPTH {
+            return Err(ParseError::Macro {
+                msg: format!(
+                    "宏 `{name}` 展开超过深度上限 {MAX_MACRO_DEPTH}（疑似无限递归）"
+                ),
+                line: start.line,
+                col: start.col,
+            });
+        }
+        if self.macros.contains_key(&name) {
+            self.macro_depth += 1;
+            let result = (|| {
+                let expanded = expand_macro(&self.macros, &name, &tokens).map_err(|e| {
+                    ParseError::Macro {
+                        msg: e.0,
+                        line: start.line,
+                        col: start.col,
+                    }
+                })?;
+                let located: Vec<LocatedToken> = expanded
+                    .into_iter()
+                    .map(|t| LocatedToken::new(t, start))
+                    .collect();
+                let mut sub =
+                    Parser::from_tokens(located, self.macros.clone(), self.macro_depth);
+                let expr = sub.parse_expr()?;
+                if !sub.at_eof() {
+                    return Err(ParseError::Macro {
+                        msg: format!(
+                            "宏 `{name}` 展开产物含多余 token（transcriber 应展开为单个表达式）"
+                        ),
+                        line: start.line,
+                        col: start.col,
+                    });
+                }
+                Ok(expr)
+            })();
+            self.macro_depth -= 1;
+            return result;
+        }
+        Err(ParseError::Macro {
+            msg: format!(
+                "未定义的宏 `{name}`（内置格式化宏：println!/print!/format!/dbg!）"
+            ),
+            line: start.line,
+            col: start.col,
+        })
     }
 
     /// 判断当前位置是否为结构体字面量构造 `Ident { field: value, ... }`。
@@ -763,9 +876,14 @@ impl<'src> Parser<'src> {
         Ok(AstExpr::new(ExprKind::Break(value), span))
     }
 
-    /// 语句终止符：`;` `}` 或 EOF
+    /// 语句终止符：`;` `}` `,`（match 臂尾）或 EOF。
+    /// `,` 用于 `match { None => break, Some(v) => return v, }` 等臂体为
+    /// 无值 break/return 的场景（`break,` / `return,`）。
     fn stmt_terminator(&self) -> bool {
-        self.check(&Token::Semicolon) || self.check(&Token::RBrace) || self.at_eof()
+        self.check(&Token::Semicolon)
+            || self.check(&Token::RBrace)
+            || self.check(&Token::Comma)
+            || self.at_eof()
     }
 
     /// send 表达式：`send actor.method(args)`
@@ -912,6 +1030,11 @@ fn binary_op(tok: &Token) -> BinaryOp {
         Token::OrOr => BinaryOp::Or,
         _ => unreachable!("guarded by infix_info"),
     }
+}
+
+/// 内置格式化宏（I2：由 typecheck 层 desugar 为字符串拼接 + 打印内建）。
+pub(crate) fn is_builtin_macro(name: &str) -> bool {
+    matches!(name, "println" | "print" | "format" | "dbg")
 }
 
 // 注意：parse_match_arm 定义在 stmt.rs，见 `impl Parser` 的 parse_match_arm。

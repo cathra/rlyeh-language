@@ -1,10 +1,15 @@
 //! 解析器核心：Token 流管理、辅助方法、顶层项分发。
 
 use crate::error::ParseError;
+use std::collections::HashMap;
 use std::marker::PhantomData;
-use zeta_ast::{AstItem, AstProgram};
+use zeta_ast::{AstItem, AstMacroDecl, AstProgram};
+use zeta_macro::{parse_matcher, parse_transcriber, MacroRule};
 
 use zeta_lexer::{Lexer, LocatedToken, Span, Token};
+
+/// 宏展开递归深度上限（防无限递归展开）
+pub(crate) const MAX_MACRO_DEPTH: usize = 64;
 
 /// Zeta 语法分析器。
 ///
@@ -20,6 +25,10 @@ pub struct Parser<'src> {
     pub(crate) pending_gt: usize,
     /// 最后被消费 token 的起始行号（用于判断块类表达式 `}` 与后续中缀运算符是否跨行）
     pub(crate) last_line: usize,
+    /// 声明式宏注册表（`macro_rules!`，宏名 → 规则列表）
+    pub(crate) macros: HashMap<String, Vec<MacroRule>>,
+    /// 宏展开递归深度（防无限展开）
+    pub(crate) macro_depth: usize,
     /// 生命周期占位：保留泛型参数以兼容宏体切片等未来扩展
     _source: PhantomData<&'src str>,
 }
@@ -33,8 +42,29 @@ impl<'src> Parser<'src> {
             pos: 0,
             pending_gt: 0,
             last_line: 0,
+            macros: HashMap::new(),
+            macro_depth: 0,
             _source: PhantomData,
         })
+    }
+
+    /// 从展开后的 token 序列构造子分析器（宏展开产物递归解析用）。
+    ///
+    /// 继承宏注册表（嵌套宏调用可在展开产物中继续展开）与展开深度计数。
+    pub(crate) fn from_tokens(
+        tokens: Vec<LocatedToken>,
+        macros: HashMap<String, Vec<MacroRule>>,
+        macro_depth: usize,
+    ) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            pending_gt: 0,
+            last_line: 0,
+            macros,
+            macro_depth,
+            _source: PhantomData,
+        }
     }
 
     /// 解析完整程序
@@ -208,11 +238,137 @@ impl<'src> Parser<'src> {
             Some(Token::Async) | Some(Token::Unsafe) | Some(Token::Extern) => {
                 Ok(AstItem::FnDecl(Box::new(self.parse_fn()?)))
             }
+            // `macro_rules! name { ... }` 声明式宏（I1）：定义注册到
+            // `self.macros`，产出占位 AstItem（typecheck 忽略，展开发生在 parse 阶段）
+            // （`macro_rules` 为单个标识符，lexer 不拆分为 `macro` + `rules`）
+            Some(Token::Ident(name)) if name == "macro_rules" => {
+                Ok(AstItem::MacroDecl(Box::new(self.parse_macro_rules()?)))
+            }
             _ => {
                 let stmt = self.parse_stmt()?;
                 Ok(AstItem::Statement(Box::new(stmt)))
             }
         }
+    }
+
+    /// 解析 `macro_rules! name { (matcher) => { transcriber }; ... }`（MVP）。
+    ///
+    /// matcher / transcriber 为定界组（内容 token 剥离外层定界符后交给
+    /// `zeta-macro` 解析）；transcriber 也可为裸 token 序列（到顶层 `;`）。
+    fn parse_macro_rules(&mut self) -> Result<AstMacroDecl, ParseError> {
+        let start = self
+            .peek()
+            .map(|lt| lt.span)
+            .unwrap_or(Span { start: 0, end: 0, line: 1, col: 1 });
+        self.bump(); // macro_rules
+        self.expect(&Token::NotNot, "'!'")?;
+        let name = self.expect_ident()?;
+        self.expect(&Token::LBrace, "'{'")?;
+        let mut rules = Vec::new();
+        while !self.check(&Token::RBrace) {
+            if self.at_eof() {
+                return Err(self.unexpected("'}' (macro_rules 未闭合)"));
+            }
+            let matcher_span = self
+                .peek()
+                .map(|lt| lt.span)
+                .unwrap_or(Span { start: 0, end: 0, line: 1, col: 1 });
+            // matcher `( tokens )`：`collect_group_content` 会自行消费开定界符，
+            // 这里不能预先 expect(LParen)，否则会双重消费吞掉首个 `$` token
+            let matcher_tokens = self.collect_group_content(&Token::RParen)?;
+            let matcher = parse_matcher(&matcher_tokens).map_err(|e| ParseError::Macro {
+                msg: format!("{}：{}", name, e.0),
+                line: matcher_span.line,
+                col: matcher_span.col,
+            })?;
+            self.expect(&Token::FatArrow, "'=>'")?;
+            // transcriber：定界组整体 或 裸 token 序列（到顶层 `;`）
+            let trans_tokens = if self.check(&Token::LBrace)
+                || self.check(&Token::LBracket)
+                || self.check(&Token::LParen)
+            {
+                let open = self.current().cloned().expect("checked");
+                let close = match open {
+                    Token::LBrace => Token::RBrace,
+                    Token::LBracket => Token::RBracket,
+                    _ => Token::RParen,
+                };
+                self.collect_group_content(&close)?
+            } else {
+                // 裸 token 序列：收集到顶层 `;`
+                let mut out = Vec::new();
+                while !self.at_eof() && !self.check(&Token::Semicolon) {
+                    out.push(self.bump().expect("checked").token);
+                }
+                out
+            };
+            let transcriber =
+                parse_transcriber(&trans_tokens).map_err(|e| ParseError::Macro {
+                    msg: format!("{}：{}", name, e.0),
+                    line: matcher_span.line,
+                    col: matcher_span.col,
+                })?;
+            rules.push(MacroRule {
+                matcher,
+                transcriber,
+            });
+            self.eat(&Token::Semicolon);
+        }
+        self.expect(&Token::RBrace, "'}'")?;
+        self.macros.insert(name.clone(), rules);
+        let end = self.peek().map(|lt| lt.span).unwrap_or(start);
+        Ok(AstMacroDecl {
+            name,
+            params: Vec::new(),
+            body: String::new(),
+            span: self.merge_span(start, end),
+        })
+    }
+
+    /// 收集当前开定界符组的内容 token（深度计数），并消费到配对的 `close`。
+    ///
+    /// 当前 token 须为 `close` 对应的开定界符；返回内容 token（不含定界符本身）。
+    pub(crate) fn collect_group_content(
+        &mut self,
+        close: &Token,
+    ) -> Result<Vec<Token>, ParseError> {
+        let span = self
+            .peek()
+            .map(|lt| lt.span)
+            .unwrap_or(Span { start: 0, end: 0, line: 1, col: 1 });
+        self.bump(); // 开定界符
+        let mut depth = 1usize;
+        let mut out = Vec::new();
+        while !self.at_eof() {
+            let t = self.current().cloned().expect("checked");
+            match t {
+                // 所有开定界符加深
+                Token::LParen | Token::LBracket | Token::LBrace => {
+                    depth += 1;
+                    out.push(t);
+                    self.bump();
+                }
+                // 闭合符：目标 close 归零时结束（其余闭合符仅减深）
+                Token::RParen | Token::RBracket | Token::RBrace => {
+                    depth -= 1;
+                    if &t == close && depth == 0 {
+                        self.bump(); // 消费 close
+                        return Ok(out);
+                    }
+                    out.push(t);
+                    self.bump();
+                }
+                _ => {
+                    out.push(t);
+                    self.bump();
+                }
+            }
+        }
+        Err(ParseError::Macro {
+            msg: "定界组未闭合".into(),
+            line: span.line,
+            col: span.col,
+        })
     }
 
     /// 当前 token 是否可能开启一个顶层项

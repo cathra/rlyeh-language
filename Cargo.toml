@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/zeta-lexer",
+    "crates/zeta-macro",
     "crates/zeta-parser",
     "crates/zeta-ast",
     "crates/zeta-hir",
@@ -14,6 +15,7 @@ members = [
     "crates/zeta-driver",
     "crates/zeta-std",
     "crates/zeta-actor-runtime",
+    "crates/zeta-gc-runtime",
     "crates/zeta-region-alloc",
     "crates/zeta-lsp",
     "tools/zeta-fmt",
@@ -39,6 +41,7 @@ zeta-hir = { path = "crates/zeta-hir" }
 zeta-mir = { path = "crates/zeta-mir" }
 zeta-lir = { path = "crates/zeta-lir" }
 zeta-lexer = { path = "crates/zeta-lexer" }
+zeta-macro = { path = "crates/zeta-macro" }
 zeta-parser = { path = "crates/zeta-parser" }
 zeta-typecheck = { path = "crates/zeta-typecheck" }
 zeta-borrowck = { path = "crates/zeta-borrowck" }
@@ -47,6 +50,7 @@ zeta-codegen = { path = "crates/zeta-codegen" }
 zeta-driver = { path = "crates/zeta-driver" }
 zeta-std = { path = "crates/zeta-std" }
 zeta-actor-runtime = { path = "crates/zeta-actor-runtime" }
+zeta-gc-runtime = { path = "crates/zeta-gc-runtime" }
 zeta-region-alloc = { path = "crates/zeta-region-alloc" }
 zeta-lsp = { path = "crates/zeta-lsp" }
 zeta-fmt = { path = "tools/zeta-fmt" }

@@ -46,6 +46,17 @@ pub enum ParseError {
         col: usize,
     },
 
+    /// 宏错误（`macro_rules!` 定义 / 调用 / 展开失败）。
+    #[error("macro error: {msg} at {line}:{col}")]
+    Macro {
+        /// 错误信息
+        msg: String,
+        /// 行号
+        line: usize,
+        /// 列号
+        col: usize,
+    },
+
     /// 词法错误
     #[error(transparent)]
     LexError(#[from] LexError),
@@ -57,7 +68,8 @@ impl ParseError {
         match self {
             ParseError::UnexpectedToken { line, col, .. }
             | ParseError::InvalidComparisonChain { line, col }
-            | ParseError::MissingExpr { line, col, .. } => Span {
+            | ParseError::MissingExpr { line, col, .. }
+            | ParseError::Macro { line, col, .. } => Span {
                 start: 0,
                 end: 0,
                 line: *line,

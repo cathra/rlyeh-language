@@ -342,9 +342,11 @@ RegionPlan {
 
 ---
 
-## 4. L2：引用计数（规划）
+## 4. L2：引用计数
 
-> **实现状态**：❌ 未实现（规划）。`Rc<T>`/`Arc<T>` 为目标 API。
+> **实现状态**：`Rc<T>`/`Arc<T>` 已实现（K3 ✅：编译器内建，`Rc::new`/`clone`/`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`Weak::upgrade` + 解引用/字段/方法/索引自动剥层）。
+>
+> **MVP 布局注记**：规范语义布局为 `RcInner = { strong, weak, value }`；MVP 编译器实现改为 **`T` 值区自堆首槽起（槽 0..`n`，`n = slot_count(T)`，与 `Box<T>` 同构，剥层零差异）+ 尾部计数槽（槽 `n` = strong、槽 `n + 1` = weak）**，分配 `(n + 2)` 个 8 字节槽。计数槽为普通整数（8 字节槽，FieldScalar::Int）：`Arc` 与 `Rc` 同构，`AtomicUsize` 原子性规划中。MVP 无自动 drop（编译器不生成析构代码），计数只增不减，显式释放语义规划中（与 `Box`/`Vec`/`String` 一致）。
 
 ### 4.1 Rc<T>（单线程）
 

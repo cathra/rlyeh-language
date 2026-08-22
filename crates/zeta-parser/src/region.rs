@@ -6,6 +6,15 @@ use zeta_ast::{AstExpr, ExprKind, RegionOptions};
 use zeta_lexer::Token;
 
 impl<'src> Parser<'src> {
+    /// 解析 gc_region 表达式：`gc_region { body }`（K4 追踪 GC 生命周期作用域，
+    /// 离开块触发 GC 周期）
+    pub(crate) fn parse_gc_region_expr(&mut self) -> Result<AstExpr, ParseError> {
+        let start = self.expect(&Token::GcRegion, "'gc_region'")?.span;
+        let body = self.parse_block()?;
+        let span = self.merge_span(start, body.span);
+        Ok(AstExpr::new(ExprKind::GcRegion { body }, span))
+    }
+
     /// 解析 region 表达式：
     /// `region ['r] [with_size(N)] [allow_growth[(growth_factor=f)]] [adaptive] [exact] { body }`
     pub(crate) fn parse_region_expr(&mut self) -> Result<AstExpr, ParseError> {

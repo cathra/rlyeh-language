@@ -159,6 +159,7 @@ impl MirLowerer {
             HirExpr::CharLiteral(c) => Some(MirValue::Char(*c)),
             HirExpr::BoolLiteral(b) => Some(MirValue::Bool(*b)),
             HirExpr::Unit => Some(MirValue::Unit),
+            HirExpr::FnPtr(name) => Some(MirValue::FnRef(name.clone())),
             HirExpr::Variable(v) => Some(MirValue::Place(v.clone())),
             HirExpr::Assign { target, op, value } => {
                 // 先求值右侧（副作用顺序），再读 target 构造复合赋值
@@ -218,6 +219,27 @@ impl MirLowerer {
                     target: Some(tmp.clone()),
                     callee: callee.clone(),
                     args: arg_places,
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::CallIndirect {
+                callee,
+                args,
+                param_names,
+                ret_name,
+            } => {
+                let callee_place = self.lower_expr(callee)?;
+                let mut arg_places = Vec::with_capacity(args.len());
+                for a in args {
+                    arg_places.push(self.lower_expr(a)?);
+                }
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::CallIndirect {
+                    target: Some(tmp.clone()),
+                    callee: callee_place,
+                    args: arg_places,
+                    param_names: param_names.clone(),
+                    ret_name: ret_name.clone(),
                 });
                 Some(MirValue::Place(tmp))
             }

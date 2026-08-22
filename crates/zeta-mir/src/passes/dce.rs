@@ -86,7 +86,8 @@ fn collect_used(value: &MirValue, used: &mut HashSet<Local>) {
         | MirValue::String(_)
         | MirValue::Char(_)
         | MirValue::Bool(_)
-        | MirValue::Unit => {}
+        | MirValue::Unit
+        | MirValue::FnRef(_) => {}
     }
 }
 
@@ -114,6 +115,12 @@ fn remove_dead_assignments(f: &mut MirFunction) {
                 MirStmt::Assign { value, .. } => collect_used(value, &mut used),
                 MirStmt::Call { args, .. } => {
                     // 调用可能有副作用（如 `print` / `println`），参数必活跃
+                    used.extend(args.iter().cloned());
+                }
+                MirStmt::CallIndirect { callee, args, .. } => {
+                    // 间接调用可能调用任意函数（副作用未知），
+                    // 函数指针与实参必活跃，否则实参赋值会被误删
+                    used.insert(callee.clone());
                     used.extend(args.iter().cloned());
                 }
                 MirStmt::FieldGet { base, .. } => {

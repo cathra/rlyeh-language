@@ -137,6 +137,19 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                     }
                     // 用户函数调用：跨函数类型在全部推断完成后解析
                     MirStmt::Call { .. } => {}
+                    // 间接调用：签名类型名已显式携带，直接解析登记
+                    MirStmt::CallIndirect {
+                        target,
+                        ret_name,
+                        callee,
+                        ..
+                    } => {
+                        if let Some(t) = target {
+                            changed |= set_type(&mut ty, t, parse_extern_type(ret_name))?;
+                        }
+                        // 函数指针变量统一为指针槽
+                        changed |= set_type(&mut ty, callee, LirType::Ptr)?;
+                    }
                     MirStmt::Alloc { target, .. } => {
                         changed |= set_type(&mut ty, target, LirType::Ptr)?;
                     }
@@ -203,6 +216,18 @@ fn collect_locals(f: &MirFunction) -> Vec<Local> {
                     if let Some(t) = target {
                         names.push(t.clone());
                     }
+                    names.extend(args.iter().cloned());
+                }
+                MirStmt::CallIndirect {
+                    target,
+                    callee,
+                    args,
+                    ..
+                } => {
+                    if let Some(t) = target {
+                        names.push(t.clone());
+                    }
+                    names.push(callee.clone());
                     names.extend(args.iter().cloned());
                 }
                 MirStmt::AllocInRegion { target, .. } => names.push(target.clone()),
@@ -315,6 +340,8 @@ fn infer_value_type(v: &MirValue, ty: &HashMap<Local, LirType>) -> Option<LirTyp
                 HirUnaryOp::Not => LirType::Bool,
             })
         }
+        // 函数地址：指针（统一为 i8* 槽）
+        MirValue::FnRef(_) => Some(LirType::Ptr),
     }
 }
 
@@ -609,6 +636,22 @@ impl FunctionLowerer {
                     args: args.clone(),
                 });
             }
+            MirStmt::CallIndirect {
+                target,
+                callee,
+                args,
+                param_names,
+                ret_name,
+            } => {
+                let param_tys = param_names.iter().map(|n| parse_extern_type(n)).collect();
+                out.push(LirStmt::CallIndirect {
+                    target: target.clone(),
+                    callee: callee.clone(),
+                    args: args.clone(),
+                    param_tys,
+                    ret_ty: parse_extern_type(ret_name),
+                });
+            }
             MirStmt::RegionEnter { name, .. } => {
                 out.push(LirStmt::RegionEnter { name: name.clone() });
             }
@@ -831,6 +874,7 @@ impl FunctionLowerer {
             MirValue::Bool(b) => Ok(LirOperand::Bool(*b)),
             MirValue::Unit => Ok(LirOperand::Unit),
             MirValue::Place(l) => Ok(LirOperand::Local(l.clone())),
+            MirValue::FnRef(name) => Ok(LirOperand::FnPtr(name.clone())),
             MirValue::Binary { op, lhs, rhs } => {
                 // 嵌套二元 → 拆平到临时变量；
                 // ty 字段为操作数类型，临时变量槽登记为结果类型（比较 / 逻辑 → bool）
