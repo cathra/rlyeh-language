@@ -166,19 +166,26 @@ pub enum LirStmt {
         /// 返回类型
         ret_ty: LirType,
     },
-    /// 区域进入（后端可忽略）
+    /// 区域进入（L3 接线：`zeta_region_enter`）
     RegionEnter {
         /// 区域名（匿名区域为 `None`）
         name: Option<String>,
+        /// 区域选项（初始大小 / 扩容 / 自适应 / 精确 / 策略）
+        options: zeta_hir::HirRegionOptions,
     },
-    /// 区域退出（后端可忽略）
-    RegionExit,
-    /// 区域归属登记（后端可忽略）
+    /// 区域退出（L3 接线：`zeta_region_exit`）
+    RegionExit {
+        /// 区域名（与 `RegionEnter` 配对；匿名区域为 `None`）
+        name: Option<String>,
+    },
+    /// 区域归属分配（L3 接线：`zeta_region_alloc` + 值镜像）
     AllocInRegion {
         /// 目标变量
         target: Local,
         /// 区域名
         region: String,
+        /// 对象字节大小（`type_slot_count × 8`，0 = 标量 / 无需接线）
+        size: usize,
     },
     /// 所有权转移（后端可忽略）
     Transfer {

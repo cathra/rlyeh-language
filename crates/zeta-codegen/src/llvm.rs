@@ -46,6 +46,11 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     out.push_str("declare void @free(i8*)\n");
     out.push_str("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)\n");
     out.push_str("declare i32 @memcmp(i8*, i8*, i64)\n");
+    // L3 region 接线：zeta-region-alloc 运行时（driver 链接 libzeta_region_alloc.a）
+    out.push_str("declare i8* @zeta_region_enter(i8*, i64, i64, i8, double, i8, i8, i8)\n");
+    out.push_str("declare i8* @zeta_region_alloc(i8*, i64, i64)\n");
+    out.push_str("declare void @zeta_region_transfer(i8*, i8*)\n");
+    out.push_str("declare void @zeta_region_exit(i8*)\n");
     for g in &emitter.globals {
         out.push_str(g);
         out.push('\n');
@@ -168,6 +173,22 @@ impl LlvmEmitter {
         for (name, ty) in &f.params {
             let lt = llvm_type(*ty)?;
             body.push_str(&format!("  store {lt} %{name}, {lt}* %{name}.addr\n"));
+        }
+
+        // L3 region 接线：按区域名预分配区域句柄槽（匿名区域已由 MIR lower
+        // 赋唯一内部名；同名嵌套区域 MVP 不支持，区域名须在函数内唯一）。
+        let mut region_keys: Vec<String> = Vec::new();
+        for b in &f.blocks {
+            for s in &b.stmts {
+                if let LirStmt::RegionEnter { name: Some(n), .. } = s {
+                    if !region_keys.contains(n) {
+                        region_keys.push(n.clone());
+                    }
+                }
+            }
+        }
+        for key in &region_keys {
+            body.push_str(&format!("  %{key}.rh = alloca i8*\n"));
         }
 
         // 基本块
@@ -524,11 +545,77 @@ impl LlvmEmitter {
                     body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
                 }
             }
-            // 区域标注指令：LLVM 后端 MVP 忽略
-            LirStmt::RegionEnter { .. }
-            | LirStmt::RegionExit
-            | LirStmt::AllocInRegion { .. }
-            | LirStmt::Transfer { .. } => {}
+            // L3 region 接线：region 指令 → zeta-region-alloc 运行时调用
+            // （区域句柄槽 `%{key}.rh` 已在入口块预分配）
+            LirStmt::RegionEnter { name, options } => {
+                let key = match name {
+                    Some(n) if !n.is_empty() => n.clone(),
+                    _ => "__anon".to_string(),
+                };
+                let handle = format!("{key}.rh");
+                // 区域名指针：Apple clang 21 不认 `%r = getelementptr inbounds
+                // ([N x i8], ...)` 独立指令（报 "expected type"），改用 bitcast
+                // 指令形式取字符串首地址，再以 `i8* %r` 作实参引用。
+                let nptr_arg = if key == "__anon" {
+                    "i8* null".to_string()
+                } else {
+                    let nptr_reg = self.emit_string_global_ptr(body, &key)?;
+                    format!("i8* {nptr_reg}")
+                };
+                let nlen = key.len();
+                let initial = options.size.unwrap_or(0) as u64;
+                let allow_growth = if options.allow_growth { 1 } else { 0 };
+                let factor = options.growth_factor.unwrap_or(2.0);
+                let factor_s = if factor.fract() == 0.0 {
+                    format!("{factor:.1}")
+                } else {
+                    format!("{factor}")
+                };
+                let exact = if options.exact { 1 } else { 0 };
+                let adaptive = if options.adaptive { 1 } else { 0 };
+                let strategy = if options.strategy.is_some() { 1 } else { 0 };
+                let r = self.reg();
+                body.push_str(&format!(
+                    "  %{r} = call i8* @zeta_region_enter({nptr_arg}, i64 {nlen}, i64 {initial}, i8 {allow_growth}, double {factor_s}, i8 {exact}, i8 {adaptive}, i8 {strategy})\n"
+                ));
+                body.push_str(&format!("  store i8* %{r}, i8** %{handle}\n"));
+            }
+            LirStmt::RegionExit { name } => {
+                let key = match name {
+                    Some(n) if !n.is_empty() => n.clone(),
+                    _ => "__anon".to_string(),
+                };
+                let handle = format!("{key}.rh");
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
+                body.push_str(&format!("  call void @zeta_region_exit(i8* %{r})\n"));
+            }
+            LirStmt::AllocInRegion { target, region, size } => {
+                // 仅聚合对象（Ptr 槽）接线：区域内 bump 分配 + 值镜像；
+                // 标量 `in 'r` 无区域分配语义（MVP 保持栈上副本）。
+                if *size > 0 && local_type(f, target) == LirType::Ptr {
+                    let handle = format!("{region}.rh");
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
+                    let p = self.reg();
+                    body.push_str(&format!(
+                        "  %{p} = call i8* @zeta_region_alloc(i8* %{r}, i64 {size}, i64 8)\n"
+                    ));
+                    let v = self.operand_value(&LirOperand::Local(target.clone()), LirType::Ptr, body, f)?;
+                    body.push_str(&format!(
+                        "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{p}, i8* {v}, i64 {size}, i1 false)\n"
+                    ));
+                }
+            }
+            LirStmt::Transfer { place, region } => {
+                let handle = format!("{region}.rh");
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
+                let v = self.operand_value(&LirOperand::Local(place.clone()), LirType::Ptr, body, f)?;
+                body.push_str(&format!(
+                    "  call void @zeta_region_transfer(i8* %{r}, i8* {v})\n"
+                ));
+            }
         }
         Ok(())
     }
@@ -975,6 +1062,33 @@ impl LlvmEmitter {
         ))
     }
 
+    /// 生成字符串全局常量，并以 `bitcast` **指令**形式取其 `i8*` 首地址，
+    /// 返回结果寄存器名。
+    ///
+    /// Apple clang 21 不接受 `%r = getelementptr inbounds ([N x i8], ...)`
+    /// 的独立指令形式（报 `expected type`，但同一表达式内联在 `store` 中
+    /// 合法），故需独立取地址值的场景（如区域名指针实参）改用 bitcast。
+    fn emit_string_global_ptr(
+        &mut self,
+        body: &mut String,
+        s: &str,
+    ) -> Result<String, CodegenError> {
+        let idx = self.global_counter;
+        self.global_counter += 1;
+        let name = format!("@.str.{idx}");
+        let (escaped, bytes) = escape_llvm_string(s);
+        self.globals.push(format!(
+            "{name} = private unnamed_addr constant [{len} x i8] c\"{escaped}\\00\"",
+            len = bytes + 1
+        ));
+        let reg = self.reg();
+        body.push_str(&format!(
+            "  %{reg} = bitcast [{len} x i8]* {name} to i8*\n",
+            len = bytes + 1
+        ));
+        Ok(format!("%{reg}"))
+    }
+
     /// 生成格式串全局常量并返回 GEP 表达式。
     fn emit_fmt_global(&mut self, s: &str) -> Result<String, CodegenError> {
         let idx = self.global_counter;
@@ -1134,7 +1248,9 @@ fn escape_llvm_string(s: &str) -> (String, usize) {
         bytes += 1;
         match b {
             b'\\' => out.push_str("\\\\"),
-            b'"' => out.push_str("\\\""),
+            // `"` 用十六进制转义（`\"` 在 LLVM 字符串常量中不可靠：`c"\"\00"` 被
+            // clang 解析为 `[1 x i8]`，报长度不匹配；`\22` 无歧义）
+            b'"' => out.push_str("\\22"),
             b'\n' => out.push_str("\\0A"),
             b'\r' => out.push_str("\\0D"),
             b'\t' => out.push_str("\\09"),

@@ -6,8 +6,9 @@
 //!
 //! MVP 限制（详见 `docs/grammar.md` §2.14）：
 //! - 元变量种类支持 `$x:expr` / `$x:ident` / `$x:ty` / `$x:tt`；
-//!   `$x:expr` 捕获「单个原子」——定界组整体（`(...)`/`[...]`/`{...}`）或单个 token
-//!   （字面量 / 标识符 / 布尔等），不支持任意表达式 token 序列。
+//!   `$x:expr` 捕获完整表达式 token 序列（token 级优先级爬升：前缀一元
+//!   `-`/`!`/`not`/`&`/`*`、二元中缀、后缀调用/索引/成员/`?`/`as` 转换），
+//!   如 `a > b`、`-1`、`f(x) + 1` 均可捕获。
 //! - 重复支持 `$($inner),sep op`（op 为 `*` `+` `?`）；transcriber 中的 `$x`
 //!   与 `$($inner),*` 展开按捕获迭代。
 //! - 宏须在使用前定义（单遍展开，无前向引用）；无 hygiene（全局名称匹配）。
@@ -368,17 +369,150 @@ fn push_binding(bindings: &mut Bindings, name: &str, tokens: Vec<Token>) {
     bindings.entry(name.to_string()).or_default().push(tokens);
 }
 
-/// 消费一个「原子」（定界组整体 或 单个 token），返回消费数。
-fn consume_atom(input: &[Token]) -> Option<usize> {
-    match input.first()? {
-        t if is_open(t) => {
-            let (_, end) = find_group(input, 0)?;
-            Some(end)
+/// 判断 token 是否为前缀一元运算符（`-x` / `!x` / `not x` / `&x` / `*p`）。
+fn is_prefix_op(t: &Token) -> bool {
+    matches!(
+        t,
+        Token::Minus
+            | Token::Plus
+            | Token::NotNot
+            | Token::Not
+            | Token::BitAnd
+            | Token::Star
+    )
+}
+
+/// 判断 token 是否为二元中缀运算符。
+fn is_binary_op(t: &Token) -> bool {
+    matches!(
+        t,
+        Token::OrOr
+            | Token::AndAnd
+            | Token::BitOr
+            | Token::BitXor
+            | Token::BitAnd
+            | Token::Eq
+            | Token::Ne
+            | Token::Lt
+            | Token::Le
+            | Token::Gt
+            | Token::Ge
+            | Token::Shl
+            | Token::Shr
+            | Token::Plus
+            | Token::Minus
+            | Token::Star
+            | Token::Slash
+            | Token::Percent
+            | Token::In
+            | Token::NotIn
+            | Token::Range
+            | Token::DotDotLt
+            | Token::DotDotDot
+            | Token::LtDotDot
+    )
+}
+
+/// 消费一个类型 token 序列（`i64` / `String` / `Vec<i64>` / `mod::Type`），返回消费数。
+fn consume_ty(input: &[Token], pos: usize) -> Option<usize> {
+    match input.get(pos)? {
+        Token::Ident(_) => {
+            let mut p = pos + 1;
+            // 路径段 `a::b::Type`
+            while input.get(p) == Some(&Token::Colon) && input.get(p + 1) == Some(&Token::Colon) {
+                p += 2;
+                if !matches!(input.get(p), Some(Token::Ident(_))) {
+                    return None;
+                }
+                p += 1;
+            }
+            // 泛型参数 `Vec<i64>` / `HashMap<i64, String>`（尖括号深度配对）
+            if input.get(p) == Some(&Token::Lt) {
+                let mut depth = 1usize;
+                let mut q = p + 1;
+                while q < input.len() && depth > 0 {
+                    match input.get(q) {
+                        Some(Token::Lt) => depth += 1,
+                        Some(Token::Gt) => depth -= 1,
+                        None => return None,
+                        _ => {}
+                    }
+                    q += 1;
+                }
+                p = q;
+            }
+            Some(p)
         }
-        t if is_close(t) => None,
-        Token::Comma => None,
-        _ => Some(1),
+        _ => None,
     }
+}
+
+/// 消费一个操作数（前缀一元 * 原子 * 后缀），返回消费数。
+fn consume_operand(input: &[Token], mut pos: usize) -> Option<usize> {
+    // 前缀一元
+    while input.get(pos).is_some_and(is_prefix_op) {
+        pos += 1;
+    }
+    // 原子操作数：定界组整体 / 标识符 / 字面量
+    match input.get(pos)? {
+        t if is_open(t) => pos = find_group(input, pos)?.1,
+        Token::Ident(_)
+        | Token::True
+        | Token::False
+        | Token::IntLiteral(_)
+        | Token::FloatLiteral(_)
+        | Token::StringLiteral(_)
+        | Token::CharLiteral(_)
+        | Token::BoolLiteral(_)
+        | Token::TimeLiteral { .. } => pos += 1,
+        _ => return None,
+    }
+    // 后缀：调用 `(...)` / 索引 `[...]` / 成员 `.x` / `?` / `as` 类型转换
+    loop {
+        match input.get(pos) {
+            None => break,
+            Some(Token::LParen) | Some(Token::LBracket) => pos = find_group(input, pos)?.1,
+            Some(Token::Dot) => {
+                pos += 1;
+                if !matches!(input.get(pos), Some(Token::Ident(_))) {
+                    return None;
+                }
+                pos += 1;
+            }
+            Some(Token::Question) => pos += 1,
+            // 宏调用操作数 `f!(...)`：`!` 后须跟开定界符组
+            Some(Token::NotNot) if matches!(input.get(pos + 1), Some(t) if is_open(t)) => {
+                pos += 1;
+                pos = find_group(input, pos)?.1;
+            }
+            Some(Token::As) => {
+                pos += 1;
+                pos = consume_ty(input, pos)?;
+            }
+            Some(_) => break,
+        }
+    }
+    Some(pos)
+}
+
+/// 消费一个完整表达式（token 级优先级爬升），返回消费数。
+///
+/// 支持：前缀一元（`-` `+` `!` `not` `&` `*`）、二元中缀（`||` `&&` 位运算
+/// 比较 加减乘除模 移位 `in` 范围）、后缀（调用 / 索引 / 成员 / `?` / `as`）。
+/// 边界：遇 `,` `)` `]` `}` `;` `=` `=>` `:` 等分隔 token 即停止。
+fn consume_expr(input: &[Token]) -> Option<usize> {
+    let mut pos = consume_operand(input, 0)?;
+    loop {
+        match input.get(pos) {
+            None => break,
+            Some(t) if is_binary_op(t) => {
+                pos += 1;
+                pos = consume_operand(input, pos)?;
+            }
+            Some(_) => break,
+        }
+    }
+    Some(pos)
 }
 
 /// 匹配 matcher 与输入 token 序列；成功返回消费数。
@@ -426,7 +560,7 @@ fn match_matcher(
                     off += n;
                 }
                 MetaKind::Expr => {
-                    let n = consume_atom(rest)?;
+                    let n = consume_expr(rest)?;
                     push_binding(bindings, name, rest[..n].to_vec());
                     off += n;
                 }

@@ -26,13 +26,30 @@ pub enum BorrowError {
         /// 列号（预留）。
         col: usize,
     },
-    /// 借用冲突：同一时刻存在多个可变借用 / 可变与不可变借用并存。
-    ///
-    /// 当前 MVP 阶段 typecheck 拒绝 `&` 取址表达式（返回 `Unsupported`），
-    /// 该变体为防御性预留：待 HIR 引入引用节点（`AddrOf`）后在此处拒绝。
+    /// 借用冲突：同一时刻存在多个可变借用 / 可变与不可变借用并存，
+    /// 或写入（赋值）被借用中的变量（Rust E0502 / E0499 对应）。
     BorrowConflict {
         /// 错误描述。
         detail: String,
+        /// 行号（预留）。
+        line: usize,
+        /// 列号（预留）。
+        col: usize,
+    },
+    /// 对不可变绑定取可变引用（`let x = 1; let r = &mut x;`，Rust E0596 对应）。
+    BorrowMutImmutable {
+        /// 变量名。
+        name: String,
+        /// 行号（预留）。
+        line: usize,
+        /// 列号（预留）。
+        col: usize,
+    },
+    /// 悬垂引用：对局部变量的引用逃逸出其作用域
+    /// （`fn f() -> &i64 { let x = 1; &x }`，Rust E0597 对应）。
+    DanglingReference {
+        /// 被引用（已消亡）的变量名。
+        name: String,
         /// 行号（预留）。
         line: usize,
         /// 列号（预留）。
@@ -67,6 +84,33 @@ impl BorrowError {
             col: 0,
         }
     }
+
+    /// 借用冲突错误构造辅助。
+    pub(crate) fn borrow_conflict(detail: impl Into<String>) -> Self {
+        BorrowError::BorrowConflict {
+            detail: detail.into(),
+            line: 0,
+            col: 0,
+        }
+    }
+
+    /// 对不可变绑定取可变引用错误构造辅助。
+    pub(crate) fn borrow_mut_immutable(name: impl Into<String>) -> Self {
+        BorrowError::BorrowMutImmutable {
+            name: name.into(),
+            line: 0,
+            col: 0,
+        }
+    }
+
+    /// 悬垂引用错误构造辅助。
+    pub(crate) fn dangling_reference(name: impl Into<String>) -> Self {
+        BorrowError::DanglingReference {
+            name: name.into(),
+            line: 0,
+            col: 0,
+        }
+    }
 }
 
 impl fmt::Display for BorrowError {
@@ -83,6 +127,18 @@ impl fmt::Display for BorrowError {
             }
             BorrowError::BorrowConflict { detail, .. } => {
                 write!(f, "borrow conflict: {detail}")
+            }
+            BorrowError::BorrowMutImmutable { name, .. } => {
+                write!(
+                    f,
+                    "cannot borrow `{name}` as mutable, as it is not declared as mutable"
+                )
+            }
+            BorrowError::DanglingReference { name, .. } => {
+                write!(
+                    f,
+                    "`{name}` does not live long enough: borrowed reference escapes its scope"
+                )
             }
             BorrowError::MoveWhileBorrowed { detail, .. } => {
                 write!(f, "cannot move out of a borrowed value: {detail}")

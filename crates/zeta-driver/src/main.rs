@@ -276,10 +276,17 @@ fn build_file(path: &str, out: &Path, opts: &CliOpts) -> Result<(), DriverError>
 
 /// 构建增量驱动。
 fn new_driver(opts: &CliOpts) -> IncrementalDriver {
+    // L3 PGO 回灌：`--profile` 提供区域推荐容量，注入 adaptive 区域初始大小
+    let hints = opts
+        .profile
+        .as_ref()
+        .and_then(|p| zeta_driver::region_hints_from_profile(p).ok())
+        .unwrap_or_default();
     IncrementalDriver::new(opts.cache_dir.clone())
         .with_force(opts.force)
         .with_no_std(opts.no_std)
         .with_target(opts.target.clone())
+        .with_region_hints(hints)
 }
 
 /// 打印缓存命中/未命中与统计（`--verbose`）。

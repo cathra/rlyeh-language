@@ -764,6 +764,78 @@ fn int_to_string(n: i64) -> String {
     }
     buf
 }
+// JSON 字符串转义（L2 serde，`json.stringify` 使用）：
+// `"`(34) → `\"`、`\`(92) → `\\`、换行(10) → `\n`、制表(9) → `\t`，其余字节原样
+fn json_escape(s: String) -> String {
+    let mut buf = String::new();
+    let mut i = 0;
+    while i < s.len {
+        let c = s.get(i);
+        if c == 34 {
+            buf.push_byte(92);
+            buf.push_byte(34);
+        } else if c == 92 {
+            buf.push_byte(92);
+            buf.push_byte(92);
+        } else if c == 10 {
+            buf.push_byte(92);
+            buf.push_byte(110);
+        } else if c == 9 {
+            buf.push_byte(92);
+            buf.push_byte(116);
+        } else {
+            buf.push_byte(c);
+        }
+        i = i + 1;
+    }
+    buf
+}
+// JSON 字符串反转义（L2 serde，`json.parse::<String>` 使用）：
+// 剥离首尾引号（34），还原 `\"`/`\\`/`\n`/`\t` 转义序列
+fn json_unescape(s: String) -> String {
+    let mut buf = String::new();
+    let mut start = 0;
+    if s.len > 0 {
+        if s.get(0) == 34 {
+            start = 1;
+        }
+    }
+    let mut end = s.len;
+    if s.len > 0 {
+        if s.get(s.len - 1) == 34 {
+            end = s.len - 1;
+        }
+    }
+    let mut i = start;
+    while i < end {
+        let c = s.get(i);
+        if c == 92 {
+            if i + 1 < end {
+                let n = s.get(i + 1);
+                if n == 34 {
+                    buf.push_byte(34);
+                } else if n == 92 {
+                    buf.push_byte(92);
+                } else if n == 110 {
+                    buf.push_byte(10);
+                } else if n == 116 {
+                    buf.push_byte(9);
+                } else {
+                    buf.push_byte(c);
+                    buf.push_byte(n);
+                }
+                i = i + 2;
+            } else {
+                buf.push_byte(c);
+                i = i + 1;
+            }
+        } else {
+            buf.push_byte(c);
+            i = i + 1;
+        }
+    }
+    buf
+}
 // 字符串转整数：解析十进制数字（'0'-'9' = 48-57）累加；'-'（45）前缀为负；
 // 遇非数字字符停止解析（返回已解析部分）；空串/无数字返回 0。
 fn string_to_int(s: String) -> i64 {

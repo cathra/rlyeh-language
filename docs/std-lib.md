@@ -26,7 +26,7 @@
 | §7 时间 | ✅ 已实现 | `Duration`/`Instant`（libc `clock()` extern） |
 | §8 格式化与打印 | 🔧 部分 | 内建 `println(expr)`/`print(expr)`（0–1 参数，无 `{}`）；`Display`/`format!` 规划 |
 | §9 序列化 | 📋 规划 | — |
-| §10 异步运行时 | 📋 规划 | actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制） |
+| §10 异步运行时 | 🔧 部分 | 普通函数 `async fn`/`.await` 已支持（L1 ✅，MVP 同步语义）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；`Future`/executor 规划 |
 | §11 智能指针 | 🔧 部分 | `Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）编译器内建已实现；`Gc<T>`（K4）✅ 已实现（MVP，见 §11） |
 | §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；`?` 运算符规划 |
 
@@ -689,7 +689,24 @@ let s = format!("{} + {} = {}", a, b, a + b);
 
 ## 9. 序列化框架
 
+> **实现状态（2026-08-23）**：🔧 部分。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；`Serialize` / `Deserialize` trait 与 `#[derive]` 风格宏仍为规划 API。TOML 模块规划中。
+
+### 9.1 JSON（L2 ✅，编译器内建）
+
 ```zeta
+mod json {
+    fn stringify(value: T) -> String;   // ✅ 内建：i64 / bool / String / &str / 数组 / struct / Vec / HashMap
+    fn parse<T>(s: String) -> T;        // ✅ 内建：i64 / bool / String / HashMap（turbofish 泛型实参 `::<T>`）
+}
+```
+
+- `json::stringify(v)`：`i64`→十进制；`bool`→`true`/`false`；`String`/`&str`→带引号 JSON 字符串（`"` `\` 换行 制表 转义为 `\"` `\\` `\n` `\t`）；数组→`[e0,e1,...]`（静态展开）；struct→`{"f1":v1,"f2":v2}`（字段序 = 定义序，嵌套递归）；`Vec<T>`→`[e0,e1,...]`（while 循环 push_str）；`HashMap<K,V>`→`{"k":v,...}`（L2f：i64/String 键 + 值递归，键序确定性——按容量扫描 states 顺序）。
+- `json::parse::<T>(s)`：turbofish 泛型实参指定目标类型；`i64`→`string_to_int`、`bool`→字节比较、`String`→`json_unescape`（剥离首尾引号 + 还原转义）；`HashMap<K,V>`（L2g：`substring(1, len-1)` 剥离 `{}` → `split(",")` 分段 → `find(":")` 分键值 → 键经 `json_unescape`（i64 键再 `string_to_int`）+ 值递归标量解析 → `HashMap::new()`/`insert` 构建，`let __m: HashMap<K,V>` 注解定型；空 `{}` → 空 map）。**MVP 语义：直接返回 `T`**（非法输入给默认值：`0` / `false` / 空串 / 空 map），非 Result 包装。
+- 转义函数 `json_escape` / `json_unescape` 实现于 std `core.zeta`。
+- MVP 限制：`map![...]`/`vec![...]` 绑定后 K/V（元素）为 `Infer`，须 `let m: HashMap<i64, i64>`（`let v: Vec<i64>`）注解定型（与 `for x in v` 约束一致）；HashMap parse 键/值含逗号或冒号时 `split(",")`/`find(":")` 分段不可靠、嵌套 `HashMap` 值报 Unsupported（值限标量）；`HashMap<i64,Vec<T>>` 值序列化可用但 parse 不支持；自定义 `Serialize` 规划中。
+
+```zeta
+// 目标 API（规划）
 trait Serialize {
     fn serialize(&self, serializer: &mut Serializer) -> Result<(), SerError>;
 }
@@ -698,7 +715,6 @@ trait Deserialize {
     fn deserialize(deserializer: &mut Deserializer) -> Result<Self, DeError>;
 }
 
-// JSON
 mod json {
     fn to_string<T: Serialize>(value: &T) -> Result<String, JsonError>;
     fn from_str<T: Deserialize>(s: &str) -> Result<T, JsonError>;
@@ -716,6 +732,8 @@ mod toml {
 ---
 
 ## 10. 异步运行时
+
+> **实现状态（2026-08-23）**：🔧 部分。普通函数 `async fn` / `.await` 已支持（L1 ✅，MVP 同步语义：`async fn` 编译为同步函数、`expr.await` 直接求值，复用 actor 机制）；actor `async` 方法 + `.await` / `send` 为独立机制（§9，ask 同步往返）。下方 `Future` / `Poll` / `block_on` / `join_all` / `timeout` / `sync` 并发原语仍为规划 API。
 
 ```zeta
 trait Future {

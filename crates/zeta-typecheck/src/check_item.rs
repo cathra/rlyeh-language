@@ -11,7 +11,10 @@ use zeta_hir::{
 };
 use zeta_lexer::Span;
 
-use crate::check_expr::{check_block, infer_expr, resolve_ast_type};
+use crate::check_expr::{
+    check_block, check_block_with_expected_final, fix_deferred_closure_with_sig, infer_expr,
+    resolve_ast_type, try_closure_value_as_fn,
+};
 use crate::context::{FnTemplate, TypeContext};
 use crate::error::TypeError;
 use crate::types::{
@@ -28,7 +31,18 @@ use crate::types::{
 ///
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
 pub fn typecheck(program: &AstProgram) -> Result<HirProgram, TypeError> {
+    typecheck_with_region_hints(program, &Default::default())
+}
+
+/// 类型检查完整程序，并注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
+///
+/// 无提示时等价于 [`typecheck`]；`zeta build --profile` 编译路径使用本入口。
+pub fn typecheck_with_region_hints(
+    program: &AstProgram,
+    region_hints: &std::collections::HashMap<String, usize>,
+) -> Result<HirProgram, TypeError> {
     let mut ctx = TypeContext::new();
+    ctx.region_hints = region_hints.clone();
     collect_declarations(&mut ctx, program)?;
 
     let mut items = Vec::new();
@@ -958,8 +972,12 @@ pub(crate) fn check_fn_body_with_self(
         }
     };
 
-    // 参数进入局部作用域
+    // 参数进入局部作用域（变量表与初始化表一并隔离，防止本函数体
+    // 局部变量名污染调用方——尤其 std 方法体同名变量会覆盖调用方
+    // `local_inits` 的字面量绑定追踪，导致 `String::from(s)` / Str 值
+    // 升级查不到绑定内容）
     let saved = std::mem::take(&mut ctx.variables);
+    let saved_inits = std::mem::take(&mut ctx.local_inits);
     for p in &f.params {
         let ty = if p.name == "self" && self_ty.is_some() {
             self_ty.cloned().unwrap()
@@ -972,18 +990,66 @@ pub(crate) fn check_fn_body_with_self(
     // 返回类型检查（签名在收集阶段已存入，此处重新解析以保持一致性）
     let return_type = fn_signature_with_self(ctx, f, self_ty, f.span)?.return_type;
 
-    let (hir_body, body_ty) = check_block(ctx, body)?;
+    // `fn make() -> fn(i64) -> i64 { |x| x + 1 }`：返回类型为 fn 且函数体
+    // 尾表达式为闭包时，按 H2 无捕获闭包签名检查（H5 补全，返回闭包的函数）。
+    let (mut hir_body, body_ty) = if matches!(&return_type, Type::Fn(_))
+        && body
+            .final_expr
+            .as_ref()
+            .is_some_and(|e| matches!(&*e.kind, zeta_ast::ExprKind::Closure { .. }))
+    {
+        check_block_with_expected_final(ctx, body, Some(&return_type))?
+    } else {
+        check_block(ctx, body)?
+    };
 
     // 返回类型一致性：函数体类型应兼容声明的返回类型
     if body_ty != Type::Never && !body_ty.compatible_with(&return_type) {
-        ctx.variables = saved;
-        return Err(TypeError::WrongType {
-            expected: return_type.to_string(),
-            found: body_ty.to_string(),
-            span: f.span,
-        });
+        // 无捕获闭包值 → fn 指针降级（H5 补全）：
+        // `fn make() -> fn(i64) -> i64 { let f = |x: i64| x + 1; f }`——
+        // 函数体尾表达式为闭包值变量，闭包对象与 fn 返回类型不兼容，但
+        // 零捕获闭包值等价于 fn 指针（调用展开为空字段读取），签名匹配时
+        // 将尾表达式替换为 `FnPtr(__closure_N)`。
+        let mut downgraded = false;
+        if let Type::Fn(sig) = &return_type {
+            // 已固化无捕获闭包值 → fn 指针降级
+            if let Some((fp_hir, fp_ty)) = try_closure_value_as_fn(&body_ty) {
+                if fp_ty.compatible_with(&return_type) && hir_body.final_expr.is_some() {
+                    hir_body.final_expr = Some(fp_hir);
+                    downgraded = true;
+                }
+            }
+            // 未固化延迟闭包值 → 按返回签名固化
+            // （`fn make() -> fn(..) { let f = |x| ..; f }`：参数类型由返回
+            // 签名给出，无捕获时降级为 fn 指针；捕获非空报 Unsupported）
+            if !downgraded
+                && matches!(&body_ty, Type::Closure { fn_name, .. } if fn_name.is_empty())
+            {
+                let var_name = hir_body.final_expr.as_ref().and_then(|fe| match fe {
+                    HirExpr::Variable(n) => Some(n.clone()),
+                    _ => None,
+                });
+                if let Some(n) = var_name {
+                    let (fp_hir, fp_ty) = fix_deferred_closure_with_sig(ctx, &n, sig, f.span)?;
+                    if fp_ty.compatible_with(&return_type) {
+                        hir_body.final_expr = Some(fp_hir);
+                        downgraded = true;
+                    }
+                }
+            }
+        }
+        if !downgraded {
+            ctx.variables = saved;
+            ctx.local_inits = saved_inits;
+            return Err(TypeError::WrongType {
+                expected: return_type.to_string(),
+                found: body_ty.to_string(),
+                span: f.span,
+            });
+        }
     }
 
     ctx.variables = saved;
+    ctx.local_inits = saved_inits;
     Ok(Some(hir_body))
 }

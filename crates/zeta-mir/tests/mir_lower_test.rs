@@ -191,7 +191,7 @@ fn main() -> u32 {
         .iter()
         .map(|s| match s {
             MirStmt::RegionEnter { .. } => "region_enter",
-            MirStmt::RegionExit => "region_exit",
+            MirStmt::RegionExit { .. } => "region_exit",
             MirStmt::AllocInRegion { .. } => "alloc",
             MirStmt::Transfer { .. } => "transfer",
             MirStmt::Assign { .. } => "assign",

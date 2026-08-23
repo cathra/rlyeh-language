@@ -21,22 +21,70 @@ struct Scope {
     bindings: HashMap<String, Binding>,
 }
 
+/// 借用种类。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BorrowKind {
+    /// 共享借用（`&x`）：只读，可共存。
+    Shared,
+    /// 可变借用（`&mut x`）：互斥。
+    Mut,
+}
+
+/// 一条借用记录。
+///
+/// 活跃期（NLL 近似）为 `born <= pos <= last_use`：借用创建于语句
+/// `born`，其引用变量在语句 `last_use` 最后一次使用后释放。
+#[derive(Debug, Clone)]
+struct Borrow {
+    /// 被借用变量名。
+    source: String,
+    /// 引用变量名（`let r = &x;` 为 `Some(r)`）；临时借用（`f(&x)` 实参、
+    /// 聚合字段内嵌 `&x`）为 `None`，仅创建语句活跃。
+    var: Option<String>,
+    /// 借用种类。
+    kind: BorrowKind,
+    /// 创建处全局语句序。
+    born: usize,
+    /// 引用变量最后使用处全局语句序（临时借用 = `born`）。
+    last_use: usize,
+}
+
 /// 借用检查器。
 ///
-/// MVP 阶段检查范围（L0 静态所有权）：
+/// 检查范围（L0 静态所有权 + 引用借用互斥）：
 /// - **use-after-move**：变量被 `transfer` 转移所有权后再次使用
 ///   （Rust E0382 对应；P005 遗留缺口，`test_transfer_then_use_in_region`）；
 /// - **不可变绑定赋值**：对 `let x = ...;`（非 `let mut`）的变量赋值
-///   （Rust E0384 对应；typecheck 的符号表不记录可变性，此项此前无人检查）；
+///   （Rust E0384 对应）；
+/// - **借用互斥（G1 收尾）**：`&x` / `&mut x` 的别名与可变性互斥——
+///   写（赋值）被借用中的变量、`&mut` 与任何活跃借用冲突、`&` 与活跃
+///   可变借用冲突、`&mut x` 要求 `x` 为 `let mut`（E0596）、对局部变量
+///   的引用逃逸出函数（悬垂，E0597）；
 /// - 区域块值传递例外：`transfer x out of 'r; x` 中 `x` 作为区域块尾值
 ///   是所有权转出，不视为"使用"（regionck 既有合法用例保持通过）。
 ///
-/// 借用互斥规则（`&` / `&mut`）与生命周期推断依赖引用语法与类型标注，
-/// 待 typecheck 支持后启用；`BorrowConflict` / `MoveWhileBorrowed`
-/// 为防御性变体，保留构造入口与 Display。
+/// 语义说明（与 Rust 的差异，Zeta 值语义下有意放宽）：
+/// - **读被借用变量不受限**：Zeta 的 `&x` 是值槽地址 / 聚合对象指针拷贝，
+///   裸指针（`*mut`）别名读写是合法模式（tests/run-pass/raw_ptr.zeta），
+///   故活跃借用期间读原变量、经引用写原槽均不报错；
+/// - **借用活跃期 = 引用变量最后一次使用**（语句粒度 NLL）：借用结束后
+///   对原变量的写入/再借用均允许；
+/// - **引用经聚合字段传播**（`Wrapper { inner: &a }`）与**方法返回引用**
+///   （`String::as_str()`）无法在 HIR 上追踪（HIR 无类型标注），暂不检查
+///   字段内引用悬垂；MVP 悬垂检查覆盖 `return` 与函数体块尾值两个出口。
+///
+/// HIR 节点不携带源码位置，`line` / `col` 恒为 0。
 pub struct BorrowChecker {
     scopes: Vec<Scope>,
     errors: Vec<BorrowError>,
+    /// 当前函数内的借用记录。
+    borrows: Vec<Borrow>,
+    /// 引用变量名 → 使用处全局语句序（预扫描收集，供 NLL 末次使用判定）。
+    uses: HashMap<String, Vec<usize>>,
+    /// 当前全局语句序（函数内单调递增；预扫描与检查遍历共用）。
+    pos: usize,
+    /// 当前函数参数名（悬垂判定：借参数不悬垂）。
+    param_names: Vec<String>,
 }
 
 impl BorrowChecker {
@@ -45,6 +93,10 @@ impl BorrowChecker {
         Self {
             scopes: Vec::new(),
             errors: Vec::new(),
+            borrows: Vec::new(),
+            uses: HashMap::new(),
+            pos: 0,
+            param_names: Vec::new(),
         }
     }
 
@@ -55,6 +107,10 @@ impl BorrowChecker {
         for item in &program.items {
             if let HirItemKind::Fn(f) = &item.kind {
                 if let Some(body) = &f.body {
+                    // 函数级状态复位
+                    self.param_names = f.params.iter().map(|p| p.name.clone()).collect();
+                    self.borrows.clear();
+                    self.uses.clear();
                     self.scopes.push(Scope::default());
                     for param in &f.params {
                         self.insert(
@@ -65,7 +121,17 @@ impl BorrowChecker {
                             },
                         );
                     }
+                    // 预扫描：收集引用变量的使用位置（与检查遍历同构，
+                    // 语句序一致），供借用末次使用（NLL）判定。
+                    self.pos = 0;
+                    self.collect_block_uses(body, false);
+                    // 检查遍历
+                    self.pos = 0;
                     self.check_block(body, false);
+                    // 函数体块尾值 = 返回值：悬垂检查
+                    if let Some(expr) = &body.final_expr {
+                        self.check_dangling_return(expr);
+                    }
                     self.scopes.pop();
                 }
             }
@@ -104,15 +170,106 @@ impl BorrowChecker {
         }
     }
 
+    /// 变量名在当前语句序上的活跃借用（`born <= pos <= last_use`）。
+    fn active_borrows(&self, source: &str) -> Vec<&Borrow> {
+        self.borrows
+            .iter()
+            .filter(|b| {
+                b.source == source && b.born <= self.pos && self.pos <= b.last_use
+            })
+            .collect()
+    }
+
+    /// 借用创建：冲突检查 + 登记。
+    ///
+    /// `var`：`let r = &x;` 的引用变量名；表达式内临时借用（`f(&x)`、
+    /// 聚合字段内嵌 `&x`）传 `None`（仅当前语句活跃）。
+    fn register_borrow(&mut self, var: Option<&str>, source: &str, is_mut: bool) {
+        // 可变性互斥 / 别名冲突
+        for b in self.active_borrows(source) {
+            match (b.kind, is_mut) {
+                (BorrowKind::Mut, true) => {
+                    self.errors.push(BorrowError::borrow_conflict(format!(
+                        "cannot mutably borrow `{source}` because it is already borrowed as mutable"
+                    )));
+                    return;
+                }
+                (BorrowKind::Mut, false) => {
+                    self.errors.push(BorrowError::borrow_conflict(format!(
+                        "cannot borrow `{source}` as shared because it is already borrowed as mutable"
+                    )));
+                    return;
+                }
+                (BorrowKind::Shared, true) => {
+                    self.errors.push(BorrowError::borrow_conflict(format!(
+                        "cannot mutably borrow `{source}` because it is already borrowed as shared"
+                    )));
+                    return;
+                }
+                (BorrowKind::Shared, false) => {}
+            }
+        }
+        // `&mut x` 要求 `x` 为 `let mut`（E0596）；全局 / 未绑定（const）宽松跳过
+        if is_mut {
+            if let Some(b) = self.lookup(source) {
+                if !b.mutable {
+                    self.errors.push(BorrowError::borrow_mut_immutable(source));
+                    return;
+                }
+            }
+        }
+        let kind = if is_mut {
+            BorrowKind::Mut
+        } else {
+            BorrowKind::Shared
+        };
+        let last_use = var
+            .and_then(|v| self.uses.get(v).and_then(|u| u.last()).copied())
+            .unwrap_or(self.pos);
+        self.borrows.push(Borrow {
+            source: source.to_string(),
+            var: var.map(|s| s.to_string()),
+            kind,
+            born: self.pos,
+            last_use,
+        });
+    }
+
+    /// 悬垂检查：返回的引用必须指向参数（或全局），不能是局部变量的引用。
+    fn check_dangling_return(&mut self, expr: &HirExpr) {
+        match expr {
+            HirExpr::Variable(v) => {
+                for b in &self.borrows {
+                    if b.var.as_deref() == Some(v) && !self.param_names.contains(&b.source) {
+                        self.errors.push(BorrowError::dangling_reference(v));
+                        return;
+                    }
+                }
+            }
+            HirExpr::Ref { expr: inner, .. } => {
+                if let HirExpr::Variable(src) = inner.as_ref() {
+                    if !self.param_names.contains(src) {
+                        self.errors.push(BorrowError::dangling_reference(src));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// 检查语句块。
     ///
     /// `allow_transfer_pass` 仅在区域块上开启：允许已转移变量以
     /// 直接变量形式作为块尾值（所有权转出，见 [`Self::check_block`]）。
+    /// 注意：transfer 例外早退使检查阶段语句序比预扫描少 1，为保守方向
+    /// （借用活跃期在边界处略延后），不造成漏报。
     fn check_block(&mut self, block: &HirBlock, allow_transfer_pass: bool) {
         for stmt in &block.stmts {
+            self.pos += 1;
             self.check_stmt(stmt);
         }
         if let Some(expr) = &block.final_expr {
+            self.pos += 1;
             // transfer 例外：`transfer x out of 'r; x` 中 x 作为块值 =
             // 所有权转出给区域表达式的求值结果，不视为"使用"。
             if allow_transfer_pass {
@@ -133,8 +290,19 @@ impl BorrowChecker {
                 init,
                 mutable,
             } => {
-                // 先检查 init（shadowing 时 init 引用的是旧绑定）
-                self.check_expr(init);
+                // 借用创建特判：`let r = &x;` / `let r = &mut x;` ——
+                // 具名借用（引用变量 = r），借用活跃到 r 最后一次使用。
+                // 先检查借用（shadowing 时 init 引用的是旧绑定），再注册绑定。
+                if let HirExpr::Ref { expr, is_mut, .. } = init {
+                    if let HirExpr::Variable(src) = expr.as_ref() {
+                        self.register_borrow(Some(name), src, *is_mut);
+                    } else {
+                        // 非变量源（防御：typecheck 已限制 `&` 目标为变量）
+                        self.check_expr(init);
+                    }
+                } else {
+                    self.check_expr(init);
+                }
                 if name != "_" {
                     self.insert(
                         name.clone(),
@@ -158,6 +326,12 @@ impl BorrowChecker {
                 }
             }
             HirExpr::Assign { target, value, .. } => {
+                // 借用互斥：不能赋值（写）被借用中的变量
+                if !self.active_borrows(target).is_empty() {
+                    self.errors.push(BorrowError::borrow_conflict(format!(
+                        "cannot assign to `{target}` because it is borrowed"
+                    )));
+                }
                 if let Some(b) = self.lookup(target).cloned() {
                     if b.transferred {
                         // 对已转移值的赋值也是使用（Rust：assignment to moved value）
@@ -238,7 +412,13 @@ impl BorrowChecker {
                 self.check_block(body, false);
                 self.scopes.pop();
             }
-            HirExpr::Return(e) | HirExpr::Break(e) => {
+            HirExpr::Return(e) => {
+                if let Some(e) = e {
+                    self.check_expr(e);
+                    self.check_dangling_return(e);
+                }
+            }
+            HirExpr::Break(e) => {
                 if let Some(e) = e {
                     self.check_expr(e);
                 }
@@ -294,14 +474,148 @@ impl BorrowChecker {
                 self.check_expr(index);
                 self.check_expr(value);
             }
-            // 引用 / 解引用：递归检查被引用 / 被解引用表达式
-            // （`&x` 不转移所有权；`*p = v` 的写入可变性互斥检查待引用
-            // 类型标注接入后启用——borrowck 已预留 BorrowConflict 等变体）
-            HirExpr::Ref { expr, .. } => self.check_expr(expr),
+            // 引用 / 解引用：
+            // - `&x`（非 `let r = &x` 的表达式内出现，如实参 / 聚合字段 / dyn 构造）
+            //   为临时借用：冲突检查 + 登记（仅当前语句活跃）。
+            // - `*p` 读 / `*p = v` 写经引用进行：读原变量不受限（宽松），
+            //   写是借用用途（`&mut` 借出即为此），均不额外检查。
+            HirExpr::Ref { expr, is_mut, .. } => {
+                if let HirExpr::Variable(src) = expr.as_ref() {
+                    self.register_borrow(None, src, *is_mut);
+                } else {
+                    self.check_expr(expr);
+                }
+            }
             HirExpr::Deref { expr, .. } => self.check_expr(expr),
             HirExpr::DerefSet { base, value, .. } => {
                 self.check_expr(base);
                 self.check_expr(value);
+            }
+        }
+    }
+
+    // ---------------- 预扫描（NLL 末次使用收集） ----------------
+    // 与 check_block / check_stmt / check_expr 遍历顺序同构，
+    // 保证语句序一致；不维护所有权 / 借用状态，仅收集变量使用位置。
+
+    fn collect_block_uses(&mut self, block: &HirBlock, _allow_transfer_pass: bool) {
+        for stmt in &block.stmts {
+            self.pos += 1;
+            self.collect_stmt_uses(stmt);
+        }
+        if let Some(expr) = &block.final_expr {
+            self.pos += 1;
+            self.collect_expr_uses(expr);
+        }
+    }
+
+    fn collect_stmt_uses(&mut self, stmt: &HirStmt) {
+        match stmt {
+            HirStmt::Let { init, .. } => self.collect_expr_uses(init),
+            HirStmt::Expr(e) | HirStmt::Semi(e) => self.collect_expr_uses(e),
+        }
+    }
+
+    fn collect_expr_uses(&mut self, expr: &HirExpr) {
+        match expr {
+            HirExpr::Variable(name) => {
+                self.uses.entry(name.clone()).or_default().push(self.pos);
+            }
+            HirExpr::Assign { value, .. } => self.collect_expr_uses(value),
+            HirExpr::Binary(_, l, r) => {
+                self.collect_expr_uses(l);
+                self.collect_expr_uses(r);
+            }
+            HirExpr::Unary(_, e) => self.collect_expr_uses(e),
+            HirExpr::SetLookup { value, members, .. } => {
+                self.collect_expr_uses(value);
+                for m in members {
+                    self.collect_expr_uses(m);
+                }
+            }
+            HirExpr::RangeCheck {
+                value,
+                lower,
+                upper,
+                ..
+            } => {
+                self.collect_expr_uses(value);
+                if let Some(l) = lower {
+                    self.collect_expr_uses(l);
+                }
+                if let Some(u) = upper {
+                    self.collect_expr_uses(u);
+                }
+            }
+            HirExpr::If {
+                cond,
+                then_block,
+                else_block,
+            } => {
+                self.collect_expr_uses(cond);
+                self.collect_block_uses(then_block, false);
+                if let Some(eb) = else_block {
+                    self.collect_block_uses(eb, false);
+                }
+            }
+            HirExpr::Block(b) => self.collect_block_uses(b, false),
+            HirExpr::Call { args, .. } => {
+                for a in args {
+                    self.collect_expr_uses(a);
+                }
+            }
+            HirExpr::FnPtr(_) => {}
+            HirExpr::CallIndirect { callee, args, .. } => {
+                self.collect_expr_uses(callee);
+                for a in args {
+                    self.collect_expr_uses(a);
+                }
+            }
+            HirExpr::While { cond, body } => {
+                self.collect_expr_uses(cond);
+                self.collect_block_uses(body, false);
+            }
+            HirExpr::Loop { body } => self.collect_block_uses(body, false),
+            HirExpr::Return(e) | HirExpr::Break(e) => {
+                if let Some(e) = e {
+                    self.collect_expr_uses(e);
+                }
+            }
+            HirExpr::Region { body, .. } => self.collect_block_uses(body, true),
+            HirExpr::InRegion { expr, .. } => self.collect_expr_uses(expr),
+            HirExpr::Transfer { expr, .. } => self.collect_expr_uses(expr),
+            HirExpr::IntLiteral(_)
+            | HirExpr::FloatLiteral(_)
+            | HirExpr::StringLiteral(_)
+            | HirExpr::CharLiteral(_)
+            | HirExpr::BoolLiteral(_)
+            | HirExpr::Continue
+            | HirExpr::Unit
+            | HirExpr::Alloc { .. } => {}
+            HirExpr::FieldGet { base, .. } => self.collect_expr_uses(base),
+            HirExpr::FieldSet { base, value, .. } => {
+                self.collect_expr_uses(base);
+                self.collect_expr_uses(value);
+            }
+            HirExpr::Index { base, index, .. } => {
+                self.collect_expr_uses(base);
+                self.collect_expr_uses(index);
+            }
+            HirExpr::IndexSet {
+                base,
+                index,
+                value,
+                ..
+            } => {
+                self.collect_expr_uses(base);
+                self.collect_expr_uses(index);
+                self.collect_expr_uses(value);
+            }
+            HirExpr::Ref { expr, .. } => self.collect_expr_uses(expr),
+            HirExpr::Deref { expr, .. } => self.collect_expr_uses(expr),
+            HirExpr::DerefSet { base, value, .. } => {
+                self.collect_expr_uses(base);
+                self.collect_expr_uses(value);
             }
         }
     }

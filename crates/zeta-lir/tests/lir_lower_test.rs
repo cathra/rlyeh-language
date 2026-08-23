@@ -131,7 +131,9 @@ fn main() {
         .iter()
         .any(|s| matches!(s, LirStmt::AllocInRegion { .. })));
     assert!(stmts.iter().any(|s| matches!(s, LirStmt::Transfer { .. })));
-    assert!(stmts.iter().any(|s| matches!(s, LirStmt::RegionExit)));
+    assert!(stmts
+        .iter()
+        .any(|s| matches!(s, LirStmt::RegionExit { .. })));
 }
 
 #[test]

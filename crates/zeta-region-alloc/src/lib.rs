@@ -45,6 +45,7 @@
 
 mod block;
 mod bump;
+mod cabi;
 mod destructor;
 mod error;
 mod region;

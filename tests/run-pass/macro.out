@@ -1,8 +1,0 @@
-double(21) = 42
-max(3, 7) = 7
-sum 1 + 2 = 3
-fmt: abc and 7
-dbg: 20
-dbg returned 20
-pi=7
-strarg=ab + cd

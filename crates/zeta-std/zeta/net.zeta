@@ -16,7 +16,11 @@ fn htons(v: i64) -> i64 {
 
 // 创建全双工字节流套接字对（AF_UNIX SOCK_STREAM，无需 sockaddr）。
 // 返回承载 fd 数组的 8 字节缓冲（两个 int32）；经 fd_at 读取。
+// WASI 下无 socket API：返回空缓冲（fd_at 读取到 0），明确禁用文档化（L4a）。
 fn socketpair_stream() -> String {
+    if __zeta_target_os() == 5 {
+        return String::with_capacity(8);
+    }
     let fds = String::with_capacity(8);
     let _ = socketpair(1, 1, 0, fds);
     fds
@@ -30,12 +34,20 @@ fn fd_at(fds: String, k: i64) -> i64 {
 }
 
 // 发送整段内容（len 字节）；返回实际发送字节数。
+// WASI 下无 socket API：返回 0，明确禁用文档化（L4a）。
 fn send_all(fd: i64, buf: String) -> i64 {
+    if __zeta_target_os() == 5 {
+        return 0;
+    }
     r#send(fd, buf, buf.len, 0)
 }
 
 // 接收至多 cap 字节；返回按实际字节数设 len 的内容。
+// WASI 下无 socket API：返回空缓冲（len = 0），明确禁用文档化（L4a）。
 fn recv_some(fd: i64, cap: i64) -> String {
+    if __zeta_target_os() == 5 {
+        return String::with_capacity(cap);
+    }
     let mut buf = String::with_capacity(cap);
     let n = r#recv(fd, buf, cap, 0);
     buf.len = n;
@@ -73,7 +85,11 @@ fn sockaddr_in4(port: i64, a: i64, b: i64, c: i64, d: i64) -> String {
 }
 
 // TCP 连接（阻塞）：成功返回 fd（>0），失败返回 -1（已 close 释放）。
+// WASI 下无 socket API：直接返回 -1（错误码），明确禁用文档化（L4a）。
 fn tcp_connect(port: i64, a: i64, b: i64, c: i64, d: i64) -> i64 {
+    if __zeta_target_os() == 5 {
+        return -1;
+    }
     let fd = socket(2, 1, 0);   // AF_INET=2, SOCK_STREAM=1
     if fd < 0 {
         return -1;
@@ -90,7 +106,11 @@ fn tcp_connect(port: i64, a: i64, b: i64, c: i64, d: i64) -> i64 {
 // 本机主机名。
 // gethostname 返回 int（i32），以 i64 声明时高位未定义，故不依赖返回值，
 // 仅扫描缓冲内首个 NUL 定位实际长度（成功时 gethostname 保证 NUL 结尾）。
+// WASI 下无 gethostname API：返回空串，明确禁用文档化（L4a）。
 fn hostname() -> String {
+    if __zeta_target_os() == 5 {
+        return String::with_capacity(0);
+    }
     let mut buf = String::with_capacity(256);
     let _r = gethostname(buf, 256);
     // 定位 NUL 终止位置作为实际长度（找不到则回退 255）

@@ -170,15 +170,22 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                     MirStmt::DerefRead {
                         target,
                         ty: scalar_ty,
+                        base,
                         ..
                     } => {
                         changed |= set_type(&mut ty, target, field_scalar_to_lir(*scalar_ty))?;
+                        // 解引用操作数必须是引用 / 指针（typecheck 保证），
+                        // 登记为指针槽：引用参数 / 引用返回值经 `*r` 处补全类型，
+                        // 避免返回引用的函数被误推断为 i64 导致调用点槽类型错乱。
+                        changed |= set_type(&mut ty, base, LirType::Ptr)?;
                     }
-                    // 解引用写入不产生新类型信息
-                    MirStmt::DerefWrite { .. } => {}
+                    MirStmt::DerefWrite { base, .. } => {
+                        // 同 DerefRead：解引用写入的基址为引用 / 指针槽
+                        changed |= set_type(&mut ty, base, LirType::Ptr)?;
+                    }
                     // 区域指令不产生类型信息
                     MirStmt::RegionEnter { .. }
-                    | MirStmt::RegionExit
+                    | MirStmt::RegionExit { .. }
                     | MirStmt::AllocInRegion { .. }
                     | MirStmt::Transfer { .. } => {}
                 }
@@ -652,14 +659,22 @@ impl FunctionLowerer {
                     ret_ty: parse_extern_type(ret_name),
                 });
             }
-            MirStmt::RegionEnter { name, .. } => {
-                out.push(LirStmt::RegionEnter { name: name.clone() });
+            MirStmt::RegionEnter { name, options } => {
+                out.push(LirStmt::RegionEnter {
+                    name: name.clone(),
+                    options: *options,
+                });
             }
-            MirStmt::RegionExit => out.push(LirStmt::RegionExit),
-            MirStmt::AllocInRegion { target, region } => {
+            MirStmt::RegionExit { name } => out.push(LirStmt::RegionExit { name: name.clone() }),
+            MirStmt::AllocInRegion {
+                target,
+                region,
+                size,
+            } => {
                 out.push(LirStmt::AllocInRegion {
                     target: target.clone(),
                     region: region.clone(),
+                    size: *size,
                 });
             }
             MirStmt::Transfer { place, region } => {

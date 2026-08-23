@@ -32,13 +32,21 @@ pub use types::{FnSignature, Mutability, StructDef, Type};
 
 use zeta_hir::HirProgram;
 
-pub use crate::check_item::{collect_fn_signatures, typecheck};
+pub use crate::check_item::{collect_fn_signatures, typecheck, typecheck_with_region_hints};
 
 /// 便捷函数：解析源码并类型检查，返回 HIR。
 pub fn typecheck_source(source: &str) -> Result<HirProgram, TypeError> {
+    typecheck_source_with_region_hints(source, &Default::default())
+}
+
+/// 便捷函数：解析源码并类型检查，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
+pub fn typecheck_source_with_region_hints(
+    source: &str,
+    region_hints: &std::collections::HashMap<String, usize>,
+) -> Result<HirProgram, TypeError> {
     let program = zeta_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
         span: e.span(),
     })?;
-    typecheck(&program)
+    typecheck_with_region_hints(&program, region_hints)
 }

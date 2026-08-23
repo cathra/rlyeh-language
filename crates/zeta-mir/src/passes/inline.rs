@@ -102,7 +102,7 @@ fn has_region_op(s: &MirStmt) -> bool {
     matches!(
         s,
         MirStmt::RegionEnter { .. }
-            | MirStmt::RegionExit
+            | MirStmt::RegionExit { .. }
             | MirStmt::AllocInRegion { .. }
             | MirStmt::Transfer { .. }
     )

@@ -180,8 +180,9 @@ fn gen_escape_string() {
         vec![("_s", LirType::Str)],
     );
     let ll = generate_llvm(&p).expect("生成 LLVM IR");
-    // 输入 `a"b\c<LF>d` → 转义为 `a\"b\\c\0Ad`
-    assert!(ll.contains("a\\\"b\\\\c\\0Ad"));
+    // 输入 `a"b\c<LF>d` → 转义为 `a\22b\\c\0Ad`（`"` 用十六进制 \22，
+    // 因 `\"` 会被 clang 误解析为 [1 x i8] 导致长度不匹配）
+    assert!(ll.contains("a\\22b\\\\c\\0Ad"));
 }
 
 #[test]

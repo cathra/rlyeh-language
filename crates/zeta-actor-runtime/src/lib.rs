@@ -55,6 +55,8 @@ mod error;
 mod ffi;
 mod runtime;
 mod scheduler;
+#[cfg(target_os = "wasi")]
+mod sync;
 mod supervisor;
 
 pub use actor::{ActorContext, ActorId, ActorState, ActorStatus};

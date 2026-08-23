@@ -2,7 +2,7 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use zeta_ast::{AstExpr, ExprKind, RegionOptions};
+use zeta_ast::{AstExpr, ExprKind, RegionOptions, RegionStrategy};
 use zeta_lexer::Token;
 
 impl<'src> Parser<'src> {
@@ -16,7 +16,7 @@ impl<'src> Parser<'src> {
     }
 
     /// 解析 region 表达式：
-    /// `region ['r] [with_size(N)] [allow_growth[(growth_factor=f)]] [adaptive] [exact] { body }`
+    /// `region ['r] [with_size(N)] [allow_growth[(growth_factor=f)]] [adaptive] [exact] [strategy(bump)] { body }`
     pub(crate) fn parse_region_expr(&mut self) -> Result<AstExpr, ParseError> {
         let start = self.expect(&Token::Region, "'region'")?.span;
         let name = if self
@@ -40,11 +40,28 @@ impl<'src> Parser<'src> {
         ))
     }
 
-    /// 区域选项：`with_size`、`allow_growth`、`adaptive`、`exact`
+    /// 区域选项：`with_size`、`allow_growth`、`adaptive`、`exact`、`strategy`
     fn parse_region_options(&mut self) -> Result<RegionOptions, ParseError> {
         let mut opts = RegionOptions::default();
         while let Some(Token::Ident(name)) = self.current().cloned() {
             let handled = match name.as_str() {
+                "strategy" => {
+                    self.bump();
+                    self.expect(&Token::LParen, "'('")?;
+                    let strategy = match self.current().cloned() {
+                        Some(Token::Ident(s)) if s == "bump" => {
+                            self.bump();
+                            RegionStrategy::Bump
+                        }
+                        Some(Token::Ident(_)) => {
+                            return Err(self.unexpected("strategy (bump) (其他策略规划中)"));
+                        }
+                        _ => return Err(self.unexpected("strategy identifier")),
+                    };
+                    self.expect(&Token::RParen, "')'")?;
+                    opts.strategy = Some(strategy);
+                    true
+                }
                 "with_size" => {
                     self.bump();
                     self.expect(&Token::LParen, "'('")?;

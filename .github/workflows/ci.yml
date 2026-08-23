@@ -38,7 +38,9 @@ jobs:
         run: cargo build --workspace
 
       - name: Test
-        run: cargo test --workspace
+        # 串行测试线程：driver 集成测试会 spawn clang 编译，并行时进程资源
+        # 耗尽（os error 35，EMFILE/EPROCLIM）导致偶发失败，故限制为 1
+        run: cargo test --workspace -- --test-threads=1
 
       # E1：macOS 双架构交叉编译冒烟（本机 clang 直链 SDK，已在本机验证）
       - name: Cross-compile smoke (macOS dual-arch)

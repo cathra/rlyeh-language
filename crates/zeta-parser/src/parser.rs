@@ -29,6 +29,8 @@ pub struct Parser<'src> {
     pub(crate) macros: HashMap<String, Vec<MacroRule>>,
     /// 宏展开递归深度（防无限展开）
     pub(crate) macro_depth: usize,
+    /// 集合宏（`vec!`/`map!`/`arr!`）desugar 临时变量序号
+    pub(crate) collection_temp_seq: usize,
     /// 生命周期占位：保留泛型参数以兼容宏体切片等未来扩展
     _source: PhantomData<&'src str>,
 }
@@ -44,6 +46,7 @@ impl<'src> Parser<'src> {
             last_line: 0,
             macros: HashMap::new(),
             macro_depth: 0,
+            collection_temp_seq: 0,
             _source: PhantomData,
         })
     }
@@ -63,6 +66,7 @@ impl<'src> Parser<'src> {
             last_line: 0,
             macros,
             macro_depth,
+            collection_temp_seq: 0,
             _source: PhantomData,
         }
     }

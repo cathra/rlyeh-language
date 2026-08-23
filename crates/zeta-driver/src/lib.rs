@@ -137,6 +137,26 @@ pub fn region_profile_report(path: &Path) -> Result<String, DriverError> {
     Ok(build_region_report(&data))
 }
 
+/// 读取 `.zeta_profile`，为每个区域生成 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
+///
+/// 推荐容量 = `PgoAdvisor::recommend_size`（p95 × 安全系数，下限 64KiB）。
+/// 注入到 `adaptive` 区域后，`zeta_region_enter` 以该容量创建初始块。
+pub fn region_hints_from_profile(
+    path: &Path,
+) -> Result<std::collections::HashMap<String, usize>, DriverError> {
+    let text = std::fs::read_to_string(path).map_err(DriverError::Io)?;
+    let data: zeta_region_alloc::PgoData = serde_json::from_str(&text)
+        .map_err(|e| DriverError::Profile(format!("解析 `.zeta_profile` 失败: {e}")))?;
+    let advisor = zeta_region_alloc::PgoAdvisor::from_data(data.clone());
+    let mut hints = std::collections::HashMap::new();
+    for id in data.region_ids() {
+        if let Some(size) = advisor.recommend_size(&id) {
+            hints.insert(id, size);
+        }
+    }
+    Ok(hints)
+}
+
 /// 依据 PGO 数据生成区域分配决策报告（纯函数，便于单元测试）。
 ///
 /// 每个区域：`estimated_size` = 历史平均分配量（静态基线）、
@@ -186,6 +206,8 @@ pub struct IncrementalDriver {
     target: Option<String>,
     /// 会话内缓存统计
     stats: CacheStats,
+    /// L3 PGO 回灌：区域名 → 推荐初始容量（`zeta build --profile` 注入）
+    region_hints: std::collections::HashMap<String, usize>,
 }
 
 impl IncrementalDriver {
@@ -197,7 +219,15 @@ impl IncrementalDriver {
             no_std: false,
             target: None,
             stats: CacheStats::default(),
+            region_hints: std::collections::HashMap::new(),
         }
+    }
+
+    /// 注入 L3 PGO 回灌提示（区域名 → 推荐初始容量），
+    /// 供 `adaptive` 区域在编译期采用推荐容量。
+    pub fn with_region_hints(mut self, hints: std::collections::HashMap<String, usize>) -> Self {
+        self.region_hints = hints;
+        self
     }
 
     /// 强制全量重编译（忽略缓存）。
@@ -252,7 +282,7 @@ impl IncrementalDriver {
 
         // 2. 全量编译 + 写入缓存
         self.stats.misses += 1;
-        let llvm = full_pipeline(source)?;
+        let llvm = full_pipeline_with_hints(source, &self.region_hints)?;
         let interface = extract_interface(source)?;
         let interface_hash = compute_interface_hash(&interface);
         cache.store_llvm(file, &source_hash, &interface_hash, &llvm)?;
@@ -339,8 +369,16 @@ fn source_with_std(source: String, no_std: bool) -> Result<String, DriverError> 
 
 /// 完整流水线：typecheck → borrowck → regionck → MIR(+优化) → LIR → LLVM IR。
 fn full_pipeline(source: &str) -> Result<String, DriverError> {
+    full_pipeline_with_hints(source, &std::collections::HashMap::new())
+}
+
+/// 完整流水线，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
+fn full_pipeline_with_hints(
+    source: &str,
+    region_hints: &std::collections::HashMap<String, usize>,
+) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR）
-    let hir = zeta_typecheck::typecheck_source(source)
+    let hir = zeta_typecheck::typecheck_source_with_region_hints(source, region_hints)
         .map_err(|e| DriverError::Typecheck(e.to_string()))?;
 
     // 2. 借用检查（L0 所有权）
@@ -377,7 +415,19 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     let ll_path = dir.join("main.ll");
     // 注入平台内建（`__zeta_target_os`）后写盘——codegen 对 `__zeta_` 前缀 extern 不生成 declare。
     let llvm_with_builtins = format!("{llvm}\n{}", platform_builtin_ir(target));
-    std::fs::write(&ll_path, llvm_with_builtins).map_err(DriverError::Io)?;
+    // L4b: wasm 目标注入 actor 符号解析表（静态查表替代 dlsym，见 actor_resolve_ir）。
+    let llvm_final = match target {
+        Some(t) if is_wasm_triple(t) => {
+            let actor_ir = actor_resolve_ir(&llvm_with_builtins);
+            if actor_ir.is_empty() {
+                llvm_with_builtins
+            } else {
+                format!("{llvm_with_builtins}\n{actor_ir}")
+            }
+        }
+        _ => llvm_with_builtins,
+    };
+    std::fs::write(&ll_path, llvm_final).map_err(DriverError::Io)?;
 
     // WebAssembly 目标走独立汇编链路（wasi-libc sysroot + wasm-ld），其余走系统链接器。
     if let Some(t) = target {
@@ -397,7 +447,7 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
         );
         Vec::new()
     } else {
-        [actor_runtime_lib_path(), gc_runtime_lib_path()]
+        [actor_runtime_lib_path(), gc_runtime_lib_path(), region_runtime_lib_path()]
             .into_iter()
             .flatten()
             .collect()
@@ -527,7 +577,7 @@ fn assemble_wasm(
             "define i32 @__main_argc_argv(i32 %argc, i8** %argv) {",
         );
     }
-    std::fs::write(ll_path, ll).map_err(DriverError::Io)?;
+    std::fs::write(ll_path, &ll).map_err(DriverError::Io)?;
     let mut cmd = Command::new(&clang);
     cmd.arg(format!("--target={target}"));
     cmd.arg(format!("--sysroot={}", sysroot.display()));
@@ -538,6 +588,23 @@ fn assemble_wasm(
     cmd.arg(ll_path);
     cmd.arg(lib_dir.join("crt1.o"));
     cmd.arg(lib_dir.join("libc.a"));
+    // L4b: 链接 wasm 版 Actor 运行时（单线程同步模式，替代 dlsym）。
+    // 程序引用 zeta_actor_* 而库缺失时给出明确诊断（避免链接器 undefined symbol）。
+    let uses_actor = ll.contains("@zeta_actor_");
+    match wasm_actor_runtime_lib_path() {
+        Some(lib) => {
+            cmd.arg(lib);
+        }
+        None if uses_actor => {
+            let _ = std::fs::remove_dir_all(dir);
+            return Err(DriverError::Clang(
+                "wasm 目标下 actor 程序需要 wasm 版运行时: 请先执行 \
+                 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`"
+                    .to_string(),
+            ));
+        }
+        None => {}
+    }
     cmd.arg("-o").arg(out_path);
     // wasm-ld 不在 PATH（Homebrew lld keg-only 时）则注入其 bin 目录，
     // clang 链接 wasm 目标时按名查找 `wasm-ld`。
@@ -623,6 +690,18 @@ fn gc_runtime_lib_path() -> Option<PathBuf> {
     lib.exists().then_some(lib)
 }
 
+/// 定位区域运行时静态库（L3 region 接线，staticlib 产物）；缺失返回 `None`
+/// （不含 `region` 块的程序不受影响）。
+fn region_runtime_lib_path() -> Option<PathBuf> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let lib = manifest
+        .join("../../target")
+        .join(profile)
+        .join("libzeta_region_alloc.a");
+    lib.exists().then_some(lib)
+}
+
 /// 本机 LLVM 目标 triple（如 `arm64-apple-macosx` / `x86_64-unknown-linux-gnu`）。
 pub fn host_triple() -> String {
     let arch = match std::env::consts::ARCH {
@@ -668,10 +747,11 @@ fn host_arch() -> &'static str {
     }
 }
 
-/// 平台内建 `__zeta_target_os()` 的返回码（0=未知 1=linux 2=macos 3=windows 4=freebsd）。
+/// 平台内建 `__zeta_target_os()` 的返回码（0=未知 1=linux 2=macos 3=windows 4=freebsd 5=wasi）。
 ///
 /// 从目标 triple 提取 OS 段（`None` = 主机）；标准库据此做平台分支
-/// （如 `sockaddr_in4` 的 `sin_len` 布局：macOS 有、Linux 无）。
+/// （如 `sockaddr_in4` 的 `sin_len` 布局：macOS 有、Linux 无；WASI 下无 socket
+/// API，`net` 模块短路返回错误码——L4a 明确禁用文档化）。
 pub fn target_os_code(target: Option<&str>) -> i32 {
     let os = match target {
         None => std::env::consts::OS,
@@ -685,6 +765,8 @@ pub fn target_os_code(target: Option<&str>) -> i32 {
         3
     } else if os.contains("freebsd") {
         4
+    } else if os.contains("wasi") || os.contains("wasm") {
+        5
     } else {
         0
     }
@@ -696,6 +778,125 @@ fn platform_builtin_ir(target: Option<&str>) -> String {
         "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__zeta_target_os() {{\nentry:\n  ret i32 {}\n}}\n",
         target_os_code(target)
     )
+}
+
+/// 将 Rust 字符串转义为 LLVM `c"..."` 常量体；返回（转义文本, 原始字节数）。
+fn escape_llvm_c_string(s: &str) -> (String, usize) {
+    let mut out = String::new();
+    let mut bytes = 0;
+    for b in s.bytes() {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            b'"' => out.push_str("\\22"),
+            b'\n' => out.push_str("\\0A"),
+            b'\r' => out.push_str("\\0D"),
+            0x20..=0x7E => out.push(b as char),
+            _ => out.push_str(&format!("\\{b:02X}")),
+        }
+        bytes += 1;
+    }
+    (out, bytes)
+}
+
+/// LLVM 引号包裹的符号名（`::` 等非字母数字字符须用 `@"..."` 形式）。
+fn llvm_quoted_name(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\22"))
+}
+
+/// 从 LLVM IR 文本解析所有 Zeta actor 的 handle / factory 函数名
+/// （`<actor>::__handle` / `<actor>::__state_new` 结尾的 `define`）。
+fn actor_symbols_from_ir(llvm: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in llvm.lines() {
+        let line = line.trim_start();
+        if !line.starts_with("define ") {
+            continue;
+        }
+        let Some(at) = line.find('@') else { continue };
+        let rest = &line[at + 1..];
+        let name = if let Some(stripped) = rest.strip_prefix('"') {
+            match stripped.find('"') {
+                Some(end) => &stripped[..end],
+                None => continue,
+            }
+        } else {
+            let end = rest
+                .find(|c: char| c.is_whitespace() || c == '(')
+                .unwrap_or(rest.len());
+            &rest[..end]
+        };
+        if name.ends_with("::__handle") || name.ends_with("::__state_new") {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// 生成 wasm 目标的 actor 符号解析表（L4b）：替代 `dlsym` 的静态查表。
+///
+/// 编译期已知全部 handle / factory 函数，生成 `zeta_actor_resolve(name)`
+/// （`strcmp` 字符串比较 → `ptrtoint` 函数地址），wasm 版运行时
+/// （`zeta-actor-runtime` 同步模式）据此解析符号。返回空串表示无 actor。
+fn actor_resolve_ir(llvm: &str) -> String {
+    let symbols = actor_symbols_from_ir(llvm);
+    if symbols.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    out.push_str("\n; --- L4b: actor 符号解析表（wasm 目标替代 dlsym）---\n");
+    out.push_str("declare i32 @strcmp(i8*, i8*)\n");
+    for (i, s) in symbols.iter().enumerate() {
+        let (escaped, bytes) = escape_llvm_c_string(s);
+        let len = bytes + 1;
+        out.push_str(&format!(
+            "@.zr.{i} = private unnamed_addr constant [{len} x i8] c\"{escaped}\\00\"\n"
+        ));
+    }
+    // 外部链接：wasm 版运行时（静态库）需解析该符号；internal 对链接器不可见。
+    out.push_str("define i64 @zeta_actor_resolve(i8* %name) {\n");
+    out.push_str("entry:\n");
+    let mut blocks = Vec::new();
+    for (i, s) in symbols.iter().enumerate() {
+        let (_, bytes) = escape_llvm_c_string(s);
+        let len = bytes + 1;
+        // handle 回调签名 `i64 (i64, i64, i64, i64, i64)`；factory
+        // （`__state_new`）实际返回 `i8*`（状态对象指针），须与真实签名一致，
+        // 否则 wasm 间接调用报 `indirect call type mismatch`。
+        let fn_ty = if s.ends_with("::__state_new") {
+            "i8* ()"
+        } else {
+            "i64 (i64, i64, i64, i64, i64)"
+        };
+        let quoted = llvm_quoted_name(s);
+        blocks.push(format!(
+            "  %s{i} = bitcast [{len} x i8]* @.zr.{i} to i8*\n  %c{i} = call i32 @strcmp(i8* %name, i8* %s{i})\n  %eq{i} = icmp eq i32 %c{i}, 0\n  br i1 %eq{i}, label %hit{i}, label %miss{i}\nhit{i}:\n  ret i64 ptrtoint ({fn_ty}* @{quoted} to i64)\nmiss{i}:"
+        ));
+    }
+    blocks.push("  ret i64 0".to_string());
+    out.push_str(&blocks.join("\n"));
+    out.push_str("\n}\n");
+    out
+}
+
+/// 探测 wasm 版 Actor 运行时静态库路径（`cargo build --target wasm32-wasip1
+/// -p zeta-actor-runtime` 产物）；无则返回 `None`。
+fn wasm_actor_runtime_lib_path() -> Option<std::path::PathBuf> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()?
+        .parent()?;
+    for target in ["wasm32-wasip1", "wasm32-wasi"] {
+        for profile in ["release", "debug"] {
+            let p = root
+                .join("target")
+                .join(target)
+                .join(profile)
+                .join("libzeta_actor_runtime.a");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
 }
 
 /// 执行可执行文件并捕获标准输出。

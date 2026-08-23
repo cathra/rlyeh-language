@@ -95,6 +95,35 @@ impl Region {
         Ok(unsafe { &mut *ptr.as_ptr().cast::<T>() })
     }
 
+    /// 在区域内分配一块裸内存（不写入值、不注册析构），供 C ABI 接线使用。
+    ///
+    /// 空间不足时按 [`Region::strategy`] 扩容；`Exact` 模式或扩容失败返回 `None`。
+    /// 返回的指针指向区域内内存，随区域销毁整体释放。
+    pub fn allocate_bytes(&mut self, size: usize, align: usize) -> Option<NonNull<u8>> {
+        if self.destroyed || size == 0 {
+            return None;
+        }
+        let align = align.max(1);
+        let (ptr, wasted) = match self.allocator.try_allocate(size, align) {
+            Some(ok) => ok,
+            None => {
+                if !self.allows_growth() {
+                    return None;
+                }
+                let next = self
+                    .strategy
+                    .calculate_next_size(self.capacity(), size, &self.stats);
+                self.allocator.grow(next).ok()?;
+                self.stats.growth_count += 1;
+                self.allocator.try_allocate(size, align)?
+            }
+        };
+        self.stats.allocation_count += 1;
+        self.stats.total_allocated += size;
+        self.stats.total_wasted += wasted;
+        Some(ptr)
+    }
+
     /// 当前总容量（所有块之和）。
     pub fn capacity(&self) -> usize {
         self.allocator.capacity()

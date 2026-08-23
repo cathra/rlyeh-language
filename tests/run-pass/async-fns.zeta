@@ -1,0 +1,41 @@
+// L1 async fn/await：普通函数异步支持（MVP 同步语义，抽象复用 actor 机制）
+// - `async fn` 编译为同步函数（async 关键字为语法标记，与 actor async 方法一致）
+// - `expr.await` ≡ expr（.await 为语法标记，同步求值）
+// 输出与 async-fns.out 精确对比
+
+// 直接调用 / .await 均可（同步语义）
+async fn get_value(x: i64) -> i64 {
+    x * 2
+}
+
+// async fn 内 .await 另一个 async fn（嵌套）
+async fn nested(x: i64) -> i64 {
+    get_value(x).await + 1
+}
+
+// async fn 返回 String
+async fn build_string(s: String) -> String {
+    s + String::from("!")
+}
+
+// async fn 返回数组（元素类型统一）
+async fn build_arr() -> [i64; 3] {
+    [1, 2, 3]
+}
+
+fn main() {
+    // 直接调用 async fn（async 丢弃，编译为同步函数）
+    println(get_value(21));        // 42
+    // .await 调用
+    println(get_value(21).await);  // 42
+    // 嵌套 await
+    println(nested(10).await);     // 21
+    // String 返回
+    let s = build_string(String::from("hi")).await;
+    println(s.len());              // 3
+    // 数组返回 + 索引
+    let a = build_arr().await;
+    println(a[0] + a[2]);          // 4
+    // 表达式中间 .await
+    println(get_value(3).await + get_value(4).await);  // 14
+}

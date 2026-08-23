@@ -5,10 +5,25 @@ use std::collections::HashMap;
 use zeta_hir::HirExpr;
 use zeta_lexer::Span;
 
-use zeta_ast::{AstActorDecl, AstFnDecl};
+use zeta_ast::{AstActorDecl, AstExpr, AstFnDecl};
 
 use crate::error::TypeError;
 use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, TraitDef, Type};
+
+/// 延迟闭包值绑定记录（H5 补全：非注解闭包 `let f = |x| body;`）。
+///
+/// 绑定处闭包参数类型未知，仅记录 AST 与变量名，绑定变量类型为未固化
+/// `Type::Closure`（`fn_name` 为空）；首次调用点 `f(args)` 由实参类型
+/// 推断参数类型后固化（检查闭包体、生成匿名函数与捕获聚合对象）。
+#[derive(Debug, Clone)]
+pub struct DeferredClosure {
+    /// 绑定的变量名（`let f = ..` 中的 `f`）
+    pub var_name: String,
+    /// 闭包 AST（`ExprKind::Closure`）
+    pub closure: AstExpr,
+    /// 绑定语句 span（错误定位用）
+    pub span: Span,
+}
 
 /// 泛型函数模板（实例化前不生成 HIR，调用点按实参类型实例化）。
 #[derive(Debug, Clone)]
@@ -78,6 +93,11 @@ pub struct TypeContext {
     pub temp_counter: usize,
     /// H2 无捕获闭包匿名函数名计数器（`__closure_{n}` 全局唯一）
     pub closure_seq: usize,
+    /// 延迟闭包值绑定表（H5 补全：非注解闭包 `let f = |x| body;`）。
+    ///
+    /// 绑定处注册（变量类型为未固化 `Type::Closure`，`fn_name` 为空），
+    /// 首次调用点 `f(args)` 由实参类型推断参数类型后固化并移除记录。
+    pub deferred_closures: Vec<DeferredClosure>,
     /// 顶层裸名 fn 被遮蔽的重命名表（裸名 → mangle 名）。
     ///
     /// 用户顶层函数与 std 预置根函数重名时（如用户 `fn read` 与 std extern `read`），
@@ -91,6 +111,11 @@ pub struct TypeContext {
     pub fn_decl_shadow: HashMap<(usize, usize), String>,
     /// 同名遮蔽计数器（裸名 → 已遮蔽次数，用于生成唯一 mangle 名）。
     pub fn_shadow_seq: HashMap<String, usize>,
+    /// L3 PGO 回灌：区域名 → 推荐初始容量（字节）。
+    ///
+    /// 由 `zeta build --profile` 读取 `.zeta_profile` 后注入；
+    /// `adaptive` 区域在检查时优先采用该容量作为 `HirRegionOptions.size`。
+    pub region_hints: HashMap<String, usize>,
 }
 
 impl TypeContext {

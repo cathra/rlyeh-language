@@ -182,6 +182,38 @@ fn test_raw_string_no_escape() {
 }
 
 #[test]
+fn test_raw_hash_string() {
+    // `r#"..."#`：无转义（`\n` 保留字面反斜杠）
+    assert_eq!(
+        tokens("r#\"hello\\nworld\"#"),
+        vec![Token::StringLiteral(r"hello\nworld".to_string())]
+    );
+    // `r##"..."##`：内容可含单个 `"` 与转义序列
+    assert_eq!(
+        tokens("r##\"a\"b \\n c\"##"),
+        vec![Token::StringLiteral(r#"a"b \n c"#.to_string())]
+    );
+    // 短内容
+    assert_eq!(
+        tokens("r#\"hi\"#"),
+        vec![Token::StringLiteral("hi".to_string())]
+    );
+    // 多哈希定界与内容含双引号
+    assert_eq!(
+        tokens("r###\"x \"\" y\"###"),
+        vec![Token::StringLiteral(r#"x "" y"#.to_string())]
+    );
+    // 与原始标识符 `r#type` 区分（`r#"` 前缀须走字符串分支）
+    assert_eq!(
+        tokens("r#\"a\"# b"),
+        vec![
+            Token::StringLiteral("a".to_string()),
+            Token::Ident("b".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn test_raw_identifier() {
     assert_eq!(tokens("r#type"), vec![Token::Ident("type".to_string())]);
 }

@@ -99,13 +99,18 @@ pub enum MirStmt {
         options: HirRegionOptions,
     },
     /// 区域退出
-    RegionExit,
-    /// `target = alloc_in_region(target, 'region)`：对象在区域中登记
+    RegionExit {
+        /// 区域名（与 `RegionEnter` 配对；匿名区域为 `None`）
+        name: Option<String>,
+    },
+    /// `target = alloc_in_region(target, 'region)`：对象在区域中分配（L3 接线）
     AllocInRegion {
         /// 目标变量
         target: Local,
         /// 区域名
         region: String,
+        /// 对象字节大小（`type_slot_count × 8`，0 = 标量 / 无需接线）
+        size: usize,
     },
     /// `transfer place out of 'region`
     Transfer {

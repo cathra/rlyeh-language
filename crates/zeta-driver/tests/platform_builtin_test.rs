@@ -49,7 +49,10 @@ fn target_os_code_mapping() {
     assert_eq!(zeta_driver::target_os_code(Some("x86_64-unknown-linux-gnu")), 1);
     assert_eq!(zeta_driver::target_os_code(Some("aarch64-unknown-linux-gnu")), 1);
     assert_eq!(zeta_driver::target_os_code(Some("x86_64-pc-windows-msvc")), 3);
-    assert_eq!(zeta_driver::target_os_code(Some("wasm32-unknown-unknown")), 0);
+    // L4a: wasm/wasi 目标映射为 5（WASI 专属码，net 模块据此短路）
+    assert_eq!(zeta_driver::target_os_code(Some("wasm32-unknown-unknown")), 5);
+    assert_eq!(zeta_driver::target_os_code(Some("wasm32-wasip1")), 5);
+    assert_eq!(zeta_driver::target_os_code(Some("wasm32-wasi")), 5);
     // 无 target = 主机；主机 triple 也应得到同一码
     assert_eq!(zeta_driver::target_os_code(None), host_os_code());
     let host = zeta_driver::host_triple();

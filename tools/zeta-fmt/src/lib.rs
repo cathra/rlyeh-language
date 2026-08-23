@@ -578,7 +578,7 @@ fn fmt_expr(e: &AstExpr) -> String {
         ExprKind::Transfer { expr, region } => {
             format!("transfer {} out of '{}", fmt_expr(expr), region)
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             let c = fmt_operand(callee, PREC_POSTFIX, false);
             let a = args.iter().map(fmt_expr).collect::<Vec<_>>().join(", ");
             format!("{}({})", c, a)
@@ -622,6 +622,7 @@ fn fmt_expr(e: &AstExpr) -> String {
         ),
         ExprKind::Closure {
             params,
+            param_types,
             body,
             capture,
         } => {
@@ -629,9 +630,14 @@ fn fmt_expr(e: &AstExpr) -> String {
                 CaptureMode::Move => "move ",
                 CaptureMode::Borrow => "",
             };
+            // 参数类型注解 `|x: i64, y|`：有注解的参数拼上类型
             let ps = params
                 .iter()
-                .map(fmt_pattern)
+                .zip(param_types.iter())
+                .map(|(p, t)| match t {
+                    Some(ty) => format!("{}: {}", fmt_pattern(p), fmt_type(ty)),
+                    None => fmt_pattern(p),
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             let b = if is_block_like(body) {

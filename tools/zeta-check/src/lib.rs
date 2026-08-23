@@ -485,7 +485,7 @@ impl Checker {
             } => self.walk_block(body),
             ExprKind::GcRegion { body } => self.walk_block(body),
             ExprKind::Transfer { expr, .. } => self.walk_expr(expr),
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 self.walk_expr(callee);
                 for a in args {
                     self.walk_expr(a);
@@ -518,6 +518,7 @@ impl Checker {
             }
             ExprKind::Closure {
                 params,
+                param_types: _,
                 body,
                 capture: _,
             } => {

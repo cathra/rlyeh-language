@@ -1,15 +1,24 @@
 # Zeta 语言语法规范 (EBNF)
 
 > 版本：v2.0  
-> 最后更新：2026-08-22
+> 最后更新：2026-08-23
 
 > **⚠️ 实现状态**：本文为**目标语法规范**（EBNF），其中部分语法为规划特性，MVP 编译器尚未实现：
 > 宏系统（§2.14 `macro_rules!` 已实现：`$x:expr`/`ident`/`ty`/`tt` + `$(`...`)` 重复，parse 期 AST 展开；
-> 内置格式化宏 `println!`/`print!`/`format!`/`dbg!` 已实现，`vec!` 等其它内置宏仍规划）、
+> 内置格式化宏 `println!`/`print!`/`format!`/`dbg!` 与集合宏 `arr!`/`vec!`/`map!` 均已实现（I3 ✅，parse 期 desugar，见 §2.14 下方说明）、
 > 闭包 `|x| ...`（typecheck 报 Unsupported）、引用类型 `&T` 已实现
 > （G1 ✅：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、`*` 解引用；`&str` 只读借用视图已实现
 > （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*T` 仍规划）、
 > `dyn Trait`、`?` 运算符、生命周期参数 `'a` 等。
+> 普通函数 `async fn`/`await` 已实现（L1 ✅：`FnDecl`/`ActorMethod` 的 `async?` 与 `expr.await` 语法全程接受，
+> MVP 同步语义——`async` 关键字与 `.await` 为语法标记，编译为同步调用，复用 actor 机制；`Future`/executor 仍规划）。
+> JSON 序列化已实现（L2 ✅：`json::stringify(v)` 与 `json::parse::<T>(s)` 内建，turbofish 泛型实参
+> `::<T>`（PostfixOp `'::' '<' TypeList '>' '(' ArgList? ')'`，parser 三 token 前瞻检测；嵌套泛型
+> `>>` 拆分层）；typecheck 期 desugar 为 String 构建/解析表达式，零新增 IR 节点；支持标量/数组/struct/Vec/
+> HashMap 序列化（L2f）与 i64/bool/String/HashMap 反序列化（L2g）；自定义 `Serialize`/`Deserialize` 仍规划）。
+> 平台加固已实现（L4 ✅：WASI（`__zeta_target_os` 码 5）下 net 模块网络函数明确禁用短路返回；actor 交叉编译 /
+> WASM 支持——`wasm32-wasip1` 目标下 driver 注入静态 `zeta_actor_resolve` 符号表替代 dlsym，actor 语法
+> （§2.7）与受监督语义全程可用，详见 guide.md §11.3）。
 > **已实现子集的教程与可运行示例见 [`guide.md`](./guide.md)，已知限制见其 §13。**
 
 ## 相关文档
@@ -252,6 +261,10 @@ PostfixOp   ::= '.' Ident
               | '(' ArgList? ')'
               | '?'
               | 'in' RegionName
+              | '::' '<' TypeList '>' '(' ArgList? ')'   (* L2 ✅ turbofish 泛型实参：`json::parse::<i64>(s)`、
+                                                            `json::parse::<HashMap<i64, i64>>(s)`；parser 对 `::<` 三 token
+                                                            前瞻检测，类型实参经子 Parser 解析（支持嵌套泛型，
+                                                            收尾 `>>` 按 pending 深度拆分为逐层 `>`） *)
 
 PrimaryExpr ::= Literal
               | Ident
@@ -347,6 +360,21 @@ MacroItem   ::= '$' Ident ':' MacroClass
               | '{' MacroItem* '}'
               | ~['$', '(', ')', '[', ']', '{', '}']
 ```
+
+**集合宏**（I3 ✅，parse 期 desugar，零新增 IR）：
+
+```
+ArrMacro ::= 'arr' '!' '(' Expr (',' Expr)* ')'
+VecMacro ::= 'vec' '!' '(' Expr (',' Expr)* ')'
+MapMacro ::= 'map' '!' '(' Expr '=>' Expr (',' Expr '=>' Expr)* ')'
+```
+
+- `arr![a, b, c]` → 数组字面量（元素类型须统一，长度编译期已知）
+- `vec![a, b, c]` → 块表达式 `let mut __vec_N = Vec::with_capacity(n); __vec_N.push(a); ...; __vec_N`（空 → `Vec::new()`）
+- `map![k1 => v1, k2 => v2]` → 块表达式 `let mut __map_N = HashMap::with_capacity(n); __map_N.insert(k1, v1); ...; __map_N`（空 → `HashMap::new()`；元素缺 `=>` 报 parse 错）
+
+元素为任意表达式（含嵌套宏调用、绑定变量），经子 Parser 继承宏注册表解析；
+`Vec::with_capacity`/`HashMap::with_capacity` 为 typecheck 构造器特判，`push`/`insert` 为 std 方法调用。
 
 ---
 

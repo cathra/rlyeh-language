@@ -452,6 +452,8 @@ pub enum ExprKind {
         callee: AstExpr,
         /// 实参
         args: Vec<AstExpr>,
+        /// 泛型类型实参（turbofish `::<T1, T2>`，L2：`json.parse::<T>(s)`）
+        type_args: Vec<AstType>,
     },
 
     /// 宏调用（`println!(...)` / `format!(...)` 等内置格式化宏）。
@@ -506,6 +508,9 @@ pub enum ExprKind {
     Closure {
         /// 形参模式
         params: Vec<AstPattern>,
+        /// 形参类型注解（与 `params` 平行；`None` = 无注解）。
+        /// 支持 `|x: i64| ..` 语法：全注解时可在无 fn 上下文处创建闭包值对象。
+        param_types: Vec<Option<AstType>>,
         /// 闭包体
         body: AstExpr,
         /// 捕获模式
@@ -636,7 +641,14 @@ pub enum CaptureMode {
     Borrow,
 }
 
-/// 区域选项（`region 'r with_size(...) allow_growth(...) exact adaptive`）。
+/// 区域分配策略（`strategy (bump)`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionStrategy {
+    /// 显式 bump 分配（默认策略，等价倍率扩容）
+    Bump,
+}
+
+/// 区域选项（`region 'r with_size(...) allow_growth(...) exact adaptive strategy(...)`）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RegionOptions {
     /// 固定初始大小（`with_size(N)`）
@@ -649,10 +661,12 @@ pub struct RegionOptions {
     pub adaptive: bool,
     /// 精确大小模式（`exact`）
     pub exact: bool,
+    /// 显式分配策略（`strategy (bump)`）
+    pub strategy: Option<RegionStrategy>,
 }
 
 impl Default for RegionOptions {
-    /// 默认区域选项：允许扩容、无固定大小、非自适应、非精确
+    /// 默认区域选项：允许扩容、无固定大小、非自适应、非精确、无显式策略
     fn default() -> Self {
         Self {
             size: None,
@@ -660,6 +674,7 @@ impl Default for RegionOptions {
             growth_factor: None,
             adaptive: false,
             exact: false,
+            strategy: None,
         }
     }
 }

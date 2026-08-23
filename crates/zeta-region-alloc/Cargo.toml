@@ -17,3 +17,5 @@ harness = false
 
 [lib]
 path = "src/lib.rs"
+# staticlib：供编译器生成的 LLVM 代码链接（L3 接线）
+crate-type = ["rlib", "staticlib"]

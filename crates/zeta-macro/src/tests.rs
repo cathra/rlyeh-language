@@ -40,6 +40,22 @@ fn toks(input: &str) -> Vec<Token> {
                 "!" => NotNot,
                 "?" => Question,
                 "&" => BitAnd,
+                ">" => Gt,
+                "<" => Lt,
+                ">=" => Ge,
+                "<=" => Le,
+                "==" => Eq,
+                "!=" => Ne,
+                "||" => OrOr,
+                "&&" => AndAnd,
+                "/" => Slash,
+                "%" => Percent,
+                "..<" => DotDotLt,
+                "..." => DotDotDot,
+                "as" => As,
+                "." => Dot,
+                "not" => Not,
+                "in" => In,
                 _ if w.starts_with('"') => StringLiteral(w.trim_matches('"').to_string()),
                 _ if w.chars().all(|c| c.is_ascii_digit()) => IntLiteral(w.parse().unwrap()),
                 _ => Ident(w.to_string()),
@@ -205,4 +221,71 @@ fn test_expr_atom_limits() {
     // 字符串字面量
     let out = expand(&macros, "m", &toks("\"hi\"")).unwrap();
     assert_eq!(out, vec![StringLiteral("hi".into())]);
+}
+
+#[test]
+fn test_expr_multi_token() {
+    // 二元中缀：`3 + 4`
+    let macros = single_rule("$x : expr", "$x");
+    let out = expand(&macros, "m", &toks("3 + 4")).unwrap();
+    assert_eq!(out, vec![IntLiteral(3), Plus, IntLiteral(4)]);
+
+    // 比较链：`a > b`
+    let out = expand(&macros, "m", &toks("a > b")).unwrap();
+    assert_eq!(out, vec![Ident("a".into()), Gt, Ident("b".into())]);
+
+    // 一元负：`-1`
+    let out = expand(&macros, "m", &toks("- 1")).unwrap();
+    assert_eq!(out, vec![Minus, IntLiteral(1)]);
+
+    // 调用 + 算术：`f ( x ) + 1`
+    let out = expand(&macros, "m", &toks("f ( x ) + 1")).unwrap();
+    assert_eq!(
+        out,
+        vec![
+            Ident("f".into()),
+            LParen,
+            Ident("x".into()),
+            RParen,
+            Plus,
+            IntLiteral(1),
+        ]
+    );
+
+    // 成员访问：`a . b`
+    let out = expand(&macros, "m", &toks("a . b")).unwrap();
+    assert_eq!(out, vec![Ident("a".into()), Dot, Ident("b".into())]);
+
+    // `as` 转换：`x as i64`
+    let out = expand(&macros, "m", &toks("x as i64")).unwrap();
+    assert_eq!(
+        out,
+        vec![Ident("x".into()), As, Ident("i64".into())]
+    );
+
+    // 范围：`0..<10`
+    let out = expand(&macros, "m", &toks("0 ..< 10")).unwrap();
+    assert_eq!(
+        out,
+        vec![IntLiteral(0), DotDotLt, IntLiteral(10)]
+    );
+}
+
+#[test]
+fn test_expr_boundary_stops() {
+    // 逗号分隔（两个 $x:expr 的边界）
+    let macros = single_rule("$a : expr , $b : expr", "[ $a , $b ]");
+    let out = expand(&macros, "m", &toks("1 + 2 , 3")).unwrap();
+    assert_eq!(
+        out,
+        vec![
+            LBracket,
+            IntLiteral(1),
+            Plus,
+            IntLiteral(2),
+            Comma,
+            IntLiteral(3),
+            RBracket,
+        ]
+    );
 }

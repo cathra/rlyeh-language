@@ -55,15 +55,34 @@ pub(crate) fn check_comparison_chain(
         //   `s1 < s2`  → `__c < 0 || (__c == 0 && __la < __lb)`
         //   `s1 > s2`  → `s2 < s1`（交换操作数）
         //   `s1 <= s2` → `!(s2 < s1)`，`s1 >= s2` → `!(s1 < s2)`
-        // `&str` 视图与 String 同内容语义（G2），一并纳入字符串比较
-        let lhs_str = is_string_type(ctx, &items[0].2) || is_str_view(&items[0].2);
-        let rhs_str = is_string_type(ctx, &items[1].2) || is_str_view(&items[1].2);
+        // `&str` 视图与 String 同内容语义（G2），`str` 值（字面量绑定）经
+        // 升级为 String 对象后同样纳入字符串比较（内容比较，非指针比较）
+        let lhs_str = is_string_type(ctx, &items[0].2)
+            || is_str_view(&items[0].2)
+            || is_str_value(&items[0].2);
+        let rhs_str = is_string_type(ctx, &items[1].2)
+            || is_str_view(&items[1].2)
+            || is_str_value(&items[1].2);
         if matches!(
             op,
             CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge
         ) && lhs_str
             && rhs_str
         {
+            // `str` 值操作数升级为 String 对象（编译期长度展开，见
+            // `check_string_from`），使 `string_lt_hir` 可读 len/data 槽
+            if is_str_value(&items[0].2) {
+                let (h, t) =
+                    check_expr::check_string_from(ctx, std::slice::from_ref(&items[0].0), span)?;
+                items[0].1 = h;
+                items[0].2 = t;
+            }
+            if is_str_value(&items[1].2) {
+                let (h, t) =
+                    check_expr::check_string_from(ctx, std::slice::from_ref(&items[1].0), span)?;
+                items[1].1 = h;
+                items[1].2 = t;
+            }
             let (lhs, rhs) = (&items[0].1, &items[1].1);
             let hir = match op {
                 CompareOp::Lt => string_lt_hir(ctx, lhs, rhs),
@@ -78,10 +97,27 @@ pub(crate) fn check_comparison_chain(
             };
             return Ok((hir, Type::Bool));
         }
-        check_comparison(&items[0].2, &items[1].2, op, span)?;
+        // 字符串组合（Str 值 / `&str` 视图 / String）跳过类型兼容检查
+        // （`check_comparison` 仅放行数值与字符；字符串内容比较在下方统一处理）
+        if !(lhs_str && rhs_str) {
+            check_comparison(&items[0].2, &items[1].2, op, span)?;
+        }
         // String 对象相等 / 不等：内容比较 desugar
         // `s1 == s2` → `s1.len == s2.len && bytes_eq(s1.data, s2.data, s1.len)`
         if matches!(op, CompareOp::Eq | CompareOp::Ne) && lhs_str && rhs_str {
+            // `str` 值操作数升级为 String 对象（同字典序分支）
+            if is_str_value(&items[0].2) {
+                let (h, t) =
+                    check_expr::check_string_from(ctx, std::slice::from_ref(&items[0].0), span)?;
+                items[0].1 = h;
+                items[0].2 = t;
+            }
+            if is_str_value(&items[1].2) {
+                let (h, t) =
+                    check_expr::check_string_from(ctx, std::slice::from_ref(&items[1].0), span)?;
+                items[1].1 = h;
+                items[1].2 = t;
+            }
             let eq = string_eq_hir(ctx, &items[0].1, &items[1].1);
             let hir = if op == CompareOp::Ne {
                 HirExpr::Unary(HirUnaryOp::Not, Box::new(eq))
@@ -237,6 +273,15 @@ pub(crate) fn is_string_type(ctx: &TypeContext, ty: &Type) -> bool {
 /// （比较 / 方法 / 索引 / 切片）与 String 一致。
 pub(crate) fn is_str_view(ty: &Type) -> bool {
     matches!(ty, Type::Ref(inner, _) if matches!(**inner, Type::Str))
+}
+
+/// 是否为 `str` 值（字符串字面量 / 绑定字面量的变量；非 `&str` 引用）。
+///
+/// MVP 中 `str` 值的运行期表示是 `i8*` 数据指针（指向静态字面量数据），
+/// 无 String 对象的 len/cap 槽；参与字符串操作（方法 / 拼接 / 比较）前
+/// 需升级为 String 对象（编译期长度展开，见 `check_string_from`）。
+pub(crate) fn is_str_value(ty: &Type) -> bool {
+    matches!(ty, Type::Str)
 }
 
 /// 判断类型是否为已定义的结构体对象（含 `Vec` / `HashMap` 等动态集合）。

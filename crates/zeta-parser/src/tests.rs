@@ -754,6 +754,32 @@ fn test_nested_generics_shr_split() {
 }
 
 #[test]
+fn test_turbofish_nested_generics_shr_split() {
+    // `json::parse::<HashMap<i64, i64>>(s)`：`>>` 拆分为两层 `>`（HashMap 关闭 + turbofish 关闭）
+    let program = parse_ok("let m = json::parse::<HashMap<i64, i64>>(s);");
+    let AstItem::Statement(stmt) = &program.items[0] else {
+        panic!();
+    };
+    let AstStmt::Let { init, .. } = &**stmt else {
+        panic!();
+    };
+    let ExprKind::Call { callee, args, type_args } = &*init.kind else {
+        panic!("expected call");
+    };
+    assert!(matches!(&*callee.kind, ExprKind::Path(ref segs) if segs == &["json", "parse"]));
+    assert_eq!(type_args.len(), 1);
+    let AstType::Path(name, ty_args) = &type_args[0] else {
+        panic!("expected path type");
+    };
+    assert_eq!(name, "HashMap");
+    assert_eq!(ty_args.len(), 2);
+    assert!(matches!(&ty_args[0], AstType::Path(n, _) if n == "i64"));
+    assert!(matches!(&ty_args[1], AstType::Path(n, _) if n == "i64"));
+    assert_eq!(args.len(), 1);
+    assert!(matches!(&*args[0].kind, ExprKind::Ident(n) if n == "s"));
+}
+
+#[test]
 fn test_for_loop() {
     let program = parse_ok("for i in 0..<10000 { sum += i; }");
     let e = top_expr(&program);
@@ -837,7 +863,7 @@ fn test_path_expression() {
     let AstStmt::Let { init, .. } = &**stmt else {
         panic!();
     };
-    let ExprKind::Call { callee, args } = &*init.kind else {
+    let ExprKind::Call { callee, args, .. } = &*init.kind else {
         panic!("expected call");
     };
     let ExprKind::Path(segments) = &*callee.kind else {
@@ -869,6 +895,7 @@ fn test_closure() {
     };
     let ExprKind::Closure {
         params,
+        param_types,
         body,
         capture,
     } = &*init.kind
@@ -876,8 +903,26 @@ fn test_closure() {
         panic!("expected closure");
     };
     assert_eq!(params.len(), 2);
+    assert!(param_types.iter().all(|t| t.is_none()));
     assert!(matches!(capture, zeta_ast::CaptureMode::Borrow));
     assert!(matches!(&*body.kind, ExprKind::Binary { .. }));
+}
+
+#[test]
+fn test_closure_param_anno() {
+    let program = parse_ok("let f = |x: i64, y: String| x;");
+    let AstItem::Statement(stmt) = &program.items[0] else {
+        panic!();
+    };
+    let AstStmt::Let { init, .. } = &**stmt else {
+        panic!();
+    };
+    let ExprKind::Closure { params, param_types, .. } = &*init.kind else {
+        panic!("expected closure");
+    };
+    assert_eq!(params.len(), 2);
+    assert!(param_types[0].is_some());
+    assert!(param_types[1].is_some());
 }
 
 #[test]

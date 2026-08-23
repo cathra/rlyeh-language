@@ -110,6 +110,18 @@ impl<'src> Lexer<'src> {
             '\'' => self.read_char_or_lifetime()?,
             // 原始字符串 / 原始标识符：必须在普通标识符分支之前判断
             'r' if self.peek_nth(1) == Some('"') => self.read_raw_string()?,
+            // `r#"..."#` / `r##"..."##`：一个或多个 `#` 定界，其后跟 `"` 即哈希原始字符串
+            'r'
+                if {
+                    let mut k = 1;
+                    while self.peek_nth(k) == Some('#') {
+                        k += 1;
+                    }
+                    k > 1 && self.peek_nth(k) == Some('"')
+                } =>
+            {
+                self.read_raw_hash_string()?
+            }
             'r' if self.peek_nth(1) == Some('#') => self.read_raw_ident(),
             c if c.is_xid_start() || c == '_' => self.read_identifier(),
             '@' => {
@@ -473,6 +485,46 @@ impl<'src> Lexer<'src> {
             self.bump();
         }
         Err(LexError::UnterminatedString { line, col })
+    }
+
+    /// 读取带哈希原始字符串 `r#"..."#` / `r##"..."##`（不处理转义，
+    /// 内容到 `"` 后跟 N 个 `#` 结束，N = 前缀哈希数）。
+    fn read_raw_hash_string(&mut self) -> Result<Token, LexError> {
+        let (line, col) = (self.line, self.col);
+        self.bump(); // r
+        let mut hashes = 0usize;
+        while self.peek_char() == Some('#') {
+            self.bump();
+            hashes += 1;
+        }
+        self.bump(); // "
+        let start = self.byte_pos;
+        loop {
+            match self.peek_char() {
+                None => return Err(LexError::UnterminatedString { line, col }),
+                Some('"') => {
+                    let mut ok = true;
+                    for i in 0..hashes {
+                        if self.peek_nth(1 + i) != Some('#') {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if ok {
+                        let text = self.source[start..self.byte_pos].to_string();
+                        self.bump(); // "
+                        for _ in 0..hashes {
+                            self.bump(); // #s
+                        }
+                        return Ok(Token::StringLiteral(text));
+                    }
+                    self.bump();
+                }
+                Some(_) => {
+                    self.bump();
+                }
+            }
+        }
     }
 
     /// 判断是字符字面量还是生命周期标签，并分发

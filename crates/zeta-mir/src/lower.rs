@@ -31,6 +31,9 @@ pub struct MirLowerer {
     temp_counter: usize,
     /// 循环上下文栈
     loop_stack: Vec<LoopCtx>,
+    /// 匿名区域序号（L3：匿名区域赋唯一内部名 `__anon_region_N`，
+    /// 供 `RegionExit` 与代码生成的区域句柄槽配对）
+    anon_region_seq: usize,
 }
 
 /// 将 HIR 程序降低为 MIR 程序。
@@ -290,19 +293,29 @@ impl MirLowerer {
                 options,
                 body,
             } => {
+                // 匿名区域赋唯一内部名，保证 RegionExit 与句柄槽正确配对
+                let key = match name {
+                    Some(n) => n.clone(),
+                    None => {
+                        let n = format!("__anon_region_{}", self.anon_region_seq);
+                        self.anon_region_seq += 1;
+                        n
+                    }
+                };
                 self.emit(MirStmt::RegionEnter {
-                    name: name.clone(),
+                    name: Some(key.clone()),
                     options: *options,
                 });
                 let val = self.lower_block(body)?;
-                self.emit(MirStmt::RegionExit);
+                self.emit(MirStmt::RegionExit { name: Some(key) });
                 Some(MirValue::Place(val))
             }
-            HirExpr::InRegion { expr, region } => {
+            HirExpr::InRegion { expr, region, size } => {
                 let val = self.lower_expr(expr)?;
                 self.emit(MirStmt::AllocInRegion {
                     target: val.clone(),
                     region: region.clone(),
+                    size: *size,
                 });
                 Some(MirValue::Place(val))
             }

@@ -2,7 +2,10 @@
 
 use crate::error::ParseError;
 use crate::parser::{Parser, MAX_MACRO_DEPTH};
-use zeta_ast::{AssignOp, AstBlock, AstExpr, BinaryOp, CaptureMode, CompareOp, ExprKind, UnaryOp};
+use zeta_ast::{
+    AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, BinaryOp, CaptureMode, CompareOp, ExprKind,
+    UnaryOp,
+};
 use zeta_lexer::{LocatedToken, Span, Token};
 use zeta_macro::expand as expand_macro;
 
@@ -61,11 +64,43 @@ impl<'src> Parser<'src> {
                 lhs = self.parse_postfix_dot(lhs)?;
                 continue;
             }
-            if self.check(&Token::LParen) {
+            if self.check(&Token::LParen) || self.check_turbofish() {
                 let start = lhs.span;
+                // turbofish 泛型类型实参：`foo::<T1, T2>(args)`（L2：`json.parse::<T>(s)`）。
+                // 关闭处支持 `>>` 拆分为两层 `>`（嵌套泛型：`::<HashMap<i64, Vec<i64>>>(s)`）
+                let type_args = if self.check_turbofish() {
+                    self.bump(); // :
+                    self.bump(); // :
+                    self.bump(); // <
+                    let mut tys = Vec::new();
+                    loop {
+                        if self.at_eof() {
+                            return Err(self.unexpected("'>'"));
+                        }
+                        tys.push(self.parse_type()?);
+                        if !self.eat(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    // 关闭 turbofish：优先消费 parse_type 留下的 `>>` 拆分层（pending_gt），
+                    // 否则消费一个 `>`；`Shr` 自身也可拆一层留到外层
+                    if self.pending_gt > 0 {
+                        self.pending_gt -= 1;
+                    } else if !self.eat(&Token::Gt) {
+                        if self.check(&Token::Shr) {
+                            self.bump();
+                            self.pending_gt += 1;
+                        } else {
+                            return Err(self.unexpected("'>'"));
+                        }
+                    }
+                    tys
+                } else {
+                    Vec::new()
+                };
                 let (args, end) = self.parse_call_args()?;
                 let span = self.merge_span(start, end);
-                lhs = AstExpr::new(ExprKind::Call { callee: lhs, args }, span);
+                lhs = AstExpr::new(ExprKind::Call { callee: lhs, args, type_args }, span);
                 continue;
             }
             if self.check(&Token::LBracket) {
@@ -544,7 +579,17 @@ impl<'src> Parser<'src> {
         }
         // 路径 `a::b::c`（lexer 将 `::` 拆为两个 `:`，此处合并）
         let mut segments = vec![name];
-        while self.eat_colon_colon() {
+        loop {
+            // turbofish 检测：`a::b::<T>(...)` 的 `::<` 停止路径解析，由 Call 后缀处理
+            if self.check(&Token::Colon)
+                && self.peek_n(1).is_some_and(|t| t.token == Token::Colon)
+                && self.peek_n(2).is_some_and(|t| t.token == Token::Lt)
+            {
+                break;
+            }
+            if !self.eat_colon_colon() {
+                break;
+            }
             let seg = self.expect_ident()?;
             segments.push(seg);
         }
@@ -611,6 +656,11 @@ impl<'src> Parser<'src> {
             return Err(self.unexpected("宏调用的定界符 '('/'['/'{'"));
         };
         let tokens = self.collect_group_content(&close)?;
+        // I3 集合宏（`arr!`/`vec!`/`map!`）：parse 期 desugar 为数组字面量或
+        // 块表达式（`Vec::with_capacity` + 逐元素 `push`/`insert`），零新增 IR 节点
+        if is_collection_macro(&name) {
+            return self.parse_collection_macro(&name, &tokens, start);
+        }
         // 内置格式化宏：参数 = 表达式列表
         if is_builtin_macro(&name) {
             let mut wrapped = Vec::with_capacity(tokens.len() + 2);
@@ -680,11 +730,178 @@ impl<'src> Parser<'src> {
         }
         Err(ParseError::Macro {
             msg: format!(
-                "未定义的宏 `{name}`（内置格式化宏：println!/print!/format!/dbg!）"
+                "未定义的宏 `{name}`（内置宏：println!/print!/format!/dbg!/arr!/vec!/map!）"
             ),
             line: start.line,
             col: start.col,
         })
+    }
+
+    /// 解析 I3 集合宏 `arr!` / `vec!` / `map!`（parse 期 desugar）。
+    ///
+    /// - `arr![a, b, c]` → `ExprKind::ArrayLit([a, b, c])`（元素须类型统一，typecheck 校验）
+    /// - `vec![a, b, c]` → 块：`let mut __vec_N = Vec::with_capacity(3);`
+    ///   `__vec_N.push(a); ...; __vec_N`（空 → `Vec::new()`）
+    /// - `map![k1 => v1, ...]` → 块：`let mut __map_N = HashMap::with_capacity(n);`
+    ///   `__map_N.insert(k1, v1); ...; __map_N`（空 → `HashMap::new()`）
+    ///
+    /// 元素 token 流经子 Parser 解析（继承宏注册表，支持嵌套宏调用与完整表达式）；
+    /// `Vec::with_capacity`/`Vec::push`、`HashMap::insert` 均为 typecheck 已有路径
+    /// （构造器特判 + std 方法查询），零新增 IR 节点。
+    fn parse_collection_macro(
+        &mut self,
+        name: &str,
+        tokens: &[Token],
+        start: Span,
+    ) -> Result<AstExpr, ParseError> {
+        let mut wrapped = Vec::with_capacity(tokens.len() + 2);
+        wrapped.push(LocatedToken::new(Token::LParen, start));
+        for t in tokens {
+            wrapped.push(LocatedToken::new(t.clone(), start));
+        }
+        wrapped.push(LocatedToken::new(Token::RParen, start));
+        let mut sub = Parser::from_tokens(wrapped, self.macros.clone(), self.macro_depth);
+        let span = self.span_until_current(start);
+
+        let result = match name {
+            "arr" => {
+                let (elems, _) = sub.parse_call_args()?;
+                if !sub.at_eof() {
+                    return Err(ParseError::Macro {
+                        msg: "宏 `arr!` 参数解析后有多余 token".to_string(),
+                        line: start.line,
+                        col: start.col,
+                    });
+                }
+                Ok(AstExpr::new(ExprKind::ArrayLit(elems), span))
+            }
+            "vec" | "map" => {
+                let is_map = name == "map";
+                // 逐元素解析：`vec!` 元素为单表达式；`map!` 元素为 `k => v`（FatArrow）
+                // （先消费包裹的 `(`，与 `parse_call_args` 行为一致）
+                let mut elems: Vec<(AstExpr, Option<AstExpr>)> = Vec::new();
+                sub.expect(&Token::LParen, "'('")?;
+                loop {
+                    if sub.check(&Token::RParen) {
+                        break; // 空集合 `vec![]` / `map![]`
+                    }
+                    if sub.at_eof() {
+                        return Err(ParseError::Macro {
+                            msg: format!("宏 `{name}!` 元素列表未闭合"),
+                            line: start.line,
+                            col: start.col,
+                        });
+                    }
+                    let key = sub.parse_expr()?;
+                    if sub.eat(&Token::FatArrow) {
+                        let val = sub.parse_expr()?;
+                        elems.push((key, Some(val)));
+                    } else if is_map {
+                        return Err(ParseError::Macro {
+                            msg: "宏 `map!` 元素必须为 `k => v` 键值对（缺少 `=>`）".to_string(),
+                            line: start.line,
+                            col: start.col,
+                        });
+                    } else {
+                        elems.push((key, None));
+                    }
+                    if !sub.eat(&Token::Comma) {
+                        break;
+                    }
+                }
+                sub.expect(&Token::RParen, "')'")?;
+                if !sub.at_eof() {
+                    return Err(ParseError::Macro {
+                        msg: format!("宏 `{name}!` 参数解析后有多余 token"),
+                        line: start.line,
+                        col: start.col,
+                    });
+                }
+
+                // 临时变量名（与 typecheck `fresh_temp` 命名风格一致）
+                let tmp_name = if is_map {
+                    format!("__map_{}", self.collection_temp_seq)
+                } else {
+                    format!("__vec_{}", self.collection_temp_seq)
+                };
+                self.collection_temp_seq += 1;
+
+                let mut stmts = Vec::new();
+                // `let mut __tmp = Vec/HashMap::with_capacity(n);`（空 → `new()`）
+                let ctor = if elems.is_empty() {
+                    ExprKind::Call {
+                        callee: AstExpr::new(
+                            ExprKind::Ident(if is_map {
+                                "HashMap::new".to_string()
+                            } else {
+                                "Vec::new".to_string()
+                            }),
+                            span,
+                        ),
+                        args: Vec::new(),
+                        type_args: Vec::new(),
+                    }
+                } else {
+                    let len = AstExpr::new(ExprKind::IntLiteral(elems.len() as i128), span);
+                    ExprKind::Call {
+                        callee: AstExpr::new(
+                            ExprKind::Ident(if is_map {
+                                "HashMap::with_capacity".to_string()
+                            } else {
+                                "Vec::with_capacity".to_string()
+                            }),
+                            span,
+                        ),
+                        args: vec![len],
+                        type_args: Vec::new(),
+                    }
+                };
+                stmts.push(AstStmt::Let {
+                    pattern: AstPattern::Ident(tmp_name.clone()),
+                    type_anno: None,
+                    init: AstExpr::new(ctor, span),
+                    mutable: true,
+                });
+
+                // 逐元素 `.push(e)` / `.insert(k, v)`
+                let receiver = AstExpr::new(ExprKind::Ident(tmp_name.clone()), span);
+                for (k, v) in &elems {
+                    let args = if is_map {
+                        vec![
+                            k.clone(),
+                            v.clone().expect("map! 元素 value 必填（已校验）"),
+                        ]
+                    } else {
+                        vec![k.clone()]
+                    };
+                    stmts.push(AstStmt::Semi(AstExpr::new(
+                        ExprKind::MethodCall {
+                            receiver: receiver.clone(),
+                            method: if is_map {
+                                "insert".to_string()
+                            } else {
+                                "push".to_string()
+                            },
+                            args,
+                        },
+                        span,
+                    )));
+                }
+
+                // 块值 = 集合变量
+                let block = AstExpr::new(
+                    ExprKind::Block(AstBlock {
+                        stmts,
+                        final_expr: Some(AstExpr::new(ExprKind::Ident(tmp_name), span)),
+                        span,
+                    }),
+                    span,
+                );
+                Ok(block)
+            }
+            _ => unreachable!("is_collection_macro 已过滤宏名"),
+        };
+        result
     }
 
     /// 判断当前位置是否为结构体字面量构造 `Ident { field: value, ... }`。
@@ -718,6 +935,13 @@ impl<'src> Parser<'src> {
         } else {
             false
         }
+    }
+
+    /// turbofish 检测：`::<`（PathSep + Lt），用于 `foo::<T>(args)` 泛型类型实参
+    pub(crate) fn check_turbofish(&self) -> bool {
+        self.check(&Token::Colon)
+            && self.peek_n(1).is_some_and(|t| t.token == Token::Colon)
+            && self.peek_n(2).is_some_and(|t| t.token == Token::Lt)
     }
 
     /// 括号表达式：空集合 / 集合字面量 / 分组
@@ -913,12 +1137,22 @@ impl<'src> Parser<'src> {
         };
         // 开 `|`：单个 `|` 后有参数列表，`||` 表示无参数
         let mut params = Vec::new();
+        // 参数类型注解（与 `params` 平行）
+        let mut param_types = Vec::new();
         if self.eat(&Token::BitOr) {
             while !self.check(&Token::BitOr) {
                 if self.at_eof() {
                     return Err(self.unexpected("'|'"));
                 }
-                params.push(self.parse_pattern()?);
+                let pat = self.parse_pattern()?;
+                // 闭包参数类型注解 `|x: i64, y: String|`（与 Rust 兼容）
+                let anno = if self.eat(&Token::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                params.push(pat);
+                param_types.push(anno);
                 if !self.eat(&Token::Comma) {
                     break;
                 }
@@ -932,6 +1166,7 @@ impl<'src> Parser<'src> {
         Ok(AstExpr::new(
             ExprKind::Closure {
                 params,
+                param_types,
                 body,
                 capture,
             },
@@ -1035,6 +1270,11 @@ fn binary_op(tok: &Token) -> BinaryOp {
 /// 内置格式化宏（I2：由 typecheck 层 desugar 为字符串拼接 + 打印内建）。
 pub(crate) fn is_builtin_macro(name: &str) -> bool {
     matches!(name, "println" | "print" | "format" | "dbg")
+}
+
+/// I3 集合宏名（`arr!`/`vec!`/`map!`，parse 期 desugar 为数组字面量或块表达式）
+pub(crate) fn is_collection_macro(name: &str) -> bool {
+    matches!(name, "arr" | "vec" | "map")
 }
 
 // 注意：parse_match_arm 定义在 stmt.rs，见 `impl Parser` 的 parse_match_arm。

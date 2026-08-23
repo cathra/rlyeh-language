@@ -244,6 +244,9 @@ pub enum HirExpr {
         expr: Box<HirExpr>,
         /// 区域名（不含 `'`）
         region: String,
+        /// 被归属对象的大小（字节，`type_slot_count(ty) * 8`；L3 接线用，
+        /// 0 表示标量 / 无需接线）
+        size: usize,
     },
     /// 转移（`transfer expr out of 'r`）
     Transfer {
@@ -330,6 +333,13 @@ pub enum FieldScalar {
     Ptr,
 }
 
+/// 区域分配策略（`strategy (bump)`，MVP 仅 bump）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HirRegionStrategy {
+    /// 显式 bump 分配（默认策略，等价倍率扩容）
+    Bump,
+}
+
 /// 区域选项（编译期已知，由 AST `RegionOptions` 复制而来）。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HirRegionOptions {
@@ -343,6 +353,8 @@ pub struct HirRegionOptions {
     pub adaptive: bool,
     /// 精确大小模式（`exact`）
     pub exact: bool,
+    /// 显式分配策略（`strategy (bump)`）
+    pub strategy: Option<HirRegionStrategy>,
 }
 
 /// HIR 赋值运算符。

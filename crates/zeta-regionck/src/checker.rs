@@ -123,7 +123,7 @@ impl RegionChecker {
                 // 区域结束后，未 transfer 的区域内变量归属一并清除
                 self.state.allocated.retain(|_, r| *r != key);
             }
-            HirExpr::InRegion { expr, region } => {
+            HirExpr::InRegion { expr, region, .. } => {
                 self.check_expr(expr);
                 if !self.state.region_in_scope(region) {
                     self.state.errors.push(RegionError::not_found(region));

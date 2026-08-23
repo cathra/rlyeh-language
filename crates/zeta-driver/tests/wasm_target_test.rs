@@ -66,6 +66,25 @@ fn wasm_toolchain_ready() -> bool {
     wasi_sysroot_ready() && wasm_ld_ready() && tool_exists("wasmtime")
 }
 
+/// wasm 版 Actor 运行时静态库是否就位（L4b：`cargo build --target
+/// wasm32-wasip1 -p zeta-actor-runtime` 产物；driver 探测路径之一）。
+fn wasm_actor_runtime_ready() -> bool {
+    let root = workspace_root();
+    for target in ["wasm32-wasip1", "wasm32-wasi"] {
+        for profile in ["release", "debug"] {
+            let p = root
+                .join("target")
+                .join(target)
+                .join(profile)
+                .join("libzeta_actor_runtime.a");
+            if p.exists() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// 编译入口文件为 `.wasm` 并用 wasmtime 运行，返回 stdout。
 fn build_and_run_wasm(entry: &Path, dir: &Path, tag: &str) -> String {
     let wasm = dir.join(format!("{tag}.wasm"));
@@ -137,4 +156,74 @@ fn wasm_std_features_runs() {
     let stdout = build_and_run_wasm(&f, &dir, "std-demo");
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(stdout, "60 wasm-ok 143\n");
+}
+
+/// L4b: Actor 交叉编译 / WASM 支持——ask 往返 + send 异步 + FIFO 在
+/// `wasm32-wasi` 目标下编译运行，输出与原生完全一致。
+///
+/// wasm 版 Actor 运行时（`zeta-actor-runtime` 同步模式）为单线程实现：
+/// 无 dlsym / 线程池，符号经 driver 注入的静态表 `zeta_actor_resolve` 解析，
+/// 消息同步派发（与 L1 `async` 的 MVP 同步语义一致）。
+#[test]
+fn wasm_actor_runs() {
+    if !wasm_toolchain_ready() {
+        eprintln!("跳过: wasm 工具链不齐备（需要 wasi-libc / wasm-ld / wasmtime）");
+        return;
+    }
+    if !wasm_actor_runtime_ready() {
+        eprintln!(
+            "跳过: 缺 wasm 版 Actor 运行时（先执行 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`）"
+        );
+        return;
+    }
+    let root = workspace_root();
+    let ping_pong = root.join("tests/run-pass/actor-ping-pong.zeta");
+    assert!(ping_pong.exists(), "缺测试用例: {}", ping_pong.display());
+    let dir = tmp_dir("actor");
+    let stdout = build_and_run_wasm(&ping_pong, &dir, "actor");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(stdout, "11\n12\n2\n4\n");
+}
+
+/// L4b: Actor 交叉编译——受监督崩溃重启语义在 wasm 下与原生一致：
+/// handle 返回 -1 触发崩溃协议，factory 重建初始状态，ask 崩溃时回复 0。
+#[test]
+fn wasm_actor_supervised_runs() {
+    if !wasm_toolchain_ready() {
+        eprintln!("跳过: wasm 工具链不齐备（需要 wasi-libc / wasm-ld / wasmtime）");
+        return;
+    }
+    if !wasm_actor_runtime_ready() {
+        eprintln!(
+            "跳过: 缺 wasm 版 Actor 运行时（先执行 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`）"
+        );
+        return;
+    }
+    let dir = tmp_dir("actor-sup");
+    let f = dir.join("actor-supervised.zeta");
+    std::fs::write(
+        &f,
+        "// 受监督 actor：value 达 100 崩溃一次，supervisor 重建初始状态\n\
+         actor Counter {\n\
+         \x20   value: i64 = 0,\n\
+         \x20   pub fn increment(amount: i64) -> i64 {\n\
+         \x20       self.value += amount;\n\
+         \x20       if self.value == 100 { return -1; }\n\
+         \x20       self.value\n\
+         \x20   }\n\
+         }\n\
+         fn main() {\n\
+         \x20   let c = Counter::new_supervised(0);\n\
+         \x20   let r1 = c.increment(50).await;   // 50\n\
+         \x20   let r2 = c.increment(50).await;   // 100 → -1 崩溃 → 重建 → ask 回复 0\n\
+         \x20   let r3 = c.increment(10).await;   // 重建后 0 + 10 = 10\n\
+         \x20   println(r1);\n\
+         \x20   println(r2);\n\
+         \x20   println(r3);\n\
+         }\n",
+    )
+    .unwrap();
+    let stdout = build_and_run_wasm(&f, &dir, "actor-sup");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(stdout, "50\n0\n10\n");
 }

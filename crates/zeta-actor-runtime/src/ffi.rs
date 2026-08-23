@@ -48,18 +48,22 @@ pub struct ZetaMsg {
 pub type ZetaHandler = unsafe extern "C" fn(u64, u64, u64, u64, u64) -> u64;
 
 /// 状态工厂回调签名（supervisor 重启时重建状态对象）。
-pub type ZetaFactory = unsafe extern "C" fn() -> u64;
+///
+/// Zeta 侧 `__state_new` 实际返回 `i8*`（状态对象指针），故统一为指针返回，
+/// 与 wasm（i32）及原生（8 字节）ABI 均匹配；值经 `as u64` 落入状态槽。
+pub type ZetaFactory = unsafe extern "C" fn() -> *mut c_void;
 
-/// 桥接 Actor 状态：Zeta 侧状态指针 + 编译器生成的 handle 函数。
+/// 桥接 Actor 状态：Zeta 侧状态槽值（`__state_new` 返回的 u64，存 actor 字段
+/// 槽位地址）+ 编译器生成的 handle 函数。
 pub struct CallbackActor {
-    /// Zeta 侧分配的状态对象指针（`calloc` 内存）。
-    state: *mut c_void,
+    /// Zeta 侧状态槽值（u64，由 `__state_new` 返回；原生目标下即状态内存地址）。
+    state: u64,
     /// 消息处理回调。
     handler: ZetaHandler,
 }
 
 // 状态内存由 Zeta 侧分配，运行时对同一 Actor 的消息处理串行化
-// （每 Actor 单线程互斥），裸指针在 Actor 间迁移由调度器保证安全。
+// （每 Actor 单线程互斥），状态槽值在 Actor 间迁移由调度器保证安全。
 // 生命周期与进程一致（MVP 不释放），因此可安全跨线程。
 unsafe impl Send for CallbackActor {}
 unsafe impl Sync for CallbackActor {}
@@ -74,7 +78,7 @@ impl ActorState for CallbackActor {
             .downcast::<ZetaMsg>()
             .map_err(|_| ActorError::WrongReplyType)?;
         // 回调：state 与消息槽均按 u64 传递（Zeta 侧 i64 槽语义）。
-        let ret = unsafe { (self.handler)(self.state as u64, m.kind, m.a, m.b, m.c) };
+        let ret = unsafe { (self.handler)(self.state, m.kind, m.a, m.b, m.c) };
         if ret == u64::MAX {
             // -1 为崩溃信号：handle 返回 -1 表示处理出错，视为 panic。
             // 先 reply 0 让 ask 立即失败返回（否则 ask 要干等满超时），
@@ -104,9 +108,9 @@ pub struct CallbackFactory {
 impl CallbackFactory {
     /// 创建新的桥接 Actor 状态实例。
     pub fn make(&self) -> Box<dyn ActorState> {
-        let state = unsafe { (self.factory)() };
+        let state = unsafe { (self.factory)() } as u64;
         Box::new(CallbackActor {
-            state: state as *mut c_void,
+            state,
             handler: self.handler,
         })
     }
@@ -136,16 +140,30 @@ unsafe fn cstr(ptr: *const c_char) -> String {
     CStr::from_ptr(ptr).to_string_lossy().into_owned()
 }
 
-/// 按符号名解析 Zeta 生成的 handle / factory 函数（`dlsym`）。
+/// 按符号名解析 Zeta 生成的 handle / factory 函数。
 ///
 /// 返回 `None` 表示符号未找到（Zeta 侧可能未生成该函数，或符号被 strip）。
 unsafe fn resolve_symbol(name: &str) -> Option<*mut c_void> {
-    let name_c = std::ffi::CString::new(name).ok()?;
-    let ptr = libc::dlsym(libc::RTLD_DEFAULT, name_c.as_ptr());
-    if ptr.is_null() {
-        None
-    } else {
-        Some(ptr)
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let name_c = std::ffi::CString::new(name).ok()?;
+        let ptr = libc::dlsym(libc::RTLD_DEFAULT, name_c.as_ptr());
+        if ptr.is_null() {
+            None
+        } else {
+            Some(ptr)
+        }
+    }
+    // WASI 无 dlsym：查 driver 注入的静态符号表 `zeta_actor_resolve`（L4b）。
+    #[cfg(target_os = "wasi")]
+    {
+        let name_c = std::ffi::CString::new(name).ok()?;
+        let ptr = crate::sync::resolve_symbol(name_c.as_ptr());
+        if ptr.is_null() {
+            None
+        } else {
+            Some(ptr)
+        }
     }
 }
 
@@ -171,12 +189,16 @@ fn report_err(what: &str, e: &ActorError) {
 /// 显式初始化运行时（可选；默认首次使用时自动初始化）。
 ///
 /// `workers` 为工作线程数（自动夹在 1..=64）。返回 0 表示成功。
+/// WASI 单线程同步模式下无 worker，参数忽略，恒返回 0。
 #[no_mangle]
-pub unsafe extern "C" fn zeta_actor_init(workers: i64) -> i32 {
-    let mut guard = global().lock().unwrap();
-    if guard.is_none() {
-        let n = workers.clamp(1, 64) as usize;
-        *guard = Some(RuntimeBuilder::new().with_workers(n).build());
+pub unsafe extern "C" fn zeta_actor_init(_workers: i64) -> i32 {
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let mut guard = global().lock().unwrap();
+        if guard.is_none() {
+            let n = _workers.clamp(1, 64) as usize;
+            *guard = Some(RuntimeBuilder::new().with_workers(n).build());
+        }
     }
     0
 }
@@ -184,20 +206,29 @@ pub unsafe extern "C" fn zeta_actor_init(workers: i64) -> i32 {
 /// 创建无监督 Actor。
 ///
 /// `handler` 为 Zeta 编译器生成的 handle 函数名（C 字符串），
-/// `state` 为 Zeta 侧分配的状态对象指针。返回 ActorRef 不透明句柄
-/// （0 表示失败：符号未找到或运行时未初始化）。
+/// `state` 为 Zeta 侧 `__state_new` 返回的状态槽值（u64；原生目标下即状态
+/// 内存地址）。返回 ActorRef 不透明句柄（0 表示失败：符号未找到或运行时
+/// 未初始化）。
 #[no_mangle]
-pub unsafe extern "C" fn zeta_actor_spawn(handler: *const c_char, state: *mut c_void) -> u64 {
+pub unsafe extern "C" fn zeta_actor_spawn(handler: *const c_char, state: u64) -> u64 {
     let name = cstr(handler);
     let Some(ptr) = (unsafe { resolve_symbol(&name) }) else {
         eprintln!("zeta-actor-runtime: 未找到 handle 符号: {name}");
         return 0;
     };
     let handler: ZetaHandler = std::mem::transmute(ptr);
-    let actor = with_runtime(|rt| {
-        rt.spawn_boxed(Box::new(CallbackActor { state, handler }))
-    });
-    actor_to_handle(actor)
+    #[cfg(target_os = "wasi")]
+    {
+        // 单线程同步模式：登记 (handler, state) 并返回句柄（L4b）。
+        crate::sync::spawn(handler, state)
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let actor = with_runtime(|rt| {
+            rt.spawn_boxed(Box::new(CallbackActor { state, handler }))
+        });
+        actor_to_handle(actor)
+    }
 }
 
 /// 创建受监督的 Actor（崩溃时按策略重启，窗口配置用运行时默认值）。
@@ -223,14 +254,22 @@ pub unsafe extern "C" fn zeta_actor_spawn_supervised(
     };
     let handler: ZetaHandler = std::mem::transmute(hp);
     let factory: ZetaFactory = std::mem::transmute(fp);
-    let strat = match strategy {
-        0 => RestartStrategy::OneForOne,
-        1 => RestartStrategy::AllForOne,
-        _ => RestartStrategy::RestartForOne,
-    };
-    let cf = CallbackFactory { handler, factory };
-    let actor = with_runtime(|rt| rt.spawn_supervised(move || cf.make(), strat));
-    actor_to_handle(actor)
+    #[cfg(target_os = "wasi")]
+    {
+        // 单线程同步模式：登记受监督条目（崩溃时经 factory 重建状态）。
+        crate::sync::spawn_supervised(handler, factory, strategy)
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let strat = match strategy {
+            0 => RestartStrategy::OneForOne,
+            1 => RestartStrategy::AllForOne,
+            _ => RestartStrategy::RestartForOne,
+        };
+        let cf = CallbackFactory { handler, factory };
+        let actor = with_runtime(|rt| rt.spawn_supervised(move || cf.make(), strat));
+        actor_to_handle(actor)
+    }
 }
 
 /// fire-and-forget 发送消息。返回 0 表示成功，非 0 表示失败
@@ -243,13 +282,27 @@ pub unsafe extern "C" fn zeta_actor_send(
     b: u64,
     c: u64,
 ) -> i32 {
-    let actor_ref = unsafe { handle_to_ref(actor) };
-    let msg = Box::new(ZetaMsg { kind, a, b, c });
-    match actor_ref.send(msg) {
-        Ok(()) => 0,
-        Err(e) => {
-            report_err("send 失败", &e);
-            1
+    #[cfg(target_os = "wasi")]
+    {
+        // 单线程同步模式：同步派发（send 语义 = 立即处理，忽略回复）。
+        return match crate::sync::dispatch(actor, kind, a, b, c) {
+            Some(_) => 0,
+            None => {
+                eprintln!("zeta-actor-runtime: send 失败: actor 已停止");
+                1
+            }
+        };
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let actor_ref = unsafe { handle_to_ref(actor) };
+        let msg = Box::new(ZetaMsg { kind, a, b, c });
+        match actor_ref.send(msg) {
+            Ok(()) => 0,
+            Err(e) => {
+                report_err("send 失败", &e);
+                1
+            }
         }
     }
 }
@@ -266,13 +319,27 @@ pub unsafe extern "C" fn zeta_actor_ask(
     b: u64,
     c: u64,
 ) -> u64 {
-    let actor_ref = unsafe { handle_to_ref(actor) };
-    let msg = Box::new(ZetaMsg { kind, a, b, c });
-    match actor_ref.ask_blocking::<u64>(msg) {
-        Ok(reply) => reply,
-        Err(e) => {
-            report_err("ask 失败", &e);
-            0
+    #[cfg(target_os = "wasi")]
+    {
+        // 单线程同步模式：同步调用并直接返回回复（崩溃回复 0，与原生一致）。
+        return match crate::sync::dispatch(actor, kind, a, b, c) {
+            Some(reply) => reply,
+            None => {
+                eprintln!("zeta-actor-runtime: ask 失败: actor 已停止");
+                0
+            }
+        };
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let actor_ref = unsafe { handle_to_ref(actor) };
+        let msg = Box::new(ZetaMsg { kind, a, b, c });
+        match actor_ref.ask_blocking::<u64>(msg) {
+            Ok(reply) => reply,
+            Err(e) => {
+                report_err("ask 失败", &e);
+                0
+            }
         }
     }
 }
@@ -280,25 +347,48 @@ pub unsafe extern "C" fn zeta_actor_ask(
 /// 请求 actor 停止（处理完当前消息后退出）。返回 0。
 #[no_mangle]
 pub unsafe extern "C" fn zeta_actor_stop(actor: u64) -> i64 {
-    let actor_ref = unsafe { handle_to_ref(actor) };
-    actor_ref.stop();
-    0
+    #[cfg(target_os = "wasi")]
+    {
+        crate::sync::stop(actor);
+        0
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let actor_ref = unsafe { handle_to_ref(actor) };
+        actor_ref.stop();
+        0
+    }
 }
 
 /// 查询 actor 生命周期状态：0 = Idle，1 = Processing，2 = Stopping，
 /// 3 = Stopped，4 = Crashed。
 #[no_mangle]
 pub unsafe extern "C" fn zeta_actor_status(actor: u64) -> i32 {
-    let actor_ref = unsafe { handle_to_ref(actor) };
-    actor_ref.status() as u8 as i32
+    #[cfg(target_os = "wasi")]
+    {
+        crate::sync::status(actor)
+    }
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let actor_ref = unsafe { handle_to_ref(actor) };
+        actor_ref.status() as u8 as i32
+    }
 }
 
 /// 优雅关闭运行时（排空消息队列后停止 Worker 与全部 Actor）。返回 0。
 #[no_mangle]
 pub unsafe extern "C" fn zeta_actor_shutdown() -> i64 {
-    let mut guard = global().lock().unwrap();
-    if let Some(rt) = guard.take() {
-        rt.shutdown();
+    #[cfg(target_os = "wasi")]
+    {
+        crate::sync::shutdown();
+        0
     }
-    0
+    #[cfg(not(target_os = "wasi"))]
+    {
+        let mut guard = global().lock().unwrap();
+        if let Some(rt) = guard.take() {
+            rt.shutdown();
+        }
+        0
+    }
 }

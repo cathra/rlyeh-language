@@ -72,6 +72,22 @@ pub enum Type {
     Named(String, Vec<Type>),
     /// 函数类型（`fn(A, B) -> C`），即函数指针类型
     Fn(Box<FnSignature>),
+    /// 闭包值对象：捕获字段 + 参数 + 返回类型 + 生成的匿名函数名。
+    ///
+    /// 由 `let f = |x: i64| ..;` 全参数注解闭包创建，desugar 为捕获聚合对象
+    /// （`Alloc` + `FieldSet`）；调用点 `f(..)` desugar 为
+    /// `__closure_N(FieldGet(f, i)..., 实参...)`。仅存在于局部变量环境，
+    /// 不跨函数边界（MVP）。
+    Closure {
+        /// 捕获字段类型（顺序与聚合对象槽位对应）
+        captures: Vec<Type>,
+        /// 闭包参数类型（来自参数注解）
+        params: Vec<Type>,
+        /// 返回类型
+        ret: Box<Type>,
+        /// 生成的匿名函数名（`__closure_N`）
+        fn_name: String,
+    },
     /// 泛型占位
     Generic(String),
 }
@@ -164,7 +180,7 @@ impl Type {
                 (Type::Named(n, _), Type::Ref(a, _)) => matches!(**a, Type::Str) && n == "String",
                 // 裸指针（G3）：`*mut T` 可降级为 `*const T`；反向不可
                 (Type::RawPtr(a, ma), Type::RawPtr(b, mb)) => {
-                    a.compatible_with(b) && (!(*ma && !*mb))
+                    (*mb || !*ma) && a.compatible_with(b)
                 }
                 // 引用 ↔ 裸指针互视（G3 宽松规则，借用安全性留给 borrowck）：
                 // `&T`/`&mut T` 与 `*const T`/`*mut T` 内层兼容即可互传——FFI 场景
@@ -256,6 +272,14 @@ impl fmt::Display for Type {
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "fn({inner}) -> {}", sig.return_type)
+            }
+            Type::Closure { params, ret, .. } => {
+                let inner = params
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "closure({inner}) -> {}", ret)
             }
         }
     }
@@ -354,14 +378,15 @@ pub fn field_scalar_of(ty: &Type) -> zeta_hir::FieldScalar {
         Type::Bool => FieldScalar::Bool,
         Type::Char => FieldScalar::Char,
         Type::Str => FieldScalar::Str,
-        // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象均以指针形式存储；函数指针为指针
+        // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象 / 闭包值均以指针形式存储；函数指针为指针
         Type::Ref(..)
         | Type::RawPtr(..)
         | Type::Array(..)
         | Type::Tuple(..)
         | Type::Named(..)
         | Type::Dyn(..)
-        | Type::Fn(..) => FieldScalar::Ptr,
+        | Type::Fn(..)
+        | Type::Closure { .. } => FieldScalar::Ptr,
         Type::Unit => FieldScalar::Int,
         _ => FieldScalar::Int,
     }
