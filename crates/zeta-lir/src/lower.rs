@@ -822,7 +822,18 @@ impl FunctionLowerer {
     /// 解析操作数类型（立即数直接取，变量查局部类型表）。
     fn operand_type(&self, op: &LirOperand) -> Option<LirType> {
         op.literal_type().or_else(|| match op {
-            LirOperand::Local(l) => self.ty.get(l).copied(),
+            LirOperand::Local(l) => self
+                .ty
+                .get(l)
+                .copied()
+                // 嵌套二元/一元拆平的临时变量登记在 extra_locals 中，
+                // 查不到会误判 i64（如 `x*x + y*y` 外层加法结果类型错乱）
+                .or_else(|| {
+                    self.extra_locals
+                        .iter()
+                        .find(|(n, _)| n == l)
+                        .map(|(_, t)| *t)
+                }),
             _ => None,
         })
     }

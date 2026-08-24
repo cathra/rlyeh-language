@@ -1,0 +1,51 @@
+// ===== 场景：几何体、光源、环境参数 =====
+// 坐标全部为定点（×1000），如 x=-3500 即 -3.5 个单位。
+
+use fixed::SCALE;
+use vec3::Vec3;
+use color::Color;
+use ray::Sphere;
+
+pub struct Scene {
+    pub spheres: Vec<Sphere>,
+    pub ground_y: i64,          // 水平平面高度（y = -1.5）
+    pub ground_color: Color,
+    pub light: Vec3,            // 光源位置
+    pub light_color: Color,
+    pub ambient: i64,           // 环境光强度（0.15）
+    pub sky_top: Color,         // 天空渐变色（顶部）
+    pub sky_bottom: Color,      // 天空渐变色（地平线）
+    pub shininess: i64,         // 高光指数
+}
+
+// 构建默认场景：三个球 + 地面 + 方向光源
+pub fn build_scene() -> Scene {
+    let mut spheres: Vec<Sphere> = Vec::new();
+
+    // 红球（左上方）
+    let c1 = Vec3 { x: -3500, y: 200, z: 0 };
+    let s1 = Sphere::new(c1, 1500, Color::new(1000, 200, 200));
+    spheres.push(s1);
+
+    // 绿球（中间）
+    let c2 = Vec3 { x: 0, y: 0, z: 0 };
+    let s2 = Sphere::new(c2, 1000, Color::new(150, 1000, 150));
+    spheres.push(s2);
+
+    // 蓝球（右侧下方）
+    let c3 = Vec3 { x: 3500, y: -500, z: 500 };
+    let s3 = Sphere::new(c3, 1200, Color::new(150, 150, 1000));
+    spheres.push(s3);
+
+    Scene {
+        spheres: spheres,
+        ground_y: -1500,
+        ground_color: Color::new(500, 500, 550),
+        light: Vec3 { x: -5000, y: 8000, z: 3000 },
+        light_color: Color::new(1000, 950, 900),
+        ambient: 150,
+        sky_top: Color::new(200, 300, 800),
+        sky_bottom: Color::new(900, 900, 950),
+        shininess: 8,
+    }
+}

@@ -1,0 +1,18 @@
+// smoke2：多文件 + NIO（纯 i64，避开 f64）
+mod math;
+mod util;
+
+fn main() {
+    println(math::square(7));          // 49
+    println(util::greet());            // hi from util
+
+    let p = match Poller::new() {
+        Result::Ok(x) => x,
+        Result::Err(e) => return,
+    };
+    let evs = match p.poll(100) {
+        Result::Ok(v) => v,
+        Result::Err(e) => return,
+    };
+    println(evs.len());                // 0（无输入超时）
+}

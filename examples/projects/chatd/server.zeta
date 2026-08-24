@@ -1,0 +1,203 @@
+// ===== 聊天服务器：NIO 事件驱动（Poller + 非阻塞 TCP）=====
+//
+// 单线程事件循环（规避 MVP"无全局变量 + 线程函数零参数"限制，
+// 同时展示 Zeta 的 NIO 能力）：poll 监听监听 fd 与所有连接 fd，
+// 可读事件分派 accept / 消息处理 / 广播 / 断开清理。
+
+use protocol::Msg;
+use protocol::decode;
+use hub::Hub;
+
+// 运行服务器（阻塞事件循环，Ctrl-C 终止）
+pub fn run_server(port: i64, hub: &mut Hub) -> i64 {
+    let addr = SocketAddr::new(String::from("127.0.0.1"), port);
+    let listener = match TcpListener::bind(addr) {
+        Result::Ok(v) => v,
+        Result::Err(e) => {
+            println("bind failed");
+            return 0
+        }
+    };
+    let _ = listener.set_nonblocking(true);
+    let lfd = listener.fd;
+
+    let poller0 = match Poller::new() {
+        Result::Ok(v) => v,
+        Result::Err(e) => return 0,
+    };
+    let mut poller = poller0;
+    let _ = poller.register(lfd, lfd, Interest::Readable);
+
+    let mut streams: HashMap<i64, TcpStream> = HashMap::new();
+    let mut running = 1;
+    while running == 1 {
+        let evs = poller.poll(100);
+        match evs {
+            Result::Err(e) => {}
+            Result::Ok(events) => {
+                let n = events.len();
+                let mut i = 0;
+                while i < n {
+                    let ev = events[i];
+                    let tok = ev.token;
+                    if tok == lfd {
+                        accept_one(listener, &mut poller, &mut streams, hub);
+                    } else {
+                        let _ = handle_event(tok, &mut poller, &mut streams, hub);
+                    }
+                    i = i + 1;
+                }
+            }
+        }
+    }
+    1
+}
+
+// 接受一个新连接：登记轮询器、建立双向映射、发送欢迎语
+fn accept_one(listener: TcpListener, poller: &mut Poller, streams: &mut HashMap<i64, TcpStream>, hub: &mut Hub) {
+    let acc = listener.accept();
+    match acc {
+        Result::Err(e) => {}
+        Result::Ok(stream) => {
+            let _ = stream.set_nonblocking(true);
+            let cfd = stream.fd;
+            let _ = poller.register(cfd, cfd, Interest::Readable);
+            streams.insert(cfd, stream);
+            hub.by_fd.insert(cfd, String::from(""));
+            let w = String::from("> hello! set nick: NICK <name>\n");
+            let s = streams.get(cfd);
+            match s {
+                Option::Some(st) => {
+                    let _ = st.write(w);
+                }
+                Option::None => {}
+            }
+        }
+    }
+}
+
+// 处理一个连接的可读事件；返回 1 继续，0 已断开
+fn handle_event(fd: i64, poller: &mut Poller, streams: &mut HashMap<i64, TcpStream>, hub: &mut Hub) -> i64 {
+    let s = streams.get(fd);
+    match s {
+        Option::None => 0,
+        Option::Some(st) => {
+            let rl = st.read_line();
+            match rl {
+                Result::Err(e) => {
+                    // 非阻塞下无数据（EAGAIN）忽略，其他错误断开
+                    let k = e.kind();
+                    let would = match k {
+                        IoErrorKind::WouldBlock => 1,
+                        _ => 0,
+                    };
+                    if would == 1 {
+                        return 1;
+                    }
+                    disconnect(fd, poller, streams, hub)
+                }
+                Result::Ok(line) => {
+                    if line.len() == 0 {
+                        // 对端关闭
+                        return disconnect(fd, poller, streams, hub);
+                    }
+                    let k = handle_line(fd, line, streams, hub);
+                    if k == 0 {
+                        return disconnect(fd, poller, streams, hub);
+                    }
+                    1
+                }
+            }
+        }
+    }
+}
+
+// 处理一行协议消息；返回 1 继续，0 断开（QUIT / 昵称冲突不在此断开）
+fn handle_line(fd: i64, line: String, streams: &mut HashMap<i64, TcpStream>, hub: &mut Hub) -> i64 {
+    let msg = decode(line);
+    match msg {
+        Msg::Nick(n) => {
+            let ok = hub.join(fd, n.clone());
+            if ok == 1 {
+                let joined = String::from("> ") + n + " joined";
+                broadcast(hub, streams, joined, 0 - 1);
+            } else {
+                let dup = String::from("> nick taken: ") + n;
+                send_to(fd, streams, dup);
+            }
+            1
+        }
+        Msg::Say(t) => {
+            let nick = hub.nick_of(fd);
+            let text = nick + ": " + t;
+            broadcast(hub, streams, text, 0 - 1);
+            1
+        }
+        Msg::List => {
+            let keys = hub.clients.keys();
+            let cnt = hub.count();
+            let mut list_str = String::from("> online (");
+            list_str.push_str(int_to_string(cnt));
+            list_str.push_str("): ");
+            let m = keys.len();
+            let mut j = 0;
+            while j < m {
+                list_str.push_str(keys[j]);
+                if j < m - 1 {
+                    list_str.push_str(", ");
+                }
+                j = j + 1;
+            }
+            send_to(fd, streams, list_str);
+            1
+        }
+        Msg::Quit => {
+            let nick = hub.nick_of(fd);
+            hub.leave(fd);
+            let gone = String::from("> ") + nick + " left";
+            broadcast(hub, streams, gone, fd);
+            0
+        }
+    }
+}
+
+// 断开连接：注销轮询器、移除连接、清理 hub 映射
+fn disconnect(fd: i64, poller: &mut Poller, streams: &mut HashMap<i64, TcpStream>, hub: &mut Hub) -> i64 {
+    let _ = poller.deregister(fd);
+    let _ = streams.remove(fd);
+    hub.leave(fd);
+    0
+}
+
+// 广播给所有连接（except 指定 fd 除外）
+fn broadcast(hub: &Hub, streams: &HashMap<i64, TcpStream>, text: String, except: i64) {
+    let fds = hub.clients.values();
+    let payload = text + "\n";
+    let n = fds.len();
+    let mut i = 0;
+    while i < n {
+        let fd = fds[i];
+        if fd != except {
+            let s = streams.get(fd);
+            match s {
+                Option::Some(st) => {
+                    let _ = st.write(payload.clone());
+                }
+                Option::None => {}
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// 发送单条消息给指定连接
+fn send_to(fd: i64, streams: &HashMap<i64, TcpStream>, text: String) {
+    let s = streams.get(fd);
+    match s {
+        Option::Some(st) => {
+            let payload = text + "\n";
+            let _ = st.write(payload);
+        }
+        Option::None => {}
+    }
+}

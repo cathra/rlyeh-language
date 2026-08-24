@@ -1,0 +1,20 @@
+// ===== chatd-client 入口 =====
+//
+// 连接 127.0.0.1:9888 的聊天室，昵称与地址硬编码于此（MVP 无命令行参数 API）。
+// 构建：scripts/build.sh；运行：./chatd-client
+//
+// 交互命令：
+//   直接输入文字  → 广播给聊天室所有人
+//   /list         → 查看在线列表
+//   /quit 或 Ctrl-D → 退出聊天
+
+mod protocol;
+mod client;
+
+use client::run_client;
+
+fn main() {
+    println("chatd client: connecting to 127.0.0.1:9888 ...");
+    let _ = run_client(String::from("127.0.0.1"), 9888, String::from("anon"));
+    println("bye");
+}

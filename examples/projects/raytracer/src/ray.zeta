@@ -1,0 +1,72 @@
+// ===== 光线与几何体（球 / 水平平面）+ 求交 =====
+//
+// 求交数学（定点量纲验证）：
+//   光线 p(t) = o + t·d，球 |p - c|² = r²（r 半径 ×1000，t 距离 ×1000）。
+//   令 oc = o - c，a = |d|²，b = oc·d，c = oc·oc - r²（均 ×1000 量纲），
+//   则判别式 D = b² - a·c（×1e6 量纲），t = (-b - √D) / a。
+
+use fixed::SCALE;
+use fixed::fsqrt;
+use vec3::Vec3;
+use color::Color;
+
+pub struct Ray {
+    pub origin: Vec3,
+    pub dir: Vec3,
+}
+
+impl Ray {
+    pub fn new(o: Vec3, d: Vec3) -> Ray {
+        Ray { origin: o, dir: d }
+    }
+}
+
+pub struct Sphere {
+    pub center: Vec3,
+    pub radius: i64,
+    pub color: Color,
+}
+
+impl Sphere {
+    pub fn new(c: Vec3, r: i64, col: Color) -> Sphere {
+        Sphere { center: c, radius: r, color: col }
+    }
+}
+
+// 光线-球求交：返回最近正向交点 t（×1000），无交点返回 -1
+pub fn hit_sphere(r: Ray, s: Sphere) -> i64 {
+    let oc = r.origin.sub(s.center);
+    let a = r.dir.dot(r.dir);
+    if a <= 0 {
+        return -1;
+    }
+    let b = oc.dot(r.dir);
+    let oc2 = oc.dot(oc);
+    let rr = s.radius * s.radius / SCALE;
+    let c = oc2 - rr;
+    let b2 = b * b;
+    let ac = a * c;
+    let disc = b2 - ac;
+    if disc < 0 {
+        return -1;
+    }
+    let sq = fsqrt(disc);
+    let num = 0 - b - sq;
+    if num <= 0 {
+        return -1;
+    }
+    num * SCALE / a
+}
+
+// 光线-水平平面求交：y = gy，返回 t（×1000）；朝上或平行返回 -1
+pub fn hit_plane(r: Ray, gy: i64) -> i64 {
+    let dy = r.dir.y;
+    if dy >= 0 {
+        return -1;
+    }
+    let num = r.origin.y - gy;
+    if num <= 0 {
+        return -1;
+    }
+    num * SCALE / (0 - dy)
+}

@@ -6171,12 +6171,21 @@ fn check_pattern(
                     span,
                 });
             };
-            let enum_def = ctx.lookup_enum(en).cloned().ok_or_else(|| {
-                TypeError::UndefinedType {
-                    name: en.clone(),
-                    span,
-                }
-            })?;
+            // 枚举名可能为 use 导入的本地名（`use protocol::Msg` 后裸名 `Msg`），
+            // 裸名未注册时回退经 resolve_full_name 解析完整符号名（模块前缀 / use 别名）。
+            let enum_def = ctx
+                .lookup_enum(en)
+                .cloned()
+                .or_else(|| {
+                    ctx.resolve_full_name(en)
+                        .and_then(|full| ctx.lookup_enum(&full).cloned())
+                })
+                .ok_or_else(|| {
+                    TypeError::UndefinedType {
+                        name: en.clone(),
+                        span,
+                    }
+                })?;
             let variant_def = enum_def
                 .variants
                 .iter()

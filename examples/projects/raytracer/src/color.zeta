@@ -1,0 +1,41 @@
+// ===== 颜色（i64 定点分量，0..SCALE 对应 0..1）=====
+
+use fixed::SCALE;
+use fixed::fmul;
+use fixed::clamp;
+
+pub struct Color {
+    pub r: i64,
+    pub g: i64,
+    pub b: i64,
+}
+
+impl Color {
+    pub fn new(r: i64, g: i64, b: i64) -> Color {
+        Color { r: r, g: g, b: b }
+    }
+
+    // 分量乘标量（亮度调制，k ×1000）
+    pub fn scale(&self, k: i64) -> Color {
+        Color { r: fmul(self.r, k), g: fmul(self.g, k), b: fmul(self.b, k) }
+    }
+
+    // 逐分量加
+    pub fn add(&self, o: Color) -> Color {
+        Color { r: self.r + o.r, g: self.g + o.g, b: self.b + o.b }
+    }
+
+    // 逐分量乘（颜色调制）
+    pub fn modulate(&self, o: Color) -> Color {
+        Color { r: fmul(self.r, o.r), g: fmul(self.g, o.g), b: fmul(self.b, o.b) }
+    }
+
+    // 夹取到合法范围
+    pub fn saturate(&self) -> Color {
+        Color {
+            r: clamp(self.r, 0, SCALE),
+            g: clamp(self.g, 0, SCALE),
+            b: clamp(self.b, 0, SCALE),
+        }
+    }
+}

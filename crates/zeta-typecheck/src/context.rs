@@ -192,13 +192,14 @@ impl TypeContext {
 
     /// 将局部名解析为完整符号名。
     ///
-    /// 优先级：直接存在的符号名（函数 / 结构体 / actor / 常量）→ use 导入别名。
+    /// 优先级：直接存在的符号名（函数 / 结构体 / actor / 常量 / 枚举）→ use 导入别名。
     /// 无法解析时返回 `None`（由调用方决定如何报错）。
     pub fn resolve_full_name(&self, name: &str) -> Option<String> {
         if self.structs.contains_key(name)
             || self.fn_signatures.contains_key(name)
             || self.actors.contains_key(name)
             || self.constants.contains_key(name)
+            || self.enum_defs.contains_key(name)
         {
             return Some(name.to_string());
         }
@@ -208,12 +209,15 @@ impl TypeContext {
         // Q3a 修复：模块内 trait/impl 方法签名在收集阶段解析参数类型时 use 段
         // 尚未注册，模块内短名须按 `mod::Name` 前缀定位（如 `fmt/mod.zeta` 中
         // `trait Display { fn fmt(&self, f: &mut Formatter) }`）。
+        // 枚举同样按前缀定位（`protocol::Msg`），否则模块内裸名枚举类型注解
+        // （`fn encode(m: Msg)`）与 match 模式解析失败。
         if !name.contains("::") && !self.module_prefix.is_empty() {
             let full = format!("{}::{}", self.module_prefix, name);
             if self.structs.contains_key(&full)
                 || self.fn_signatures.contains_key(&full)
                 || self.actors.contains_key(&full)
                 || self.constants.contains_key(&full)
+                || self.enum_defs.contains_key(&full)
             {
                 return Some(full);
             }
