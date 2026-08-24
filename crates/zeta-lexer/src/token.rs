@@ -214,6 +214,8 @@ pub enum Token {
     At,
     /// `$`（声明式宏元变量前缀，如 `$x:expr`）
     Dollar,
+    /// `#`（attribute 前缀，如 `#[derive(Serialize)]`；`r#ident`/`r#"..."#` 由专用分支消费）
+    Pound,
     /// `?`（声明式宏重复操作符 `?`；`?` 错误传播运算符仍规划中）
     Question,
     /// `not in` 组合

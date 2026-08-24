@@ -384,6 +384,37 @@ impl<'src> Parser<'src> {
                 let span = self.span_until_current(start);
                 Ok(AstExpr::new(ExprKind::Await(Box::new(receiver)), span))
             }
+            // P 阶段：`send`/`recv` 保留字允许作方法名/字段名（`.send()`/`.recv()`，
+            // 与 actor 前缀 `send x.m(...)` 语法不冲突——后者仅在表达式开头识别）
+            Some(Token::Send) | Some(Token::Recv) => {
+                let name = match self.current() {
+                    Some(Token::Send) => "send",
+                    _ => "recv",
+                }
+                .to_string();
+                self.bump();
+                if self.check(&Token::LParen) {
+                    let (args, end) = self.parse_call_args()?;
+                    let span = self.merge_span(start, end);
+                    Ok(AstExpr::new(
+                        ExprKind::MethodCall {
+                            receiver,
+                            method: name,
+                            args,
+                        },
+                        span,
+                    ))
+                } else {
+                    let span = self.span_until_current(start);
+                    Ok(AstExpr::new(
+                        ExprKind::FieldAccess {
+                            expr: receiver,
+                            field: name,
+                        },
+                        span,
+                    ))
+                }
+            }
             _ => Err(self.unexpected("field name or 'await' after '.'")),
         }
     }
@@ -730,7 +761,7 @@ impl<'src> Parser<'src> {
         }
         Err(ParseError::Macro {
             msg: format!(
-                "未定义的宏 `{name}`（内置宏：println!/print!/format!/dbg!/arr!/vec!/map!）"
+                "未定义的宏 `{name}`（内置宏：println!/print!/format!/dbg!/eprintln!/eprint!/arr!/vec!/map!）"
             ),
             line: start.line,
             col: start.col,
@@ -1267,9 +1298,10 @@ fn binary_op(tok: &Token) -> BinaryOp {
     }
 }
 
-/// 内置格式化宏（I2：由 typecheck 层 desugar 为字符串拼接 + 打印内建）。
+/// 内置格式化宏（I2：由 typecheck 层 desugar 为字符串拼接 + 打印内建；
+/// `eprintln!`/`eprint!` 输出到 stderr，desugar 目标为 `eprint`/`eprintln` 内建）。
 pub(crate) fn is_builtin_macro(name: &str) -> bool {
-    matches!(name, "println" | "print" | "format" | "dbg")
+    matches!(name, "println" | "print" | "format" | "dbg" | "eprintln" | "eprint")
 }
 
 /// I3 集合宏名（`arr!`/`vec!`/`map!`，parse 期 desugar 为数组字面量或块表达式）

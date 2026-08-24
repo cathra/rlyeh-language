@@ -1,6 +1,10 @@
-//! 测试标准库 io 模块（阶段 B2）与 net 基础绑定（阶段 B3）：
+//! 测试标准库 io 模块（阶段 B2 / M3a）与 net 基础绑定（阶段 B3 / M3b）：
 //! libc 文件 IO —— `read_file` / `write_file` / `append_file` / `c_str` / `read_line`；
 //! 主机名查询 —— `hostname()`。
+//!
+//! M3a（2026-08）后 io 自由函数 Result 化：`read_file`/`write_file`/`append_file`
+//! 返回 `Result<T, IoError>`，失败不再用"空串 / -1"哨兵值；本文件用例均按
+//! `match { Ok(..) / Err(..) }` 解包验证。
 //!
 //! 实现基于通用 FFI（`extern fn`，阶段 A4）：String 的 LIR 表示即 data 指针（i8*），
 //! 可直接作为 C 字符串/缓冲传入 libc；路径参数经 `c_str` 附加 NUL 终止。
@@ -40,10 +44,14 @@ fn file_write_read_roundtrip() {
         r#"
 fn main() {{
     let path = String::from("{p}");
-    let w = write_file(path, String::from("Hello Zeta!"));
-    println(w);                  // 11 字节
-    let content = read_file(path);
-    println(content);            // 内容一致
+    match write_file(path, String::from("Hello Zeta!")) {{
+        Ok(w) => println(w),             // 11 字节
+        Err(e) => println(-1),
+    }}
+    match read_file(path) {{
+        Ok(v) => println(v),             // 内容一致
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));
@@ -63,8 +71,10 @@ fn main() {{
     let path = String::from("{p}");
     let _ = write_file(path, String::from("first"));
     let _ = write_file(path, String::from("second"));
-    let content = read_file(path);
-    println(content);            // second（截断覆盖）
+    match read_file(path) {{
+        Ok(v) => println(v),             // second（截断覆盖）
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));
@@ -83,10 +93,14 @@ fn file_append() {
 fn main() {{
     let path = String::from("{p}");
     let _ = write_file(path, String::from("AB"));
-    let a = append_file(path, String::from("CD"));
-    println(a);                  // 2 字节
-    let content = read_file(path);
-    println(content);            // ABCD（追加）
+    match append_file(path, String::from("CD")) {{
+        Ok(a) => println(a),             // 2 字节
+        Err(e) => println(-1),
+    }}
+    match read_file(path) {{
+        Ok(v) => println(v),             // ABCD（追加）
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));
@@ -106,10 +120,14 @@ fn file_utf8_content() {
 fn main() {{
     let path = String::from("{p}");
     let text = String::from("你好，Zeta！");
-    let w = write_file(path, text);
-    println(w);                  // 16 字节
-    let content = read_file(path);
-    println(content);            // 内容一致
+    match write_file(path, text) {{
+        Ok(w) => println(w),             // 16 字节
+        Err(e) => println(-1),
+    }}
+    match read_file(path) {{
+        Ok(v) => println(v),             // 内容一致
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));
@@ -133,12 +151,18 @@ fn main() {{
         big.push_byte(120);      // 'x'
         i = i + 1;
     }}
-    let w = write_file(path, big);
-    println(w);                  // 4096
-    let content = read_file(path);
-    println(content.len);        // 4096
-    println(content.data[0] == 120);    // true
-    println(content.data[4095] == 120); // true
+    match write_file(path, big) {{
+        Ok(w) => println(w),             // 4096
+        Err(e) => println(-1),
+    }}
+    match read_file(path) {{
+        Ok(content) => {{
+            println(content.len);        // 4096
+            println(content.data[0] == 120);    // true
+            println(content.data[4095] == 120); // true
+        }}
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));
@@ -146,7 +170,7 @@ fn main() {{
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 文件不存在：read_file 返回空串（打开失败路径）。
+/// 文件不存在：read_file 返回 Err(NotFound)（M3a Result 化，不再是空串）。
 #[test]
 fn file_missing_returns_empty() {
     let dir = temp_dir();
@@ -156,15 +180,15 @@ fn file_missing_returns_empty() {
         r#"
 fn main() {{
     let content = read_file(String::from("{p}"));
-    println(content.len);        // 0（打开失败返回空串）
+    println(content.is_err());           // 1（打开失败 → Err(NotFound)）
 }}
 "#,
     ));
-    assert_eq!(out, "0\n");
+    assert_eq!(out, "1\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 空文件：lseek size = 0，读取返回空串。
+/// 空文件：lseek size = 0，读取成功返回空串。
 #[test]
 fn file_empty_read() {
     let dir = temp_dir();
@@ -175,8 +199,13 @@ fn file_empty_read() {
         r#"
 fn main() {{
     let content = read_file(String::from("{p}"));
-    println(content.len);        // 0
-    println(content == String::from(""));  // true
+    match content {{
+        Ok(v) => {{
+            println(v.len);              // 0
+            println(v == String::from(""));  // true
+        }}
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));
@@ -190,9 +219,13 @@ fn net_hostname() {
     let out = run(
         r#"
 fn main() {
-    let h = hostname();
-    println(h.len > 0);      // true（gethostname 成功）
-    println(h.len < 256);    // true
+    match hostname() {
+        Ok(h) => {
+            println(h.len > 0);      // true（gethostname 成功）
+            println(h.len < 256);    // true
+        }
+        Err(e) => println(-1),
+    }
 }
 "#,
     );
@@ -210,12 +243,20 @@ fn file_compose_chain() {
 fn main() {{
     let path = String::from("{p}");
     let _ = write_file(path, String::from("zeta"));
-    let content = read_file(path);
-    let greeting = content + String::from("-lang");
-    let _ = write_file(path, greeting);
-    let again = read_file(path);
-    println(again);            // zeta-lang
-    println(again.len);        // 9
+    match read_file(path) {{
+        Ok(v) => {{
+            let greeting = v + String::from("-lang");
+            let _ = write_file(path, greeting);
+            match read_file(path) {{
+                Ok(again) => {{
+                    println(again);            // zeta-lang
+                    println(again.len);        // 9
+                }}
+                Err(e) => println(-1),
+            }}
+        }}
+        Err(e) => println(-1),
+    }}
 }}
 "#,
     ));

@@ -128,6 +128,11 @@ impl<'src> Lexer<'src> {
                 self.bump();
                 Token::At
             }
+            // `#[derive(...)]` attribute 前缀（Q1b）；`r#ident` / `r#"..."#` 已由上方 `r` 分支消费
+            '#' => {
+                self.bump();
+                Token::Pound
+            }
             '(' | ')' | '{' | '}' | '[' | ']' | ',' | ':' | ';' | '.' | '+' | '-' | '*' | '/'
             | '%' | '=' | '<' | '>' | '!' | '&' | '|' | '^' | '$' | '?' => self.read_operator(),
             c => return Err(LexError::InvalidChar { ch: c, line, col }),
@@ -259,12 +264,16 @@ impl<'src> Lexer<'src> {
         self.source[start..self.byte_pos].to_string()
     }
 
-    /// 原始标识符 `r#keyword` → `Ident("keyword")`
+    /// 原始标识符 `r#keyword` → `Ident("r#keyword")`
+    ///
+    /// 保留 `r#` 前缀：raw identifier 除"关键字转义"外，还承载"根命名空间
+    /// 显式引用"语义（如 `r#rename` 在 fs 模块内引用根 extern `rename`，
+    /// 不被 `fs::rename` 遮蔽）。typecheck 解析时去前缀并跳过模块内优先。
     fn read_raw_ident(&mut self) -> Token {
         self.bump(); // r
         self.bump(); // #
         let text = self.read_ident_text();
-        Token::Ident(text)
+        Token::Ident(format!("r#{text}"))
     }
 
     // ===== 数字与时间字面量 =====
@@ -804,6 +813,7 @@ impl<'src> Lexer<'src> {
                     ';' => Token::Semicolon,
                     '.' => Token::Dot,
                     '@' => Token::At,
+                    '#' => Token::Pound,
                     '$' => Token::Dollar,
                     '?' => Token::Question,
                     // 主循环已过滤非法字符，此处不可达

@@ -10,8 +10,9 @@
 > （G1 ✅：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、`*` 解引用；`&str` 只读借用视图已实现
 > （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*T` 仍规划）、
 > `dyn Trait`、`?` 运算符、生命周期参数 `'a` 等。
-> 普通函数 `async fn`/`await` 已实现（L1 ✅：`FnDecl`/`ActorMethod` 的 `async?` 与 `expr.await` 语法全程接受，
-> MVP 同步语义——`async` 关键字与 `.await` 为语法标记，编译为同步调用，复用 actor 机制；`Future`/executor 仍规划）。
+> 普通函数 `async fn`/`await` 已实现（S1c ✅：`FnDecl`/`ActorMethod` 的 `async?` 与 `expr.await` 语法全程接受，
+> 状态机 desugar——`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，
+> 支持 `Poll::Pending` 挂起/恢复与跨 await 变量提升；参数 `i64`、返回 `i64`/`()`；控制流块内 / 表达式嵌套 await 规划）。
 > JSON 序列化已实现（L2 ✅：`json::stringify(v)` 与 `json::parse::<T>(s)` 内建，turbofish 泛型实参
 > `::<T>`（PostfixOp `'::' '<' TypeList '>' '(' ArgList? ')'`，parser 三 token 前瞻检测；嵌套泛型
 > `>>` 拆分层）；typecheck 期 desugar 为 String 构建/解析表达式，零新增 IR 节点；支持标量/数组/struct/Vec/
@@ -49,6 +50,14 @@ Letter      ::= 'a'..'z' | 'A'..'Z'
 Digit       ::= '0'..'9'
 RawIdent    ::= 'r#' Ident
 ```
+
+> `RawIdent`（原始标识符 `r#foo`）双重语义：
+> 1. **关键字转义**：`send`/`recv`/`type` 等保留字可用作标识符（如 `extern fn r#send`、调用 `r#send(...)`）；
+> 2. **根命名空间显式引用**：在模块内部调用 `r#foo(...)` 时跳过模块内优先解析（`resolve_callable`），
+>    直接绑定**根命名空间**的 `foo`——模块内 `fn foo` 与之同名不构成遮蔽
+>    （例：fs 模块内 `fn rename` 与根 extern `r#rename` 同名，`r#rename(...)` 绑定根 extern，
+>    裸名 `rename(...)` 绑定 `fs::rename`）。函数声明名（`fn r#foo`）与 use 导入路径在
+>    符号注册时归一化为无前缀名。
 
 ### 1.3 字面量
 

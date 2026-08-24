@@ -215,7 +215,11 @@ fn test_raw_hash_string() {
 
 #[test]
 fn test_raw_identifier() {
-    assert_eq!(tokens("r#type"), vec![Token::Ident("type".to_string())]);
+    // `r#` 前缀保留：raw identifier 承载"根命名空间显式引用"语义
+    // （typecheck 解析时去前缀并跳过模块内优先）。
+    assert_eq!(tokens("r#type"), vec![Token::Ident("r#type".to_string())]);
+    assert_eq!(tokens("r#rename"), vec![Token::Ident("r#rename".to_string())]);
+    assert_eq!(tokens("r#send"), vec![Token::Ident("r#send".to_string())]);
 }
 
 #[test]
@@ -289,9 +293,26 @@ fn test_peek_at_eof() {
 
 #[test]
 fn test_invalid_char() {
-    let mut lexer = Lexer::new("let # = 1;");
+    // `#` 自阶段 Q1b 起为合法 token（Pound：attribute 前缀），改用 `~` 验证非法字符
+    let mut lexer = Lexer::new("let ~ = 1;");
     let err = lexer.tokenize().unwrap_err();
-    assert!(matches!(err, LexError::InvalidChar { ch: '#', .. }));
+    assert!(matches!(err, LexError::InvalidChar { ch: '~', .. }));
+}
+
+#[test]
+fn test_pound_token() {
+    // Q1b：`#[derive(Serialize, Deserialize)]` 中的 `#` 产生 Pound token
+    let mut lexer = Lexer::new("#[derive(Serialize, Deserialize)]");
+    let toks = lexer.tokenize().unwrap();
+    assert_eq!(toks[0].token, Token::Pound);
+    assert_eq!(toks[1].token, Token::LBracket);
+    assert_eq!(toks[2].token, Token::Ident("derive".to_string()));
+    assert_eq!(toks[3].token, Token::LParen);
+    assert_eq!(toks[4].token, Token::Ident("Serialize".to_string()));
+    assert_eq!(toks[5].token, Token::Comma);
+    assert_eq!(toks[6].token, Token::Ident("Deserialize".to_string()));
+    assert_eq!(toks[7].token, Token::RParen);
+    assert_eq!(toks[8].token, Token::RBracket);
 }
 
 #[test]

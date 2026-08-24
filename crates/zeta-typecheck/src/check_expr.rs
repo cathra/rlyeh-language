@@ -26,7 +26,7 @@ use crate::types::{field_scalar_of, type_mono_key, FnSignature, ImplDef, Mutabil
 pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
     let dyn_arr = || Type::Array(Box::new(Type::Infer), 0);
     match name {
-        "print" | "println" => Some((vec![Type::Infer], Type::Unit)),
+        "print" | "println" | "eprint" | "eprintln" => Some((vec![Type::Infer], Type::Unit)),
         "alloc_array" => Some((vec![Type::I64], dyn_arr())),
         "array_copy" => Some((vec![dyn_arr(), dyn_arr(), Type::I64], Type::Unit)),
         "array_free" => Some((vec![dyn_arr()], Type::Unit)),
@@ -2456,20 +2456,39 @@ fn check_call(
     };
 
     // L2 编译器内建 JSON 序列化/反序列化（`json.stringify(v)` / `json.parse::<T>(s)`）：
-    // AST 层 desugar 为 String 构建 / 解析表达式，零新增 IR 节点
-    if name == "json::stringify" {
+    // AST 层 desugar 为 String 构建 / 解析表达式，零新增 IR 节点。
+    // Q2a 泛型 API 别名：`json.to_string(v)` ≡ `json.stringify(v)`；
+    // `json.from_str::<T>(s)` ≡ `json.parse::<T>(s)`。MVP 无泛型 trait 约束
+    // （`T: Serialize` / `T: Deserialize` bound 不支持），签名退化为无 bound
+    // turbofish 形式：序列化类型由实参推断，反序列化经 turbofish 指定。
+    if name == "json::stringify" || name == "json::to_string" {
         return check_json_stringify(ctx, args, span);
     }
-    if name == "json::parse" {
+    if name == "json::parse" || name == "json::from_str" {
         return check_json_parse(ctx, args, type_args, span);
+    }
+    // Q2b 流式 writer/reader（目标 `File`；TcpStream 留待流式 read_all 方法化）：
+    // `json.to_writer(w, v)` → `w.write_all(json.stringify(v))`，返回
+    // `Result<i64, io::error::IoError>`；`json.from_reader::<T>(r)` →
+    // `json.parse::<T>(r.read_to_string().unwrap())`，读失败经 `unwrap` 死循环
+    // （MVP 语义，与 std `Result::unwrap` 一致）。
+    if name == "json::to_writer" {
+        return check_json_to_writer(ctx, args, span);
+    }
+    if name == "json::from_reader" {
+        return check_json_from_reader(ctx, args, type_args, span);
     }
 
     // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
     // 按签名检查参数、返回签名类型
     if let Some((params, ret)) = builtin_signature(&name) {
-        // `print` / `println` 允许 0..=1 个参数（`println()` 打印空行）
-        let is_print = name == "print" || name == "println";
-        let max_args = if is_print { 1 } else { params.len() };
+        // `print` / `println` / `eprint` / `eprintln` 允许 0..=1 个参数
+        // （`println()` 打印空行；`eprint*` 输出到 stderr）
+        let is_console = name == "print"
+            || name == "println"
+            || name == "eprint"
+            || name == "eprintln";
+        let max_args = if is_console { 1 } else { params.len() };
         if args.len() > max_args {
             return Err(TypeError::UnexpectedArgumentCount {
                 name: name.clone(),
@@ -2478,9 +2497,10 @@ fn check_call(
                 span,
             });
         }
-        // `print(s)` / `println(s)` 参数为 String → 展开为 `print_string` / `println_string`
+        // `print(s)` / `println(s)` / `eprint(s)` / `eprintln(s)` 参数为 String →
+        // 展开为 `print_string` / `println_string` / `eprint_string` / `eprintln_string`
         // 内建（动态缓冲按 `%.*s` 打印；typecheck 无法在内建签名层表达对象槽读取）
-        if is_print && args.len() == 1 {
+        if is_console && args.len() == 1 {
             let (mut hir, mut ty) = infer_expr(ctx, &args[0])?;
             // 引用参数自动剥一层（G1 剥层语义覆盖 print/println 内建：
             // `println(r)` 打印解引用值而非地址，与字段访问 / 方法调用剥层一致）
@@ -2496,10 +2516,11 @@ fn check_call(
                     .resolve_full_name(&n)
                     .unwrap_or_else(|| n.clone());
                 if full == "String" && ctx.lookup_struct(&full).is_some() {
-                    let callee = if name == "println" {
-                        "println_string"
-                    } else {
-                        "print_string"
+                    let callee = match name.as_str() {
+                        "println" => "println_string",
+                        "print" => "print_string",
+                        "eprintln" => "eprintln_string",
+                        _ => "eprint_string",
                     };
                     return Ok((
                         HirExpr::Call {
@@ -2510,8 +2531,8 @@ fn check_call(
                     ));
                 }
             }
-            // 非 String 参数：直接生成 print / println 调用（引用已剥层，
-            // 避免落入下方通用路径时对原始实参重新 infer 而丢失剥层结果）
+            // 非 String 参数：直接生成 print / println / eprint / eprintln 调用
+            // （引用已剥层，避免落入下方通用路径时对原始实参重新 infer 而丢失剥层结果）
             return Ok((
                 HirExpr::Call {
                     callee: name.clone(),
@@ -2802,6 +2823,14 @@ fn check_call(
             } else {
                 try_closure_value_as_fn(&ty).unwrap_or((hir, ty))
             }
+        } else {
+            (hir, ty)
+        };
+        // 函数指针实参 → i64 形参（S0 线程入口地址整数化）：
+        // `__zeta_thread_spawn(f, 0)` 中 f 为 `fn() -> i64` 函数指针值，extern 形参
+        // 是 i64——函数指针按地址整数传递，codegen 在 extern 调用点做 ptrtoint。
+        let (hir, ty) = if matches!(param_ty, Type::I64) && matches!(&ty, Type::Fn(_)) {
+            (hir, Type::I64)
         } else {
             (hir, ty)
         };
@@ -3700,6 +3729,12 @@ pub(crate) fn check_closure_expected(
 ///    `fn_shadow_of` 绑定自身版本；
 /// 3. 其余按裸名 / use 导入别名解析。
 fn resolve_callable(ctx: &TypeContext, name: &str) -> String {
+    // `r#` 原始标识符：显式引用根命名空间（如 fs 模块内 `r#rename(...)`
+    // 引用根 extern `rename`，不被 `fs::rename` 遮蔽）。去前缀后跳过
+    // 模块内优先 / 用户遮蔽，直接绑定根命名空间符号（注册名已归一化）。
+    if let Some(base) = name.strip_prefix("r#") {
+        return base.to_string();
+    }
     // 模块内函数引用：优先绑定当前模块内定义（`prefix::name`），
     // 避免子模块内部裸名调用被全局同名函数（含用户顶层覆盖）劫持。
     // 例：std `io.zeta` 内部 `read(0, tmp, 256)` 必须绑定 `io::read`，
@@ -3762,14 +3797,23 @@ pub(crate) fn resolve_ast_type(
             if name == "str" && args.is_empty() {
                 return Ok(Type::Str);
             }
+            // 带泛型实参的类型也解析完整名（use 别名 / 模块前缀），与 args 为空时
+            // 一致（S1 修复：`Poll<i64>` 注解与 `Poll::Ready` 构造的路径一致性——
+            // 裸名不做别名展开会产生 `Poll` vs `future::Poll` 的错配）。
             if args.is_empty() {
                 ctx.resolve_named_type(name, span)
             } else {
+                // 带泛型实参的类型也解析完整名（use 别名 / 模块前缀），与 args 为空
+                // 时一致（S1 修复：`Poll<i64>` 注解与 `Poll::Ready` 构造的路径一致性——
+                // 裸名不做别名展开会产生 `Poll` vs `future::Poll` 的错配）。
+                let full = ctx
+                    .resolve_full_name(name)
+                    .unwrap_or_else(|| name.to_string());
                 let mut resolved = Vec::with_capacity(args.len());
                 for a in args {
                     resolved.push(resolve_ast_type(ctx, a, span)?);
                 }
-                Ok(Type::Named(name.clone(), resolved))
+                Ok(Type::Named(full, resolved))
             }
         }
         AstType::Ref(inner, is_mut) => {
@@ -6340,6 +6384,9 @@ fn check_method_call(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    // `r#` 前缀（关键字转义，如 `fn r#send`）在方法调用处去前缀，
+    // 与定义侧 parse_fn 归一化（`r#send` → `send`）保持一致。
+    let method = method.strip_prefix("r#").unwrap_or(method);
     let (recv_hir, recv_ty) = infer_expr(ctx, receiver)?;
     // `Rc<T>` / `Arc<T>` / `Weak<T>` 引用计数内建方法（K3）：clone /
     // strong_count / weak_count / downgrade / try_unwrap / upgrade。
@@ -7008,7 +7055,9 @@ fn check_macro_call(
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     match name {
-        "println!" | "print!" | "format!" => check_format_macro(ctx, name, args, span),
+        "println!" | "print!" | "format!" | "eprintln!" | "eprint!" => {
+            check_format_macro(ctx, name, args, span)
+        }
         "dbg!" => check_dbg_macro(ctx, args, span),
         _ => Err(TypeError::Unsupported {
             what: format!("未实现的宏 `{name}`"),
@@ -7017,13 +7066,15 @@ fn check_macro_call(
     }
 }
 
-/// 格式串片段：字面量段 或 值占位段（`{}` / `{:?}`）。
+/// 格式串片段：字面量段 或 值占位段（`{}` → Display，`{:?}` → Debug）。
 struct FormatSeg {
     text: String,
     is_value: bool,
+    /// `{:?}` → true（Q3b：Debug 路径；`{}` → false，Display 路径）
+    is_debug: bool,
 }
 
-/// 解析格式串占位符：`{}`、`{:?}`（MVP 与 `{}` 同构）、`{{`/`}}` 转义。
+/// 解析格式串占位符：`{}`（Display）、`{:?}`（Debug）、`{{`/`}}` 转义。
 fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>, TypeError> {
     let mut segs = Vec::new();
     let mut cur = String::new();
@@ -7035,11 +7086,13 @@ fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>, TypeError>
                     chars.next();
                     cur.push('{');
                 } else {
-                    // `{:?}`（debug）或 `{}`
+                    // `{:?}`（debug）或 `{}`（display）
+                    let mut is_debug = false;
                     if chars.peek() == Some(&':') {
                         chars.next();
                         if chars.peek() == Some(&'?') {
                             chars.next();
+                            is_debug = true;
                         }
                     }
                     if chars.peek() == Some(&'}') {
@@ -7048,11 +7101,13 @@ fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>, TypeError>
                             segs.push(FormatSeg {
                                 text: std::mem::take(&mut cur),
                                 is_value: false,
+                                is_debug: false,
                             });
                         }
                         segs.push(FormatSeg {
                             text: String::new(),
                             is_value: true,
+                            is_debug,
                         });
                     } else {
                         return Err(TypeError::Unsupported {
@@ -7080,6 +7135,7 @@ fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>, TypeError>
         segs.push(FormatSeg {
             text: cur,
             is_value: false,
+            is_debug: false,
         });
     }
     if segs.is_empty() {
@@ -7087,6 +7143,7 @@ fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>, TypeError>
         segs.push(FormatSeg {
             text: String::new(),
             is_value: false,
+            is_debug: false,
         });
     }
     Ok(segs)
@@ -7922,6 +7979,276 @@ fn json_parse_ast(
                 span,
             ))
         }
+        // 用户 struct → JSON 对象 `{"f0":v0,"f1":v1}` 反序列化（字段名匹配，顺序无关，
+        // 缺失字段保持零值，未知字段忽略）。desugar 为块表达式 + `for x in vec`
+        // （复用 check_for_vec 遍历 split 结果）：
+        // `{ let __s = String::from(<arg>);                 // JSON 文本
+        //    let __body = __s.substring(1, __s.len() - 1);  // 剥离首尾 { }
+        //    let __parts = __body.split(",");               // 逗号分段
+        //    let mut __p: Point = Point { x: 0, y: 0 };     // 零值构造
+        //    for __part in __parts {
+        //      let __c = __part.find(":");
+        //      if __c >= 0 {
+        //        let __name = json_unescape(__part.substring(0, __c));  // 字段名（剥引号）
+        //        let __val = __part.substring(__c + 1, __part.len());
+        //        if __name == "x" { __p.x = <字段 x 值解析>; }   // 递归 json_parse_ast
+        //        else if __name == "y" { __p.y = <字段 y 值解析>; }
+        //        else { }                                        // 未知字段忽略
+        //      }
+        //    }
+        //    __p }`
+        // 字段值限 json_parse_ast 支持类型（i64 / bool / String / 嵌套 struct）；
+        // 嵌套 struct / Vec / HashMap 值含逗号经 split(",") 分段错误的 MVP 限制
+        // （与 HashMap 分支一致）；泛型 struct（带类型实参）MVP 不支持（零值与字段
+        // 解析需按实参定型）。
+        Type::Named(n, args) if ctx.lookup_struct(&n).is_some() && args.is_empty() => {
+            let def = ctx.lookup_struct(&n).cloned().unwrap();
+            if def.fields.is_empty() {
+                return Err(TypeError::Unsupported {
+                    what: format!("json.parse：空结构体 `{n}` 反序列化"),
+                    span,
+                });
+            }
+            // 临时变量：JSON 文本 / 剥离后主体 / 逗号分段 / 结果 struct / 段 /
+            // 冒号下标 / 字段名 / 值段
+            let s_name = ctx.fresh_temp();
+            let body_name = ctx.fresh_temp();
+            let parts_name = ctx.fresh_temp();
+            let p_name = ctx.fresh_temp();
+            let part_name = ctx.fresh_temp();
+            let c_name = ctx.fresh_temp();
+            let name_name = ctx.fresh_temp();
+            let val_name = ctx.fresh_temp();
+            let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
+            let body_id = AstExpr::new(ExprKind::Ident(body_name.clone()), span);
+            let parts_id = AstExpr::new(ExprKind::Ident(parts_name.clone()), span);
+            let p_id = AstExpr::new(ExprKind::Ident(p_name.clone()), span);
+            let part_id = AstExpr::new(ExprKind::Ident(part_name.clone()), span);
+            let c_id = AstExpr::new(ExprKind::Ident(c_name.clone()), span);
+            let name_id = AstExpr::new(ExprKind::Ident(name_name.clone()), span);
+            let val_id = AstExpr::new(ExprKind::Ident(val_name.clone()), span);
+            // `recv.method(args)` 方法调用 AST
+            let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: method.to_string(),
+                        args,
+                    },
+                    span,
+                )
+            };
+            // 字段值解析（递归 json_parse_ast）
+            let field_parse = |ctx: &mut TypeContext, fty: &Type| {
+                json_parse_ast(ctx, fty, &val_id.clone(), span)
+            };
+            // 零值构造（缺失字段保持零值）
+            let mut zero_fields = Vec::new();
+            for (fname, fty) in &def.fields {
+                zero_fields.push((fname.clone(), ty_to_zero_ast(ctx, fty, span)?));
+            }
+            let zero_ctor = AstExpr::new(
+                ExprKind::StructCtor {
+                    type_name: vec![n.clone()],
+                    fields: zero_fields,
+                },
+                span,
+            );
+            // if-else 链：`if __name == "x" { __p.x = <解析>; } else if ... else { }`
+            // 自后向前构建；最内层 else 为空块（未知字段忽略）
+            let mut chain: Option<AstExpr> = None;
+            for (fname, fty) in def.fields.iter().rev() {
+                let name_eq = AstExpr::new(
+                    ExprKind::ComparisonChain {
+                        elements: vec![
+                            name_id.clone(),
+                            string_from_lit_ast(fname.clone(), span),
+                        ],
+                        operators: vec![CompareOp::Eq],
+                    },
+                    span,
+                );
+                let inner = chain.take();
+                let then_block = AstBlock {
+                    stmts: vec![AstStmt::Semi(AstExpr::new(
+                        ExprKind::Assign {
+                            target: AstExpr::new(
+                                ExprKind::FieldAccess {
+                                    expr: p_id.clone(),
+                                    field: fname.clone(),
+                                },
+                                span,
+                            ),
+                            op: AssignOp::Assign,
+                            value: field_parse(ctx, fty)?,
+                        },
+                        span,
+                    ))],
+                    final_expr: None,
+                    span,
+                };
+                chain = Some(AstExpr::new(
+                    ExprKind::If {
+                        cond: name_eq,
+                        then_block,
+                        else_block: Some(AstBlock {
+                            stmts: Vec::new(),
+                            final_expr: inner,
+                            span,
+                        }),
+                    },
+                    span,
+                ));
+            }
+            let if_chain = chain.expect("struct 至少一个字段");
+            // `if __c >= 0 { let __name = ...; let __val = ...; <if 链> }`
+            let c_ge_zero = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![c_id.clone(), AstExpr::new(ExprKind::IntLiteral(0), span)],
+                    operators: vec![CompareOp::Ge],
+                },
+                span,
+            );
+            let if_parse = AstExpr::new(
+                ExprKind::If {
+                    cond: c_ge_zero,
+                    then_block: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(name_name),
+                                type_anno: None,
+                                init: mk_ident_call(
+                                    "json_unescape".to_string(),
+                                    vec![mcall(
+                                        part_id.clone(),
+                                        "substring",
+                                        vec![
+                                            AstExpr::new(ExprKind::IntLiteral(0), span),
+                                            c_id.clone(),
+                                        ],
+                                    )],
+                                    span,
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(val_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id.clone(),
+                                    "substring",
+                                    vec![
+                                        AstExpr::new(
+                                            ExprKind::Binary {
+                                                op: BinaryOp::Add,
+                                                left: c_id.clone(),
+                                                right: AstExpr::new(
+                                                    ExprKind::IntLiteral(1),
+                                                    span,
+                                                ),
+                                            },
+                                            span,
+                                        ),
+                                        mcall(part_id.clone(), "len", Vec::new()),
+                                    ],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Semi(if_chain),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                    else_block: None,
+                },
+                span,
+            );
+            // `for __part in __parts { let __c = __part.find(":"); <if 解析> }`
+            let for_expr = AstExpr::new(
+                ExprKind::For {
+                    pattern: AstPattern::Ident(part_name),
+                    iterator: parts_id.clone(),
+                    body: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(c_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id,
+                                    "find",
+                                    vec![string_from_lit_ast(":".to_string(), span)],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Semi(if_parse),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                },
+                span,
+            );
+            // 顶层块：`{ let __s; let __body; let __parts; let mut __p; <for>; __p }`
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(s_name),
+                            type_anno: None,
+                            init: mk_path_call(
+                                vec!["String".to_string(), "from".to_string()],
+                                vec![arg.clone()],
+                                span,
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(body_name),
+                            type_anno: None,
+                            init: mcall(
+                                s_id.clone(),
+                                "substring",
+                                vec![
+                                    AstExpr::new(ExprKind::IntLiteral(1), span),
+                                    AstExpr::new(
+                                        ExprKind::Binary {
+                                            op: BinaryOp::Sub,
+                                            left: mcall(s_id, "len", Vec::new()),
+                                            right: AstExpr::new(
+                                                ExprKind::IntLiteral(1),
+                                                span,
+                                            ),
+                                        },
+                                        span,
+                                    ),
+                                ],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(parts_name),
+                            type_anno: None,
+                            init: mcall(
+                                body_id,
+                                "split",
+                                vec![string_from_lit_ast(",".to_string(), span)],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(p_name),
+                            type_anno: Some(AstType::Path(n.clone(), Vec::new())),
+                            init: zero_ctor,
+                            mutable: true,
+                        },
+                        AstStmt::Semi(for_expr),
+                    ],
+                    final_expr: Some(p_id),
+                    span,
+                }),
+                span,
+            ))
+        }
         other => Err(TypeError::Unsupported {
             what: format!("json.parse：类型 `{other}` 反序列化"),
             span,
@@ -7929,14 +8256,186 @@ fn json_parse_ast(
     }
 }
 
-/// 值 → String 的 AST（`{}` 显示；MVP 支持 i64 / bool / String / &str / 字符串字面量）。
+/// Q2b `json.to_writer(w, v)` → `w.write_all(json.stringify(v))`（编译器内建）。
+///
+/// 参数：`w` 为 `File` / `&File` / `&mut File`（写句柄，方法调用自动剥引用层）；
+/// `v` 递归 `check_json_stringify` 序列化。返回 `Result<i64, io::error::IoError>`
+/// （`File::write_all` 的返回类型，调用方可 match / `?` 处理）。
+fn check_json_to_writer(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 2 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "json.to_writer".to_string(),
+            expected: 2,
+            found: args.len(),
+            span,
+        });
+    }
+    // 首个参数须为 File 写句柄（File / &File / &mut File；名称按短名或路径后缀匹配，
+    // 解析后完整名可能为 `io::file::File`）
+    let (_w_hir, w_ty) = infer_expr(ctx, &args[0])?;
+    let inner = match &w_ty {
+        Type::Named(n, _) => Some(n),
+        Type::Ref(t, _) => match &**t {
+            Type::Named(n, _) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    };
+    let is_file = inner
+        .map(|n| n == "File" || n.ends_with("::File"))
+        .unwrap_or(false);
+    if !is_file {
+        return Err(TypeError::Unsupported {
+            what: format!(
+                "json.to_writer：首个参数须为 `File`（MVP；TcpStream 留待流式接线），实为 `{w_ty}`"
+            ),
+            span,
+        });
+    }
+    // 构造 `w.write_all(json.stringify(v))` 调用 AST
+    let ser = mk_path_call(
+        vec!["json".to_string(), "stringify".to_string()],
+        vec![args[1].clone()],
+        span,
+    );
+    let call_ast = AstExpr::new(
+        ExprKind::MethodCall {
+            receiver: args[0].clone(),
+            method: "write_all".to_string(),
+            args: vec![ser],
+        },
+        span,
+    );
+    infer_expr(ctx, &call_ast)
+}
+
+/// Q2b `json.from_reader::<T>(r)` → `json.parse::<T>(r.read_to_string().unwrap())`
+/// （编译器内建）。
+///
+/// 参数：`r` 为 `File` / `&mut File`（读句柄）。读取失败经 `Result::unwrap` 死循环
+/// （MVP 语义，与 std `Result::unwrap` 一致）；返回 `T`（须经 turbofish 指定）。
+fn check_json_from_reader(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    type_args: &[AstType],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "json.from_reader".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    if type_args.len() != 1 {
+        return Err(TypeError::Unsupported {
+            what: "json.from_reader：须显式泛型实参 `json.from_reader::<T>(r)`".to_string(),
+            span,
+        });
+    }
+    // 首个参数须为 File 读句柄（名称按短名或路径后缀匹配）
+    let (_r_hir, r_ty) = infer_expr(ctx, &args[0])?;
+    let inner = match &r_ty {
+        Type::Named(n, _) => Some(n),
+        Type::Ref(t, _) => match &**t {
+            Type::Named(n, _) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    };
+    let is_file = inner
+        .map(|n| n == "File" || n.ends_with("::File"))
+        .unwrap_or(false);
+    if !is_file {
+        return Err(TypeError::Unsupported {
+            what: format!(
+                "json.from_reader：首个参数须为 `File`（MVP；TcpStream 留待流式接线），实为 `{r_ty}`"
+            ),
+            span,
+        });
+    }
+    // 构造 `r.read_to_string().unwrap()` → `json.parse::<T>(...)` 调用 AST
+    let read_ast = AstExpr::new(
+        ExprKind::MethodCall {
+            receiver: args[0].clone(),
+            method: "read_to_string".to_string(),
+            args: Vec::new(),
+        },
+        span,
+    );
+    let unwrap_ast = AstExpr::new(
+        ExprKind::MethodCall {
+            receiver: read_ast,
+            method: "unwrap".to_string(),
+            args: Vec::new(),
+        },
+        span,
+    );
+    let parse_ast = AstExpr::new(
+        ExprKind::Call {
+            callee: AstExpr::new(
+                ExprKind::Path(vec!["json".to_string(), "parse".to_string()]),
+                span,
+            ),
+            args: vec![unwrap_ast],
+            type_args: type_args.to_vec(),
+        },
+        span,
+    );
+    infer_expr(ctx, &parse_ast)
+}
+
+/// 字段类型 → 零值 AST（struct 反序列化零值构造用；缺失字段保持零值）。
+fn ty_to_zero_ast(ctx: &TypeContext, ty: &Type, span: Span) -> Result<AstExpr, TypeError> {
+    use Type::*;
+    match ty {
+        I64 | U8 => Ok(AstExpr::new(ExprKind::IntLiteral(0), span)),
+        F64 => Ok(AstExpr::new(ExprKind::FloatLiteral(0.0), span)),
+        Bool => Ok(AstExpr::new(ExprKind::BoolLiteral(false), span)),
+        Named(n, _) if n == "String" => Ok(string_from_lit_ast(String::new(), span)),
+        Named(n, _) if n == "Vec" || n == "HashMap" => Ok(mk_path_call(
+            vec![n.clone(), "new".to_string()],
+            Vec::new(),
+            span,
+        )),
+        Named(n, args) if ctx.lookup_struct(&n).is_some() && args.is_empty() => {
+            let def = ctx.lookup_struct(&n).expect("lookup_struct 已验证");
+            let mut fields = Vec::new();
+            for (fname, fty) in &def.fields {
+                fields.push((fname.clone(), ty_to_zero_ast(ctx, fty, span)?));
+            }
+            Ok(AstExpr::new(
+                ExprKind::StructCtor {
+                    type_name: vec![n.clone()],
+                    fields,
+                },
+                span,
+            ))
+        }
+        other => Err(TypeError::Unsupported {
+            what: format!(
+                "json.parse：字段类型 `{other}` 的零值构造（MVP 支持 i64 / u8 / f64 / bool / String / Vec / HashMap / 嵌套 struct）"
+            ),
+            span,
+        }),
+    }
+}
+
+/// 值 → String 的 AST（`{}` 显示 / `{:?}` Debug；MVP 内建类型走内建转换，
+/// 自定义类型经 `Display::fmt` / `Debug::fmt_debug` 方法调用）。
 fn value_to_string_ast(
     ctx: &mut TypeContext,
     arg: &AstExpr,
+    debug: bool,
     span: Span,
 ) -> Result<AstExpr, TypeError> {
     let (_, ty) = infer_expr(ctx, arg)?;
-    value_to_string_for_ty(ctx, &ty, arg, span)
+    value_to_string_for_ty(ctx, &ty, arg, debug, span)
 }
 
 /// 按预推断类型构造值 → String 的 AST（`dbg!` 等场景参数尚未绑定为变量时复用）。
@@ -7944,6 +8443,7 @@ fn value_to_string_for_ty(
     ctx: &mut TypeContext,
     ty: &Type,
     arg: &AstExpr,
+    debug: bool,
     span: Span,
 ) -> Result<AstExpr, TypeError> {
     let base = peel_ref(ty);
@@ -8012,9 +8512,61 @@ fn value_to_string_for_ty(
             span,
         ));
     }
+    // Q3b：自定义类型走 Display / Debug trait 方法
+    // （`{}` → `fmt`，`{:?}` → `fmt_debug`；方法名查找 impl，与手写 impl 调用
+    // 路径一致，MVP 无 trait bound 检查）。`fmt` 直接返回 String（拼接模式）。
+    let method = if debug { "fmt_debug" } else { "fmt" };
+    if ctx.find_impl_for_method(&base, method).is_some() {
+        // 块表达式：`let mut __fmt_q3 = Formatter::new(); x.fmt(&mut __fmt_q3)`
+        // （MVP `&mut` 仅支持变量目标，临时值 `&mut Formatter::new()` 不可用）
+        let tmp = "__fmt_q3".to_string();
+        let f_new = AstExpr::new(
+            ExprKind::Call {
+                callee: AstExpr::new(
+                    ExprKind::Path(vec!["Formatter".to_string(), "new".to_string()]),
+                    span,
+                ),
+                args: Vec::new(),
+                type_args: Vec::new(),
+            },
+            span,
+        );
+        let bind = AstStmt::Let {
+            pattern: AstPattern::Ident(tmp.clone()),
+            type_anno: None,
+            init: f_new,
+            mutable: true,
+        };
+        let f_ref = AstExpr::new(
+            ExprKind::Unary {
+                op: UnaryOp::AddrOfMut,
+                operand: AstExpr::new(ExprKind::Ident(tmp.clone()), span),
+            },
+            span,
+        );
+        let call = AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: arg.clone(),
+                method: method.to_string(),
+                args: vec![f_ref],
+            },
+            span,
+        );
+        return Ok(AstExpr::new(
+            ExprKind::Block(AstBlock {
+                stmts: vec![bind],
+                final_expr: Some(call),
+                span,
+            }),
+            span,
+        ));
+    }
+    let placeholder = if debug { "{:?}" } else { "{}" };
     Err(TypeError::Unsupported {
         what: format!(
-            "`{{}}` 占位符不支持类型 `{ty}`（MVP 支持 i64 / bool / String / &str / 字符串字面量）"
+            "`{placeholder}` 占位符不支持类型 `{ty}`（MVP 支持 i64 / bool / String / &str / 字符串字面量；自定义类型须 `impl {}`）",
+            placeholder = placeholder,
+            ty = ty,
         ),
         span,
     })
@@ -8077,7 +8629,7 @@ fn check_format_macro(
         let seg_ast = if seg.is_value {
             let arg = &args[value_idx];
             value_idx += 1;
-            value_to_string_ast(ctx, arg, span)?
+            value_to_string_ast(ctx, arg, seg.is_debug, span)?
         } else {
             string_from_lit_ast(seg.text.clone(), span)
         };
@@ -8131,10 +8683,12 @@ fn check_dbg_macro(
     let tmp = ctx.fresh_temp();
     // `let __tmp = <expr>; println("dbg: " + to_string(__tmp)); __tmp`
     let prefix = string_from_lit_ast("dbg: ".to_string(), span);
+    // `dbg!` 用 Debug 格式（`{:?}` 语义）：自定义类型走 `fmt_debug`
     let value = value_to_string_for_ty(
         ctx,
         &arg_ty,
         &AstExpr::new(ExprKind::Ident(tmp.clone()), span),
+        true,
         span,
     )?;
     let concat = AstExpr::new(

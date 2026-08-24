@@ -17,6 +17,8 @@ use crate::{
 pub const BUILTIN_FUNCTIONS: &[&str] = &[
     "print",
     "println",
+    "eprint",
+    "eprintln",
     "alloc_array",
     "array_copy",
     "array_free",
@@ -26,6 +28,8 @@ pub const BUILTIN_FUNCTIONS: &[&str] = &[
     "bytes_cmp",
     "print_string",
     "println_string",
+    "eprint_string",
+    "eprintln_string",
     "hash_value",
 ];
 

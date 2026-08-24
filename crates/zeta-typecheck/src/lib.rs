@@ -44,8 +44,13 @@ pub fn typecheck_source_with_region_hints(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
 ) -> Result<HirProgram, TypeError> {
-    let program = zeta_parser::parse(source).map_err(|e| TypeError::Unsupported {
+    let mut program = zeta_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
+        span: e.span(),
+    })?;
+    // S1c：async/await 状态机 desugar（parse 后、typecheck 前，AST → AST）
+    zeta_desugar::desugar_program(&mut program).map_err(|e| TypeError::Unsupported {
+        what: e.to_string(),
         span: e.span(),
     })?;
     typecheck_with_region_hints(&program, region_hints)

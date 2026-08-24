@@ -122,9 +122,15 @@ fn collect_item_decls(
         AstItem::ActorDecl(a) => collect_actor(ctx, a, prefix)?,
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
+            // Q3a 修复：模块内符号（struct/trait/impl）的短名解析须感知模块前缀。
+            // 模块内 trait/impl 方法签名在收集阶段即 resolve_ast_type（如
+            // `fmt/mod.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
+            // 此时文件后部的 use 段尚未注册 use_aliases，须按 `mod::Name` 前缀回退。
+            let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {
                 collect_item_decls(ctx, inner, &new_prefix)?;
             }
+            ctx.module_prefix = old_prefix;
         }
         AstItem::UseDecl(u) => register_use(ctx, u)?,
         // 收集阶段注册模块常量（供函数体 / 其它 const 引用）
@@ -165,7 +171,15 @@ pub(crate) fn type_to_extern_name(ty: &Type) -> String {
 ///
 /// MVP 限制：路径从根开始解析；暂不支持 glob 导入（`use a::*;`）。
 fn register_use(ctx: &mut TypeContext, u: &AstUseDecl) -> Result<(), TypeError> {
-    let path = u.path.join("::");
+    // `r#` 前缀（关键字转义 / 根命名空间显式引用标记）在符号注册时归一化，
+    // 与 extern 声明注册名保持一致（`use r#rename` → 目标 "rename"）。
+    let norm = |s: &str| s.strip_prefix("r#").unwrap_or(s).to_string();
+    let path = u
+        .path
+        .iter()
+        .map(|s| norm(s))
+        .collect::<Vec<String>>()
+        .join("::");
     if u.path.last().map(String::as_str) == Some("*") {
         return Err(TypeError::Unsupported {
             what: "glob 导入 use a::*".to_string(),
@@ -173,8 +187,8 @@ fn register_use(ctx: &mut TypeContext, u: &AstUseDecl) -> Result<(), TypeError> 
         });
     }
     let local = match &u.alias {
-        Some(a) => a.clone(),
-        None => u.path.last().cloned().unwrap_or_default(),
+        Some(a) => norm(a),
+        None => u.path.last().map(|s| norm(s)).unwrap_or_default(),
     };
     ctx.insert_use_alias(local, path);
     Ok(())
@@ -249,9 +263,12 @@ pub(crate) fn check_item(
         }
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
+            // 与收集阶段一致：模块内短名解析感知模块前缀（Q3a）
+            let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {
                 check_item(ctx, inner, &new_prefix, out)?;
             }
+            ctx.module_prefix = old_prefix;
         }
         // actor：展开为状态初始化函数 + 方法函数 + dispatch handle + runtime extern 声明
         AstItem::ActorDecl(a) => expand_actor(ctx, a, prefix, out)?,
@@ -762,6 +779,27 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
         full_name(prefix, &imp.type_name),
         imp.generics.iter().map(|g| Type::Generic(g.clone())).collect(),
     );
+    // trait 名解析为完整符号名（与 `dyn Trait` 解析一致）：
+    // 1) 显式 `mod::Trait` 路径原样使用；2) 当前模块前缀下存在（`impl Trait` 定义于 trait 同模块内）；
+    // 3) 顶层已定义；4) use 导入别名；5) 原样回退。inherent impl（无 trait）保持 None。
+    let trait_name = match &imp.trait_name {
+        Some(tn) if tn.contains("::") => Some(tn.clone()),
+        Some(tn) if !prefix.is_empty()
+            && ctx
+                .trait_defs
+                .contains_key(&format!("{}::{}", prefix, tn)) =>
+        {
+            Some(format!("{}::{}", prefix, tn))
+        }
+        Some(tn) if ctx.trait_defs.contains_key(tn) => Some(tn.clone()),
+        Some(tn) => Some(
+            ctx.use_aliases
+                .get(tn)
+                .cloned()
+                .unwrap_or_else(|| tn.clone()),
+        ),
+        None => None,
+    };
 
     let mut methods = Vec::new();
     for m in &imp.methods {
@@ -803,7 +841,7 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
     ctx.insert_impl(ImplDef {
-        trait_name: imp.trait_name.clone(),
+        trait_name,
         self_type,
         type_params: imp.generics.clone(),
         methods,
@@ -818,8 +856,17 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
 pub fn collect_fn_signatures(
     program: &AstProgram,
 ) -> Result<Vec<(String, FnSignature)>, TypeError> {
+    // S1c：async/await 状态机 desugar——接口签名须反映 desugar 后的真实签名
+    // （async fn 实际签名返回 `__Fut_X`，且用户类型可能引用生成项）。
+    // 与 typecheck_source 挂载点保持一致，clone 后处理，不修改调用方持有的 AST。
+    let mut program = program.clone();
+    zeta_desugar::desugar_program(&mut program).map_err(|e| TypeError::Unsupported {
+        what: e.to_string(),
+        span: e.span(),
+    })?;
+    let program = &program;
     let mut ctx = TypeContext::new();
-    // 先收集结构体 / 枚举 / trait / impl（签名可能引用这些类型）
+    // 先收集结构体 / 枚举 / trait / impl / use 导入别名（签名可能引用这些类型）
     for item in &program.items {
         match item {
             AstItem::StructDecl(s) => collect_struct(&mut ctx, s, "")?,
@@ -827,6 +874,7 @@ pub fn collect_fn_signatures(
             AstItem::TraitDecl(t) => collect_trait(&mut ctx, t, "")?,
             AstItem::ImplBlock(imp) => collect_impl(&mut ctx, imp, "")?,
             AstItem::ModDecl(m) => collect_mod_types(&mut ctx, m)?,
+            AstItem::UseDecl(u) => register_use(&mut ctx, u)?,
             _ => {}
         }
     }
@@ -846,17 +894,36 @@ pub fn collect_fn_signatures(
 }
 
 /// 递归收集模块内的类型声明（结构体 / 枚举 / trait / impl）。
+///
+/// 模块前缀与 `collect_item_decls` 一致地**逐级累积**（`io::error::IoErrorKind`），
+/// 否则 `impl` 方法签名在收集时经 `resolve_ast_type` 解析 `mod::Type` 引用会
+/// 因注册名缺前缀（`error::IoErrorKind`）而报 UndefinedType（S1 修复，2026-08）。
 fn collect_mod_types(ctx: &mut TypeContext, m: &AstModDecl) -> Result<(), TypeError> {
+    collect_mod_types_inner(ctx, m, "")
+}
+
+fn collect_mod_types_inner(
+    ctx: &mut TypeContext,
+    m: &AstModDecl,
+    prefix: &str,
+) -> Result<(), TypeError> {
+    let new_prefix = full_name(prefix, &m.name);
+    // Q3a：与 `collect_item_decls` 的 ModDecl 分支一致，模块内短名解析须感知
+    // 模块前缀（`fmt/mod.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
+    // 等——collect_impl/collect_trait 收集阶段即 resolve_ast_type，use 段未注册）。
+    let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
     for inner in &m.items {
         match inner {
-            AstItem::StructDecl(s) => collect_struct(ctx, s, &m.name)?,
-            AstItem::EnumDecl(e) => collect_enum(ctx, e, &m.name)?,
-            AstItem::TraitDecl(t) => collect_trait(ctx, t, &m.name)?,
-            AstItem::ImplBlock(imp) => collect_impl(ctx, imp, &m.name)?,
-            AstItem::ModDecl(inner_mod) => collect_mod_types(ctx, inner_mod)?,
+            AstItem::StructDecl(s) => collect_struct(ctx, s, &new_prefix)?,
+            AstItem::EnumDecl(e) => collect_enum(ctx, e, &new_prefix)?,
+            AstItem::TraitDecl(t) => collect_trait(ctx, t, &new_prefix)?,
+            AstItem::ImplBlock(imp) => collect_impl(ctx, imp, &new_prefix)?,
+            AstItem::ModDecl(inner_mod) => collect_mod_types_inner(ctx, inner_mod, &new_prefix)?,
+            AstItem::UseDecl(u) => register_use(ctx, u)?,
             _ => {}
         }
     }
+    ctx.module_prefix = old_prefix;
     Ok(())
 }
 

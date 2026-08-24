@@ -17,9 +17,27 @@ use zeta_lir::{FieldScalar, LirFunction, LirOperand, LirProgram, LirStmt, LirTer
 use crate::error::CodegenError;
 
 /// 内建函数名（与 `zeta-lir::lower::BUILTIN_FUNCTIONS` 保持一致）。
+/// libc 变参函数白名单（R 阶段，2026-08）：这些符号在 libc 中按
+/// `(int, int, ...)` 等**变参原型**声明，而 Zeta extern 只能表达固定参数。
+/// 元组第二项 = libc 原型的**固定形参个数**（fcntl = 2：fd、cmd）。
+///
+/// 若把 declare 写成固定参数（`(i64, i64, i64)`），LLVM 调用点不会生成 SysV
+/// ABI 的寄存器保存区（reg_save_area）复制与 `%al` 设置；libc 内部 va_start
+/// 仍按变参从保存区读第 3 个参数，读到残留垃圾值（fcntl F_SETFL 的 arg 曾
+/// 读到随机 flags 导致行为不稳定）。若把声明写成 `(i64, i64, i64, ...)`
+/// （3 个"固定"参数），LLVM 会认为 3 个参数全部走寄存器而不写保存区，
+/// 同样错位。
+///
+/// 正确做法：只保留 libc 的固定形参个数（fcntl = 2），其余 Zeta 参数并入
+/// `...` 变参——LLVM 生成变参调用序（复制到保存区 + 设 %al），libc 的
+/// va_arg 从保存区读到正确值。
+const VARIADIC_EXTERNS: &[(&str, usize)] = &[("fcntl", 2)];
+
 const BUILTIN_FUNCTIONS: &[&str] = &[
     "print",
     "println",
+    "eprint",
+    "eprintln",
     "alloc_array",
     "array_copy",
     "array_free",
@@ -29,6 +47,8 @@ const BUILTIN_FUNCTIONS: &[&str] = &[
     "bytes_cmp",
     "print_string",
     "println_string",
+    "eprint_string",
+    "eprintln_string",
     "hash_value",
 ];
 
@@ -42,6 +62,9 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     let mut out = String::new();
     out.push_str("; ModuleID = 'zeta'\n");
     out.push_str("declare i32 @printf(i8*, ...)\n");
+    // POSIX `dprintf(fd, fmt, ...)`：eprint/eprintln 直写 fd 2（stderr）。
+    // 不引用 `stderr` 符号（macOS 为 `__stderrp`，不可移植）；WASI 亦提供 dprintf。
+    out.push_str("declare i32 @dprintf(i32, i8*, ...)\n");
     out.push_str("declare i8* @malloc(i64)\n");
     out.push_str("declare void @free(i8*)\n");
     out.push_str("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)\n");
@@ -123,14 +146,25 @@ impl LlvmEmitter {
             } else {
                 llvm_type(f.return_type)?.to_string()
             };
-            let params = f
+            let mut params = f
                 .params
                 .iter()
                 .map(|(name, ty)| Ok(format!("{} %{name}", llvm_type(*ty)?)))
-                .collect::<Result<Vec<_>, CodegenError>>()?
-                .join(", ");
+                .collect::<Result<Vec<_>, CodegenError>>()?;
+            // libc 变参函数（fcntl 等）：只保留 libc 原型的固定形参个数，
+            // 其余参数并入 `...` 变参（见 VARIADIC_EXTERNS 注释：
+            // 固定声明会导致变参 ABI 错位，libc va_arg 读到垃圾值）。
+            let mut variadic = "";
+            if let Some((_, fixed)) = VARIADIC_EXTERNS
+                .iter()
+                .find(|(n, _)| *n == f.name.as_str())
+            {
+                params.truncate(*fixed);
+                variadic = if params.is_empty() { "..." } else { ", ..." };
+            }
+            let params_str = params.join(", ");
             self.body.push_str(&format!(
-                "declare {ret_ty} @{}({params})\n",
+                "declare {ret_ty} @{}({params_str}{variadic})\n",
                 llvm_global_name(&f.name)
             ));
             return Ok(());
@@ -652,6 +686,13 @@ impl LlvmEmitter {
                 let d = self.reg();
                 body.push_str(&format!("  %{d} = load i8*, i8** %{addr}\n"));
                 arg_v.push(format!("%{d}"));
+            } else if *pt == LirType::I64 && local_type(f, arg.as_str()) == LirType::Ptr {
+                // 函数指针值（i8* 槽）→ i64 形参（S0 线程入口 `__zeta_thread_spawn(f, 0)`）：
+                // 函数指针按地址整数传递，取地址后 ptrtoint 为 i64。
+                let p = self.operand_value(&LirOperand::Local(arg.clone()), LirType::Ptr, body, f)?;
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = ptrtoint i8* {p} to i64\n"));
+                arg_v.push(format!("%{r}"));
             } else {
                 arg_v.push(self.operand_value(&LirOperand::Local(arg.clone()), *pt, body, f)?);
             }
@@ -664,13 +705,36 @@ impl LlvmEmitter {
             .join(", ");
 
         let callee_name = llvm_global_name(callee);
+        // libc 变参函数（fcntl 等）：调用点需带**显式变参函数类型**
+        // `({固定参数类型}, ...)`。仅靠变参 declare 不够——LLVM 对
+        // `call i32 @fcntl(...)`（隐式类型）不会触发变参调用序，ARM64
+        // AAPCS64 会把变参留在寄存器 x2，而 libc va_start 从调用者栈的
+        // 参数区读取，得到垃圾值；显式类型才生成「变参复制到栈」。
+        let variadic_ty: String =
+            VARIADIC_EXTERNS
+                .iter()
+                .find(|(n, _)| *n == callee)
+                .map(|(_, fixed)| {
+                    let fixed_tys = param_tys
+                        .iter()
+                        .take(*fixed)
+                        .map(|t| llvm_type(*t).map(|s| s.to_string()))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let fp = fixed_tys.join(", ");
+                    let sep = if fp.is_empty() { "" } else { ", " };
+                    Ok::<_, CodegenError>(format!(" ({fp}{sep}...)"))
+                })
+                .transpose()?
+                .unwrap_or_default();
         if ret_ty == LirType::Unit {
-            body.push_str(&format!("  call void @{callee_name}({arg_str})\n"));
+            body.push_str(&format!("  call void{variadic_ty} @{callee_name}({arg_str})\n"));
         } else if is_extern && extern_ret32 {
             // extern 返回 i32（pthread trylock 等）：call i32 后 sext 到 i64
             // 存入 i64 槽，得到干净的 32 位符号扩展值（规避高位未定义）。
             let r = self.reg();
-            body.push_str(&format!("  %{r} = call i32 @{callee_name}({arg_str})\n"));
+            body.push_str(&format!(
+                "  %{r} = call i32{variadic_ty} @{callee_name}({arg_str})\n"
+            ));
             let e = self.reg();
             body.push_str(&format!("  %{e} = sext i32 %{r} to i64\n"));
             if let Some(t) = target {
@@ -679,7 +743,7 @@ impl LlvmEmitter {
         } else {
             let r = self.reg();
             body.push_str(&format!(
-                "  %{r} = call {} @{callee_name}({arg_str})\n",
+                "  %{r} = call {}{variadic_ty} @{callee_name}({arg_str})\n",
                 llvm_type(ret_ty)?
             ));
             if let Some(t) = target {
@@ -861,8 +925,27 @@ impl LlvmEmitter {
             return Ok(());
         }
         // String 打印：读 String 对象槽 0（data 指针）与槽 1（字节长度），
-        // 以 `printf("%.*s", len, data)` 输出（支持任意字节内容，遇 \0 截断）。
-        if callee == "print_string" || callee == "println_string" {
+        // 以 `printf("%.*s", len, data)` 输出（支持任意字节内容，遇 \0 截断）；
+        // eprint*_string 输出到 stderr（`fprintf(@stderr, ...)`）。
+        let to_stderr = callee == "eprint"
+            || callee == "eprintln"
+            || callee == "eprint_string"
+            || callee == "eprintln_string";
+        // 输出调用辅助：`printf(fmt, args...)` / `dprintf(2, fmt, args...)`
+        let emit_out = |body: &mut String, fmt: &str, rest: &str| {
+            if to_stderr {
+                body.push_str(&format!(
+                    "  call i32 (i32, i8*, ...) @dprintf(i32 2, i8* {fmt}{rest})\n"
+                ));
+            } else {
+                body.push_str(&format!("  call i32 (i8*, ...) @printf(i8* {fmt}{rest})\n"));
+            }
+        };
+        if callee == "print_string"
+            || callee == "println_string"
+            || callee == "eprint_string"
+            || callee == "eprintln_string"
+        {
             let p = self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
             let len_a = self.reg();
             body.push_str(&format!(
@@ -876,18 +959,20 @@ impl LlvmEmitter {
             body.push_str(&format!("  %{data_a} = bitcast i8* {p} to i8**\n"));
             let data_v = self.reg();
             body.push_str(&format!("  %{data_v} = load i8*, i8** %{data_a}\n"));
-            let nl = if callee == "println_string" { "\n" } else { "" };
+            let nl = if callee == "println_string" || callee == "eprintln_string" {
+                "\n"
+            } else {
+                ""
+            };
             let fmt = self.emit_fmt_global(&format!("%.*s{nl}"))?;
-            body.push_str(&format!(
-                "  call i32 (i8*, ...) @printf(i8* {fmt}, i32 %{len32}, i8* %{data_v})\n"
-            ));
+            emit_out(body, &fmt, &format!(", i32 %{len32}, i8* %{data_v}"));
             return Ok(());
         }
-        let newline = callee == "println";
+        let newline = callee == "println" || callee == "eprintln";
         if args.is_empty() {
             // 仅换行
             let fmt = self.emit_fmt_global("\n")?;
-            body.push_str(&format!("  call i32 (i8*, ...) @printf(i8* {fmt})\n"));
+            emit_out(body, &fmt, "");
             return Ok(());
         }
 
@@ -897,19 +982,14 @@ impl LlvmEmitter {
         match aty {
             LirType::Str | LirType::I64 | LirType::F64 | LirType::Ptr => {
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;
-                body.push_str(&format!(
-                    "  call i32 (i8*, ...) @printf(i8* {fmt}, {} {v})\n",
-                    llvm_type(aty)?
-                ));
+                emit_out(body, &fmt, &format!(", {} {v}", llvm_type(aty)?));
             }
             LirType::Char => {
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;
                 let r = self.reg();
                 // printf 变参整型提升：i8 → i32
                 body.push_str(&format!("  %{r} = zext i8 {v} to i32\n"));
-                body.push_str(&format!(
-                    "  call i32 (i8*, ...) @printf(i8* {fmt}, i32 %{r})\n"
-                ));
+                emit_out(body, &fmt, &format!(", i32 %{r}"));
             }
             LirType::Bool => {
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;
@@ -918,12 +998,10 @@ impl LlvmEmitter {
                 body.push_str(&format!(
                     "  %{r} = select i1 {v}, i8* {t_ptr}, i8* {f_ptr}\n"
                 ));
-                body.push_str(&format!(
-                    "  call i32 (i8*, ...) @printf(i8* {fmt}, i8* %{r})\n"
-                ));
+                emit_out(body, &fmt, &format!(", i8* %{r}"));
             }
             LirType::Unit => {
-                body.push_str(&format!("  call i32 (i8*, ...) @printf(i8* {fmt})\n"));
+                emit_out(body, &fmt, "");
             }
         }
         Ok(())

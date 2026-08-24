@@ -9,4 +9,5 @@ dist/
 *.d
 *.out
 *.o
+tests/run-pass/_tmp_*
 *.dylib

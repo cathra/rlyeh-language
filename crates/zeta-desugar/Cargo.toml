@@ -1,0 +1,15 @@
+[package]
+name = "zeta-desugar"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+zeta-ast = { workspace = true }
+zeta-lexer = { workspace = true }
+thiserror = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+zeta-parser = { workspace = true }

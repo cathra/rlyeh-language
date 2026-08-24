@@ -34,6 +34,9 @@ impl<'src> Parser<'src> {
         }
         let start = self.expect(&Token::Fn, "'fn'")?.span;
         let name = self.expect_ident()?;
+        // `r#` 前缀为关键字转义 / 根命名空间显式引用标记；声明名归一化为无前缀名
+        // （调用处保留 `r#` 前缀，typecheck resolve_callable 去前缀后绑定根命名空间）。
+        let name = name.strip_prefix("r#").unwrap_or(&name).to_string();
         let generics = self.parse_generics()?;
         let params = self.parse_params()?;
         let return_type = if self.eat(&Token::Arrow) {
@@ -219,6 +222,7 @@ impl<'src> Parser<'src> {
             name,
             generics,
             fields,
+            derive: Vec::new(),
             span: self.merge_span(start, end),
         })
     }

@@ -104,3 +104,54 @@ fn main() {
     );
     assert_eq!(out, "true\ntrue\ntrue\n");
 }
+
+/// S2c `future::timeout` 成功路径：时限内 `Ready` 返回 `Ok(值)`。
+#[test]
+fn timeout_ok_returns_value() {
+    let out = run(
+        r#"
+struct MyFut { state: i64 }
+impl Future for MyFut {
+    fn poll(&mut self) -> Poll<i64> {
+        self.state += 1;
+        if self.state >= 3 {
+            Poll::Ready(self.state)
+        } else {
+            Poll::Pending
+        }
+    }
+}
+fn main() {
+    let mut f = MyFut { state: 0 };
+    match timeout(Duration::milliseconds(100), &mut f) {
+        Result::Ok(v) => println(v),    // 3
+        Result::Err(_) => println(-1),
+    }
+}
+"#,
+    );
+    assert_eq!(out, "3\n");
+}
+
+/// S2c `future::timeout` 超时路径：时限内未 `Ready` 返回 `Err(-1)`。
+#[test]
+fn timeout_expired_returns_err() {
+    let out = run(
+        r#"
+struct NeverFut { dummy: i64 }
+impl Future for NeverFut {
+    fn poll(&mut self) -> Poll<i64> {
+        Poll::Pending
+    }
+}
+fn main() {
+    let mut f = NeverFut { dummy: 0 };
+    match timeout(Duration::milliseconds(50), &mut f) {
+        Result::Ok(v) => println(v),
+        Result::Err(e) => println(e),   // -1
+    }
+}
+"#,
+    );
+    assert_eq!(out, "-1\n");
+}

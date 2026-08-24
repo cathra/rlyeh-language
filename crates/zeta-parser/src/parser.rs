@@ -185,9 +185,16 @@ impl<'src> Parser<'src> {
 
     /// 解析一个顶层项（或语句）
     pub(crate) fn parse_item(&mut self) -> Result<AstItem, ParseError> {
+        // `#[derive(Serialize, Deserialize)]` attribute（阶段 Q1b）：MVP 仅支持
+        // struct 声明前的 derive 标记；其它项宽松忽略（typecheck 不感知 derive）。
+        let derive = self.parse_attributes()?;
         match self.current() {
             Some(Token::Fn) => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
-            Some(Token::Struct) => Ok(AstItem::StructDecl(Box::new(self.parse_struct()?))),
+            Some(Token::Struct) => {
+                let mut s = self.parse_struct()?;
+                s.derive = derive;
+                Ok(AstItem::StructDecl(Box::new(s)))
+            }
             Some(Token::Enum) => Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?))),
             Some(Token::Trait) => Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?))),
             Some(Token::Impl) => Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?))),
@@ -214,7 +221,9 @@ impl<'src> Parser<'src> {
                     }
                     Some(Token::Struct) => {
                         self.bump();
-                        Ok(AstItem::StructDecl(Box::new(self.parse_struct()?)))
+                        let mut s = self.parse_struct()?;
+                        s.derive = derive;
+                        Ok(AstItem::StructDecl(Box::new(s)))
                     }
                     Some(Token::Enum) => {
                         self.bump();
@@ -253,6 +262,34 @@ impl<'src> Parser<'src> {
                 Ok(AstItem::Statement(Box::new(stmt)))
             }
         }
+    }
+
+    /// 解析 `#[derive(Serialize, Deserialize)]` attribute（阶段 Q1b）。
+    ///
+    /// MVP 仅支持 struct 声明前的 derive 标记：`#[derive(...)]`（可多个、可空
+    /// `#[derive]`）；其它 attribute 名报错。返回 derive 的 trait 名列表。
+    fn parse_attributes(&mut self) -> Result<Vec<String>, ParseError> {
+        let mut derives = Vec::new();
+        while self.eat(&Token::Pound) {
+            self.expect(&Token::LBracket, "'['")?;
+            let attr_name = self.expect_ident()?;
+            if attr_name != "derive" {
+                return Err(self.unexpected("'#[derive(..)]'"));
+            }
+            if self.eat(&Token::LParen) {
+                if !self.check(&Token::RParen) {
+                    loop {
+                        derives.push(self.expect_ident()?);
+                        if !self.eat(&Token::Comma) {
+                            break;
+                        }
+                    }
+                }
+                self.expect(&Token::RParen, "')'")?;
+            }
+            self.expect(&Token::RBracket, "']'")?;
+        }
+        Ok(derives)
     }
 
     /// 解析 `macro_rules! name { (matcher) => { transcriber }; ... }`（MVP）。
@@ -393,6 +430,7 @@ impl<'src> Parser<'src> {
                     | Token::Pub
                     | Token::Async
                     | Token::Unsafe
+                    | Token::Pound // `#[derive(...)]` attribute 后接 item（Q1b）
             )
         )
     }

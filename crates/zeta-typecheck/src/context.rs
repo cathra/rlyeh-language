@@ -202,7 +202,23 @@ impl TypeContext {
         {
             return Some(name.to_string());
         }
-        self.use_aliases.get(name).cloned()
+        if let Some(a) = self.use_aliases.get(name) {
+            return Some(a.clone());
+        }
+        // Q3a 修复：模块内 trait/impl 方法签名在收集阶段解析参数类型时 use 段
+        // 尚未注册，模块内短名须按 `mod::Name` 前缀定位（如 `fmt/mod.zeta` 中
+        // `trait Display { fn fmt(&self, f: &mut Formatter) }`）。
+        if !name.contains("::") && !self.module_prefix.is_empty() {
+            let full = format!("{}::{}", self.module_prefix, name);
+            if self.structs.contains_key(&full)
+                || self.fn_signatures.contains_key(&full)
+                || self.actors.contains_key(&full)
+                || self.constants.contains_key(&full)
+            {
+                return Some(full);
+            }
+        }
+        None
     }
 
     /// 按名字查找 actor 定义（支持短名 → 完整名解析，与 struct 一致）。

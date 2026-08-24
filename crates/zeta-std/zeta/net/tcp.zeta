@@ -1,0 +1,184 @@
+// net/tcp.zeta：TCP 流与监听者（std-lib.md §5.1）。
+// 目录化（2026-08）：由原 net.zeta 拆分。符号完整路径 net::tcp::TcpStream 等；
+// SocketAddr 经 net::addr:: 前缀引用；send_all/recv_some 为 net/mod.zeta 顶层函数。
+
+// O1c：TCP 流。read/write/read_line 复用 recv_some/send_all（O2）。
+struct TcpStream {
+    fd: i64,
+    addr: net::addr::SocketAddr,   // 对端地址（connect 目标 / accept 回填）
+}
+
+impl TcpStream {
+    fn connect(addr: net::addr::SocketAddr) -> Result<net::tcp::TcpStream, io::error::IoError> {
+        if __zeta_target_os() == 5 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("socket API disabled on WASI"),
+            ));
+        }
+        let fd = socket(2, 1, 0);
+        if fd < 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("socket creation failed"),
+            ));
+        }
+        let sa = addr.to_sockaddr();
+        let r = connect(fd, sa, 16);
+        if r != 0 {
+            let _ = close(fd);
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("connect failed"),
+            ));
+        }
+        Result::Ok(net::tcp::TcpStream { fd: fd, addr: addr })
+    }
+    fn peer_addr(&self) -> net::addr::SocketAddr {
+        self.addr
+    }
+    // 接收至多 cap 字节（MVP：String 缓冲，`&mut [u8]` 切片实参留待切片借用成熟）。
+    fn read(&self, cap: i64) -> Result<String, io::error::IoError> {
+        net::recv_some(self.fd, cap)
+    }
+    // 发送全部内容；返回实际发送字节数。
+    fn write(&self, buf: String) -> Result<i64, io::error::IoError> {
+        net::send_all(self.fd, buf)
+    }
+    // 逐行读取（不含换行；\r\n 一并剥离）。MVP 逐字节实现（正确性优先，
+    // 高频行读取场景待缓冲优化）。
+    fn read_line(&self) -> Result<String, io::error::IoError> {
+        let mut buf = String::new();
+        loop {
+            let tmp = self.read(1)?;
+            if tmp.len == 0 {
+                break;
+            }
+            let b = tmp.data[0];
+            buf.push_byte(b);
+            if b == 10 {
+                break;
+            }
+        }
+        if buf.len >= 1 && buf.data[buf.len - 1] == 10 {
+            buf.len = buf.len - 1;
+            if buf.len >= 1 && buf.data[buf.len - 1] == 13 {
+                buf.len = buf.len - 1;
+            }
+        }
+        Result::Ok(buf)
+    }
+    // 关闭发送/接收方向（Read=0 / Write=1 / Both=2）。
+    fn shutdown(&self, how: net::addr::Shutdown) -> Result<i64, io::error::IoError> {
+        let h = match how {
+            net::addr::Shutdown::Read => 0,
+            net::addr::Shutdown::Write => 1,
+            net::addr::Shutdown::Both => 2,
+        };
+        let r = shutdown(self.fd, h);
+        if r != 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("shutdown failed"),
+            ));
+        }
+        Result::Ok(1)
+    }
+    // R2（2026-08）：非阻塞模式设置/查询（fcntl O_NONBLOCK，io::nio 转发）。
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<i64, io::error::IoError> {
+        io::nio::set_nonblocking(self.fd, nonblocking)
+    }
+    fn is_nonblocking(&self) -> Result<bool, io::error::IoError> {
+        io::nio::is_nonblocking(self.fd)
+    }
+}
+// O1b：TCP 监听者。bind(端口 0) 时用 local_addr()（getsockname）读实际端口。
+struct TcpListener {
+    fd: i64,
+    addr: net::addr::SocketAddr,
+}
+
+impl TcpListener {
+    fn bind(addr: net::addr::SocketAddr) -> Result<net::tcp::TcpListener, io::error::IoError> {
+        if __zeta_target_os() == 5 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("socket API disabled on WASI"),
+            ));
+        }
+        let fd = socket(2, 1, 0);   // AF_INET=2, SOCK_STREAM=1
+        if fd < 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("socket creation failed"),
+            ));
+        }
+        // SO_REUSEADDR（SOL_SOCKET=1, SO_REUSEADDR=2），避免 TIME_WAIT 端口占用
+        let one = net::byteorder::int_buf4(1);
+        let _ = setsockopt(fd, 1, 2, one, 4);
+        let sa = addr.to_sockaddr();
+        let r = bind(fd, sa, 16);
+        if r != 0 {
+            let _ = close(fd);
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("bind failed"),
+            ));
+        }
+        let r = listen(fd, 128);
+        if r != 0 {
+            let _ = close(fd);
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("listen failed"),
+            ));
+        }
+        Result::Ok(net::tcp::TcpListener { fd: fd, addr: addr })
+    }
+    // 接受一个连接：返回 net::tcp::TcpStream（peer 地址经 accept 回填 sockaddr 解析）。
+    fn accept(&self) -> Result<net::tcp::TcpStream, io::error::IoError> {
+        if __zeta_target_os() == 5 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("socket API disabled on WASI"),
+            ));
+        }
+        let addr_buf = String::with_capacity(16);
+        let mut len_buf = net::byteorder::int_buf4(16);   // socklen_t 初值 = 16
+        let cfd = accept(self.fd, addr_buf, len_buf);
+        if cfd < 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("accept failed"),
+            ));
+        }
+        let peer = net::byteorder::parse_sockaddr(addr_buf);
+        Result::Ok(net::tcp::TcpStream { fd: cfd, addr: peer })
+    }
+    // 实际绑定地址（getsockname 回填；端口 0 时返回真实端口）。
+    fn local_addr(&self) -> Result<net::addr::SocketAddr, io::error::IoError> {
+        if __zeta_target_os() == 5 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("socket API disabled on WASI"),
+            ));
+        }
+        let mut buf = String::with_capacity(16);
+        let mut len_buf = net::byteorder::int_buf4(16);
+        let r = getsockname(self.fd, buf, len_buf);
+        if r != 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("getsockname failed"),
+            ));
+        }
+        Result::Ok(net::byteorder::parse_sockaddr(buf))
+    }
+    // R2（2026-08）：非阻塞模式设置/查询（fcntl O_NONBLOCK，io::nio 转发）。
+    fn set_nonblocking(&self, nonblocking: bool) -> Result<i64, io::error::IoError> {
+        io::nio::set_nonblocking(self.fd, nonblocking)
+    }
+    fn is_nonblocking(&self) -> Result<bool, io::error::IoError> {
+        io::nio::is_nonblocking(self.fd)
+    }
+}

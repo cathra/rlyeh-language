@@ -5,6 +5,10 @@
 //! `sockaddr_in4` 字节布局（macOS sin_len 头）、
 //! `tcp_connect` 对未监听端口的拒绝（验证 sockaddr_in 被内核正确解析）。
 //!
+//! M3b（2026-08）后 net 自由函数 Result 化：`send_all`/`recv_some`/`tcp_connect`
+//! 返回 `Result<T, IoError>`，失败不再用 "0 / -1 / 空串" 哨兵值；本文件用例
+//! 均按 `match { Ok(..) / Err(..) }` 解包验证。
+//!
 //! 需要系统 clang（与 std_test.rs / agg_test.rs 相同）。
 
 use std::path::PathBuf;
@@ -59,15 +63,23 @@ fn main() {
     println(fd1 > 0);            // true
     println(fd0 != fd1);         // true（两端口独立）
     // 单向：fd0 → fd1
-    let n = send_all(fd0, String::from("hello"));
-    println(n);                  // 5
-    let r = recv_some(fd1, 16);
-    println(r == String::from("hello"));   // true
+    match send_all(fd0, String::from("hello")) {
+        Ok(n) => println(n),     // 5
+        Err(e) => println(-1),
+    }
+    match recv_some(fd1, 16) {
+        Ok(r) => println(r == String::from("hello")),   // true
+        Err(e) => println(false),
+    }
     // 反向：fd1 → fd0
-    let n2 = send_all(fd1, String::from("world"));
-    println(n2);                 // 5
-    let r2 = recv_some(fd0, 16);
-    println(r2 == String::from("world"));  // true
+    match send_all(fd1, String::from("world")) {
+        Ok(n2) => println(n2),   // 5
+        Err(e) => println(-1),
+    }
+    match recv_some(fd0, 16) {
+        Ok(r2) => println(r2 == String::from("world")),  // true
+        Err(e) => println(false),
+    }
     let _ = close(fd0);
     let _ = close(fd1);
 }
@@ -94,7 +106,10 @@ fn main() {
     // 接收端循环 3 次各收 4 字节
     let mut j = 0;
     while j < 3 {
-        println(recv_some(fd1, 4));
+        match recv_some(fd1, 4) {
+            Ok(v) => println(v),
+            Err(e) => println(-1),
+        }
         j = j + 1;
     }
     let _ = close(fd0);
@@ -121,17 +136,25 @@ fn main() {
         big.push_byte(i & 0xFF);
         i = i + 1;
     }
-    let n = send_all(fd0, big);
-    println(n);                  // 4096
+    match send_all(fd0, big) {
+        Ok(n) => println(n),     // 4096
+        Err(e) => println(-1),
+    }
     // 循环收满
     let mut got = String::new();
     let mut total = 0;
     while total < 4096 {
-        let chunk = recv_some(fd1, 4096 - total);
-        if chunk.len == 0 {
-            break;               // 对端关闭，防死循环
+        match recv_some(fd1, 4096 - total) {
+            Ok(chunk) => {
+                if chunk.len == 0 {
+                    break;       // 对端关闭，防死循环
+                }
+                got.push_str(chunk);
+            }
+            Err(e) => {
+                break;
+            }
         }
-        got.push_str(chunk);
         total = got.len;
     }
     println(got.len);            // 4096
@@ -176,17 +199,19 @@ fn main() {
     assert_eq!(out, "16\n2\n31\n144\n127\n0\n0\n1\n0\n0\n0\n80\n192\n10\n");
 }
 
-/// tcp_connect 对未监听端口：sockaddr_in 构造被内核解析（ECONNREFUSED → -1）。
+/// tcp_connect 对未监听端口：sockaddr_in 构造被内核解析（ECONNREFUSED → Err）。
 #[test]
 fn connect_refused_unlistened() {
     let out = run(
         r#"
 fn main() {
-    // 127.0.0.1:1 无服务监听 → connect 返回 ECONNREFUSED → tcp_connect 返回 -1。
+    // 127.0.0.1:1 无服务监听 → connect 返回 ECONNREFUSED → tcp_connect 返回 Err。
     // 若 sockaddr_in 布局错误（EINVAL/EFAULT），connect 同样非 0——本测试验证
     // 构造的 16 字节 sockaddr_in 能通过内核校验并到达协议层。
-    let fd = tcp_connect(1, 127, 0, 0, 1);
-    println(fd == -1);   // true
+    match tcp_connect(1, 127, 0, 0, 1) {
+        Ok(fd) => println(fd == -1),   // false（成功分支，不应走到）
+        Err(e) => println(true),       // true（拒绝）
+    }
 }
 "#,
     );

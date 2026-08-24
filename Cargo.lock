@@ -1287,6 +1287,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "zeta-desugar"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.69",
+ "zeta-ast",
+ "zeta-lexer",
+ "zeta-parser",
+]
+
+[[package]]
 name = "zeta-doc"
 version = "0.1.0"
 dependencies = [
@@ -1423,6 +1433,7 @@ version = "0.1.0"
 dependencies = [
  "thiserror 1.0.69",
  "zeta-ast",
+ "zeta-desugar",
  "zeta-hir",
  "zeta-lexer",
  "zeta-parser",

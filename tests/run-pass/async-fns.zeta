@@ -1,41 +1,74 @@
-// L1 async fn/await：普通函数异步支持（MVP 同步语义，抽象复用 actor 机制）
-// - `async fn` 编译为同步函数（async 关键字为语法标记，与 actor async 方法一致）
-// - `expr.await` ≡ expr（.await 为语法标记，同步求值）
+// S1c async fn/await：状态机 desugar
+// - `async fn` desugar 为 Future 结构体 + poll 状态机 + 构造器（返回 i64 / ()）
+// - `expr.await` 经 poll 状态机轮询子 future，支持挂起（Poll::Pending）与恢复
+// - 跨 await 的 i64 变量与子 future 提升为结构体字段
 // 输出与 async-fns.out 精确对比
 
-// 直接调用 / .await 均可（同步语义）
+// 无 await 的 async fn（单个尾段）
 async fn get_value(x: i64) -> i64 {
     x * 2
 }
 
 // async fn 内 .await 另一个 async fn（嵌套）
 async fn nested(x: i64) -> i64 {
-    get_value(x).await + 1
+    let v = get_value(x).await;
+    v + 1
 }
 
-// async fn 返回 String
-async fn build_string(s: String) -> String {
-    s + String::from("!")
+// 多 await 顺序执行 + 跨段变量
+async fn chain(x: i64) -> i64 {
+    let a = get_value(x).await;
+    let b = get_value(a).await;
+    a + b
 }
 
-// async fn 返回数组（元素类型统一）
-async fn build_arr() -> [i64; 3] {
-    [1, 2, 3]
+// 语句形式 await + return await
+async fn early(x: i64) -> i64 {
+    get_value(1).await;
+    return get_value(x).await;
+}
+
+// 手动 Future：首次 Pending、二次 Ready（验证恢复轮询）
+struct H { state: i64, x: i64 }
+
+impl Future for H {
+    fn poll(&mut self) -> Poll<i64> {
+        if self.state == 0 {
+            self.state = 1;
+            Poll::Pending
+        } else {
+            Poll::Ready(self.x)
+        }
+    }
+}
+
+fn mk_h(x: i64) -> H {
+    H { state: 0, x: x }
+}
+
+// 跨 await 的 Pending 恢复
+async fn pending_chain() -> i64 {
+    let f1: H = mk_h(99);
+    let a = f1.await;
+    let f2: H = mk_h(100);
+    let b = f2.await;
+    a + b
 }
 
 fn main() {
-    // 直接调用 async fn（async 丢弃，编译为同步函数）
-    println(get_value(21));        // 42
-    // .await 调用
-    println(get_value(21).await);  // 42
+    // block_on 状态机轮询
+    let mut fut1 = get_value(21);
+    println(block_on(&mut fut1));        // 42
     // 嵌套 await
-    println(nested(10).await);     // 21
-    // String 返回
-    let s = build_string(String::from("hi")).await;
-    println(s.len());              // 3
-    // 数组返回 + 索引
-    let a = build_arr().await;
-    println(a[0] + a[2]);          // 4
-    // 表达式中间 .await
-    println(get_value(3).await + get_value(4).await);  // 14
+    let mut fut2 = nested(10);
+    println(block_on(&mut fut2));        // 21
+    // 多 await 链
+    let mut fut3 = chain(3);
+    println(block_on(&mut fut3));        // 6 + 12 = 18
+    // return await
+    let mut fut4 = early(20);
+    println(block_on(&mut fut4));        // 40
+    // Pending 恢复
+    let mut fut5 = pending_chain();
+    println(block_on(&mut fut5));        // 199
 }

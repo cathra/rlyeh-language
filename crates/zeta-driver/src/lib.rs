@@ -774,10 +774,198 @@ pub fn target_os_code(target: Option<&str>) -> i32 {
 
 /// 注入平台内建的 LLVM IR 定义文本（`__zeta_target_os` 返回当前目标 OS 码）。
 fn platform_builtin_ir(target: Option<&str>) -> String {
+    let os = target_os_code(target);
     format!(
-        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__zeta_target_os() {{\nentry:\n  ret i32 {}\n}}\n",
-        target_os_code(target)
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__zeta_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n",
+        os,
+        sendfile_builtin_ir(os),
+        thread_builtin_ir(os),
+        time_builtin_ir(os)
     )
+}
+
+/// `__zeta_sendfile(i64 out_fd, i64 in_fd, i64* off, i64 count) -> i64` 的平台实现。
+/// 语言侧 io::sendfile::sendfile 统一调用此符号，平台签名差异在此屏蔽：
+/// - Linux（码 1）：`ssize_t sendfile(int out, int in, off_t* off, size_t count)`，
+///   off 为 in/out 指针（count==0 发送到 EOF，返回实际字节数，失败 -1）。
+/// - macOS（码 2）：`int sendfile(int in, int out, off_t off, off_t* len, sf_hdtr*, int flags)`，
+///   off 传值、len in/out（初值=count，0 到 EOF；成功返回 0，实际字节回填 len），
+///   失败 -1。注意 macOS 更新的是 len 而非 off，调用方按返回值推进偏移。
+/// - 其他平台（freebsd/windows/wasi 等）：返回 -1（Unsupported，MVP 禁用文档化）。
+fn sendfile_builtin_ir(os: i32) -> String {
+    match os {
+        1 => r#"
+; Linux：sendfile(2) 4 参；off 指针 in/out，count==0 到 EOF
+declare i64 @sendfile(i64, i64, i64*, i64)
+define internal i64 @__zeta_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
+entry:
+  %r = call i64 @sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count)
+  ret i64 %r
+}
+"#
+        .to_string(),
+        2 => r#"
+; macOS：sendfile(2) 6 参；off 传值、len in/out（初值=count），成功 0 / 失败 -1
+declare i32 @sendfile(i64, i64, i64, i64*, i64, i32)
+define internal i64 @__zeta_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
+entry:
+  %offv = load i64, i64* %off
+  %len = alloca i64
+  store i64 %count, i64* %len
+  %r = call i32 @sendfile(i64 %in_fd, i64 %out_fd, i64 %offv, i64* %len, i64 0, i32 0)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %done, label %fail
+done:
+  %n = load i64, i64* %len
+  ret i64 %n
+fail:
+  ret i64 -1
+}
+"#
+        .to_string(),
+        _ => r#"
+; 其他平台（freebsd/windows/wasi）：sendfile(2) 不可用，返回 -1
+define internal i64 @__zeta_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
+entry:
+  ret i64 -1
+}
+"#
+        .to_string(),
+    }
+}
+
+/// 线程平台内建（S0，2026-08）：`__zeta_thread_spawn/__zeta_thread_join/__zeta_thread_self`；
+/// S2a（2026-08）增补 `__zeta_thread_sleep`（usleep 绑定）。
+/// 语言侧 `thread::Thread::spawn/join/current` 与 `thread::sleep` 统一调用，pthread 差异在此屏蔽：
+/// - Linux/macOS（码 1/2）：pthread_create/join/self/usleep 完整实现。线程入口为
+///   `i64 (i8*)*`——Zeta `fn() -> i64` 函数指针值（按地址整数经语言侧 extern 传入，
+///   参数位 i64）在此 `inttoptr` + `bitcast` 后交给 pthread_create；被调线程忽略
+///   argv（i8* 多余参数，ABI 安全），返回值 i64 与 void* 同寄存器，join 经 i64* 槽读回。
+///   sleep 经 `usleep(3)`（POSIX，微秒，useconds_t 截断 u32，上限约 71 分钟）。
+/// - 其他平台（freebsd/windows/wasi）：返回 -1（Unsupported，MVP 禁用文档化）。
+fn thread_builtin_ir(os: i32) -> String {
+    if os == 1 || os == 2 {
+        r#"
+; --- 线程平台内建（pthread）---
+declare i32 @pthread_create(i64*, i64*, i64 (i8*)*, i8*)
+declare i32 @pthread_join(i64, i64*)
+declare i64 @pthread_self()
+declare i32 @usleep(i32)
+define internal i64 @__zeta_thread_spawn(i64 %ep_addr, i64 %arg) {
+entry:
+  %tid = alloca i64
+  %ep = inttoptr i64 %ep_addr to i8*
+  %start = bitcast i8* %ep to i64 (i8*)*
+  %argp = inttoptr i64 %arg to i8*
+  %r = call i32 @pthread_create(i64* %tid, i64* null, i64 (i8*)* %start, i8* %argp)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %done, label %fail
+done:
+  %tv = load i64, i64* %tid
+  ret i64 %tv
+fail:
+  ret i64 -1
+}
+define internal i64 @__zeta_thread_join(i64 %tid) {
+entry:
+  %rv = alloca i64
+  store i64 0, i64* %rv
+  %r = call i32 @pthread_join(i64 %tid, i64* %rv)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %done, label %fail
+done:
+  %v = load i64, i64* %rv
+  ret i64 %v
+fail:
+  ret i64 -1
+}
+define internal i64 @__zeta_thread_self() {
+entry:
+  %r = call i64 @pthread_self()
+  ret i64 %r
+}
+define internal i64 @__zeta_thread_sleep(i64 %micros) {
+entry:
+  %us = trunc i64 %micros to i32
+  %r = call i32 @usleep(i32 %us)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %done, label %fail
+done:
+  ret i64 0
+fail:
+  ret i64 -1
+}
+"#
+        .to_string()
+    } else {
+        r#"
+; --- 线程平台内建（其他平台禁用）---
+define internal i64 @__zeta_thread_spawn(i64 %ep_addr, i64 %arg) {
+entry:
+  ret i64 -1
+}
+define internal i64 @__zeta_thread_join(i64 %tid) {
+entry:
+  ret i64 -1
+}
+define internal i64 @__zeta_thread_self() {
+entry:
+  ret i64 -1
+}
+define internal i64 @__zeta_thread_sleep(i64 %micros) {
+entry:
+  ret i64 -1
+}
+"#
+        .to_string()
+    }
+}
+
+/// 时间平台内建（墙钟，S2b）：
+/// - `__zeta_clock_monotonic() -> i64`：`clock_gettime(CLOCK_MONOTONIC)` 微秒值。
+///   Linux（os 1）/macOS（os 2）为真实现，timespec 经 [2 x i64] 缓冲传指针，
+///   `tv_sec*1e6 + tv_nsec/1000`；失败返回 -1。
+///   注意：CLOCK_MONOTONIC 常量随平台不同——Linux = 1，Darwin(macOS) = 6。
+/// - 其他平台（freebsd/windows/wasi）：返回 -1（Unsupported，语言侧 `Instant`
+///   now/elapsed 退回 `clock()` CPU 时钟，保持可用）。
+fn time_builtin_ir(os: i32) -> String {
+    if os == 1 || os == 2 {
+        let monotonic = if os == 2 { 6 } else { 1 };
+        format!(
+            r#"
+; --- 时间平台内建（墙钟：clock_gettime CLOCK_MONOTONIC={monotonic}）---
+declare i32 @clock_gettime(i32, i64*)
+define internal i64 @__zeta_clock_monotonic() {{
+entry:
+  %ts = alloca [2 x i64]
+  %p = getelementptr inbounds [2 x i64], [2 x i64]* %ts, i32 0, i32 0
+  %r = call i32 @clock_gettime(i32 {monotonic}, i64* %p)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %done, label %fail
+done:
+  %sec = load i64, i64* %p
+  %sec_us = mul i64 %sec, 1000000
+  %nsptr = getelementptr inbounds [2 x i64], [2 x i64]* %ts, i32 0, i32 1
+  %ns = load i64, i64* %nsptr
+  %ns_us = udiv i64 %ns, 1000
+  %total = add i64 %sec_us, %ns_us
+  ret i64 %total
+fail:
+  ret i64 -1
+}}
+"#
+        )
+        .to_string()
+    } else {
+        r#"
+; --- 时间平台内建（其他平台禁用，退回 clock()）---
+define internal i64 @__zeta_clock_monotonic() {
+entry:
+  ret i64 -1
+}
+"#
+        .to_string()
+    }
 }
 
 /// 将 Rust 字符串转义为 LLVM `c"..."` 常量体；返回（转义文本, 原始字节数）。

@@ -9,6 +9,7 @@ members = [
     "crates/zeta-mir",
     "crates/zeta-lir",
     "crates/zeta-typecheck",
+    "crates/zeta-desugar",
     "crates/zeta-borrowck",
     "crates/zeta-regionck",
     "crates/zeta-codegen",
@@ -44,6 +45,7 @@ zeta-lexer = { path = "crates/zeta-lexer" }
 zeta-macro = { path = "crates/zeta-macro" }
 zeta-parser = { path = "crates/zeta-parser" }
 zeta-typecheck = { path = "crates/zeta-typecheck" }
+zeta-desugar = { path = "crates/zeta-desugar" }
 zeta-borrowck = { path = "crates/zeta-borrowck" }
 zeta-regionck = { path = "crates/zeta-regionck" }
 zeta-codegen = { path = "crates/zeta-codegen" }

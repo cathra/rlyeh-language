@@ -127,6 +127,8 @@ pub struct AstStructDecl {
     pub generics: Vec<String>,
     /// 命名字段
     pub fields: Vec<AstStructField>,
+    /// 派生 trait 名列表（`#[derive(Serialize, Deserialize)]`，阶段 Q1b）
+    pub derive: Vec<String>,
     /// 源码位置
     pub span: Span,
 }

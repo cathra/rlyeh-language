@@ -755,33 +755,46 @@ fn main() {
 
 崩溃协议：方法返回 `-1` → runtime 判定 Panic → ask 立即返回 0；受监督 actor 由 supervisor 经 `__state_new` 重建初始状态并重启（OneForOne 只重启崩溃者，AllForOne 重启全部，RestartForOne 逐任务重启）。
 
-### 9.3 普通函数 `async fn` / `await`（L1 ✅）
+### 9.3 普通函数 `async fn` / `await`（S1c ✅ 状态机）
 
 ```zeta
-// async fn 编译为同步函数（async 关键字为语法标记，抽象复用 actor 的 MVP 同步语义）
+// async fn 编译为 Future 结构体 + poll 状态机 + 构造器（desugar，真实挂起/恢复）
 async fn get_value(x: i64) -> i64 {
     x * 2
 }
 
 // async fn 内可 .await 其它 async fn（嵌套）
 async fn nested(x: i64) -> i64 {
-    get_value(x).await + 1
+    let v = get_value(x).await;
+    v + 1
+}
+
+// 多 await 顺序执行 + 跨段变量
+async fn chain(x: i64) -> i64 {
+    let a = get_value(x).await;
+    let b = get_value(a).await;
+    a + b
 }
 
 fn main() {
-    println(get_value(21));        // 42：直接调用（同步语义）
-    println(get_value(21).await);  // 42：.await 调用（语法标记，等价）
-    println(nested(10).await);     // 21：嵌套 await
-    println(get_value(3).await + get_value(4).await);  // 14：表达式中间 await
+    // block_on 状态机轮询
+    let mut fut1 = get_value(21);
+    println(block_on(&mut fut1));   // 42
+    let mut fut2 = nested(10);
+    println(block_on(&mut fut2));   // 21
+    let mut fut3 = chain(3);
+    println(block_on(&mut fut3));   // 6 + 12 = 18
 }
 ```
 
-- `async fn foo(args) -> T { ... }` ≡ 普通函数（`async` 关键字解析后丢弃，编译为同步函数）
-- `expr.await` ≡ `expr`（`.await` 为语法标记，同步求值；MVP 任意上下文宽松接受）
-- 支持非标量返回（`String` / 数组等）与表达式中间嵌套 `.await`
-- 与 actor 机制分工：actor 方法 `.await` = ask 同步往返（§9.1）；普通 `async fn` 复用其同步语义（无 Future / executor）
+- `async fn foo(args) -> i64` desugar 为 `struct __Fut_foo` + `impl Future for __Fut_foo` + 构造器 `fn foo(args) -> __Fut_foo`；`f(args)` 返回 future，`block_on(&mut fut)` 循环轮询直至 `Poll::Ready`。
+- `.await` 经状态机轮询子 future：await 段 `k` 占状态 `2k`（首轮询，初始化子 future 并 poll）/ `2k+1`（恢复轮询）；`Poll::Pending` 保存状态并返回挂起，`Poll::Ready(__v)` 推进到下一段。
+- 跨 await 的 `i64` 变量与子 future 提升为结构体字段（按数据依赖拓扑排序）。
+- 支持形式：`let v = e.await;` / `e.await;`（语句）/ `return e.await;` / 块尾表达式 `e.await`；await 目标为 async fn 直接调用或带类型注解的变量（`let fut: G = ...; fut.await`）。
+- **MVP 限制**：async fn 参数限 `i64`、返回限 `i64`/`()`；控制流块内 await 与表达式嵌套 await（`a.await + b.await`）不支持；递归 async fn 不支持。
+- 与 actor 机制分工：actor 方法 `.await` = ask 同步往返（§9.1）；普通 `async fn` 为独立状态机（与 actor 互不相关）。
 
-> **规划中**：`Future` trait、`block_on`/`join_all`/`timeout` 与 `sync` 并发原语（std-lib §10）为完整异步运行时目标，MVP 未实现。
+> **规划中**：泛型 `join_all`（Future 版）/ `timeout`（Result 版）/ `sync` 并发原语（std-lib §10）；await 位于控制流块 / 表达式中间、按引用捕获（std-lib §10.3）。
 
 ---
 
@@ -926,20 +939,23 @@ r.unwrap() / r.unwrap_or(0)
 ### 10.6 文件 IO
 
 ```zeta
-let content = read_file("data.txt");                 // 读整个文件；失败返回空串
-write_file("out.txt", content);                      // 截断写；返回字节数，失败 -1
-append_file("log.txt", line);                        // 追加；返回字节数，失败 -1
-let line = read_line();                              // 从 stdin 读一行（不含换行符）
+let r = read_file("data.txt");                       // Result<String, IoError>：读整个文件
+match r {
+    Ok(content) => { let _ = write_file("out.txt", content); }  // Result<i64, IoError>：截断写
+    Err(e) => println(e.message()),                  // 打开失败：错误消息（M3 起 Result 化）
+}
+let _ = append_file("log.txt", line);                // Result<i64, IoError>：追加
+let line = read_line();                              // Result<String, IoError>：stdin 读一行（不含换行符）
 ```
 
 ### 10.7 网络
 
 ```zeta
-let host = hostname();                     // 本机主机名
+let host = hostname();                     // Result<String, IoError>：本机主机名（M3 起 Result 化）
 let pair = socketpair_stream();            // AF_UNIX SOCK_STREAM 全双工 fd 对
-send_all(fd, data);                        // 循环发满（data 为 String 变量）
-let got = recv_some(fd, n);                // 接收（SOCK_STREAM 需循环收满）
-let fd = tcp_connect(8080, 127, 0, 0, 1);  // TCP 连接（port, a, b, c, d）；失败 -1
+let _ = send_all(fd, data);                // Result<i64, IoError>：发送字节数（data 为 String 变量）
+let got = recv_some(fd, n);                // Result<String, IoError>：接收（SOCK_STREAM 需循环收满）
+let fd = tcp_connect(8080, 127, 0, 0, 1);  // Result<i64, IoError>：TCP 连接（port, a, b, c, d）
 ```
 
 ### 10.8 同步原语
@@ -1067,13 +1083,13 @@ extern fn gethostname(name: String, len: i64) -> i64;
 ### 已知限制（MVP）
 
 **规划中 / 未实现**：
-- **宏系统**：已实现 `macro_rules!` 声明式宏（`$x:expr`/`$x:ident`/`$x:ty`/`$x:tt` + `$(`...`)` 重复 `*`/`+`/`?`，parse 期 AST 展开）：`$x:expr` 捕获**完整表达式 token 序列**（token 级优先级爬升：前缀一元 `-`/`!`/`not`/`&`/`*`、二元中缀、后缀调用/索引/成员/`?`/`as` 转换，`a > b`、`-1`、`f(x) + 1`、`s.len()`、嵌套宏调用 `m!(x)` 均可；按原样展开，优先级由调用方负责，与 Rust 语义一致）+ 内置格式化宏 `println!` / `print!` / `format!` / `dbg!`（`{}` 占位、`{:?}` 同构、`{{`/`}}` 转义 + 多参数可变长度，typecheck desugar 为 String 拼接 + 内建打印）+ 集合宏 `arr!` / `vec!` / `map!`（I3 ✅，见 §3.2）：`arr![a, b]` parse 期产出数组字面量；`vec![a, b]` / `map![k => v]` desugar 为块表达式（`Vec::with_capacity(n)` / `HashMap::with_capacity(n)` + 逐元素 `push` / `insert`，空集合 → `new()`），元素支持任意表达式与嵌套宏调用。`r#"..."#` 带哈希原始字符串已实现（lexer 支持 `r#`/`r##` 等任意哈希定界、无转义，与 `r#ident` 原始标识符区分；`println!(r#"..."#)` 可用）。限制：无卫生宏（hygiene，全局名称匹配）。
+- **宏系统**：已实现 `macro_rules!` 声明式宏（`$x:expr`/`$x:ident`/`$x:ty`/`$x:tt` + `$(`...`)` 重复 `*`/`+`/`?`，parse 期 AST 展开）：`$x:expr` 捕获**完整表达式 token 序列**（token 级优先级爬升：前缀一元 `-`/`!`/`not`/`&`/`*`、二元中缀、后缀调用/索引/成员/`?`/`as` 转换，`a > b`、`-1`、`f(x) + 1`、`s.len()`、嵌套宏调用 `m!(x)` 均可；按原样展开，优先级由调用方负责，与 Rust 语义一致）+ 内置格式化宏 `println!` / `print!` / `format!` / `dbg!` + `eprintln!` / `eprint!`（N4 ✅，输出 stderr，经 POSIX `dprintf(2, ...)` 直写；`{}` 占位、`{:?}` 同构、`{{`/`}}` 转义 + 多参数可变长度，typecheck desugar 为 String 拼接 + 内建打印）+ 集合宏 `arr!` / `vec!` / `map!`（I3 ✅，见 §3.2）：`arr![a, b]` parse 期产出数组字面量；`vec![a, b]` / `map![k => v]` desugar 为块表达式（`Vec::with_capacity(n)` / `HashMap::with_capacity(n)` + 逐元素 `push` / `insert`，空集合 → `new()`），元素支持任意表达式与嵌套宏调用。`r#"..."#` 带哈希原始字符串已实现（lexer 支持 `r#`/`r##` 等任意哈希定界、无转义，与 `r#ident` 原始标识符区分；`println!(r#"..."#)` 可用）。限制：无卫生宏（hygiene，全局名称匹配）。
 - **引用与借用**：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数类型、解引用 `*`、返回引用均已实现（G1 ✅，见 §8.1）；`&str` 只读借用视图已实现（G2 ✅：`String::as_str()` + `&str` 参数/返回/索引 + `String::from(&str)` 深拷贝，见 §10.2）；`str` 值（字符串字面量 / 绑定字面量的变量）已实现一等类型语义（方法调用 / `+` 拼接 / 内容比较自动升级为 String 对象；**String 形参位置的字面量实参自动升级**——普通 / 泛型函数、实例 / 静态方法、函数指针、`dyn Trait` 方法调用均可直接传字面量，见 §10.2）；裸指针已实现（G3 ✅：`*const T`/`*mut T` 类型 + `*p` 读写 + `&T`↔`*const T` 互视 + `*mut` 降级 `*const`，见 §8.2）；生命周期标注已实现（G4 ✅ MVP 语法接受：`<'a>` 与 `&'a T` 解析后丢弃，宽松检查）；`ref` / `ref mut` 模式已实现（G1 收尾：`match` 臂与 `let ref x = e;` 绑定变量为对匹配值的引用而非值拷贝，枚举子模式 / struct 字段 / 解引用写均可用，见 §8.1；MVP 注意——`match` 先拷贝匹配值，`ref` 绑定指向拷贝，与原变量无关）；**严格借用检查已实现**（G1 收尾，见 §8.1）：NLL 近似的借用排他性——`&mut` 与任何活跃借用互斥、多个 `&mut` 互斥、活跃可变借用期间写入被借用变量报 `BorrowConflict`（E0502/E0499）；`&mut` 要求 `let mut` 绑定报 `BorrowMutImmutable`（E0596）；局部引用逃逸函数（尾表达式 / `return` 返回 `&x` 或绑定引用变量）报 `DanglingReference`（E0597，参数来源引用允许返回）；语义有意宽松——读取被借用变量与经 `*p` 写入允许（裸指针别名合法），共享借用（多个 `&`）可共存，仅直接赋值被借用变量触发冲突；`print`/`println` 参数为引用时自动剥层打印解引用值（`println(r)` ≡ `println(*r)`）；严格生命周期验证仍规划中。
 - **闭包**：✅ 无捕获闭包已实现（H2，见 §3.2）：`|x, y| expr` desugar 为匿名函数 + 函数指针（零运行时开销），需 fn 类型上下文（fn 形参实参 / `let f: fn(..) = |..| ..` 注解绑定）驱动参数类型推断；参数模式仅支持简单标识符与 `_`；**返回闭包的函数已实现**（`fn make() -> fn(..) { |x| .. }` 尾闭包按 H2 签名检查生成函数指针）。捕获闭包已实现（H3 IIFE MVP，见 §3.2）：`(|x| body)(args)` 立即调用按值捕获（desugar 为匿名函数 + 捕获变量前置调用）。闭包值对象已实现（H5 补全，见 §3.2）：`let f = |x: i64| ..; f(..)` 绑定后反复调用（按值捕获，desugar 为捕获聚合对象 + 调用点字段读取展开；仅局部变量环境）；**参数类型规则**——有注解用注解、无注解由首次调用点实参推断（`let f = |x| x + 1; f(41);`，半注解亦可用，惰性检查）；**无捕获闭包值可作 fn 实参/返回值**（降级为函数指针 / 按 fn 签名固化）；捕获闭包值不跨函数边界；按引用捕获、`move` 所有权语义规划中。
 - **函数指针**：✅ 已实现（H1，见 §3.2）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用；函数值可作实参、返回值、重新绑定、类型注解。
 - **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。`dyn Trait` ✅ 已实现（H4，见 §3.2）：trait 对象（`dyn Trait` 类型 + `&T` 强制转换 + vtable 间接分派）；MVP 限制：trait/impl 非泛型、含 `Self` 签名方法不可经 dyn 调用。
 - **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）✅ 已实现（MVP，见 §8.4）：`Gc::new` 编译器内建 + `gc_region` 块（desugar 为 `zeta_gc_region_begin`/`zeta_gc_alloc`/`zeta_gc_escape`/`zeta_gc_collect`）+ 逃逸对象 root 登记 + 嵌套块存活链式提升 + 字段/方法/索引自动剥层；保守标记-清除运行时（`zeta-gc-runtime`，纯 `libc::malloc`/`free` 链表元数据，单线程无锁）。MVP 限制：块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束、stop-the-world 非增量、递归标记；多线程/增量/write barrier 规划中。
-- **并发**：`fmt` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）；普通函数 `async fn` / `.await` 已支持（L1 ✅，MVP 同步语义，见 §9.3）；`json` 序列化已实现（L2 ✅，见 §9.4：`json::stringify` / `json::parse::<T>`，turbofish 泛型实参；标量 / 数组 / struct / Vec / `HashMap` 序列化 + `i64` / `bool` / `String` / `HashMap` 反序列化；`Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划）。
+- **并发**：`fmt` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）；普通函数 `async fn` / `.await` 已支持（S1c ✅，见 §9.3：`async fn` desugar 为 Future 结构体 + poll 状态机 + 构造器，`block_on` 轮询驱动，支持 `Poll::Pending` 挂起与恢复）；`json` 序列化已实现（L2 ✅，见 §9.4：`json::stringify` / `json::parse::<T>`，turbofish 泛型实参；标量 / 数组 / struct / Vec / `HashMap` 序列化 + `i64` / `bool` / `String` / `HashMap` 反序列化；`Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划）。
 - **迭代器协议**：✅ J1–J3 已实现（见 §3.2 迭代器与适配器小节）：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` / `for x in arr`（数组迭代）容器迭代可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 可用（返回 `Vec<T>` 可链式）。`Iterator` trait 定义（std-lib §2.3）仍为规划 API（适配器为编译器内建 desugar，非 trait 实现）。
 
 **实现约束**：
