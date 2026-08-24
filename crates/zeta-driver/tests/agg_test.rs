@@ -243,9 +243,9 @@ fn run_generic_impl() {
 
 #[test]
 fn compile_agg_llvm() {
-    // 聚合对象代码生成：malloc + GEP 槽访问
+    // 聚合对象代码生成：calloc（清零分配）+ GEP 槽访问
     let ll = compile_to_llvm(ENUM_MATCH).expect("编译失败");
     assert!(ll.contains("declare i8* @malloc(i64)"), "应声明 malloc");
-    assert!(ll.contains("call i8* @malloc"), "应有堆分配");
+    assert!(ll.contains("call i64 @calloc"), "应有堆分配（calloc 清零）");
     assert!(ll.contains("getelementptr"), "应有槽寻址 GEP");
 }

@@ -187,6 +187,21 @@ pub enum LirStmt {
         /// 对象字节大小（`type_slot_count × 8`，0 = 标量 / 无需接线）
         size: usize,
     },
+    /// 区域归属分配（**字面量直接构造**）：对象在区域指针上逐字段构造，
+    /// 无中间堆临时、无值镜像 memcpy。
+    ///
+    /// 由 codegen 的 `inline_region_literal` 变换产生：把
+    /// `Alloc(t)` + `FieldSet(t,..)*` + `AllocInRegion(t)` 的字面量构造
+    /// 重写为 `AllocInRegionDirect(t)` + `FieldSet(t,..)*`——字段直接写入
+    /// 区域内存，`t` 槽即区域指针。
+    AllocInRegionDirect {
+        /// 目标变量（对象指针，指向区域内内存）
+        target: Local,
+        /// 区域名
+        region: String,
+        /// 对象字节大小（`type_slot_count × 8`）
+        size: usize,
+    },
     /// 所有权转移（后端可忽略）
     Transfer {
         /// 被转移的变量
@@ -201,6 +216,9 @@ pub enum LirStmt {
         target: Local,
         /// 槽数
         slots: usize,
+        /// 标量聚合（≤2 槽、字段全标量的 enum/struct）按值分配：
+        /// codegen 落到栈上 `[2 x i64]` 槽（免 calloc），返回/传参按值。
+        by_value: bool,
     },
     /// `target = field_get(base, index)`：读取聚合对象槽位
     /// （槽 0 为枚举判别值 tag）。

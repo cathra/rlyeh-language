@@ -456,6 +456,11 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     if let Some(t) = target {
         cmd.arg(format!("--target={t}"));
     }
+    // 发布级优化：clang 汇编 LLVM IR 时启用 -O3 优化管线
+    // （-O2 全部优化 + 更强的循环向量化 / 函数内联 / 循环变换）。
+    // 生成的 IR 不含 noalias/nsw/nuw 标注，LLVM 的优化保守安全
+    // （-O3 不依赖这些标注，无错误别名假设）。
+    cmd.arg("-O3");
     cmd.arg(&ll_path);
     for lib in &runtime_libs {
         if let Some(parent) = lib.parent() {
@@ -477,7 +482,10 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
         return Err(DriverError::Clang(stderr));
     }
-    let _ = std::fs::remove_dir_all(&dir);
+    // 调试：设置 ZETA_KEEP_TMP=1 时保留临时目录（含 main.ll 中间 IR）
+    if std::env::var("ZETA_KEEP_TMP").is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     Ok(())
 }
 
@@ -559,6 +567,89 @@ fn assemble_wasm(
         out.push_str(rest);
         out
     }
+    // calloc 调用点适配：两个参数均降位宽（i64→i32，寄存器实参经 trunc 包装），
+    // 并收集返回寄存器，随后把 `inttoptr i64 %r64 to i8*` 降宽为 i32（wasm32
+    // 指针 32 位，i32 值直转指针）。
+    fn adapt_calloc_wasm32(src: &str) -> String {
+        let mut out = String::with_capacity(src.len());
+        let mut rest = src;
+        let marker = "call i64 @calloc(";
+        let mut counter = 0;
+        let mut ret_regs: Vec<String> = Vec::new();
+        while let Some(idx) = rest.find(marker) {
+            // 提取返回寄存器（`%r64 = call i64 @calloc(` 模式，行首缩进）。
+            let head = &rest[..idx];
+            if let Some(eq) = head.rfind('=') {
+                if let Some(reg) = head[..eq].trim().rsplit(' ').next() {
+                    if reg.starts_with('%') {
+                        ret_regs.push(reg.to_string());
+                    }
+                }
+            }
+            // 调用点结果类型同步降为 i32（declare 已为 i32；若保持 i64，
+            // LLVM 会为「i64 结果 ← i32 返回」插入 bitcast 并生成非法陷阱）。
+            out.push_str(&rest[..idx]);
+            out.push_str("call i32 @calloc(");
+            rest = &rest[idx + marker.len()..];
+            let end = rest.find(')').unwrap_or(rest.len());
+            let args = &rest[..end];
+            let mut new_args = String::new();
+            let mut first = true;
+            for p in args.split(',') {
+                if !first {
+                    new_args.push_str(", ");
+                }
+                first = false;
+                let p = p.trim();
+                if let Some(inner) = p.strip_prefix("i64 ") {
+                    let inner = inner.trim();
+                    if inner.starts_with('%') {
+                        let tmp = format!("%zeta.wasm32.c{counter}");
+                        counter += 1;
+                        if let Some(nl) = out.rfind('\n') {
+                            out.insert_str(
+                                nl + 1,
+                                &format!("  {tmp} = trunc i64 {inner} to i32\n"),
+                            );
+                        }
+                        new_args.push_str(&format!("i32 {tmp}"));
+                    } else {
+                        new_args.push_str(&format!("i32 {inner}"));
+                    }
+                } else {
+                    new_args.push_str(p);
+                }
+            }
+            out.push_str(&new_args);
+            out.push_str(")");
+            // 参数区结束的 `)` 已手动补上，rest 需跳过该字符
+            // （区别于 adapt_wide_int_args：它不补 `)`、靠 rest 自然推进）。
+            rest = &rest[end + 1..];
+        }
+        out.push_str(rest);
+        for reg in &ret_regs {
+            // reg 值形如 `%r1`（已含 % 前缀），format 内直接插值。
+            let from = format!("inttoptr i64 {reg} to i8*");
+            let to = format!("inttoptr i32 {reg} to i8*");
+            if out.contains(&from) {
+                out = out.replace(&from, &to);
+            }
+            // 标准库直调（sync 模块 `let p = calloc(1, N)`）：返回值按 i64 存槽。
+            // calloc 在 wasm 返回 i32，插入 `zext i32 → i64` 并让 store 用其结果。
+            // reg 值已含 % 前缀（如 `%r4355`），format 内不要重复写 `%`。
+            let call_pat = format!("{reg} = call i32 @calloc(");
+            if let Some(idx) = out.find(&call_pat) {
+                if let Some(nl) = out[idx..].find('\n') {
+                    let insert_at = idx + nl + 1;
+                    out.insert_str(insert_at, &format!("  {reg}.w = zext i32 {reg} to i64\n"));
+                }
+            }
+            let store_from = format!("store i64 {reg}, i64*");
+            let store_to = format!("store i64 {reg}.w, i64*");
+            out = out.replace(&store_from, &store_to);
+        }
+        out
+    }
     ll = ll.replace("declare i8* @malloc(i64)", "declare i8* @malloc(i32)");
     ll = ll.replace(
         "declare i32 @memcmp(i8*, i8*, i64)",
@@ -567,6 +658,11 @@ fn assemble_wasm(
     // 注意：marker 止于 `(`，参数区从 `i64 ` 开始解析。
     ll = adapt_wide_int_args(&ll, "call i8* @malloc(");
     ll = adapt_wide_int_args(&ll, "call i32 @memcmp(i8*, i8*, ");
+    // calloc 适配：wasi-libc 的 calloc(size_t, size_t) 为 32 位签名，而 Zeta IR
+    // 声明/调用按 i64（返回值经 inttoptr 转 i8*）。将声明与调用点参数降为 i32，
+    // 并把紧跟的 `inttoptr i64 %r64 to i8*` 同步降宽（i32 值直转 32 位指针）。
+    ll = ll.replace("declare i64 @calloc(i64, i64)", "declare i32 @calloc(i32, i32)");
+    ll = adapt_calloc_wasm32(&ll);
     // WASI 入口适配：wasi-libc 的 `__main_void`（crt1 链）调用
     // `__main_argc_argv(int argc, char **argv)`，而 Zeta 生成的是无参 `@main`。
     // 将 IR 中的 main 定义重命名为 `__main_argc_argv` 并补齐 ABI 参数，
@@ -581,6 +677,9 @@ fn assemble_wasm(
     let mut cmd = Command::new(&clang);
     cmd.arg(format!("--target={target}"));
     cmd.arg(format!("--sysroot={}", sysroot.display()));
+    // 发布级优化：LLVM IR 汇编启用 -O3 优化管线（与 native 对齐；
+    // 更强内联/循环变换，生成 IR 不含 noalias/nsw/nuw 标注，优化保守安全）。
+    cmd.arg("-O3");
     // 关闭 clang 默认的 compiler-rt builtins 链接（wasm32 的 libclang_rt.builtins.a
     // 不在 Xcode CLT / brew llvm 内），改由 wasi-libc 的 crt1.o + libc.a 提供入口与库函数。
     // Zeta 的 i64/f64 运算在 wasm32 均为原生指令，不依赖 software-intrinsic。
@@ -619,7 +718,10 @@ fn assemble_wasm(
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
         return Err(DriverError::Clang(stderr));
     }
-    let _ = std::fs::remove_dir_all(dir);
+    // 调试：设置 ZETA_KEEP_TMP=1 时保留临时目录（含 main.ll 中间 IR）。
+    if std::env::var("ZETA_KEEP_TMP").is_err() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
     Ok(())
 }
 
@@ -948,14 +1050,17 @@ declare i32 @clock_gettime(i32, i64*)
 define internal i64 @__zeta_clock_monotonic() {{
 entry:
   %ts = alloca [2 x i64]
-  %p = getelementptr inbounds [2 x i64], [2 x i64]* %ts, i32 0, i32 0
+  %tsb = bitcast [2 x i64]* %ts to i8*
+  %tsg0 = getelementptr i8, i8* %tsb, i64 0
+  %p = bitcast i8* %tsg0 to i64*
   %r = call i32 @clock_gettime(i32 {monotonic}, i64* %p)
   %ok = icmp eq i32 %r, 0
   br i1 %ok, label %done, label %fail
 done:
   %sec = load i64, i64* %p
   %sec_us = mul i64 %sec, 1000000
-  %nsptr = getelementptr inbounds [2 x i64], [2 x i64]* %ts, i32 0, i32 1
+  %tsg1 = getelementptr i8, i8* %tsb, i64 8
+  %nsptr = bitcast i8* %tsg1 to i64*
   %ns = load i64, i64* %nsptr
   %ns_us = udiv i64 %ns, 1000
   %total = add i64 %sec_us, %ns_us

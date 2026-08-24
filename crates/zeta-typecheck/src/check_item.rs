@@ -438,7 +438,10 @@ fn expand_actor(
     let saved = std::mem::take(&mut ctx.variables);
     let mut stmts = vec![HirStmt::Let {
         name: "__s".to_string(),
-        init: HirExpr::Alloc { slots: slots.len() },
+        init: HirExpr::Alloc {
+            slots: slots.len(),
+            by_value: false,
+        },
         mutable: true,
     }];
     for (idx, f) in a.fields.iter().enumerate() {

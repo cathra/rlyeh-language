@@ -227,25 +227,60 @@ impl<T> Vec<T> {
         }
         result
     }
-    // 排序：原地选择排序（升序），`<` 在实例化后按具体类型比较
-    // （i64 数值 / String 字典序）。O(n²)，MVP 简单实现；非稳定排序。
+    // 排序：原地堆排序（升序，O(n log n)），`<` 在实例化后按具体类型比较
+    // （i64 数值 / String 字典序）。非稳定排序；原地 O(1) 额外空间。
+    // 算法：构建最大堆（从最后一个非叶子节点逐个下沉），再依次将堆顶
+    // 交换到末尾并缩小堆（每次交换后对根重新下沉）。
     fn sort(&mut self) {
-        let mut i = 0;
-        while i < self.len {
-            let mut min = i;
-            let mut j = i + 1;
-            while j < self.len {
-                if self.data[j] < self.data[min] {
-                    min = j;
+        let n = self.len;
+        // 构建最大堆
+        let mut start = n / 2 - 1;
+        while start >= 0 {
+            let mut root = start;
+            loop {
+                let mut child = root * 2 + 1;
+                if child >= n { break; }
+                let mut cv = self.data[child];
+                if child + 1 < n {
+                    let cv2 = self.data[child + 1];
+                    if cv < cv2 {
+                        child = child + 1;
+                        cv = cv2;
+                    }
                 }
-                j = j + 1;
+                if self.data[root] >= cv { break; }
+                let t = self.data[root];
+                self.data[root] = self.data[child];
+                self.data[child] = t;
+                root = child;
             }
-            if min != i {
-                let t = self.data[i];
-                self.data[i] = self.data[min];
-                self.data[min] = t;
+            start = start - 1;
+        }
+        // 依次提取堆顶到已排序区
+        let mut end = n - 1;
+        while end > 0 {
+            let t = self.data[0];
+            self.data[0] = self.data[end];
+            self.data[end] = t;
+            let mut root = 0;
+            loop {
+                let mut child = root * 2 + 1;
+                if child >= end { break; }
+                let mut cv = self.data[child];
+                if child + 1 < end {
+                    let cv2 = self.data[child + 1];
+                    if cv < cv2 {
+                        child = child + 1;
+                        cv = cv2;
+                    }
+                }
+                if self.data[root] >= cv { break; }
+                let t = self.data[root];
+                self.data[root] = self.data[child];
+                self.data[child] = t;
+                root = child;
             }
-            i = i + 1;
+            end = end - 1;
         }
     }
     // 首元素：空容器返回 None，否则返回槽 0 的值拷贝。
@@ -352,25 +387,59 @@ impl<T> Vec<T> {
         self.data[i]
     }
     // T1a：比较器排序——cmp 返回三态 i64（负 / 零 / 正，对齐 Rust Ordering 语义，
-    // Ordering 枚举规划；< 0 表示第一个参数应在前）。选择排序 O(n²)，非稳定；
-    // 比较器经函数指针调用（H1），H2 无捕获闭包可作实参。
+    // Ordering 枚举规划；< 0 表示第一个参数应在前）。原地堆排序 O(n log n)，
+    // 非稳定；比较器经函数指针调用（H1），H2 无捕获闭包可作实参。
+    // 算法与 sort 相同（最大堆 + 堆顶交换），仅比较改用 cmp 三态判定。
     fn sort_by(&mut self, cmp: fn(T, T) -> i64) {
-        let mut i = 0;
-        while i < self.len {
-            let mut min = i;
-            let mut j = i + 1;
-            while j < self.len {
-                if cmp(self.data[j], self.data[min]) < 0 {
-                    min = j;
+        let n = self.len;
+        // 构建最大堆
+        let mut start = n / 2 - 1;
+        while start >= 0 {
+            let mut root = start;
+            loop {
+                let mut child = root * 2 + 1;
+                if child >= n { break; }
+                let mut cv = self.data[child];
+                if child + 1 < n {
+                    let cv2 = self.data[child + 1];
+                    if cmp(cv, cv2) < 0 {
+                        child = child + 1;
+                        cv = cv2;
+                    }
                 }
-                j = j + 1;
+                if cmp(self.data[root], cv) >= 0 { break; }
+                let t = self.data[root];
+                self.data[root] = self.data[child];
+                self.data[child] = t;
+                root = child;
             }
-            if min != i {
-                let t = self.data[i];
-                self.data[i] = self.data[min];
-                self.data[min] = t;
+            start = start - 1;
+        }
+        // 依次提取堆顶到已排序区
+        let mut end = n - 1;
+        while end > 0 {
+            let t = self.data[0];
+            self.data[0] = self.data[end];
+            self.data[end] = t;
+            let mut root = 0;
+            loop {
+                let mut child = root * 2 + 1;
+                if child >= end { break; }
+                let mut cv = self.data[child];
+                if child + 1 < end {
+                    let cv2 = self.data[child + 1];
+                    if cmp(cv, cv2) < 0 {
+                        child = child + 1;
+                        cv = cv2;
+                    }
+                }
+                if cmp(self.data[root], cv) >= 0 { break; }
+                let t = self.data[root];
+                self.data[root] = self.data[child];
+                self.data[child] = t;
+                root = child;
             }
-            i = i + 1;
+            end = end - 1;
         }
     }
 }
@@ -412,15 +481,37 @@ impl String {
         self.data[self.len] = b;
         self.len = self.len + 1;
     }
-    // 拼接：追加另一字符串的全部字节（other 值拷贝 3 槽共享缓冲，逐字节
-    // push_byte 自动触发扩容迁移；`a + b` 运算符在 typecheck 层 desugar 为
+    // 拼接：追加另一字符串的全部字节（other 值拷贝 3 槽共享缓冲）。
+    // 先循环扩容一次到位（grow 翻倍），再执行无分支的纯字节拷贝循环——
+    // clang -O3 的 loop idiom 识别会将其合成为 memcpy，避免逐字节 push_byte
+    // 的每字节容量检查分支开销（strcat 类拼接基准收益显著）。
+    // `a + b` 运算符在 typecheck 层 desugar 为
     // `let __s = a.clone(); __s.push_str(b); __s`）
     fn push_str(&mut self, other: String) {
+        while self.cap - self.len < other.len {
+            self.grow();
+        }
         let mut i = 0;
         while i < other.len {
-            self.push_byte(other.data[i]);
+            self.data[self.len + i] = other.data[i];
             i = i + 1;
         }
+        self.len = self.len + other.len;
+    }
+    // 快速路径：追加编译期已知字节序列（typecheck 对 `push_str(字面量实参)`
+    // 特判改调本方法）。`src` 为 &str 只读视图（指向编译期全局常量），`n` 为
+    // 字节数，零分配、零 String 对象构造（`push_str("ab")` 的字面量实参不再
+    // 每次 alloc_bytes + copy_bytes 深拷贝——strcat 类拼接基准收益 ~3 个数量级）。
+    fn push_bytes(&mut self, src: &str, n: i64) {
+        while self.cap - self.len < n {
+            self.grow();
+        }
+        let mut i = 0;
+        while i < n {
+            self.data[self.len + i] = src[i];
+            i = i + 1;
+        }
+        self.len = self.len + n;
     }
     // 深拷贝：返回全新缓冲，内容与 self 相等但互不影响。
     // `a + b` 运算符 desugar 依赖此语义（A3：消除共享缓冲别名隐患——
@@ -945,10 +1036,26 @@ fn string_to_int(s: String) -> i64 {
 //               槽 5 = cap（容量，恒为 2 的幂）。
 // 键类型：整数键走 `hash_value` 内建（Knuth 乘法散列）；String 键由 typecheck
 // 特判展开为 djb2 内容哈希（同内容恒同哈希），键相等比较走 String `==` 内容比较。
-// 结果取非负后 `% cap` 定位槽位。其余聚合对象键暂不支持。
+// 结果经 `& (cap - 1)` 位掩码定位槽位（cap 恒为 2 的幂：new=8、with_capacity 经
+// `next_pow2` 规整、grow 翻倍——位掩码替代取模与条件回绕，省 idiv 与分支）。
+// 其余聚合对象键暂不支持。
 // 负载因子 used/cap >= 1/2 时翻倍 rehash（墓碑随之清除，len 即占用数）。
 // 构造器（new / with_capacity）由编译器特判展开（6 槽 + alloc_array 三数组）。
 // ---------------------------------------------------------------------------
+// 向上取整为 2 的幂（n <= 0 取 1）：`HashMap::with_capacity(n)` 的 cap 经此规整，
+// 保证后续所有位掩码定位（hash & (cap-1)）与翻倍扩容恒成立。
+pub fn next_pow2(n: i64) -> i64 {
+    let mut x = n;
+    if x < 1 {
+        x = 1;
+    }
+    let mut p = 1;
+    while p < x {
+        p = p * 2;
+    }
+    p
+}
+
 struct HashMap<K, V> {
     keys: [K; 0],
     vals: [V; 0],
@@ -959,19 +1066,11 @@ struct HashMap<K, V> {
 }
 
 impl<K, V> HashMap<K, V> {
-    // 哈希：内建混合散列后取绝对值，保证 `% cap` 结果非负
-    fn hash(&self, k: K) -> i64 {
-        let h = hash_value(k);
-        if h < 0 {
-            -h
-        } else {
-            h
-        }
-    }
-    // 线性探测查找：命中返回槽位索引，未找到返回 -1（遇空槽提前终止）
-    // 注意：结果经 `result` 变量返回，避免 while 块后直接跟 `-1` 被解析为减法
+    // 线性探测查找：命中返回槽位索引，未找到返回 -1（遇空槽提前终止）。
+    // 探测回绕用位掩码 `(idx + 1) & mask`（cap 为 2 的幂，等价于 `% cap` 且无分支）。
     fn find(&self, k: K) -> i64 {
-        let mut idx = self.hash(k) % self.cap;
+        let mask = self.cap - 1;
+        let mut idx = hash_value(k) & mask;
         let mut n = 0;
         let mut result = -1;
         while n < self.cap {
@@ -983,10 +1082,7 @@ impl<K, V> HashMap<K, V> {
                     return idx;
                 }
             }
-            idx = idx + 1;
-            if idx >= self.cap {
-                idx = 0;
-            }
+            idx = (idx + 1) & mask;
             n = n + 1;
         }
         result
@@ -1011,30 +1107,52 @@ impl<K, V> HashMap<K, V> {
             Option::Some(self.vals[idx])
         }
     }
-    // 插入：已存在则覆盖值；新键先按负载因子决定是否扩容，再探测空槽/墓碑写入
+    // 插入：单次探测同时完成「查键」与「找插入位」——遇空槽即确认键不存在，
+    // 期间记录首个墓碑槽（优先复用，抑制 used 增长）；已存在则覆盖值。
+    // 新键在负载 used/cap >= 1/2 时先翻倍扩容再重插（grow 后表已变，递归重试）。
     fn insert(&mut self, k: K, v: V) {
-        let idx = self.find(k);
-        if idx >= 0 {
-            self.vals[idx] = v;
-        } else {
-            if self.used * 2 >= self.cap {
-                self.grow();
+        let mask = self.cap - 1;
+        let mut j = hash_value(k) & mask;
+        let mut n = 0;
+        let mut tomb = -1;
+        while n < self.cap {
+            let s = self.states[j];
+            if s == 0 {
+                break;
             }
-            let mut j = self.hash(k) % self.cap;
-            while self.states[j] == 1 {
-                j = j + 1;
-                if j >= self.cap {
-                    j = 0;
+            if s == 1 {
+                if self.keys[j] == k {
+                    self.vals[j] = v;
+                    return;
+                }
+            } else {
+                if tomb < 0 {
+                    tomb = j;
                 }
             }
-            if self.states[j] == 0 {
-                self.used = self.used + 1;
-            }
-            self.keys[j] = k;
-            self.vals[j] = v;
-            self.states[j] = 1;
-            self.len = self.len + 1;
+            j = (j + 1) & mask;
+            n = n + 1;
         }
+        // 表满兜底（负载因子 used/cap < 1/2 保证不会发生）
+        if n >= self.cap {
+            return;
+        }
+        // 键不存在：按负载因子扩容后重插
+        if self.used * 2 >= self.cap {
+            self.grow();
+            self.insert(k, v);
+            return;
+        }
+        // 优先复用首个墓碑槽（used 不增长），否则写入空槽
+        if tomb >= 0 {
+            j = tomb;
+        } else {
+            self.used = self.used + 1;
+        }
+        self.keys[j] = k;
+        self.vals[j] = v;
+        self.states[j] = 1;
+        self.len = self.len + 1;
     }
     // 删除：命中槽位标记为墓碑（不破坏后续探测链），返回旧值
     fn remove(&mut self, k: K) -> Option<V> {
@@ -1056,15 +1174,13 @@ impl<K, V> HashMap<K, V> {
         let new_keys: [K; 0] = alloc_array(new_cap);
         let new_vals: [V; 0] = alloc_array(new_cap);
         let new_states: [i64; 0] = alloc_array(new_cap);
+        let mask = new_cap - 1;
         let mut i = 0;
         while i < self.cap {
             if self.states[i] == 1 {
-                let mut j = self.hash(self.keys[i]) % new_cap;
+                let mut j = hash_value(self.keys[i]) & mask;
                 while new_states[j] == 1 {
-                    j = j + 1;
-                    if j >= new_cap {
-                        j = 0;
-                    }
+                    j = (j + 1) & mask;
                 }
                 new_keys[j] = self.keys[i];
                 new_vals[j] = self.vals[i];

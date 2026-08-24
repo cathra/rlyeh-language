@@ -126,6 +126,8 @@ pub enum MirStmt {
         target: Local,
         /// 槽数
         slots: usize,
+        /// 标量聚合按值分配（栈槽，免 calloc）
+        by_value: bool,
     },
     /// `target = field_get(base, index)`：读取聚合对象槽位
     /// （槽 0 为枚举判别值 tag）。

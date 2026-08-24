@@ -105,7 +105,10 @@ pub(crate) fn coerce_to_dyn(
     let vt = ctx.fresh_temp();
     stmts.push(HirStmt::Let {
         name: vt.clone(),
-        init: HirExpr::Alloc { slots: 3 + n },
+        init: HirExpr::Alloc {
+            slots: 3 + n,
+            by_value: false,
+        },
         mutable: false,
     });
     for i in 0..3 {
@@ -146,7 +149,10 @@ pub(crate) fn coerce_to_dyn(
     let dyn_var = ctx.fresh_temp();
     stmts.push(HirStmt::Let {
         name: dyn_var.clone(),
-        init: HirExpr::Alloc { slots: 2 },
+        init: HirExpr::Alloc {
+            slots: 2,
+            by_value: false,
+        },
         mutable: false,
     });
     stmts.push(HirStmt::Semi(HirExpr::FieldSet {
@@ -3117,7 +3123,10 @@ pub(crate) fn check_deferred_closure_binding(
         ret: Box::new(Type::Unit),
         fn_name: String::new(),
     };
-    Ok((HirExpr::Alloc { slots: 0 }, ty))
+    Ok((HirExpr::Alloc {
+        slots: 0,
+        by_value: false,
+    }, ty))
 }
 
 /// 闭包值对象：`let f = |x: i64| body;` 绑定后 `f(args)` 调用。
@@ -3188,7 +3197,10 @@ pub(crate) fn check_closure_value_binding(
     let cv = format!("__cv_{}", ctx.closure_seq - 1);
     let mut stmts = vec![HirStmt::Let {
         name: cv.clone(),
-        init: HirExpr::Alloc { slots: captures.len() },
+        init: HirExpr::Alloc {
+            slots: captures.len(),
+            by_value: false,
+        },
         mutable: false,
     }];
     for (i, c) in captures.iter().enumerate() {
@@ -3408,7 +3420,10 @@ fn check_deferred_closure_call(
     let cv = format!("__cv_{}", ctx.closure_seq - 1);
     let mut stmts = vec![HirStmt::Let {
         name: cv.clone(),
-        init: HirExpr::Alloc { slots: captures.len() },
+        init: HirExpr::Alloc {
+            slots: captures.len(),
+            by_value: false,
+        },
         mutable: false,
     }];
     for (i, c) in captures.iter().enumerate() {
@@ -3969,11 +3984,23 @@ fn check_struct_construct(
     }
 
     // 展开为 Alloc + 字段槽
+    // 标量结构体（≤2 槽）按值分配（栈槽，免 calloc）；槽区均为 8 字节槽，
+    // 兼容栈上 `[2 x i64]` 存储。
+    //
+    // 按值仅允许"字段全为标量槽"的结构体：按值对象以 `[2 x i64]` 栈槽存储，
+    // 当它作为另一聚合（enum/struct）的字段/payload 时以"对象地址"语义写入
+    // 外层 Ptr 槽——若其含聚合字段，写入的即内部对象地址（栈地址），函数返回/
+    // 跨调用后悬垂（如 `Result<SocketAddr, _>::Ok(sa)`，`SocketAddr` 含
+    // String 字段 → tcp_addr SIGSEGV）。含聚合/引用/裸指针/泛型字段者按值
+    // 构造一律不安全，退化回堆分配。
+    let struct_by_value = def.fields.len() <= 2
+        && def.fields.iter().all(|(_, fty)| field_is_scalar_slot(fty));
     let base = ctx.fresh_temp();
     let mut stmts = vec![HirStmt::Let {
         name: base.clone(),
         init: HirExpr::Alloc {
             slots: def.fields.len(),
+            by_value: struct_by_value,
         },
         mutable: false,
     }];
@@ -4060,7 +4087,10 @@ fn check_vec_construct(
         },
         HirStmt::Let {
             name: base.clone(),
-            init: HirExpr::Alloc { slots: 3 },
+            init: HirExpr::Alloc {
+            slots: 3,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -4136,7 +4166,10 @@ fn check_string_construct(
         },
         HirStmt::Let {
             name: base.clone(),
-            init: HirExpr::Alloc { slots: 3 },
+            init: HirExpr::Alloc {
+            slots: 3,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -4200,6 +4233,17 @@ fn check_hashmap_construct(
             span,
         });
     }
+    // with_capacity 的 cap 经标准库 `next_pow2` 规整为 2 的幂：
+    // HashMap 的位掩码定位（hash & (cap-1)）与翻倍扩容依赖 cap 恒为 2 的幂，
+    // 用户传入任意正整数（如 10）会破坏该不变量。
+    let cap_hir = if method == "with_capacity" {
+        HirExpr::Call {
+            callee: "next_pow2".to_string(),
+            args: vec![cap_hir],
+        }
+    } else {
+        cap_hir
+    };
 
     let keys_tmp = ctx.fresh_temp();
     let vals_tmp = ctx.fresh_temp();
@@ -4233,7 +4277,10 @@ fn check_hashmap_construct(
         },
         HirStmt::Let {
             name: base.clone(),
-            init: HirExpr::Alloc { slots: 6 },
+            init: HirExpr::Alloc {
+            slots: 6,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -4452,7 +4499,10 @@ pub(crate) fn check_string_from(
         }),
         HirStmt::Let {
             name: base.clone(),
-            init: HirExpr::Alloc { slots: 3 },
+            init: HirExpr::Alloc {
+            slots: 3,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -4772,7 +4822,10 @@ fn check_slice(
             },
             HirStmt::Let {
                 name: out_name.clone(),
-                init: HirExpr::Alloc { slots: 3 },
+                init: HirExpr::Alloc {
+            slots: 3,
+            by_value: false,
+        },
                 mutable: false,
             },
             HirStmt::Semi(HirExpr::FieldSet {
@@ -4980,7 +5033,10 @@ fn check_box_new(
     let box_base = ctx.fresh_temp();
     stmts.push(HirStmt::Let {
         name: box_base.clone(),
-        init: HirExpr::Alloc { slots: 1 },
+        init: HirExpr::Alloc {
+            slots: 1,
+            by_value: false,
+        },
         mutable: false,
     });
     stmts.push(HirStmt::Semi(HirExpr::FieldSet {
@@ -5071,7 +5127,10 @@ fn check_rc_new(
     let rc_base = ctx.fresh_temp();
     stmts.push(HirStmt::Let {
         name: rc_base.clone(),
-        init: HirExpr::Alloc { slots: 1 },
+        init: HirExpr::Alloc {
+            slots: 1,
+            by_value: false,
+        },
         mutable: false,
     });
     stmts.push(HirStmt::Semi(HirExpr::FieldSet {
@@ -5148,7 +5207,10 @@ fn check_gc_new(
     let gc_base = ctx.fresh_temp();
     stmts.push(HirStmt::Let {
         name: gc_base.clone(),
-        init: HirExpr::Alloc { slots: 1 },
+        init: HirExpr::Alloc {
+            slots: 1,
+            by_value: false,
+        },
         mutable: false,
     });
     stmts.push(HirStmt::Semi(HirExpr::FieldSet {
@@ -5256,7 +5318,10 @@ fn rc_clone(
         }),
         HirStmt::Let {
             name: rc_t.clone(),
-            init: HirExpr::Alloc { slots: 1 },
+            init: HirExpr::Alloc {
+            slots: 1,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -5360,7 +5425,10 @@ fn rc_downgrade(
         }),
         HirStmt::Let {
             name: w_t.clone(),
-            init: HirExpr::Alloc { slots: 1 },
+            init: HirExpr::Alloc {
+            slots: 1,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -5466,7 +5534,10 @@ fn rc_try_unwrap(
         },
         HirStmt::Let {
             name: res_t.clone(),
-            init: HirExpr::Alloc { slots: res_slots },
+            init: HirExpr::Alloc {
+            slots: res_slots,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Expr(HirExpr::If {
@@ -5543,7 +5614,10 @@ fn weak_upgrade(
         }),
         HirStmt::Let {
             name: rc_t.clone(),
-            init: HirExpr::Alloc { slots: 1 },
+            init: HirExpr::Alloc {
+            slots: 1,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Semi(HirExpr::FieldSet {
@@ -5592,7 +5666,10 @@ fn weak_upgrade(
         },
         HirStmt::Let {
             name: opt_t.clone(),
-            init: HirExpr::Alloc { slots: opt_slots },
+            init: HirExpr::Alloc {
+            slots: opt_slots,
+            by_value: false,
+        },
             mutable: false,
         },
         HirStmt::Expr(HirExpr::If {
@@ -5818,6 +5895,7 @@ fn check_array_lit(
         name: base.clone(),
         init: HirExpr::Alloc {
             slots: elems.len(),
+            by_value: false,
         },
         mutable: false,
     }];
@@ -5836,6 +5914,44 @@ fn check_array_lit(
         })),
         Type::Array(Box::new(elem_ty), elems.len()),
     ))
+}
+
+/// 字段类型是否可安全作为按值（栈内联）对象的组成部分：
+/// 须为具体（非泛型/未推断）标量槽——聚合（struct/enum/String/引用/裸指针/
+/// 数组/元组/trait 对象/闭包值/函数指针）以"对象地址"语义参与存储，按值
+/// 对象地址逃逸后悬垂（如 `Result<SocketAddr, _>::Ok(sa)` 中 `SocketAddr`
+/// 的 String 字段），故含此类字段的对象不得按值构造。
+fn field_is_scalar_slot(fty: &Type) -> bool {
+    match fty {
+        Type::Generic(_) | Type::Infer => false,
+        t => field_scalar_of(t) != FieldScalar::Ptr,
+    }
+}
+
+/// 枚举是否可安全按值（栈内联）构造。
+///
+/// 按值对象以 `[2 x i64]` 栈槽存储；当其作为另一聚合（enum/struct）的
+/// 字段/payload 时以"对象地址"语义写入外层 Ptr 槽——若该对象本身是
+/// 按值栈对象，写入的即栈地址，函数返回/跨调用后悬垂。
+///
+/// 判定规则（与构造点所在变体无关，保证同一枚举所有构造路径一致）：
+/// - 槽数 > 2：无法容纳，禁用；
+/// - 泛型枚举（`Option`/`Result` 等）：定义时无法预知类型实参是否聚合，
+///   且同一枚举不同变体构造点（如 `None`/`Some`）需判定一致，保守禁用；
+/// - 非泛型枚举：所有变体的所有字段均为具体标量槽方可启用。
+fn enum_instance_by_value(ctx: &TypeContext, enum_name: &str, slot_count: usize) -> bool {
+    if slot_count > 2 {
+        return false;
+    }
+    let Some(def) = ctx.lookup_enum(enum_name) else {
+        return false;
+    };
+    if !def.type_params.is_empty() {
+        return false;
+    }
+    def.variants
+        .iter()
+        .all(|v| v.fields.iter().all(|(_, fty)| field_is_scalar_slot(fty)))
 }
 
 /// 枚举变体构造：`Option::Some(x)` → 堆对象 `Alloc + tag 槽 + 字段槽` 序列。
@@ -5881,11 +5997,17 @@ fn check_variant_construct(
     }
 
     // 展开为 Alloc + tag 槽 + 字段槽
+    // 标量枚举按值分配（栈槽，免 calloc）：≤2 槽的 enum（如 Option<i64> /
+    // Option<bool>）槽区（tag + ≤1 payload）均为 8 字节槽，兼容栈上
+    // `[2 x i64]` 存储；判定只看槽数——不依赖具体变体实例化，保证
+    // 同一 enum 的 None/Some 等各变体构造路径判定一致。
+    let enum_by_value = enum_instance_by_value(ctx, &enum_name, enum_def.slot_count);
     let base = ctx.fresh_temp();
     let mut stmts = vec![HirStmt::Let {
         name: base.clone(),
         init: HirExpr::Alloc {
             slots: enum_def.slot_count,
+            by_value: enum_by_value,
         },
         mutable: false,
     }];
@@ -6431,6 +6553,66 @@ fn check_method_call(
     // 与定义侧 parse_fn 归一化（`r#send` → `send`）保持一致。
     let method = method.strip_prefix("r#").unwrap_or(method);
     let (recv_hir, recv_ty) = infer_expr(ctx, receiver)?;
+    // `push_str(字面量实参)` 整体特判：改调 `String::push_bytes(src, n)` 快速路径，
+    // 免去字面量实参每次 alloc_bytes + copy_bytes 深拷贝（strcat 类拼接基准收益
+    // ~3 个数量级；直接字面量实参的字节数与内容编译期已知）。
+    // `src` 实参传 `&__lit`（Str 标量槽地址）：`&str` 的标准表示是 String 3 槽
+    // 对象指针（`as_str()` 返回对象指针，`check_index` 对 `&str` 索引先取槽 0 的
+    // data 指针），而字面量值本身是裸 data 指针——若直传字面量，`push_bytes` 内
+    // `src[i]` 会把常量前 8 字节当对象指针解引用（段错误）。`&__lit` 经 AddrOf
+    // 标量分支生成「指向 data 指针槽的指针」= 单槽伪对象头，FieldGet 槽 0 即 data。
+    // 条件：String 接收者 + 单实参且为字符串字面量。
+    if method == "push_str"
+        && args.len() == 1
+        && matches!(&recv_ty, Type::Named(n, _) if n == "String")
+        && matches!(&*args[0].kind, ExprKind::StringLiteral(_))
+    {
+        let s = match &*args[0].kind {
+            ExprKind::StringLiteral(s) => s.clone(),
+            _ => unreachable!(),
+        };
+        let n = s.len() as i128;
+        let lit_tmp = ctx.fresh_temp();
+        let impl_def = ctx
+            .find_impl_for_method(&recv_ty, "push_bytes")
+            .cloned()
+            .ok_or_else(|| TypeError::FunctionNotFound {
+                name: "String::push_bytes".to_string(),
+                span,
+            })?;
+        let method_def = impl_def
+            .methods
+            .iter()
+            .find(|m| m.sig.name == "push_bytes")
+            .cloned()
+            .ok_or_else(|| TypeError::FunctionNotFound {
+                name: "String::push_bytes".to_string(),
+                span,
+            })?;
+        let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &HashMap::new(), span)?;
+        return Ok((
+            HirExpr::Block(Box::new(HirBlock {
+                stmts: vec![HirStmt::Let {
+                    name: lit_tmp.clone(),
+                    init: HirExpr::StringLiteral(s),
+                    mutable: false,
+                }],
+                final_expr: Some(HirExpr::Call {
+                    callee: fn_name,
+                    args: vec![
+                        recv_hir,
+                        HirExpr::Ref {
+                            expr: Box::new(HirExpr::Variable(lit_tmp)),
+                            is_mut: false,
+                            pointee: FieldScalar::Str,
+                        },
+                        HirExpr::IntLiteral(n),
+                    ],
+                }),
+            })),
+            Type::Unit,
+        ));
+    }
     // `Rc<T>` / `Arc<T>` / `Weak<T>` 引用计数内建方法（K3）：clone /
     // strong_count / weak_count / downgrade / try_unwrap / upgrade。
     // 须在堆指针改写前分派（内建需要原始 Rc 对象取 RcInner 指针）
@@ -6716,6 +6898,7 @@ fn check_method_call(
         // 等 String 形参位置传入字面量 / 绑定字面量的变量时自动构造 String 对象。
         // 升级后 contains_infer 定型分支的 `Type::Str` 特判不再命中（已是 String），
         // 泛型 K 定型结果不变（Str → String），行为与 `String::from(lit)` 一致。
+        // （push_str 字面量实参的整体特判在 check_method_call 方法级进行）
         let (hir, ty) = upgrade_str_arg(ctx, hir, ty, &pty, a)?;
         arg_tys.push(ty.clone());
         if contains_infer(&pty) {

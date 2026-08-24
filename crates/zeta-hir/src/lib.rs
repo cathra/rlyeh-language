@@ -264,6 +264,9 @@ pub enum HirExpr {
     Alloc {
         /// 槽数
         slots: usize,
+        /// 标量聚合（≤2 槽、字段全标量的 enum/struct）按值分配：
+        /// codegen 落到栈上 `[2 x i64]` 槽（免 calloc），返回/传参按值。
+        by_value: bool,
     },
     /// 读取聚合对象槽位 `index`（槽 0 为枚举判别值 tag）。
     FieldGet {

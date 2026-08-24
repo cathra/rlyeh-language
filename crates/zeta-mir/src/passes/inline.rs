@@ -135,9 +135,14 @@ fn inline_stmt(
             callee: callee.clone(),
             args: args.iter().map(|a| map_local(a, subst, counter)).collect(),
         }),
-        MirStmt::Alloc { target, slots } => Some(MirStmt::Alloc {
+        MirStmt::Alloc {
+            target,
+            slots,
+            by_value,
+        } => Some(MirStmt::Alloc {
             target: map_local(target, subst, counter),
             slots: *slots,
+            by_value: *by_value,
         }),
         MirStmt::FieldGet {
             target,

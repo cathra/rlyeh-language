@@ -414,11 +414,12 @@ impl MirLowerer {
                 }
                 Some(r)
             }
-            HirExpr::Alloc { slots } => {
+            HirExpr::Alloc { slots, by_value } => {
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::Alloc {
                     target: tmp.clone(),
                     slots: *slots,
+                    by_value: *by_value,
                 });
                 Some(MirValue::Place(tmp))
             }

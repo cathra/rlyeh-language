@@ -4,7 +4,9 @@
 //!
 //! - [`zeta_region_enter`]：按编译器传入的选项（初始大小 / 扩容策略 / 自适应 / 精确）
 //!   创建区域，返回不透明句柄；
-//! - [`zeta_region_alloc`]：在区域内 bump 分配一块裸内存（编译器随后 memcpy 值镜像）；
+//! - [`zeta_region_alloc`]：**慢路径**分配——LLVM 后端对 `in 'r` 分配内联生成
+//!   bump 快路径（直接读写 `Region` 首部固定偏移字段），仅在当前块空间不足
+//!   （越界）时才调用本函数扩容并分配；
 //! - [`zeta_region_transfer`]：登记对象已 `transfer` 出区域（销毁时跳过其析构）；
 //! - [`zeta_region_exit`]：批量释放区域全部内存块并销毁句柄。
 //!
@@ -75,6 +77,9 @@ pub extern "C" fn zeta_region_enter(
 
 /// 在区域内 bump 分配 `size` 字节（`align` 对齐），返回区域内存指针；
 /// 失败（精确模式容量不足 / 扩容超限 / 区域已销毁）返回空指针。
+///
+/// **慢路径**：被 LLVM 内联快路径的越界分支调用。调用时 `cursor` 尚未被
+/// 内联代码修改，`allocate_bytes` 会重新尝试（必然越界）并扩容后分配。
 #[no_mangle]
 pub extern "C" fn zeta_region_alloc(handle: *mut c_void, size: usize, align: usize) -> *mut u8 {
     if handle.is_null() || size == 0 {
@@ -122,7 +127,8 @@ pub extern "C" fn zeta_region_stats(handle: *mut c_void) -> u64 {
     }
     // SAFETY: handle 由 zeta_region_enter 返回，区域存活期间有效。
     let region = unsafe { &*(handle as *mut Region) };
-    let allocs = region.stats.allocation_count as u64 & 0xFFFF_FFFF;
+    // 合并 Rust API（stats）与 C ABI / 内联快路径（alloc_count）两条分配路径。
+    let allocs = region.total_allocs() as u64 & 0xFFFF_FFFF;
     let blocks = region.block_count() as u64 & 0xFFFF_FFFF;
     (blocks << 32) | allocs
 }

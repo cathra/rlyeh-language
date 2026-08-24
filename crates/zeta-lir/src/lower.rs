@@ -687,10 +687,15 @@ impl FunctionLowerer {
                     region: region.clone(),
                 });
             }
-            MirStmt::Alloc { target, slots } => {
+            MirStmt::Alloc {
+                target,
+                slots,
+                by_value,
+            } => {
                 out.push(LirStmt::Alloc {
                     target: target.clone(),
                     slots: *slots,
+                    by_value: *by_value,
                 });
             }
             MirStmt::FieldGet {

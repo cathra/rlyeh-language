@@ -1,7 +1,8 @@
 //! 内存块：bump 分配的基础单元。
 //!
-//! 每个块是一段连续堆内存，内部按 bump 顺序分配，永不归还单个对象；
-//! 块整体随 `Drop` 释放。
+//! 每个块是一段连续堆内存；块整体随 `Drop` 释放。
+//! bump 光标状态（`cursor`）由 [`crate::Region`] 作为权威维护（内联快路径
+//! 需要首部固定偏移），内存块本身只记录 `ptr`/`size`。
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::NonNull;
@@ -9,21 +10,24 @@ use std::ptr::NonNull;
 use crate::error::AllocError;
 
 /// 内存块的基础对齐（8 字节，覆盖常见标量类型）。
-const BLOCK_ALIGN: usize = 8;
+///
+/// 同时也是 [`crate::Region`] 内联 bump 快路径的对齐下限：
+/// LLVM 后端生成的 `aligned = (cursor + align - 1) & !(align - 1)`
+/// 依赖 `align` 为 2 的幂且不小于此值。
+pub(crate) const BASE_ALIGN: usize = 8;
 
 /// 一段连续的内存块。
 pub(crate) struct MemoryBlock {
     ptr: NonNull<u8>,
     size: usize,
-    used: usize,
 }
 
 impl MemoryBlock {
-    /// 分配一个 `size` 字节的内存块。
+    /// 分配一个 `size` 字节的内存块（基址按 [`BASE_ALIGN`] 对齐）。
     pub(crate) fn new(size: usize) -> Result<Self, AllocError> {
         let size = size.max(1);
         let layout =
-            Layout::from_size_align(size, BLOCK_ALIGN).map_err(|_| AllocError::Overflow)?;
+            Layout::from_size_align(size, BASE_ALIGN).map_err(|_| AllocError::Overflow)?;
         // SAFETY: layout 已校验（size>0、align=8 合法）。
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
@@ -33,7 +37,6 @@ impl MemoryBlock {
         Ok(Self {
             ptr: unsafe { NonNull::new_unchecked(ptr) },
             size,
-            used: 0,
         })
     }
 
@@ -42,36 +45,16 @@ impl MemoryBlock {
         self.size
     }
 
-    /// 已使用字节数。
-    pub(crate) fn used(&self) -> usize {
-        self.used
-    }
-
-    /// 在块内 bump 分配 `size` 字节、对齐 `align`。
-    ///
-    /// 成功返回 `(指针, 对齐损失)`；剩余空间不足返回 `None`。
-    pub(crate) fn allocate(&mut self, size: usize, align: usize) -> Option<(NonNull<u8>, usize)> {
-        let base = self.ptr.as_ptr() as usize;
-        let addr = base + self.used;
-        let aligned = addr.checked_next_multiple_of(align.max(BLOCK_ALIGN))?;
-        let wasted = aligned - addr;
-        let end = aligned.checked_add(size)?;
-        if end > base + self.size {
-            return None;
-        }
-        self.used = end - base;
-        // SAFETY: aligned >= base 且 aligned+size <= base+size，均在块内。
-        Some((
-            unsafe { NonNull::new_unchecked(aligned as *mut u8) },
-            wasted,
-        ))
+    /// 块基址。
+    pub(crate) fn as_ptr(&self) -> *mut u8 {
+        self.ptr.as_ptr()
     }
 }
 
 impl Drop for MemoryBlock {
     fn drop(&mut self) {
         let layout =
-            Layout::from_size_align(self.size, BLOCK_ALIGN).expect("block layout is valid");
+            Layout::from_size_align(self.size, BASE_ALIGN).expect("block layout is valid");
         // SAFETY: ptr 由同 layout 的 alloc 返回，且仅释放一次。
         unsafe { dealloc(self.ptr.as_ptr(), layout) };
     }

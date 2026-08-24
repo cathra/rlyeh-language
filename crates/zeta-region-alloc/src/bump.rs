@@ -1,13 +1,16 @@
-//! Bump 分配器：由多个内存块组成的连续分配器。
+//! Bump 分配器：由多个内存块组成的连续分配器（块管理）。
 //!
 //! 遵循 ADR-002：扩容时分配新块（大小翻倍或按策略），**不拷贝**旧数据。
-
-use std::ptr::NonNull;
+//!
+//! 本模块只负责**块生命周期管理**（增删/容量/当前块查询）；bump 光标状态
+//! （`base`/`cursor`/`limit`）由 [`crate::Region`] 作为权威维护——LLVM 后端
+//! 对 `in 'r` 分配内联生成 bump 快路径，直接读写 `Region` 首部的固定偏移字段，
+//! 仅越界时才经 C ABI 调用回本 crate 扩容。
 
 use crate::block::MemoryBlock;
 use crate::error::AllocError;
 
-/// 由多个内存块组成的 bump 分配器。
+/// 由多个内存块组成的 bump 分配器（仅块管理）。
 pub(crate) struct BumpAllocator {
     blocks: Vec<MemoryBlock>,
     current: usize,
@@ -23,15 +26,6 @@ impl BumpAllocator {
         })
     }
 
-    /// 在当前块内 bump 分配；空间不足返回 `None`（不自动扩容）。
-    pub(crate) fn try_allocate(
-        &mut self,
-        size: usize,
-        align: usize,
-    ) -> Option<(NonNull<u8>, usize)> {
-        self.blocks[self.current].allocate(size, align)
-    }
-
     /// 追加一个 `size` 字节的新块作为当前块。
     pub(crate) fn grow(&mut self, size: usize) -> Result<(), AllocError> {
         let block = MemoryBlock::new(size)?;
@@ -40,14 +34,15 @@ impl BumpAllocator {
         Ok(())
     }
 
+    /// 当前块的 `(基址, 容量)`。
+    pub(crate) fn current_block(&self) -> (*mut u8, usize) {
+        let block = &self.blocks[self.current];
+        (block.as_ptr(), block.capacity())
+    }
+
     /// 所有块总容量。
     pub(crate) fn capacity(&self) -> usize {
         self.blocks.iter().map(MemoryBlock::capacity).sum()
-    }
-
-    /// 所有块已使用字节数。
-    pub(crate) fn used(&self) -> usize {
-        self.blocks.iter().map(MemoryBlock::used).sum()
     }
 
     /// 块数量。

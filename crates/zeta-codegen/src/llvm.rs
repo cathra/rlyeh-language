@@ -10,7 +10,7 @@
 //! - **区域标注指令**：MVP 后端直接忽略（分配语义由后续后端 / 运行时提供）；
 //! - **`main` 特化**：Zeta 的 `main` 生成 `define i32 @main()`（返回 0）。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use zeta_lir::{FieldScalar, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType, Local};
 
@@ -52,10 +52,190 @@ const BUILTIN_FUNCTIONS: &[&str] = &[
     "hash_value",
 ];
 
+/// 指令是否读/写了 `aliases` 中任一对象（用于判定 `AllocInRegion`
+/// 回看窗口是否可安全重排）。
+fn touches_any(s: &LirStmt, aliases: &[&str]) -> bool {
+    use LirStmt::*;
+    match s {
+        FieldSet { base, value, .. } => aliases.contains(&base.as_str()) || aliases.contains(&value.as_str()),
+        FieldGet { target, base, .. } => {
+            aliases.contains(&target.as_str()) || aliases.contains(&base.as_str())
+        }
+        IndexGet {
+            target, base, index, ..
+        } => {
+            aliases.contains(&target.as_str())
+                || aliases.contains(&base.as_str())
+                || aliases.contains(&index.as_str())
+        }
+        IndexSet {
+            base, index, value, ..
+        } => {
+            aliases.contains(&base.as_str())
+                || aliases.contains(&index.as_str())
+                || aliases.contains(&value.as_str())
+        }
+        Assign { target, value } => {
+            aliases.contains(&target.as_str())
+                || value
+                    .as_local()
+                    .map(|l| aliases.contains(&l.as_str()))
+                    .unwrap_or(false)
+        }
+        Binary {
+            target, lhs, rhs, ..
+        } => {
+            aliases.contains(&target.as_str())
+                || lhs.as_local().map(|l| aliases.contains(&l.as_str())).unwrap_or(false)
+                || rhs.as_local().map(|l| aliases.contains(&l.as_str())).unwrap_or(false)
+        }
+        Unary {
+            target, operand, ..
+        } => {
+            aliases.contains(&target.as_str())
+                || operand.as_local().map(|l| aliases.contains(&l.as_str())).unwrap_or(false)
+        }
+        Call { target, args, .. } => {
+            target.as_deref().map(|t| aliases.contains(&t)).unwrap_or(false)
+                || args.iter().any(|a| aliases.contains(&a.as_str()))
+        }
+        CallIndirect {
+            target,
+            callee,
+            args,
+            ..
+        } => {
+            target.as_deref().map(|t| aliases.contains(&t)).unwrap_or(false)
+                || aliases.contains(&callee.as_str())
+                || args.iter().any(|a| aliases.contains(&a.as_str()))
+        }
+        AddrOf { target, operand, .. } => {
+            aliases.contains(&target.as_str()) || aliases.contains(&operand.as_str())
+        }
+        DerefRead { target, base, .. } => {
+            aliases.contains(&target.as_str()) || aliases.contains(&base.as_str())
+        }
+        DerefWrite { base, value, .. } => {
+            aliases.contains(&base.as_str()) || aliases.contains(&value.as_str())
+        }
+        Alloc { target, .. } => aliases.contains(&target.as_str()),
+        RegionEnter { .. }
+        | RegionExit { .. }
+        | Transfer { .. }
+        | AllocInRegion { .. }
+        | AllocInRegionDirect { .. } => false,
+    }
+}
+
+/// LIR 变换（region 字面量直接构造）：
+/// 把同块内 `Alloc(t)` + `FieldSet(t,..)*` + `AllocInRegion(t)` 的字面量构造
+/// 重写为 `AllocInRegionDirect(t)` + `FieldSet(t,..)*`——聚合字段直接在区域
+/// 指针上写入，消除中间堆临时分配与值镜像 memcpy（region_alloc 基准热路径
+/// 的关键优化；同时修复 `in 'r` 变量仍指向堆临时对象的低效）。
+///
+/// 匹配规则（保守）：从 `AllocInRegion` 向前回看，窗口内允许
+/// `FieldSet(t,..)` 与不读写 `t` 的纯计算指令（字段值求值）；
+/// 窗口起点须为 `Alloc(t)` 且槽数对应（`slots × 8 == size`）。
+/// 命中后：窗口内的 `FieldSet(t,..)` 全部移到 `AllocInRegionDirect` 之后
+/// （直接写区域指针），其余指令保持原位置；否则保持原样（走 memcpy 路径）。
+fn inline_region_literal(f: &mut LirFunction) {
+    use LirStmt::*;
+    for block in &mut f.blocks {
+        let stmts = std::mem::take(&mut block.stmts);
+        let mut out: Vec<LirStmt> = Vec::with_capacity(stmts.len());
+        let mut i = 0;
+        while i < stmts.len() {
+            let s = &stmts[i];
+            if let AllocInRegion { target, region, size } = s {
+                // 向前回看窗口：[k, i) = `Alloc(t)` + 别名链 + 字段构造
+                // （允许字段值求值等不读写目标对象的指令穿插）。
+                let mut aliases: Vec<&str> = vec![target.as_str()];
+                let mut k = i;
+                let mut alloc_hit = false;
+                let mut alias_assign: Option<usize> = None; // 待删除的别名 Assign
+                while k > 0 {
+                    match &stmts[k - 1] {
+                        FieldSet { base, .. } if aliases.contains(&base.as_str()) => k -= 1,
+                        Alloc {
+                            target: t,
+                            slots,
+                            by_value: false,
+                        } if aliases.contains(&t.as_str()) && *slots * 8 == *size =>
+                        {
+                            alloc_hit = true;
+                            k -= 1;
+                            break;
+                        }
+                        Assign { target: at, value }
+                            if aliases.contains(&at.as_str())
+                                && matches!(value.as_local(), Some(y) if !aliases.contains(&y.as_str())) =>
+                        {
+                            // 别名扩张：`x = y`（y 为分配 target），该 Assign 待删除
+                            if let Some(y) = value.as_local() {
+                                alias_assign = Some(k - 1);
+                                aliases.push(y.as_str());
+                            }
+                            k -= 1;
+                        }
+                        Assign { target: at, .. } if aliases.contains(&at.as_str()) => break,
+                        other if !touches_any(other, &aliases) => k -= 1,
+                        _ => break,
+                    }
+                }
+                if alloc_hit && k < i && matches!(&stmts[k], Alloc { .. }) {
+                    // 命中：截断 out 到窗口前，重排窗口内容
+                    let win_len = i - k;
+                    out.truncate(out.len() - win_len);
+                    // 删除别名 Assign；非 FieldSet(别名) 指令（纯计算）保留原位；
+                    // FieldSet(别名) 收集到 Direct 之后（原序）
+                    for idx in (k + 1)..i {
+                        if alias_assign == Some(idx) {
+                            continue; // 别名赋值被 Direct 取代（target 即区域指针）
+                        }
+                        if !matches!(
+                            &stmts[idx],
+                            FieldSet { base, .. } if aliases.contains(&base.as_str())
+                        ) {
+                            out.push(stmts[idx].clone());
+                        }
+                    }
+                    // Direct 分配（区域指针）
+                    out.push(AllocInRegionDirect {
+                        target: target.clone(),
+                        region: region.clone(),
+                        size: *size,
+                    });
+                    for idx in (k + 1)..i {
+                        if matches!(
+                            &stmts[idx],
+                            FieldSet { base, .. } if aliases.contains(&base.as_str())
+                        ) {
+                            out.push(stmts[idx].clone());
+                        }
+                    }
+                    i += 1; // 跳过 AllocInRegion（其 memcpy 语义由 Direct 取代）
+                    continue;
+                }
+            }
+            out.push(s.clone());
+            i += 1;
+        }
+        block.stmts = out;
+    }
+}
+
 /// 生成 LLVM IR 文本。
 pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
-    let mut emitter = LlvmEmitter::new(program);
+    // region 字面量直接构造变换（须在 emit 前完成：预扫描/emit 按变换后指令消费）
+    let mut functions: Vec<LirFunction> = Vec::with_capacity(program.functions.len());
     for f in &program.functions {
+        let mut f2 = f.clone();
+        inline_region_literal(&mut f2);
+        functions.push(f2);
+    }
+    let program2 = LirProgram { functions };
+    let mut emitter = LlvmEmitter::new(&program2);
+    for f in &program2.functions {
         emitter.emit_function(f)?;
     }
 
@@ -66,6 +246,11 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     // 不引用 `stderr` 符号（macOS 为 `__stderrp`，不可移植）；WASI 亦提供 dprintf。
     out.push_str("declare i32 @dprintf(i32, i8*, ...)\n");
     out.push_str("declare i8* @malloc(i64)\n");
+    // calloc 预置声明必须**早于所有调用点**（LLVM IR parser 对 call 自动创建的
+    // 隐式声明与后续显式 declare 视为 redefinition 报错）。标准库 core.zeta 的
+    // `extern fn calloc -> i64` 声明由 emit_function 跳过（见下），避免重复。
+    // 返回值为 i64，内置分配点经 inttoptr 转 i8*。
+    out.push_str("declare i64 @calloc(i64, i64)\n");
     out.push_str("declare void @free(i8*)\n");
     out.push_str("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)\n");
     out.push_str("declare i32 @memcmp(i8*, i8*, i64)\n");
@@ -93,8 +278,44 @@ struct LlvmEmitter {
     global_counter: usize,
     /// 临时寄存器计数器
     reg_counter: usize,
+    /// 分支 label 计数器（label 与寄存器命名空间独立）
+    label_counter: usize,
+    /// `in 'r` 聚合分配的结果槽名（entry 统一 alloca，内联快路径 store/load；
+    /// emit_stmt 按 `alloc_slot_cursor` 顺序消费）
+    alloc_slots: Vec<String>,
+    /// 消费 `alloc_slots` 的游标
+    alloc_slot_cursor: usize,
     /// 生成的函数体（累积）
     body: String,
+    /// 标量聚合按值优化：函数名 → 该函数内按值分配的局部变量集合
+    /// （Alloc{by_value} 的目标 + 调用按值返回函数的 target）。
+    by_value_locals: HashMap<String, HashSet<String>>,
+    /// 标量聚合按值优化：按值返回（返回 `{i64, i64}`）的函数名集合。
+    ret_by_value: HashSet<String>,
+}
+
+/// 指针拷贝别名闭包传播：把函数内「从 `bvs` 中对象拷贝」的 `Assign` 左值
+/// （如 `let __tmp = _t4;` 的指针拷贝）也纳入 `bvs`，迭代至不动点。
+fn propagate_by_value_aliases(bvs: &mut HashSet<String>, f: &LirFunction) {
+    loop {
+        let mut changed = false;
+        for b in &f.blocks {
+            for s in &b.stmts {
+                if let LirStmt::Assign {
+                    target,
+                    value: LirOperand::Local(rhs),
+                } = s
+                {
+                    if bvs.contains(rhs) && bvs.insert(target.clone()) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
 }
 
 impl LlvmEmitter {
@@ -110,12 +331,125 @@ impl LlvmEmitter {
                 )
             })
             .collect();
+
+        // —— 标量聚合按值优化：预扫描 ——
+        // 1) 收集被取址的函数（函数值绑定 / vtable 槽 / 函数实参中的
+        //    `FnPtr`）：这些函数可能被 CallIndirect 按旧签名（i8* 返回）
+        //    bitcast 间接调用，返回类型不能改为 `{i64, i64}`。
+        let mut taken: HashSet<String> = HashSet::new();
+        for f in &program.functions {
+            for b in &f.blocks {
+                for s in &b.stmts {
+                    // `FnPtr` 仅出现在 `Assign{value}` 位置（函数值绑定 /
+                    // vtable 槽先 `let __m = f` 再 `FieldSet`），其余语句的
+                    // value 均为 Local，不携带函数名。
+                    if let LirStmt::Assign {
+                        value: LirOperand::FnPtr(n),
+                        ..
+                    } = s
+                    {
+                        taken.insert(n.clone());
+                    }
+                }
+            }
+        }
+        // 2) 第一遍：收集每个函数内 `Alloc{by_value}` 的目标局部变量
+        let mut by_value_locals: HashMap<String, HashSet<String>> = HashMap::new();
+        for f in &program.functions {
+            let mut bvs: HashSet<String> = HashSet::new();
+            for b in &f.blocks {
+                for s in &b.stmts {
+                    if let LirStmt::Alloc {
+                        target,
+                        by_value: true,
+                        ..
+                    } = s
+                    {
+                        bvs.insert(target.clone());
+                    }
+                }
+            }
+            by_value_locals.insert(f.name.clone(), bvs);
+        }
+        // 3) 指针拷贝别名闭包传播：把 `Alloc{by_value}` 目标的「指针拷贝别名」
+        //    也纳入按值集合。`Option::Some(v)` / `None`、`Result::Ok/Err` 等
+        //    构造先 Alloc 到内部临时（如 `_t4`），再拷贝指针到 `return` / 绑定
+        //    目标（如 `__tmp486`）；若只记录 Alloc target，判定 Return 时会因
+        //    名字不一致漏判，导致栈槽地址按 i8* 返回（悬垂指针）。
+        for f in &program.functions {
+            propagate_by_value_aliases(
+                by_value_locals.get_mut(&f.name).expect("by_value_locals entry"),
+                f,
+            );
+        }
+        // 4) 判定「按值返回」函数 + 调用点 target 并入的不动点循环。
+        //    调用「按值返回函数」的 target 会解包写入其栈槽，故并入按值集合；
+        //    `fn f() { g() }`（直接返回调用结果）依赖 g 判定后 f 才可判定，
+        //    因此二者需迭代至不动点。extern / main / 被取址函数不参与。
+        let mut ret_by_value: HashSet<String> = HashSet::new();
+        loop {
+            let mut changed = false;
+            // 4a) 调用「按值返回函数」的 target 纳入调用方按值集合
+            for f in &program.functions {
+                let bvs = by_value_locals.get_mut(&f.name).expect("by_value_locals entry");
+                let mut grew = false;
+                for b in &f.blocks {
+                    for s in &b.stmts {
+                        if let LirStmt::Call {
+                            target: Some(t),
+                            callee,
+                            ..
+                        } = s
+                        {
+                            if ret_by_value.contains(callee) && bvs.insert(t.clone()) {
+                                grew = true;
+                            }
+                        }
+                    }
+                }
+                if grew {
+                    propagate_by_value_aliases(bvs, f);
+                    changed = true;
+                }
+            }
+            // 4b) 判定：所有非 Unit 的 Return 都返回 by_value 对象，且至少一个
+            for f in &program.functions {
+                if f.is_extern || f.name == "main" || taken.contains(&f.name) {
+                    continue;
+                }
+                let bvs = &by_value_locals[&f.name];
+                let mut ok = true;
+                let mut has_by_ret = false;
+                for b in &f.blocks {
+                    if let LirTerminator::Return(Some(x)) = &b.terminator {
+                        if bvs.contains(x) {
+                            has_by_ret = true;
+                        } else {
+                            ok = false;
+                        }
+                    }
+                }
+                if ok && has_by_ret && !ret_by_value.contains(&f.name) {
+                    ret_by_value.insert(f.name.clone());
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
         Self {
             sigs,
             globals: Vec::new(),
             global_counter: 0,
             reg_counter: 0,
+            label_counter: 0,
+            alloc_slots: Vec::new(),
+            alloc_slot_cursor: 0,
             body: String::new(),
+            by_value_locals,
+            ret_by_value,
         }
     }
 
@@ -129,12 +463,26 @@ impl LlvmEmitter {
         format!("r{r}")
     }
 
+    /// 分配一个新的基本块 label `%lN`（label 与寄存器命名空间独立，
+    /// 用于内联 bump 快路径的 fast/slow/join/cont 分支）。
+    fn label(&mut self) -> String {
+        let l = self.label_counter;
+        self.label_counter += 1;
+        format!("l{l}")
+    }
+
     /// 生成单个函数定义（extern 声明生成 `declare`）。
     fn emit_function(&mut self, f: &LirFunction) -> Result<(), CodegenError> {
         if f.is_extern {
             // `__zeta_` 前缀为驱动注入的平台内建（如 `__zeta_target_os`）：
             // 跳过 declare——driver 在汇编阶段追加 `define internal`（同符号 declare+define 冲突）。
             if f.name.starts_with("__zeta_") {
+                return Ok(());
+            }
+            // calloc 已在模块头（preamble）预置 `declare i64 @calloc(i64, i64)`，
+            // 且必须早于所有调用点（避免 LLVM IR parser 隐式声明 + 显式声明冲突）；
+            // 标准库 `extern fn calloc` 的声明在此跳过，防止重复 declare。
+            if f.name == "calloc" {
                 return Ok(());
             }
             // extern 声明：返回 i32 的（pthread trylock 等）按 i32 声明，
@@ -170,6 +518,12 @@ impl LlvmEmitter {
             return Ok(());
         }
 
+        // 每次生成函数前重置内联 bump 快路径的跨块状态
+        // （槽名在函数内消费，label 跨函数递增亦可，重置保证可复现）。
+        self.alloc_slots.clear();
+        self.alloc_slot_cursor = 0;
+        self.label_counter = 0;
+
         let is_main = f.name == "main";
         if is_main && !f.params.is_empty() {
             return Err(CodegenError::InvalidMain);
@@ -179,6 +533,9 @@ impl LlvmEmitter {
             "i32".to_string()
         } else if f.return_type == LirType::Unit {
             "void".to_string()
+        } else if self.ret_by_value.contains(&f.name) {
+            // 标量聚合按值返回：`{tag, payload}` 两槽按寄存器返回
+            "{ i64, i64 }".to_string()
         } else {
             llvm_type(f.return_type)?.to_string()
         };
@@ -204,6 +561,14 @@ impl LlvmEmitter {
             let lt = llvm_type(*ty)?;
             body.push_str(&format!("  %{name}.addr = alloca {lt}\n"));
         }
+        // 标量聚合按值：为按值局部变量预分配 16 字节对象本体槽
+        // （`%{x}.obj = alloca [2 x i64]`；`%{x}.addr` 存其 i8* 地址，
+        // FieldGet/FieldSet/IndexGet 等既有代码零改动即可直接读写）。
+        if let Some(bvs) = self.by_value_locals.get(&f.name) {
+            for name in bvs {
+                body.push_str(&format!("  %{name}.obj = alloca [2 x i64]\n"));
+            }
+        }
         for (name, ty) in &f.params {
             let lt = llvm_type(*ty)?;
             body.push_str(&format!("  store {lt} %{name}, {lt}* %{name}.addr\n"));
@@ -223,6 +588,28 @@ impl LlvmEmitter {
         }
         for key in &region_keys {
             body.push_str(&format!("  %{key}.rh = alloca i8*\n"));
+        }
+
+        // 内联 bump 快路径：预扫描全部 `in 'r` 聚合分配，为每个分配在
+        // entry 统一预分配一个 `i8*` 结果槽（非入口块不允许 alloca，
+        // 快路径/慢路径分支分别 store，join 后 load 汇合）。
+        for b in &f.blocks {
+            for s in &b.stmts {
+                let region_alloc = match s {
+                    LirStmt::AllocInRegion { target, size, .. }
+                    | LirStmt::AllocInRegionDirect { target, size, .. } => Some((target, size)),
+                    _ => None,
+                };
+                if let Some((target, size)) = region_alloc {
+                    if *size > 0 && local_type(f, target) == LirType::Ptr {
+                        let slot = self.reg();
+                        self.alloc_slots.push(slot);
+                    }
+                }
+            }
+        }
+        for slot in &self.alloc_slots {
+            body.push_str(&format!("  %{slot} = alloca i8*\n"));
         }
 
         // 基本块
@@ -336,15 +723,35 @@ impl LlvmEmitter {
             } => {
                 self.emit_call_indirect(target.as_ref(), callee, args, param_tys, *ret_ty, body, f)?;
             }
-            LirStmt::Alloc { target, slots } => {
-                // 堆上分配 slots*8 字节（槽 0 为枚举 tag），返回 i8*
-                let r = self.reg();
-                body.push_str(&format!(
-                    "  %{r} = call i8* @malloc(i64 {})\n",
-                    slots * 8
-                ));
-                let t_lt = llvm_type(LirType::Ptr)?;
-                body.push_str(&format!("  store {t_lt} %{r}, {t_lt}* %{target}.addr\n"));
+            LirStmt::Alloc {
+                target,
+                slots,
+                by_value,
+            } => {
+                // 标量聚合按值：直接落到 entry 预分配的 `[2 x i64]` 栈槽，
+                // 免 calloc（tag/字段写入由后续 FieldSet 完成，槽 0 未写
+                // 时为 poison——与普通聚合一致，读取须先写；按值聚合的
+                // 构造序列 `Alloc → FieldSet(tag) → FieldSet(payload)`
+                // 保证返回前两槽均已写入）。
+                if *by_value {
+                    let r = self.reg();
+                    body.push_str(&format!(
+                        "  %{r} = bitcast [2 x i64]* %{target}.obj to i8*\n"
+                    ));
+                    body.push_str(&format!("  store i8* %{r}, i8** %{target}.addr\n"));
+                } else {
+                    // 堆上分配 slots*8 字节（槽 0 为枚举 tag），返回 i8*
+                    // calloc 清零：未写字段（如枚举 tag）读取时不再触发 LLVM poison/UB。
+                    let r64 = self.reg();
+                    body.push_str(&format!(
+                        "  %{r64} = call i64 @calloc(i64 1, i64 {})\n",
+                        slots * 8
+                    ));
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = inttoptr i64 %{r64} to i8*\n"));
+                    let t_lt = llvm_type(LirType::Ptr)?;
+                    body.push_str(&format!("  store {t_lt} %{r}, {t_lt}* %{target}.addr\n"));
+                }
             }
             LirStmt::FieldGet {
                 target,
@@ -628,17 +1035,37 @@ impl LlvmEmitter {
                 // 仅聚合对象（Ptr 槽）接线：区域内 bump 分配 + 值镜像；
                 // 标量 `in 'r` 无区域分配语义（MVP 保持栈上副本）。
                 if *size > 0 && local_type(f, target) == LirType::Ptr {
+                    let slot = self.alloc_slots[self.alloc_slot_cursor].clone();
+                    self.alloc_slot_cursor += 1;
                     let handle = format!("{region}.rh");
-                    let r = self.reg();
-                    body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
-                    let p = self.reg();
-                    body.push_str(&format!(
-                        "  %{p} = call i8* @zeta_region_alloc(i8* %{r}, i64 {size}, i64 8)\n"
-                    ));
-                    let v = self.operand_value(&LirOperand::Local(target.clone()), LirType::Ptr, body, f)?;
+                    let p = self.emit_inline_region_bump(&handle, *size, &slot, body);
+                    let v = self.operand_value(
+                        &LirOperand::Local(target.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
                     body.push_str(&format!(
                         "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{p}, i8* {v}, i64 {size}, i1 false)\n"
                     ));
+                    let cont = self.label();
+                    body.push_str(&format!("  br label %{cont}\n"));
+                    body.push_str(&format!("{cont}:\n"));
+                }
+            }
+            LirStmt::AllocInRegionDirect { target, region, size } => {
+                // 字面量直接构造（inline_region_literal 变换产物）：
+                // 聚合字段在区域指针上直接写入，无中间堆临时、无值镜像。
+                if *size > 0 && local_type(f, target) == LirType::Ptr {
+                    let slot = self.alloc_slots[self.alloc_slot_cursor].clone();
+                    self.alloc_slot_cursor += 1;
+                    let handle = format!("{region}.rh");
+                    let p = self.emit_inline_region_bump(&handle, *size, &slot, body);
+                    // target 槽 = 区域指针（后续 FieldSet 直接写区域内存）
+                    body.push_str(&format!("  store i8* %{p}, i8** %{target}.addr\n"));
+                    let cont = self.label();
+                    body.push_str(&format!("  br label %{cont}\n"));
+                    body.push_str(&format!("{cont}:\n"));
                 }
             }
             LirStmt::Transfer { place, region } => {
@@ -652,6 +1079,73 @@ impl LlvmEmitter {
             }
         }
         Ok(())
+    }
+
+    /// 生成内联 bump 快路径（`AllocInRegion` / `AllocInRegionDirect` 共用）：
+    /// 直接读写 repr(C) `Region` 首部固定偏移字段（base+0 / cursor+8 /
+    /// limit+16 / alloc_count+24，见 zeta-region-alloc/src/region.rs
+    /// FAST_*_OFF 常量），仅当前块空间不足时分支到慢路径
+    /// （`call @zeta_region_alloc` 扩容）。
+    ///
+    /// 与 `Region::try_bump` 公式逐位一致：
+    /// `aligned = (cursor+align-1) & !(align-1)`，`new = aligned+size`；
+    /// 对齐下限 8（`MemoryBlock::BASE_ALIGN`，align 恒为 2 的幂）。
+    ///
+    /// 快路径/慢路径结果经 `slot`（entry 预分配的 `i8*` 槽）汇合，
+    /// 返回汇合后的区域指针寄存器 `%p`。生成序列以 `br %cont` + `{cont}:`
+    /// 结尾，原 block 的后续指令物理上落在 cont 内（emit_terminator 追加
+    /// 的 br/ret 亦在其后），保证终结指令后紧跟 label 的 IR 合法。
+    fn emit_inline_region_bump(
+        &mut self,
+        handle: &str,
+        size: usize,
+        slot: &str,
+        body: &mut String,
+    ) -> String {
+        let align = 8u64; // 与 zeta-region-alloc MemoryBlock::BASE_ALIGN 一致
+        let amask = align - 1; // 7
+        let not_amask = !amask; // 18446744073709551607
+        let b = self.reg();
+        body.push_str(&format!("  %{b} = load i8*, i8** %{handle}\n"));
+        let base = self.reg();
+        body.push_str(&format!("  %{base} = load i8*, i8** %{b}\n"));
+        let (cg, cv) = (self.reg(), self.reg());
+        let (cur, lg, lv, lim) = (self.reg(), self.reg(), self.reg(), self.reg());
+        body.push_str(&format!("  %{cg} = getelementptr i8, i8* %{b}, i64 8\n"));
+        body.push_str(&format!("  %{cv} = bitcast i8* %{cg} to i64*\n"));
+        body.push_str(&format!("  %{cur} = load i64, i64* %{cv}\n"));
+        body.push_str(&format!("  %{lg} = getelementptr i8, i8* %{b}, i64 16\n"));
+        body.push_str(&format!("  %{lv} = bitcast i8* %{lg} to i64*\n"));
+        body.push_str(&format!("  %{lim} = load i64, i64* %{lv}\n"));
+        let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
+        body.push_str(&format!("  %{m} = add i64 %{cur}, {amask}\n"));
+        body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
+        body.push_str(&format!("  %{new} = add i64 %{al}, {size}\n"));
+        body.push_str(&format!("  %{ok} = icmp ule i64 %{new}, %{lim}\n"));
+        let (fast, slow, join) = (self.label(), self.label(), self.label());
+        body.push_str(&format!("  br i1 %{ok}, label %{fast}, label %{slow}\n"));
+        // 注意：LLVM IR 中 label 定义不带 `%`（引用时才带 `%`）。
+        body.push_str(&format!("{fast}:\n"));
+        // 快路径：更新 cursor。alloc_count 不在此递增——为换取热路径
+        // 性能，内联快路径不计数（统计语义见 zeta-region-alloc/src/region.rs）。
+        body.push_str(&format!("  store i64 %{new}, i64* %{cv}\n"));
+        let fp = self.reg();
+        body.push_str(&format!("  %{fp} = getelementptr i8, i8* %{base}, i64 %{al}\n"));
+        body.push_str(&format!("  store i8* %{fp}, i8** %{slot}\n"));
+        body.push_str(&format!("  br label %{join}\n"));
+        // 慢路径：调用运行时扩容并分配（cursor 未被快路径修改）
+        body.push_str(&format!("{slow}:\n"));
+        let sp = self.reg();
+        body.push_str(&format!(
+            "  %{sp} = call i8* @zeta_region_alloc(i8* %{b}, i64 {size}, i64 8)\n"
+        ));
+        body.push_str(&format!("  store i8* %{sp}, i8** %{slot}\n"));
+        body.push_str(&format!("  br label %{join}\n"));
+        // 汇合：取区域指针
+        body.push_str(&format!("{join}:\n"));
+        let p = self.reg();
+        body.push_str(&format!("  %{p} = load i8*, i8** %{slot}\n"));
+        p
     }
 
     /// 生成函数调用（内建 → `printf`；用户函数 → `call`）。
@@ -740,6 +1234,40 @@ impl LlvmEmitter {
             if let Some(t) = target {
                 body.push_str(&format!("  store i64 %{e}, i64* %{t}.addr\n"));
             }
+        } else if self.ret_by_value.contains(callee) {
+            // 标量聚合按值返回：`call {i64, i64}`，解包两槽写入 target 栈槽
+            // （`{tag, payload}` 寄存器返回；target.obj 已在 entry 预分配）。
+            let r = self.reg();
+            body.push_str(&format!(
+                "  %{r} = call {{ i64, i64 }} @{callee_name}({arg_str})\n"
+            ));
+            if let Some(t) = target {
+                let e0 = self.reg();
+                body.push_str(&format!("  %{e0} = extractvalue {{ i64, i64 }} %{r}, 0\n"));
+                let e1 = self.reg();
+                body.push_str(&format!("  %{e1} = extractvalue {{ i64, i64 }} %{r}, 1\n"));
+                // Apple clang 21 不接受聚合类型 GEP 引用函数局部值
+                // （`getelementptr inbounds ([2 x i64], [2 x i64]* %x, ...)` 报
+                // `invalid use of function-local name`），按项目惯例改 i8 字节
+                // 偏移：bitcast 为 i8* → `getelementptr i8` → bitcast 回 i64*。
+                let b0 = self.reg();
+                body.push_str(&format!("  %{b0} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
+                let g0 = self.reg();
+                body.push_str(&format!("  %{g0} = getelementptr i8, i8* %{b0}, i64 0\n"));
+                let p0 = self.reg();
+                body.push_str(&format!("  %{p0} = bitcast i8* %{g0} to i64*\n"));
+                body.push_str(&format!("  store i64 %{e0}, i64* %{p0}\n"));
+                let b1 = self.reg();
+                body.push_str(&format!("  %{b1} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
+                let g1 = self.reg();
+                body.push_str(&format!("  %{g1} = getelementptr i8, i8* %{b1}, i64 8\n"));
+                let p1 = self.reg();
+                body.push_str(&format!("  %{p1} = bitcast i8* %{g1} to i64*\n"));
+                body.push_str(&format!("  store i64 %{e1}, i64* %{p1}\n"));
+                let p = self.reg();
+                body.push_str(&format!("  %{p} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
+                body.push_str(&format!("  store i8* %{p}, i8** %{t}.addr\n"));
+            }
         } else {
             let r = self.reg();
             body.push_str(&format!(
@@ -819,14 +1347,16 @@ impl LlvmEmitter {
         body: &mut String,
         f: &LirFunction,
     ) -> Result<(), CodegenError> {
-        // 动态数组分配：target = malloc(n * 8)（每槽 8 字节，与数组元素步长一致）
+        // 动态数组分配：target = calloc(n, 8)（每槽 8 字节，与数组元素步长一致）。
+        // 使用 calloc 清零：读未初始化内存是 LLVM 层面的 poison/UB，O2 优化管线
+        // 可能据此产生未定义行为（如空 HashMap 迭代死循环）；清零保证确定语义。
         if callee == "alloc_array" {
             let n =
                 self.operand_value(&LirOperand::Local(args[0].clone()), LirType::I64, body, f)?;
-            let bytes = self.reg();
-            body.push_str(&format!("  %{bytes} = mul i64 {n}, 8\n"));
+            let r64 = self.reg();
+            body.push_str(&format!("  %{r64} = call i64 @calloc(i64 {n}, i64 8)\n"));
             let r = self.reg();
-            body.push_str(&format!("  %{r} = call i8* @malloc(i64 %{bytes})\n"));
+            body.push_str(&format!("  %{r} = inttoptr i64 %{r64} to i8*\n"));
             if let Some(t) = target {
                 body.push_str(&format!("  store i8* %{r}, i8** %{t}.addr\n"));
             }
@@ -853,12 +1383,15 @@ impl LlvmEmitter {
             body.push_str(&format!("  call void @free(i8* {p})\n"));
             return Ok(());
         }
-        // 字节缓冲分配（String 动态缓冲）：target = malloc(n)（按字节，无步长缩放）
+        // 字节缓冲分配（String 动态缓冲）：target = calloc(n, 1)（按字节，无步长缩放）。
+        // calloc 清零：与 alloc_array 一致，杜绝未初始化内存 UB。
         if callee == "alloc_bytes" {
             let n =
                 self.operand_value(&LirOperand::Local(args[0].clone()), LirType::I64, body, f)?;
+            let r64 = self.reg();
+            body.push_str(&format!("  %{r64} = call i64 @calloc(i64 {n}, i64 1)\n"));
             let r = self.reg();
-            body.push_str(&format!("  %{r} = call i8* @malloc(i64 {n})\n"));
+            body.push_str(&format!("  %{r} = inttoptr i64 %{r64} to i8*\n"));
             if let Some(t) = target {
                 body.push_str(&format!("  store i8* %{r}, i8** %{t}.addr\n"));
             }
@@ -1026,6 +1559,45 @@ impl LlvmEmitter {
                         let ty = local_type(f, x);
                         if ty == LirType::Unit {
                             body.push_str("  ret void\n");
+                        } else if self
+                            .by_value_locals
+                            .get(&f.name)
+                            .map(|s| s.contains(x))
+                            .unwrap_or(false)
+                        {
+                            // 标量聚合按值返回：load 对象两槽打包 `{i64, i64}`
+                            // 按寄存器返回（对象本体在调用方栈槽/被 SROA）。
+                            let p = self.reg();
+                            body.push_str(&format!("  %{p} = load i8*, i8** %{x}.addr\n"));
+                            let a = self.reg();
+                            body.push_str(&format!("  %{a} = bitcast i8* %{p} to [2 x i64]*\n"));
+                            // 同上：Apple clang 21 不接受聚合类型 GEP 引用局部值，
+                            // 改用 i8 字节偏移访问槽 0 / 槽 1。
+                            let b0 = self.reg();
+                            body.push_str(&format!("  %{b0} = bitcast [2 x i64]* %{a} to i8*\n"));
+                            let g0 = self.reg();
+                            body.push_str(&format!("  %{g0} = getelementptr i8, i8* %{b0}, i64 0\n"));
+                            let p0 = self.reg();
+                            body.push_str(&format!("  %{p0} = bitcast i8* %{g0} to i64*\n"));
+                            let s0 = self.reg();
+                            body.push_str(&format!("  %{s0} = load i64, i64* %{p0}\n"));
+                            let b1 = self.reg();
+                            body.push_str(&format!("  %{b1} = bitcast [2 x i64]* %{a} to i8*\n"));
+                            let g1 = self.reg();
+                            body.push_str(&format!("  %{g1} = getelementptr i8, i8* %{b1}, i64 8\n"));
+                            let p1 = self.reg();
+                            body.push_str(&format!("  %{p1} = bitcast i8* %{g1} to i64*\n"));
+                            let s1 = self.reg();
+                            body.push_str(&format!("  %{s1} = load i64, i64* %{p1}\n"));
+                            let v0 = self.reg();
+                            body.push_str(&format!(
+                                "  %{v0} = insertvalue {{ i64, i64 }} undef, i64 %{s0}, 0\n"
+                            ));
+                            let v1 = self.reg();
+                            body.push_str(&format!(
+                                "  %{v1} = insertvalue {{ i64, i64 }} %{v0}, i64 %{s1}, 1\n"
+                            ));
+                            body.push_str(&format!("  ret {{ i64, i64 }} %{v1}\n"));
                         } else {
                             let val =
                                 self.operand_value(&LirOperand::Local(x.clone()), ty, body, f)?;
