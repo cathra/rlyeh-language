@@ -17,25 +17,27 @@
 | 章节 | 状态 | MVP 实际形态 | 规划阶段 |
 |------|------|--------------|---------|
 | §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 | — |
-| §2.3 Iterator | 📋 规划 | `for i in 0..<10` 数值区间可用，trait 未实现 | T2 |
-| §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（核心 API） | 含 `Vec::slice` 动态切片、`String::from`（字面量/变量）；目标 API 未全部补齐 | T1（目标 API 补齐） |
+| §2.3 Iterator | ✅ 已实现（MVP 退化） | `trait Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core.zeta 顶部；关联类型 `type Item` 规划——parser/typecheck 无 trait `type` 成员载体）；自定义迭代器 `impl Iterator for T` 经 for 接入（J2）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar | — |
+| §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`（退化元素拷贝缓冲）/`get_mut`（值拷贝）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（值拷贝）；详见 §3.1/§3.2/§3.3 差异注记 | — |
 | §4.1 File | 🔧 部分（自由函数已实现） | `read_file/write_file/append_file`（libc stdio 封装，M3a 起 Result 化：`Result<T, IoError>`） | N1（前置 M，M3a 已完成） |
 | §4.2 标准输入输出 | ✅ 已实现 | `stdout`/`stderr` 模块（`write`/`writeln`/`flush`）+ stdin `read_to_string`/`lines` + `eprintln!`/`eprint!` 宏（N4 ✅） | — |
 | §4.3 路径与文件系统 | 📋 规划 | — | N3 |
 | §4.4 NIO | ✅ 已实现 | `Interest`/`Event`/`Poller` + `set_nonblocking`/`is_nonblocking`（R1a/R1b/R2 ✅，`io/nio.zeta` 基于 poll(2) 封装 + fcntl O_NONBLOCK，`Result<T, IoError>`） | — |
 | §4.5 sendfile | ✅ 已实现 | `sendfile` 自由函数 + `File::sendfile_to`（R3 ✅，driver 注入平台内建 `__zeta_sendfile`，macOS sendfile(2) 6 参签名零拷贝） | — |
 | §5.1 TCP | ✅ 已实现 | `SocketAddr`/`TcpListener`/`TcpStream` + `read/write/read_line/shutdown`（O1/O2 ✅，libc extern FFI，`Result<T, IoError>`）；旧自由函数保留兼容 | — |
-| §5.2 HTTP | ✅ 已实现（同步 MVP） | `HttpClient::get/post` + `Response::status/text` + `json::parse::<T>` 反序列化（O3 ✅，`Connection: close` 无复用）；async 版规划 | S3（async） |
+| §5.2 HTTP | ✅ 已实现（同步 MVP + async 形状） | `HttpClient::get/post` + `Response::status/text` + `json::parse::<T>` 反序列化（O3 ✅，`Connection: close` 无复用）；**async 版已实现**（S3b ✅：`HttpClient::get_async/post_async`，MVP 退化同步语义，等价 get/post；事件驱动规划随 S3 事件循环 + §4.4 NIO） | — |
 | §6.1 Mutex | ✅ 已实现 | `Mutex`/`RwLock` 裸 `lock/unlock/try_*` + `lock_guard()` guard 语义（作用域尾自动解锁注入）；`Condvar::wait/notify_one/notify_all` + `Barrier`（P1–P3 ✅，`sync/mod.zeta` pthread extern FFI） | — |
-| §6.2 Channel | ✅ 已实现 | `channel()` → `ChannelPair { tx, rx }` + `Sender::send/try_send` + `Receiver::recv/try_recv/close/iter`（P1 ✅，`Rc<Channel>` 共享；MVP 非泛型、元素 `i64`、无界） | S3（async） |
+| §6.2 Channel | ✅ 已实现 | `channel()` → `ChannelPair { tx, rx }` + `Sender::send/try_send` + `Receiver::recv/try_recv/close/iter` + **`recv_async`**（P1 ✅ + S3a ✅，`Rc<Channel>` 共享；MVP 非泛型、元素 `i64`、无界；recv_async MVP 退化阻塞语义，事件驱动规划随 R1 Poller） | — |
 | §7 时间 | ✅ 已实现 | `Duration`/`Instant`（libc `clock()` extern） | — |
 | §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` trait + `Formatter` 已实现**（Q3 ✅，`fmt/mod.zeta`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`） | Q4 |
 | §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/mod.zeta`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）规划 | — |
-| §10 异步运行时 | 🔧 部分 | 普通函数 `async fn`/`.await` 已支持（L1 ✅，MVP 同步语义）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；`Future`/executor 规划 | S（S0 线程 → S1–S3） |
-| §11 智能指针 | 🔧 部分 | `Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）编译器内建已实现；`Gc<T>`（K4）✅ 已实现（MVP，见 §11）；目标 API 未全部补齐 | T3 |
+| §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；事件驱动 executor 与多线程调度规划（R1 Poller） | R1 |
+| §11 智能指针 | ✅ 已实现 | `Box<T>`（K2，含 **`Box::leak`**（T3a ✅，返回 `*mut T` 裸指针，目标 `&'static mut T` 规划））/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3 全覆盖：`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade`，T3b ✅ 核对）/ `Gc<T>`（K4）✅ 已实现（MVP，见 §11） | — |
 | §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；**`?` 运算符已实现**（K1）；`Error`/`From`/`Into` trait 与 `IoError` 定义规划 | M |
 
 > 状态标记：✅ 已实现　🔧 部分实现（注明差异）　📋 规划中（目标 API，MVP 未实现）
+
+> **已知限制（T 阶段实测）**：typecheck 变量环境按名全局索引、无作用域隔离——同名遮蔽（如 match 臂绑定与后续 let 绑定同名）时类型互相覆盖，后续按类型分支的输出可能异常（实测 i64 200 被以 `%p` 打印为 `0xc8`）；建议避免同名变量遮蔽（作用域栈重构规划）。
 
 ---
 
@@ -216,6 +218,8 @@ trait Iterator {
 }
 ```
 
+> **已实现（T2 ✅，MVP 退化，`core.zeta` 顶部）**：`trait Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 与默认方法规划（parser/typecheck 无 trait `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl Iterator for T` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 trait impl 均可）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（未迁移到 trait 默认方法，避免重构风险）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
+
 ---
 
 ## 3. 集合类型
@@ -268,6 +272,8 @@ impl<T> Vec<T> {
 }
 ```
 
+> **MVP 已实现（T1a ✅，`core.zeta`）**：目标 API 中 `push`/`pop`/`get`/`len`/`is_empty`/`sort`/`binary_search`/`contains`/`find`/`first`/`last`/`reverse`/`swap`/`remove`/`slice` 已有 ✅。**T1a 新增**：`iter`（MVP 退化——返回元素值拷贝缓冲（快照），目标 `Iter<'_, T>` 借用迭代器规划）、`get_mut`（值拷贝，目标 `Option<&mut T>` 引用语义规划）、`sort_by`（比较器 `fn(T, T) -> i64` 三态（负/零/正），目标 `Fn(&T, &T) -> Ordering` 规划；选择排序 O(n²) 非稳定）。`iter_mut` 规划。
+
 ### 3.2 HashMap<K, V>
 
 ```zeta
@@ -287,6 +293,8 @@ impl<K, V> HashMap<K, V> where K: Hash + Eq {
     fn iter(&self) -> Iter<'_, K, V>;
 }
 ```
+
+> **MVP 已实现（T1c ✅，`core.zeta`）**：`new`/`with_capacity`/`insert`/`get`/`remove`/`contains_key`/`len`/`is_empty`/`keys`/`values`/`clear`/`cap` 已有 ✅。**T1c 新增**：`iter`（MVP 退化——返回键缓冲，与 `keys` 同构（可配 `values()` 配对），目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（值拷贝，目标 `Option<&mut V>` 引用语义规划）。
 
 ### 3.3 String
 
@@ -310,6 +318,8 @@ impl String {
     fn trim(&self) -> &str;
 }
 ```
+
+> **MVP 已实现（T1b ✅，`core.zeta`）**：`new`/`from`/`push`/`push_str`/`len`/`split`（返回 `Vec<String>`）/`replace`/`trim`/`contains`/`starts_with`/`ends_with`/`find`/`substring`/`to_upper`/`to_lower` 已有 ✅。**T1b 新增**：`chars`（MVP 字节级——逐字节 i64 列表（字符 = 字节，与 to_upper / 索引步长 1 字节一致），目标 `Chars` 迭代器 + UTF-8 码点解码规划）、`lines`（委托 `split("\n")` 返回 `Vec<String>`，`\r\n` 行尾 `\r` 保留，目标 `Lines` 迭代器规划）、`to_uppercase`/`to_lowercase`（`to_upper`/`to_lower` 的 API 别名，ASCII 语义，Unicode 全角转换规划）。
 
 ---
 
@@ -599,7 +609,7 @@ impl Response {
 }
 ```
 
-> MVP 语义：每次请求新建连接 + `Connection: close`（无连接复用）；`json::parse::<T>` 直接对 `r.text()` 反序列化（返回裸 `T` 非 `Result`）。async 版 `get_async`/`post_async` 随阶段 S3 规划。
+> MVP 语义：每次请求新建连接 + `Connection: close`（无连接复用）；`json::parse::<T>` 直接对 `r.text()` 反序列化（返回裸 `T` 非 `Result`）。**async 版已实现（S3b ✅）**：`get_async`/`post_async` 与 get/post 同签名、MVP 退化为同步语义（事件驱动版规划随 S3 事件循环 + §4.4 NIO 接入，io_uring/epoll 注册 + Future 挂起）。
 
 ---
 
@@ -662,7 +672,7 @@ impl<T> Receiver<T> {
 }
 ```
 
-> **MVP 已实现（P1 ✅，`sync/mod.zeta`）**：目标 API 为泛型 + `Arc` 无锁队列；MVP 为非泛型 `i64` 元素 + `Rc<Channel>` 共享（Mutex + Condvar 队列），构造为 `let p = channel(); p.tx / p.rx`（`ChannelPair` 结构体含 `tx`/`rx` 槽，未提供多元组返回）。差异：`try_send` 无界队列恒 `true`；`recv`/`try_recv` 返回 `Option<i64>`（空/close 后 `None`）；`recv_async` 规划（S3 async）。
+> **MVP 已实现（P1 ✅ + S3a ✅，`sync/mod.zeta`）**：目标 API 为泛型 + `Arc` 无锁队列；MVP 为非泛型 `i64` 元素 + `Rc<Channel>` 共享（Mutex + Condvar 队列），构造为 `let p = channel(); p.tx / p.rx`（`ChannelPair` 结构体含 `tx`/`rx` 槽，未提供多元组返回）。差异：`try_send` 无界队列恒 `true`；`recv`/`try_recv` 返回 `Option<i64>`（空/close 后 `None`）；**`recv_async` 已实现（S3a ✅）——MVP 退化阻塞语义（等价 `recv`），事件驱动版规划随 R1 Poller + 事件循环**（跨线程数据流 MVP 不可测：线程入口零参数 + `Rc` 非线程安全，文档化）。
 
 ---
 
@@ -964,7 +974,9 @@ fn join_all(threads: Vec<Thread>) -> Vec<i64>;
 - `sleep` 经 `usleep(3)`（POSIX 微秒）；`Duration` 构造器 `seconds`/`milliseconds` 见 §8。
 - **`Instant::now`/`elapsed` 基于墙钟**（S2b ✅：`__zeta_clock_monotonic` = clock_gettime CLOCK_MONOTONIC，睡眠期间推进——`join_all.zeta` 用例断言 sleep 20ms×3 后 elapsed ≥ 20ms）；不支持平台（freebsd/windows/wasi）返回 -1 时退回 `clock()`（CPU 时钟，CLOCKS_PER_SEC=1e6，睡眠期间不推进）。
 - WASI/Windows 下注入 stub 返回 -1，`Thread::start` 返回 `Err`（Unsupported，禁用文档化）。
-- MVP 无 TLS / 线程局部状态需求（S0e）。
+- MVP 无 TLS / 线程局部状态需求（S0e ✅）。
+- **默认栈大小（S0e ✅）**：`pthread_create` 传 `attr = NULL` 使用系统默认栈——Linux（glibc）新线程默认约 8MB（受 `ulimit -s` 约束）；macOS 新线程默认约 512KB。`thread::Builder::stack_size` 定制规划中；需要大栈的深递归场景 Linux 下经 `ulimit -s` 生效。
+- 线程内存模型（S0e ✅）：每线程独立栈 + 独立寄存器上下文，堆共享；共享数据须经同步原语（Mutex/Condvar/Channel）保证可见性，MVP 无内存模型排序保证，数据竞争 UB 由调用方负责（与 C 并发内存模型一致）。
 
 ### 10.2 Future / Poll / block_on / timeout（S1a/S1b/S2c，2026-08 ✅）
 

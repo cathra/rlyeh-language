@@ -74,4 +74,19 @@ fn main() {
         Option::Some(v) => println(v),   // 6
         Option::None => println(-1),
     }
+
+    // 7. recv_async（S3a，MVP 同步语义）：非空立即返回 / close 后空返回 None
+    let mut pair4 = channel();
+    let mut tx4 = pair4.tx;
+    let mut rx4 = pair4.rx;
+    tx4.send(7);
+    match rx4.recv_async() {
+        Option::Some(v) => println(v),   // 7
+        Option::None => println(-1),
+    }
+    tx4.close();
+    match rx4.recv_async() {
+        Option::Some(v) => println(v),
+        Option::None => println(-1),     // -1
+    }
 }

@@ -145,6 +145,14 @@ impl HttpClient {
         let all = net::http::read_all(stream)?;
         net::http::parse_response(all)
     }
+    // S3b：异步 GET / POST（MVP 退化——同步语义，等价 get/post；事件驱动版规划随
+    // S3 事件循环 + §4.4 NIO：io_uring/epoll 注册 + Future 挂起，R1 Poller 先行）。
+    fn get_async(url: String) -> Result<net::http::Response, io::error::IoError> {
+        HttpClient::get(url)
+    }
+    fn post_async(url: String, body: String) -> Result<net::http::Response, io::error::IoError> {
+        HttpClient::post(url, body)
+    }
 }
 
 impl Response {

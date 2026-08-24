@@ -227,6 +227,11 @@ impl Receiver {
         self.ch.m.unlock();
         Option::None
     }
+    // S3a：异步接收（MVP 退化——阻塞语义，等价 recv；事件驱动版规划随 R1 Poller +
+    // 事件循环：recv_async 挂起 Future 至可读，依赖 §4.4 NIO 接入）
+    fn recv_async(&mut self) -> Option<i64> {
+        self.r#recv()
+    }
     // J2 迭代器接入：for v in rx { ... }（内部 try_recv 语义，不阻塞）
     fn next(&mut self) -> Option<i64> {
         self.try_recv()

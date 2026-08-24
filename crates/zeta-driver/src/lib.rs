@@ -843,6 +843,16 @@ entry:
 ///   argv（i8* 多余参数，ABI 安全），返回值 i64 与 void* 同寄存器，join 经 i64* 槽读回。
 ///   sleep 经 `usleep(3)`（POSIX，微秒，useconds_t 截断 u32，上限约 71 分钟）。
 /// - 其他平台（freebsd/windows/wasi）：返回 -1（Unsupported，MVP 禁用文档化）。
+/// S0e（2026-08）：默认栈大小确认——pthread_create 传 `attr = null`，使用系统默认栈：
+///   Linux（glibc，os=1）新线程默认栈 8MB（受 ulimit -s 约束，多数发行版 8MB）；
+///   macOS（os=2）新线程默认栈约 512KB（POSIX 默认，PTHREAD_STACK_MIN 之上）。MVP 不
+///   提供 `thread::Builder::stack_size` 等定制（规划）；需要大栈的深递归场景在 Linux
+///   下经 `ulimit -s` 生效，macOS 下规划显式 pthread_attr_setstacksize 注入。
+/// S0e 线程局部状态与内存模型：MVP 无 TLS / 线程局部状态需求（无 thread_local 关键字
+///   与 __thread 段生成）；线程间共享数据经 `Rc<Channel>`（Mutex + Condvar 队列，P1）
+///   或 `Arc` 等同步原语；每个线程独立栈 + 独立寄存器上下文，堆共享（Rc/Box 指针
+///   跨线程传递须经同步原语保证可见性，MVP 无内存模型排序保证，数据竞争 UB 由调用方
+///   负责——与 C 并发内存模型一致）。
 fn thread_builtin_ir(os: i32) -> String {
     if os == 1 || os == 2 {
         r#"

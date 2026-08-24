@@ -1,36 +1,36 @@
 # Zeta CodeBuddy Prompt 索引
 
-> 本目录包含 13 个可独立执行的 Prompt 文件，每个对应编译器/工具链的一个核心模块。
->
-> **✅ P001–P013 已全部完成**（MVP 可用）。P001–P013 覆盖编译器基础链路（词法→语法→类型→区域→借用→MIR/LIR→LLVM）；
-> 阶段 A–F（模块系统、io/net、FFI、actor、标准库扩展、交叉编译/WASM/发布、LSP、PGO 回灌等）的执行记录见
-> [`../docs/development-plan.md`](../docs/development-plan.md)，工具链命令总览见 [`../CODEBUDDY.md`](../CODEBUDDY.md) 与 [`../docs/guide.md`](../docs/guide.md)。
+> **目录定位**：本目录收录 Zeta 编译器/工具链从零起步的 13 份开发任务书（Prompt）及其执行记录。
+> **当前状态**：P001–P013 **已全部完成**（MVP 可用）。任务书为历史执行记录，不再更新；
+> 新功能开发以 [`../docs/`](../docs/) 权威规范与 [`../CODEBUDDY.md`](../CODEBUDDY.md) 为准。
+> 执行记录：阶段 A–F 见 [`../docs/development-plan.md`](../docs/development-plan.md)，阶段 G–T 剩余任务消解见 [`../docs/mvp-gaps-plan.md`](../docs/mvp-gaps-plan.md)。
+> 设计稿 → 权威规范 → 实现任务 三方映射见 [`../docs/design/README.md`](../docs/design/README.md)。
 
 ---
 
-## 快速导航
+## 1. Prompt 索引（P001–P013，全部完成 ✅）
 
-| 编号 | 文件 | 模块 | 预估工期 |
-|------|------|------|----------|
-| P001 | [P001_词法分析器核心.md](./P001_词法分析器核心.md) | `zeta-lexer` | 3-5 天 |
-| P002 | [P002_语法分析器核心.md](./P002_语法分析器核心.md) | `zeta-parser` | 5-7 天 |
-| P003 | [P003_比较链语义分析.md](./P003_比较链语义分析.md) | `zeta-typecheck` | 3-5 天 |
-| P004 | [P004_区域系统实现.md](./P004_区域系统实现.md) | `zeta-regionck` | 5-7 天 |
-| P005 | [P005_Transfer语义实现.md](./P005_Transfer语义实现.md) | `zeta-regionck` | 3-5 天 |
-| P006 | [P006_Actor运行时.md](./P006_Actor运行时.md) | `zeta-actor-runtime` | 5-7 天 |
-| P007 | [P007_增量编译引擎.md](./P007_增量编译引擎.md) | `zeta-driver` | 5-7 天 |
-| P008 | [P008_包管理器Zep.md](./P008_包管理器Zep.md) | `zep` | 5-7 天 |
-| P009 | [P009_标准库核心模块.md](./P009_标准库核心模块.md) | `zeta-std` | 5-7 天 |
-| P010 | [P010_智能区域分配器.md](./P010_智能区域分配器.md) | `zeta-region-alloc` | 5-7 天 |
-| P011 | [P011_MIR中间表示实现.md](./P011_MIR中间表示实现.md) | `zeta-mir` | 5-7 天 |
-| P012 | [P012_L0借用检查器实现.md](./P012_L0借用检查器实现.md) | `zeta-borrowck` | 3-5 天 |
-| P013 | [P013_LLVM后端与代码生成.md](./P013_LLVM后端与代码生成.md) | `zeta-lir`+`zeta-codegen`+`zeta-driver` | 7-10 天 |
+| 编号 | 文件 | 模块 | 对应设计稿 | 预估工期 |
+|------|------|------|-----------|----------|
+| P001 | [P001_词法分析器核心.md](./P001_词法分析器核心.md) | `zeta-lexer` | [design/01](../docs/design/01_词法分析器.md) | 3-5 天 |
+| P002 | [P002_语法分析器核心.md](./P002_语法分析器核心.md) | `zeta-parser` | [design/02](../docs/design/02_语法分析器.md) | 5-7 天 |
+| P003 | [P003_比较链语义分析.md](./P003_比较链语义分析.md) | `zeta-typecheck` | [design/03](../docs/design/03_类型系统.md) / [design/06](../docs/design/06_比较链与条件判断.md) | 3-5 天 |
+| P004 | [P004_区域系统实现.md](./P004_区域系统实现.md) | `zeta-regionck` | [design/05](../docs/design/05_区域内存管理系统.md) | 5-7 天 |
+| P005 | [P005_Transfer语义实现.md](./P005_Transfer语义实现.md) | `zeta-regionck` | [design/05](../docs/design/05_区域内存管理系统.md) | 3-5 天 |
+| P006 | [P006_Actor运行时.md](./P006_Actor运行时.md) | `zeta-actor-runtime` | [design/07](../docs/design/07_Actor并发模型.md) | 5-7 天 |
+| P007 | [P007_增量编译引擎.md](./P007_增量编译引擎.md) | `zeta-driver` | [design/09](../docs/design/09_工具链设计.md) | 5-7 天 |
+| P008 | [P008_包管理器Zep.md](./P008_包管理器Zep.md) | `zep` | [design/09](../docs/design/09_工具链设计.md) | 5-7 天 |
+| P009 | [P009_标准库核心模块.md](./P009_标准库核心模块.md) | `zeta-std` | [design/10](../docs/design/10_标准库规划.md) | 5-7 天 |
+| P010 | [P010_智能区域分配器.md](./P010_智能区域分配器.md) | `zeta-region-alloc` | [design/05](../docs/design/05_区域内存管理系统.md) | 5-7 天 |
+| P011 | [P011_MIR中间表示实现.md](./P011_MIR中间表示实现.md) | `zeta-mir` | [design/08](../docs/design/08_编译器后端与代码生成.md) | 5-7 天 |
+| P012 | [P012_L0借用检查器实现.md](./P012_L0借用检查器实现.md) | `zeta-borrowck` | [design/04](../docs/design/04_所有权与借用检查器.md) | 3-5 天 |
+| P013 | [P013_LLVM后端与代码生成.md](./P013_LLVM后端与代码生成.md) | `zeta-lir`+`zeta-codegen`+`zeta-driver` | [design/08](../docs/design/08_编译器后端与代码生成.md) | 7-10 天 |
 
 **总计**：约 59-98 天（单人），2-3 个月（3-4 人团队）
 
 ---
 
-## 依赖关系
+## 2. 依赖关系
 
 ```
 P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 ──→ P011 ──→ P013
@@ -48,20 +48,19 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 
 ---
 
-## 使用方式
+## 3. 使用方式（历史指引）
 
-1. **打开**本文件，选择要执行的 Prompt
-2. **打开**对应的 `Pxxx_*.md` 文件
-3. **全选复制**文件内容
-4. **粘贴到 CodeBuddy**
-5. CodeBuddy 会按文档要求生成代码
-6. 跑通测试后进入下一个 Prompt
+> 以下流程为 P001–P013 开发阶段的用法；**当前所有 Prompt 均已完成**。
+> 新增开发任务请直接参考 `docs/development-plan.md`（阶段 A–F）或 `docs/mvp-gaps-plan.md`（阶段 G–T）的阶段划分，不必回放历史任务书。
+
+1. 在下方索引中选择要执行的 Prompt
+2. 全选复制对应 `Pxxx_*.md` 文件内容
+3. 粘贴到 CodeBuddy，按文档要求生成代码
+4. 跑通测试后进入下一个 Prompt
 
 ---
 
-## 进度追踪
-
-> 在下方表格中记录每个 Prompt 的完成状态
+## 4. 进度追踪（历史记录，已全部完成）
 
 | Prompt | 状态 | 完成日期 | 测试通过率 | 备注 |
 |--------|------|----------|------------|------|
@@ -74,23 +73,85 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 | P007 | ✅ 完成 | 2026-08-20 | 24/24 (100%) | 增量编译（源码/接口哈希 + 多版本产物缓存 + 损坏恢复 + 依赖图 + 多文件模块缓存）；补齐 M2.3 |
 | — | ✅ 完成 | 2026-08-20 | 7/7 (100%) | 模块系统（嵌套 `mod` + `use` 导入别名 + `mod foo;` 多文件加载 + 扁平符号名 + 模块内符号解析）——parser/typecheck/driver/codegen 跨层联动 |
 | P008 | ✅ 完成 | 2026-08-20 | 29/29 (100%) | 包管理器 Zep（pubgrub 依赖解析 + 本地/HTTP 注册表 + 打包解包 + 构建驱动）；补齐 M2.2 |
-| — | ✅ 完成 | 2026-08-20 | 10/10 (100%) | 聚合对象语言特性（enum + match + impl + trait + 泛型单态化）：HIR `Alloc`/`FieldGet`/`FieldSet` 堆对象原语 + tag 槽表示 + match 展开为 if-else 链 + `self`/`Self` 方法 + trait/impl 收集 + 调用点单态化（`unify`/`substitute`）+ MIR/LIR/codegen 全链路（malloc/GEP/bitcast + f64 槽转换） |
-| — | ✅ 完成 | 2026-08-20 | 62/62 (100%) | 聚合对象语言特性扩展：① `impl<T> Foo<T>` 泛型 self 类型解析；② `while`/`for`/`loop`/`region` 语句式（parse_block 语句集合扩展）；③ **struct 字面量构造 `Point { x, y }` + 字段访问/赋值全链路**（AST `StructCtor` + parser lookahead 歧义消除 + typecheck `check_struct_construct`/`check_field_access` + FieldGet 赋值目标）；④ `&self`/`&mut self` 引用接收者方法 + `Type::method()` 静态方法；⑤ match scrutinee 引用自动解引用（`match self`）+ match arm 外层变量可见性；⑥ `loop` 表达式类型 Never 化；⑦ 泛型替换下沉到模式绑定（`check_pattern` 应用 `generic_subst`）+ `Option::None` 的 `_`(Infer) 占位 + `compatible_with` Infer 宽松 |
-| — | ✅ 完成 | 2026-08-20 | 63/63 (100%) | 标准库预置接入 + 聚合类型全链路修复：① **标准库搜索路径**（`stdlib.rs` 自动注入 `core.zeta` + `--no-std` + 缓存键覆盖 std 源码）；② **LIR 跨函数类型解析覆盖语义 + 副本类型传播**（未推断变量默认 i64 的占位被 callee 返回类型覆盖，`let v = obj.method()` 别名跟随调用结果类型）；③ **MIR Never 分支 phi 语义**（`lower_loop` 无 break 无限循环不产生块值 + `LoopCtx.had_break` 追踪 + `lower_if` 两分支均无值时返回 None）——`loop {}` 充当 panic 不再污染 if/phi 合并类型，解锁**泛型方法返回聚合类型**（`Option<Result<i64,i64>>` 嵌套单态化） |
-| P009 | ✅ 完成 | 2026-08-20 | 6/6 (100%) | 标准库核心类型 + **编译器标准库搜索路径接入**：纯 Zeta 实现 `Option<T>`/`Result<T, E>`（泛型 enum + 泛型 impl + match + `loop {}` 充当 panic/Never）沉淀于 `zeta-std/zeta/core.zeta`；driver 文件入口 API 自动注入（`stdlib.rs` 定位：`ZETA_STD_PATH` 环境变量优先/仓库布局兜底，`--no-std` 禁用，组合源码哈希纳入增量缓存键）；测试 `std_test.rs` 4 用例（字符串 API 内联）+ `std_prelude_test.rs` 2 用例（文件 API 自动注入：Option/Result 直接可用 + 嵌套泛型单态化）。已有基础：NIO/sendfile 绑定层 + tests/nio_test.rs |
-| — | ✅ 完成 | 2026-08-20 | 9/9 (100%) | **for 循环 range 迭代器**：typecheck 层 desugar 为 `loop`（临时边界变量 + mutable 迭代变量初始 `start-1`；loop 体首句 `pat += 1`（continue 回跳也执行 → 不会跳过递增）；次句退出判断 `if pat >= hi { break; }`（上界闭区间为 `>`）；`lower_inclusive=false` 时 `start=lo+1`；唯一临时名 `__for_lo_N`/`__for_hi_N`；循环后清理符号表）；**修复 continue 死循环**（初版 desugar 为 `while` + 末尾递增，continue 跳过递增导致挂起，`for_break_continue` 复现）；覆盖半开/闭/左开右闭区间、break/continue、嵌套 for、变量边界、下降 range 空循环、非 range 迭代器报错（双开区间 `0<..<5` 非语法，等价用 `1..<5`） |
-| — | ✅ 完成 | 2026-08-20 | 11/11 (100%) | **跨模块路径表达式**：表达式支持多段路径 `mod::Enum::Variant`（`check_expr` Path/Call 分支改用 `rsplit_once` 右侧拆分 helper `split_variant_path`，2 段/3 段/裸变体统一）+ **模块常量引用** `mod::CONST`（`lookup_constant` 查找，常量可参与表达式运算）+ 模块函数（已有）；**match 模式多段路径**（AST 新增 `AstPattern::EnumPath`，parser 收集路径段（修复漏 push 末段 bug）、typecheck 取末段复用 `Enum` 逻辑）；覆盖无参/带参变体、嵌套模块、跨模块泛型 enum + match、裸变体回归、常量未定义报错 |
-| — | ✅ 完成 | 2026-08-20 | 12/12 (100%) | **索引访问 `a[i]` 与数组字面量**：① 数组字面量 `[a, b, c]`（AST `ExprKind::ArrayLit` + parser `parse_array_lit` + typecheck 展开为 `Alloc + 逐元素 FieldSet` 块，数组值为槽区指针；元素类型统一校验；空数组/非字面量大小报错）；② **索引读取** `arr[i]`/`s[i]`（HIR `Index` → MIR/LIR `IndexGet` → LLVM GEP+bitcast+load；数组元素步长 8 字节、字符串字符步长 1 字节（`is_str` 标志）；索引须整数）；③ **索引写入** `arr[i] = v`（Assign 目标 `Index` → HIR `IndexSet` → `IndexSet` 指令 GEP+store，仅纯赋值）；④ **类型系统修复**：`resolve_ast_type` 保留数组长度 `[T; N]`（原忽略为 0）；⑤ 覆盖嵌套数组链式索引 `m[1][0]`、结构体字段数组 `g.rows[1]=99`、函数参数数组 + for 遍历、数组别名共享堆数据语义、compile-fail（非数组/非整数索引、元素类型不一致、空数组）——M2.5 标准库 collections 硬前提 |
-| P010 | ✅ 完成 | 2026-08-20 | 28/28 (100%) | 智能区域（`SmartRegion`：静态大小推断 + PGO 画像/推荐 + EWMA 自适应扩容 + 碎片/事件统计 + 编译器集成报告 + criterion 基准）；补齐 M2.8 分配器侧 |
+| — | ✅ 完成 | 2026-08-20 | 10/10 (100%) | 聚合对象语言特性（enum + match + impl + trait + 泛型单态化） |
+| — | ✅ 完成 | 2026-08-20 | 62/62 (100%) | 聚合对象语言特性扩展（`impl<T>` 泛型 self、语句式 while/for/loop/region、struct 字面量、`&self`/`&mut self` 方法、match 引用解构、loop Never、泛型替换下沉模式） |
+| — | ✅ 完成 | 2026-08-20 | 63/63 (100%) | 标准库预置接入 + 聚合类型全链路修复（stdlib 搜索路径 + LIR 类型传播 + MIR Never 分支 phi） |
+| P009 | ✅ 完成 | 2026-08-20 | 6/6 (100%) | 标准库核心类型（Option/Result 纯 Zeta 实现于 core.zeta）+ 编译器标准库搜索路径接入 |
+| — | ✅ 完成 | 2026-08-20 | 9/9 (100%) | for 循环 range 迭代器（desugar 为 loop + 临时边界变量；修复 continue 死循环） |
+| — | ✅ 完成 | 2026-08-20 | 11/11 (100%) | 跨模块路径表达式（`mod::Enum::Variant`）+ 模块常量引用 + match 多段路径模式 |
+| — | ✅ 完成 | 2026-08-20 | 12/12 (100%) | 索引访问 `a[i]` 与数组字面量（Alloc + 逐元素 FieldSet；GEP+bitcast+load；步长 8/1 字节）——M2.5 collections 硬前提 |
+| P010 | ✅ 完成 | 2026-08-20 | 28/28 (100%) | 智能区域（SmartRegion：静态大小推断 + PGO 画像 + EWMA 自适应扩容 + 碎片统计 + criterion 基准）；补齐 M2.8 分配器侧 |
 | P011 | ✅ 完成 | 2026-08-20 | 18/18 (100%) | MIR CFG lowering + 常量折叠/DCE/内联；修复 new_block 终止符错位 bug |
 | P012 | ✅ 完成 | 2026-08-20 | 16/16 (100%) | L0 借用检查（use-after-move + 不可变赋值）；补齐 M1.5 |
 | P013 | ✅ 完成 | 2026-08-20 | 18/18 (100%) | LIR 三地址码 + LLVM IR 文本 + driver 端到端（clang 汇编/链接/运行）；补齐 M1.8/M1.9 |
 
 **状态标记**：⏳ 待开始 | 🔧 进行中 | ✅ 完成 | ❌ 阻塞
 
+> 阶段 A–F 的扩展任务（模块系统、io/net、FFI、actor 语言级接线、标准库扩展、交叉编译/WASM/发布、LSP、PGO 回灌）执行记录见 [`../docs/development-plan.md`](../docs/development-plan.md)。
+
 ---
 
-## 通用约定
+## 5. 快速验证（MVP 现状）
+
+```bash
+# 创建并运行新项目
+zeta new hello_world
+cd hello_world
+zeta run src/main.zeta        # 预期输出：Hello, Zeta!
+
+# 手动编译 hello world（内建打印，无宏）
+echo 'fn main() { println("Hello, Zeta!"); }' > test.zeta
+zeta run test.zeta            # 预期输出：Hello, Zeta!
+
+# 测试比较链与集合判断
+echo 'fn main() {
+  let x = 5;
+  if 0 < x < 10 { println("in range"); }
+  if x in (1, 3, 5) { println("in set"); }
+}' > test2.zeta
+zeta run test2.zeta
+# 预期输出：in range\nin set
+
+# 测试区域系统（区域名用单引号 'r，打印用 println(x) 而非 println!("{}", x)）
+echo 'fn main() {
+  region '\''r'\'' {
+    let x = 42 in '\''r'\'';
+    println(x);
+  }
+}' > test3.zeta
+zeta run test3.zeta
+# 预期输出：42
+
+# 测试动态切片（数组 / Vec）
+echo 'fn main() {
+  let arr = [10, 20, 30, 40, 50];
+  let a = arr[1..<3];
+  println(a.len());
+  println(a.get(0));
+}' > test4.zeta
+zeta run test4.zeta
+# 预期输出：2\n20
+
+# 测试 Actor 并发（ask 往返 + fire-and-forget）
+echo 'actor Counter {
+  value: i64 = 0,
+  pub fn increment(amount: i64) -> i64 { self.value += amount; self.value }
+}
+fn main() {
+  let c = Counter::new();
+  println(c.increment(10).await);
+  send c.increment(1);
+}' > test5.zeta
+zeta run test5.zeta
+# 预期输出：10
+
+# 全量回归
+cargo test --workspace        # 全部通过（当前 111 套件）
+```
+
+---
+
+## 6. 通用约定
 
 所有 Prompt 共享以下约定：
 
@@ -128,21 +189,23 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 
 ---
 
-## 项目文档导航
+## 7. 项目文档导航
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 项目总纲 | [../CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 + 工具链命令 + 执行记录 |
-| 语言教程 | [../docs/guide.md](../docs/guide.md) | 面向读者的教程（示例均可运行） |
-| 语法规范 | [../docs/grammar.md](../docs/grammar.md) | EBNF 语法（目标规范，含规划） |
+| 项目总纲 | [../CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 + 工具链命令 + 特性速览 |
+| 文档导航（docs 入口） | [../docs/README.md](../docs/README.md) | docs/ 文档地图 + 阅读顺序 + 一致性规则 |
+| 开发计划（阶段 A–F，已完成） | [../docs/development-plan.md](../docs/development-plan.md) | 执行记录 + 遗留问题清单 |
+| 剩余任务消解（阶段 G–T，进行中） | [../docs/mvp-gaps-plan.md](../docs/mvp-gaps-plan.md) | guide §13 限制 + std-lib 规划消解计划 |
+| 语言教程 | [../docs/guide.md](../docs/guide.md) | 面向读者（示例均可运行） |
+| 语法规范 | [../docs/grammar.md](../docs/grammar.md) | EBNF 语法（含规划） |
 | 语义规则 | [../docs/semantics.md](../docs/semantics.md) | 类型/求值规则 |
 | 内存模型 | [../docs/memory-model.md](../docs/memory-model.md) | 分层内存 |
 | Actor 模型 | [../docs/actor-model.md](../docs/actor-model.md) | 并发规范 |
-| 标准库 API | [../docs/std-lib.md](../docs/std-lib.md) | API 规范（已实现 / 规划） |
-| 开发计划 | [../docs/development-plan.md](../docs/development-plan.md) | 阶段 A–F 执行记录 + 遗留清单 |
-| 快速开始 | [QUICKSTART.md](./QUICKSTART.md) | 5 分钟上手 + 快速验证 |
+| 标准库 API | [../docs/std-lib.md](../docs/std-lib.md) | API 规范（已实现/规划） |
+| 早期设计稿归档 | [../docs/design/README.md](../docs/design/README.md) | 设计稿 ↔ 权威规范 ↔ 任务映射 |
 
 ---
 
-> **维护者**：Zeta Language Team  
+> **维护者**：Zeta Language Team
 > **License**：MIT / Apache-2.0

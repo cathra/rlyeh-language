@@ -134,11 +134,11 @@
 | **M** | 错误处理基底 | `IoErrorKind`/`IoError`（M1a/M1b）、`Error`/`From`/`Into` trait（M2a/M2b）、std 错误约定 Result 化（M3a/M3b/M3c） | 7 | K1（`?`）、H4（`dyn Trait`）、G1 | ✅ 已完成 |
 | **N** | 文件系统与 IO 对象化 | `File`/`OpenMode`（N1a/N1b/N1c）、stdin/stdout/stderr（N2a/N2b）、`Path`/`fs`（N3a/N3b/N3c）、`eprintln!`/`eprint!`（N4） | 9 | M、G1（`&str`）、I2（宏） | ✅ 已完成 |
 | **O** | 网络对象化 | `SocketAddr`/`TcpListener`/`TcpStream`（O1a/O1b/O1c）、字节读写（O2）、HTTP 同步 MVP（O3a/O3b） | 6 | M、L2（json）、G1 | ✅ 已完成 |
-| **P** | 并发通道与同步 | Channel 绑定/对象化/收尾（P1a/P1b/P1c）、锁 guard 语义（P2a/P2b）、`Condvar`/`Barrier`（P3） | 6 | K3（Arc）、Mutex ✅；P3 依赖 S0 线程 | 待开始 |
+| **P** | 并发通道与同步 | Channel 绑定/对象化/收尾（P1a/P1b/P1c）、锁 guard 语义（P2a/P2b）、`Condvar`/`Barrier`（P3） | 6 | K3（Arc）、Mutex ✅；P3 依赖 S0 线程 | ✅ 已完成（P1a–P1c、P2a/P2b、P3） |
 | **Q** | 序列化与格式化 trait | serde trait/derive（Q1a/Q1b/Q1c）、json 泛型 API（Q2a/Q2b）、`Display`/`Debug` + Formatter（Q3a/Q3b）、TOML（Q4） | 8 | I（宏）、L2（json）、H4 | ✅ 已完成（Q1–Q4） |
 | **R** | 高性能 IO | `Interest`/`Event`/`Poller`（R1a/R1b）、非阻塞（R2）、sendfile（R3） | 4 | O（TcpStream）、zeta-std nio ✅ | ✅ 已完成 |
-| **S** | 异步运行时 | S0 线程支持（S0a–S0e）、`Future`/`Poll`/`block_on`（S1a/S1b/S1c）、`join_all`/`timeout`/`sleep`（S2a/S2b/S2c）、async channel/http（S3a/S3b） | 13 | P、R、S0 | 🔧 进行中（S0a–S0d ✅，S0e 部分；S1a/S1b/S1c ✅；S2a/S2b/S2c ✅） |
-| **T** | 集合与迭代器收尾 | Vec/String/HashMap API 补齐（T1a/T1b/T1c）、`Iterator` trait（T2）、智能指针收尾（T3a/T3b） | 6 | J、K、G | 待开始 |
+| **S** | 异步运行时 | S0 线程支持（S0a–S0e）、`Future`/`Poll`/`block_on`（S1a/S1b/S1c）、`join_all`/`timeout`/`sleep`（S2a/S2b/S2c）、async channel/http（S3a/S3b） | 13 | P、R、S0 | ✅ 已完成（S0a–S0e、S1a–S1c、S2a–S2c、S3a/S3b） |
+| **T** | 集合与迭代器收尾 | Vec/String/HashMap API 补齐（T1a/T1b/T1c）、`Iterator` trait（T2）、智能指针收尾（T3a/T3b） | 6 | J、K、G | ✅ 已完成（T1a/T1b/T1c、T2、T3a/T3b） |
 
 > **任务粒度**：全部任务已拆分为「可独立实现 + 独立验收」的子任务（共 **59 个**），字母后缀（a/b/c）子任务须按序完成（后者依赖前者）；每阶段验收用例按子任务分开（见 3b.2–3b.9 各阶段验收行）。
 > **推荐执行路线**：
@@ -258,17 +258,17 @@
 | S0b | **`Thread::start(f: fn() -> i64)`**：语言侧 `thread` 模块（`spawn` 为保留关键字，方法名取 `start`）；函数指针值按地址整数经 extern i64 形参传递（typecheck 放宽 Fn→I64 + codegen ptrtoint） | ✅ 已完成 |
 | S0c | **`join` + 返回值传递**：`Thread::join` 返回值槽读取（pthread_join i64*）；启动失败映射 `IoError`（M1b） | ✅ 已完成 |
 | S0d | **WASI/Windows 短路**：注入层 os 码 4/5 返回 -1 的 stub，`Thread::start` 返回 `Err`（Unsupported） | ✅ 已完成 |
-| S0e | **加固**：栈分配（默认栈大小确认）、线程局部状态确认、内存模型文档化（MVP 无 TLS 需求） | 🔧 部分（MVP 无 TLS 已确认，默认栈大小确认规划中） |
+| S0e | **加固**：栈分配（默认栈大小确认）、线程局部状态确认、内存模型文档化（MVP 无 TLS 需求） | ✅ 已完成（pthread_create attr=NULL 系统默认栈：Linux glibc 约 8MB、macOS 约 512KB，stack_size 定制规划中；MVP 无 TLS 已确认；内存模型——共享数据经同步原语、数据竞争 UB 调用方负责，与 C 并发模型一致；thread_builtin_ir 注释 + thread/mod.zeta 头注释文档化） |
 | S1a | **`Future`/`Poll` trait 定义**：`enum Poll<T> { Ready(T), Pending }` + `trait Future { fn poll(&mut self) -> Poll<i64>; }`——关联类型 `type Output` / `Pin<&mut Self>` / `Context` 验证不可行（parser 无 trait `type` 成员、dyn 不可作函数参数），按计划退化指示 Output 固定 i64；`zeta-std/zeta/future.zeta` + core.zeta 重导出 | ✅ 已完成 |
 | S1b | **`block_on` 手动轮询 MVP**：`block_on<T>(f: &mut T) -> i64` 泛型形态（loop+match 轮询，实例化时按具体类型解析 poll，无约束宽松语义） | ✅ 已完成 |
 | S1c | **`async fn` 状态机**：L1 同步语义改造为真实状态机（`await` 挂起/恢复）——desugar（`zeta-desugar`：analyze 段切分 + generate 结构体/impl/构造器生成），状态编号 `2k`/`2k+1`（首轮询/恢复），跨 await 变量提升，`block_on` 轮询驱动 | ✅ 已完成 |
 | S2a | **`sleep`**：`thread::sleep(Duration)`——注入 `__zeta_thread_sleep`（usleep 绑定，micros 截断 u32 上限约 71 分钟）；补 `Duration::seconds/milliseconds` 构造器；`Instant` 基准 clock()（CPU 时钟）睡眠期间不推进（墙钟随 S2b 接入） | ✅ 已完成 |
 | S2b | **`join_all` + 墙钟**：线程版 `thread::join_all(Vec<Thread>) -> Vec<i64>`（并发等待多线程，按传入顺序收集返回值）；墙钟 `__zeta_clock_monotonic`（clock_gettime CLOCK_MONOTONIC，注意 macOS 常量 =6 与 Linux =1 差异）接入，`Instant::now/elapsed` 睡眠期间推进（不支持平台退回 clock()）。Future 泛型版规划（依赖 S1c + 泛型方法） | ✅ 已完成 |
 | S2c | **`timeout`**：Future 超时包装——`timeout<T>(duration, &mut fut) -> Result<i64, i64>`（MVP 退化：`TimeoutError` 规划中，超时 `Err(-1)`；参数顺序对齐规划 API；超时判定经墙钟 `__zeta_clock_monotonic`，返回 -1 退回 clock()——MVP 静态方法调用不支持模块路径前缀故直用 extern；忙等轮询，事件驱动规划随 R1 Poller）。Future 版 `Result<F::Output, TimeoutError>` 规划（依赖 S1c） | ✅ 已完成 |
-| S3a | **Channel `recv_async`**：异步接收（依赖 P1 + S1/S2 事件循环） | 待开始 |
-| S3b | **HTTP async 方法**：`HttpClient` 异步接口（依赖 O3 + S2） | 待开始 |
+| S3a | **Channel `recv_async`**：异步接收（依赖 P1 + S1/S2 事件循环） | ✅ 已完成（MVP 退化：阻塞语义，等价 `recv`——非空立即返回 / close 后空返回 None；事件驱动版规划随 R1 Poller + 事件循环，`sync/mod.zeta` `Receiver::recv_async` + channel.zeta 用例） |
+| S3b | **HTTP async 方法**：`HttpClient` 异步接口（依赖 O3 + S2） | ✅ 已完成（MVP 退化：同步语义，等价 `get`/`post`——`HttpClient::get_async`/`post_async`，`net/http.zeta` + net_http_test 2 用例；事件驱动版规划随 S3 事件循环 + §4.4 NIO） |
 
-**验收**：`crates/zeta-driver/tests/thread_test.rs`（S0 ✅：start/join 返回值、双线程并行求和、current 正数断言 3 用例全绿；S2a ✅：sleep 返回值 0 断言；S2b ✅：join_all 顺序收集 [10,20,30] 求和 60 + 墙钟 sleep 30ms 后 elapsed ≥ 30ms 断言 2 用例，共 6 用例全绿）+ `crates/zeta-driver/tests/time_test.rs`（S2c ✅：timeout 成功路径 Ok(3) + 超时路径 Err(-1) 2 用例，共 5 用例全绿）+ `tests/run-pass/block_on.{zeta,out}`（S1a/S1b ✅：Poll 构造/解构 + Future impl 三轮轮询 + block_on 手动轮询，输出 42/3）+ `tests/run-pass/sleep_join.{zeta,out}`（S2a ✅：sleep 返回值 0 + 线程存活断言，输出 sleep-ok）+ `tests/run-pass/join_all.{zeta,out}`（S2b ✅：3 线程各 sleep 20ms + join_all 收集求和 60 + 墙钟 elapsed ≥ 20ms，输出 join-all-ok）+ `tests/run-pass/timeout.{zeta,out}`（S2c ✅：3 轮后 Ready → Ok(3) + 恒 Pending 50ms → Err(-1)，输出 3/-1）+ `tests/run-pass/async-fns.{zeta,out}`（S1c ✅：无 await 单尾段 42、嵌套 await 21、多 await 链 + 跨段变量 18、语句形式 await + return await 40、手动 Pending 恢复跨 await 199）+ `tests/run-pass/async_await.{zeta,out}`（S1c ✅：手写状态机与 desugar 同构对照，输出 43）+ 全量回归（zio/net/nio/fs 系列 18 测试集全绿）。**风险**：线程是编译器 + 运行时最大新子系统（FFI 签名、栈布局、WASM 隔离），MVP 建议"block_on 轮询 + 后台线程池"；S1c 状态机已落地（MVP 支持直线 await、Pending/Ready 恢复），控制流块内 await 与表达式嵌套 await 规划中。
+**验收**：`crates/zeta-driver/tests/thread_test.rs`（S0 ✅：start/join 返回值、双线程并行求和、current 正数断言 3 用例全绿；S2a ✅：sleep 返回值 0 断言；S2b ✅：join_all 顺序收集 [10,20,30] 求和 60 + 墙钟 sleep 30ms 后 elapsed ≥ 30ms 断言 2 用例，共 6 用例全绿）+ `crates/zeta-driver/tests/time_test.rs`（S2c ✅：timeout 成功路径 Ok(3) + 超时路径 Err(-1) 2 用例，共 5 用例全绿）+ `tests/run-pass/block_on.{zeta,out}`（S1a/S1b ✅：Poll 构造/解构 + Future impl 三轮轮询 + block_on 手动轮询，输出 42/3）+ `tests/run-pass/sleep_join.{zeta,out}`（S2a ✅：sleep 返回值 0 + 线程存活断言，输出 sleep-ok）+ `tests/run-pass/join_all.{zeta,out}`（S2b ✅：3 线程各 sleep 20ms + join_all 收集求和 60 + 墙钟 elapsed ≥ 20ms，输出 join-all-ok）+ `tests/run-pass/timeout.{zeta,out}`（S2c ✅：3 轮后 Ready → Ok(3) + 恒 Pending 50ms → Err(-1)，输出 3/-1）+ `tests/run-pass/async-fns.{zeta,out}`（S1c ✅：无 await 单尾段 42、嵌套 await 21、多 await 链 + 跨段变量 18、语句形式 await + return await 40、手动 Pending 恢复跨 await 199）+ `tests/run-pass/async_await.{zeta,out}`（S1c ✅：手写状态机与 desugar 同构对照，输出 43）+ `tests/run-pass/channel.zeta`（S3a ✅：recv_async 非空立即返回 7 + close 后空返回 None，输出 7/-1；阻塞等待语义与 recv 共享路径，MVP 单线程不可测跨线程数据流——线程入口零参数 + Rc 非线程安全，文档化）+ `crates/zeta-driver/tests/net_http_test.rs`（S3b ✅：get_async/post_async 与 get/post 同步语义一致 2 用例）+ S0e ✅ 文档化（thread_builtin_ir 注释 + thread/mod.zeta 头注释，见上）+ 全量回归（zio/net/nio/fs 系列 18 测试集全绿）。**风险**：线程是编译器 + 运行时最大新子系统（FFI 签名、栈布局、WASM 隔离），MVP 建议"block_on 轮询 + 后台线程池"；S1c 状态机已落地（MVP 支持直线 await、Pending/Ready 恢复），控制流块内 await 与表达式嵌套 await 规划中。
 
 ### 3b.9 阶段 T — 集合与迭代器收尾
 
@@ -276,14 +276,16 @@
 
 | 任务 | 内容 | 状态 |
 |------|------|------|
-| T1a | **Vec 目标 API 补齐**：`sort`/`binary_search`/`iter`（按 std-lib.md 目标 API 清单核对） | 待开始 |
-| T1b | **String 目标 API 补齐**：`chars`/`lines`/`split`（部分已有）/`replace`/`to_uppercase`/`to_lowercase`/`trim` | 待开始 |
-| T1c | **HashMap 目标 API 补齐**：`iter`/`keys`/`values` 等（按 std-lib.md 目标 API 清单核对） | 待开始 |
-| T2 | **`Iterator` trait 定义**：`trait Iterator { type Item; fn next(&mut self) -> Option<Item>; }`——**风险**：先做关联类型 `type Item` 最小验证（H4 仅验证过非泛型 dyn）；适配器**保持内建 desugar 不迁移**（避免重构风险），trait 定义先行供自定义迭代器接入（J2 已支持方法式 `next() -> Option<T>`，trait 化为可选演进） | 待开始 |
-| T3a | **`Box::leak`**：泄漏堆对象返回裸指针 | 待开始 |
-| T3b | **Rc/Arc 目标 API + `Weak::upgrade` 完善**（std-lib.md §11 目标 API 清单逐项核对） | 待开始 |
+| T1a | **Vec 目标 API 补齐**：`sort`/`binary_search`/`iter`（按 std-lib.md 目标 API 清单核对） | ✅ 已完成（`sort`/`binary_search` 已有 ✅；新增 `iter`（MVP 退化——返回元素值拷贝缓冲，目标 `Iter<'_, T>` 借用迭代器规划）、`get_mut`（值拷贝，目标 `&mut T` 引用规划）、`sort_by`（比较器闭包 `fn(T, T) -> i64` 三态语义，选择排序）。**附带修复**：typecheck `substitute`/`unify` 补 `Type::Fn` 递归分支 + 实例方法实参循环补闭包特判——泛型方法 `fn(T, T)` 形参此前不替换/不反推，函数名与闭包实参均报错；修复后 `Vec::sort_by` 等泛型 fn 形参方法可用（全量回归无破坏）） |
+| T1b | **String 目标 API 补齐**：`chars`/`lines`/`split`（部分已有）/`replace`/`to_uppercase`/`to_lowercase`/`trim` | ✅ 已完成（`split`/`replace`/`trim` 已有 ✅；新增 `chars`（MVP 字节级——逐字节 i64 列表，目标 `Chars` 迭代器 + UTF-8 码点解码规划）、`lines`（委托 `split("\n")`，目标 `Lines` 迭代器规划；`\r\n` 行尾 `\r` 保留）、`to_uppercase`/`to_lowercase`（`to_upper`/`to_lower` 的 API 别名，ASCII 语义）） |
+| T1c | **HashMap 目标 API 补齐**：`iter`/`keys`/`values` 等（按 std-lib.md 目标 API 清单核对） | ✅ 已完成（`keys`/`values`/`clear` 等已有 ✅；新增 `iter`（MVP 退化——返回键缓冲，与 `keys` 同构，目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（值拷贝，目标 `&mut V` 引用规划）） |
+| T2 | **`Iterator` trait 定义**：`trait Iterator { type Item; fn next(&mut self) -> Option<Item>; }`——**风险**：先做关联类型 `type Item` 最小验证（H4 仅验证过非泛型 dyn）；适配器**保持内建 desugar 不迁移**（避免重构风险），trait 定义先行供自定义迭代器接入（J2 已支持方法式 `next() -> Option<T>`，trait 化为可选演进） | ✅ 已完成（MVP 退化：关联类型 `type Item` 验证不可行——parser/typecheck 无 trait `type` 成员载体（S1a 已记录），`trait Iterator { fn next(&mut self) -> Option<i64>; }` 元素固定 i64（core.zeta 顶部定义）。自定义迭代器 `impl Iterator for T` 后经 for 接入 ✓（check_for_iterator 检测 next() 方法，inherent 或 trait impl 均可）；适配器保持内建 desugar 不迁移 ✓。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入，注释文档化） |
+| T3a | **`Box::leak`**：泄漏堆对象返回裸指针 | ✅ 已完成（`Box::leak(b)` → `*mut T` 裸指针（G3 语义，`*p` 读写可用），读取 Box 槽 0 指针值不释放。MVP 退化：目标签名 `fn leak(self) -> &'static mut T`——`&*b` 堆地址取引用需 MIR `AddrOf` 支持任意目标表达式（当前仅变量取址），退化为裸指针值语义等价，`'static` 宽松丢弃（G4）） |
+| T3b | **Rc/Arc 目标 API + `Weak::upgrade` 完善**（std-lib.md §11 目标 API 清单逐项核对） | ✅ 已完成（逐项核对：`Rc::new`/`strong_count`/`weak_count`/`downgrade`/`try_unwrap`、`Arc::new`/`strong_count`/`weak_count`、`Weak::new`/`upgrade` 已全覆盖（rc_new.zeta 验收），无新增缺口） |
 
-**验收**：`tests/run-pass/vec_api.{zeta,out}`（T1a）+ `string_api.{zeta,out}`（T1b）+ `hashmap_api.{zeta,out}`（T1c）+ `iterator_trait.{zeta,out}`（T2：自定义迭代器经 trait 接入 `for`）+ 智能指针用例（T3）+ 全量回归。
+**验收**：`tests/run-pass/vec_api.{zeta,out}`（T1a ✅：iter 快照 + for 求和 15、get_mut 值拷贝 8、sort_by 闭包降序 `5 4 3 1 1` 与升序 `1 1 3 4 5`）+ `string_api.{zeta,out}`（T1b ✅：chars 字节级 3/65/33、lines 3 行含尾空行段、to_uppercase/to_lowercase 别名与原名一致 true）+ `hashmap_api.{zeta,out}`（T1c ✅：iter 键求和 3、iter/keys 同构 3、get_mut 200/-1/300）+ `iterator_trait.{zeta,out}`（T2 ✅：Counter/Step 自定义迭代器 `impl Iterator` 经 for 接入，输出 `10/0/12` + 直接 next 调用 `1/2/3/-1`）+ `box_leak.{zeta,out}`（T3a ✅：`*mut i64` 读写 42/99、Box\<String\>/Box\<Point\> 解引用 4/3、类型注解 `*mut i64` 7）+ T3b ✅（rc_new.zeta 已全覆盖核对）+ 全量回归（30+ 测试集 + suite_test 全绿）。
+
+> **T 阶段已知限制**（实测发现）：typecheck 变量环境 `variables: HashMap<String, Type>` 按名全局索引、**无作用域隔离**——同名遮蔽（如 match 臂绑定与后续 let 绑定同名）时类型互相覆盖，后续按类型分支的输出可能异常（实测 i64 200 被以 `%p` 打印为 `0xc8`）；当前建议避免同名变量遮蔽，作用域栈重构（按作用域分层存储变量类型）规划中。
 
 ---
 
@@ -331,5 +333,7 @@
 
 ---
 
+- [x] **T 阶段：集合与迭代器收尾**（2026-08-24）：**T1a Vec**：新增 `iter`（MVP 退化元素拷贝缓冲）/`get_mut`（值拷贝）/`sort_by`（比较器闭包，选择排序）（`sort`/`binary_search` 已有）。**T1b String**：新增 `chars`（字节级）/`lines`（委托 split）/`to_uppercase`/`to_lowercase`（别名）（`split`/`replace`/`trim` 已有）。**T1c HashMap**：新增 `iter`（退化键缓冲）/`get_mut`（值拷贝）（`keys`/`values` 已有）。**T2 Iterator trait**：`trait Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` MVP 退化固定 i64（parser/typecheck 无 trait `type` 成员载体）；自定义迭代器 `impl Iterator for T` 经 for 接入 ✓；适配器保持内建 desugar。**T3a Box::leak**：返回 `*mut T` 裸指针（G3，`*p` 读写），目标 `&'static mut T` 退化（`&*b` 取址需 MIR AddrOf 支持任意目标，规划）。**T3b**：Rc/Arc/Weak 目标 API 逐项核对完成（rc_new.zeta 已全覆盖，无缺口）。**附带修复**：① typecheck `substitute`/`unify` 补 `Type::Fn` 递归分支 + 实例方法实参循环补闭包特判（泛型方法 `fn(T, T)` 形参此前不替换/不反推，`Vec::sort_by` 等泛型 fn 形参方法函数名/闭包实参均报错；修复后可用，全量回归无破坏）；② 实测发现已知限制——typecheck 变量环境 `variables: HashMap<String, Type>` 按名全局索引无作用域隔离，同名遮蔽（match 臂绑定 vs let 绑定）类型互相覆盖，println 按类型分支输出异常（i64 200 → `0xc8`），文档化为已知限制（作用域栈重构规划）。**验收**：`vec_api`/`string_api`/`hashmap_api`/`iterator_trait`/`box_leak` 5 个 run-pass 用例 + 全量回归（30+ 测试集 + suite_test 全绿）。文档：mvp-gaps-plan.md T 阶段 + std-lib.md §2.3/§3/§11 状态与差异注记。
+
 > **维护者**：Zeta Language Team
-> **最后更新**：2026-08-23
+> **最后更新**：2026-08-24

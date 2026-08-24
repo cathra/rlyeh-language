@@ -161,3 +161,52 @@ fn main() {{
     let out = run(&src);
     assert_eq!(out, "404\n");
 }
+
+/// S3b：`HttpClient::get_async`（MVP 同步语义，等价 get）。
+#[test]
+fn http_get_async() {
+    let port = mock_server(|head, _body| {
+        assert!(head.starts_with("GET /async HTTP/1.1"), "请求行不符: {head:?}");
+        "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nasync1".to_string()
+    });
+    let src = format!(
+        r#"
+fn main() {{
+    match HttpClient::get_async(String::from("http://127.0.0.1:{port}/async")) {{
+        Result::Ok(r) => {{
+            println(r.status());
+            println(r.text());
+        }},
+        Result::Err(e) => println(-1),
+    }}
+}}
+"#
+    );
+    let out = run(&src);
+    assert_eq!(out, "200\nasync1\n");
+}
+
+/// S3b：`HttpClient::post_async`（MVP 同步语义，等价 post）。
+#[test]
+fn http_post_async() {
+    let port = mock_server(|head, body| {
+        assert_eq!(body, "zeta-post-async", "服务器端收到的 body 不符: {body:?}");
+        assert!(head.starts_with("POST /async-submit HTTP/1.1"), "请求行不符: {head:?}");
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndone".to_string()
+    });
+    let src = format!(
+        r#"
+fn main() {{
+    match HttpClient::post_async(String::from("http://127.0.0.1:{port}/async-submit"), String::from("zeta-post-async")) {{
+        Result::Ok(r) => {{
+            println(r.status());
+            println(r.text());
+        }},
+        Result::Err(e) => println(-1),
+    }}
+}}
+"#
+    );
+    let out = run(&src);
+    assert_eq!(out, "200\ndone\n");
+}

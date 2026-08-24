@@ -60,14 +60,16 @@ zeta-language/
 │   ├── Cargo.toml
 │   └── src/
 │
-├── docs/                     ← 语言规范 + 开发计划文档
+├── docs/                     ← 权威规范 + 开发进度文档（导航见 docs/README.md）
+│   ├── README.md             ← 文档导航（入口）
 │   ├── guide.md              ← 语言教程（示例均可运行）
 │   ├── grammar.md            ← 完整语法规范（EBNF，含规划标注）
 │   ├── semantics.md          ← 语义规则（含规划标注）
 │   ├── memory-model.md       ← 分层内存管理规范（含规划标注）
 │   ├── actor-model.md        ← Actor 并发模型规范（含规划标注）
 │   ├── std-lib.md            ← 标准库 API 规范（已实现 / 规划）
-│   ├── development-plan.md   ← 新版开发计划（阶段 A–F，权威副本）
+│   ├── development-plan.md   ← 开发计划（阶段 A–F 执行记录，已完成）
+│   ├── mvp-gaps-plan.md      ← 剩余任务消解（阶段 G–T，进行中）
 │   └── design/               ← 早期设计稿归档（映射见 design/README.md）
 │
 ├── examples/                 ← 示例代码
@@ -79,9 +81,8 @@ zeta-language/
 │   ├── compile-fail/
 │   └── run-pass/
 │
-├── prompts/                  ← CodeBuddy Prompt 文档
+├── prompts/                  ← CodeBuddy Prompt 文档（P001–P013 已全部完成，索引 + 快速验证见 README.md）
 │   ├── README.md
-│   ├── QUICKSTART.md
 │   └── P001-P013_*.md
 │
 └── .github/                  ← CI/CD

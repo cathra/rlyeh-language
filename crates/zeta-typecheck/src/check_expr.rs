@@ -2731,6 +2731,30 @@ fn check_call(
         if ty_full == "Gc" && method == "new" {
             return check_gc_new(ctx, args, span);
         }
+        // `Box::leak` 特判（T3a）：泄漏堆对象，返回指向堆 `T` 的裸指针
+        // `*mut T`（G3 语义，`*p` 读写可用），不再释放。
+        // 目标签名 `fn leak(self) -> &'static mut T`——MVP 退化：
+        // `&*b` 的堆地址取引用需 MIR `AddrOf` 支持任意目标表达式（当前仅变量取址，
+        // 见 lower.rs），退化为读取 Box 槽 0 指针值的裸指针（值语义等价，
+        // `'static` 生命周期标注宽松丢弃（G4））。
+        if ty_full == "Box" && method == "leak" {
+            if args.len() != 1 {
+                return Err(TypeError::UnexpectedArgumentCount {
+                    name: "Box::leak".to_string(),
+                    expected: 1,
+                    found: args.len(),
+                    span,
+                });
+            }
+            let (b_hir, b_ty) = infer_expr(ctx, &args[0])?;
+            let inner = peel_refs_and_heap(&b_ty);
+            let ptr = HirExpr::FieldGet {
+                base: Box::new(b_hir),
+                index: 0,
+                ty: FieldScalar::Ptr,
+            };
+            return Ok((ptr, Type::RawPtr(Box::new(inner), true)));
+        }
         // `Weak` 升级特判：`Weak::upgrade(w)`（K3 弱引用升级为强引用）
         if ty_full == "Weak" && method == "upgrade" {
             if args.len() != 1 {
@@ -6667,8 +6691,18 @@ fn check_method_call(
     let mut arg_tys = Vec::with_capacity(args.len());
     let raw_params: Vec<&Type> = method_def.sig.params.iter().skip(1).collect();
     for (raw_p, a) in raw_params.iter().zip(args.iter()) {
-        let (hir, ty) = infer_expr(ctx, a)?;
         let pty = substitute(raw_p, &subst);
+        // H2 无捕获闭包实参：形参为 fn 类型且实参为闭包 → 按预期签名检查
+        // （闭包参数无类型注解，无法脱离 fn 上下文推断参数类型）。
+        // T1a：泛型方法 fn 形参（如 `Vec::sort_by(cmp: fn(T, T) -> i64)`）经
+        // substitute Fn 递归替换后为具体签名（fn(i64, i64) -> i64），闭包按
+        // 具体参数类型检查。
+        let (hir, ty) =
+            if matches!(pty, Type::Fn(_)) && matches!(&*a.kind, ExprKind::Closure { .. }) {
+                check_closure_expected(ctx, a, &pty, a.span)?
+            } else {
+                infer_expr(ctx, a)?
+            };
         // Str 值实参 → 非 Str 形参自动升级：`m.push_str("!")` / `m.contains("z")`
         // 等 String 形参位置传入字面量 / 绑定字面量的变量时自动构造 String 对象。
         // 升级后 contains_infer 定型分支的 `Type::Str` 特判不再命中（已是 String），
@@ -7017,6 +7051,18 @@ fn unify(
         Type::Ref(inner, _) => {
             if let Type::Ref(ainner, _) = arg {
                 unify(inner, ainner, subst)?;
+            }
+            Ok(())
+        }
+        // T1a：函数类型递归统一（fn 形参含泛型类型参数时按实参 fn 签名反推，
+        // 与 substitute 的 Fn 递归替换配套——此前静默接受不反推，导致
+        // `Vec::sort_by(cmp: fn(T, T) -> i64)` 传 `fn(i64, i64) -> i64` 报错）。
+        Type::Fn(sig) => {
+            if let Type::Fn(asig) = arg {
+                for (p, a) in sig.params.iter().zip(asig.params.iter()) {
+                    unify(p, a, subst)?;
+                }
+                unify(&sig.return_type, &asig.return_type, subst)?;
             }
             Ok(())
         }
@@ -9923,6 +9969,14 @@ fn substitute(ty: &Type, subst: &HashMap<String, Type>) -> Type {
         Type::Ref(inner, m) => Type::Ref(Box::new(substitute(inner, subst)), *m),
         Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| substitute(t, subst)).collect()),
         Type::Array(inner, n) => Type::Array(Box::new(substitute(inner, subst)), *n),
+        // T1a：函数类型递归替换（fn(T, T) -> i64 中 T 经 impl 泛型统一后须替换为
+        // 具体类型——此前 `_` 兜底不深入 Fn 内部，泛型方法 fn 参数（如
+        // `Vec::sort_by(cmp: fn(T, T) -> i64)`）调用时形参保持 `fn(T, T)`，
+        // 函数名 / 闭包实参均无法 unify（expects fn(T, T) -> i64 错误）。
+        Type::Fn(sig) => Type::Fn(Box::new(FnSignature {
+            params: sig.params.iter().map(|p| substitute(p, subst)).collect(),
+            return_type: substitute(&sig.return_type, subst),
+        })),
         _ => ty.clone(),
     }
 }

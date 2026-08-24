@@ -334,6 +334,54 @@ impl<T> Vec<T> {
         }
         sl
     }
+    // T1a：迭代器——MVP 退化：返回元素值拷贝的新缓冲（目标 `Iter<'_, T>` 借用
+    // 迭代器规划——借用迭代器需生命周期标注的迭代状态类型，MVP 未提供；返回
+    // Vec 可经 `for` 直接迭代，元素按值拷贝，与 slice 语义一致）。
+    fn iter(&self) -> Vec<T> {
+        let mut v: Vec<T> = Vec::new();
+        let mut i = 0;
+        while i < self.len {
+            v.push(self.data[i]);
+            i = i + 1;
+        }
+        v
+    }
+    // T1a：可变索引访问——MVP 值语义：返回槽值拷贝（目标 `Option<&mut T>` 引用
+    // 语义规划——&mut 别名需借用检查支持可变引用返回，MVP 未提供，与 get 一致）。
+    fn get_mut(&mut self, i: i64) -> T {
+        self.data[i]
+    }
+    // T1a：比较器排序——cmp 返回三态 i64（负 / 零 / 正，对齐 Rust Ordering 语义，
+    // Ordering 枚举规划；< 0 表示第一个参数应在前）。选择排序 O(n²)，非稳定；
+    // 比较器经函数指针调用（H1），H2 无捕获闭包可作实参。
+    fn sort_by(&mut self, cmp: fn(T, T) -> i64) {
+        let mut i = 0;
+        while i < self.len {
+            let mut min = i;
+            let mut j = i + 1;
+            while j < self.len {
+                if cmp(self.data[j], self.data[min]) < 0 {
+                    min = j;
+                }
+                j = j + 1;
+            }
+            if min != i {
+                let t = self.data[i];
+                self.data[i] = self.data[min];
+                self.data[min] = t;
+            }
+            i = i + 1;
+        }
+    }
+}
+
+// T2：Iterator trait（MVP 退化——目标 `type Item` 关联类型；parser/typecheck
+// 无 trait `type` 成员载体（S1a 已验证），元素类型固定 i64。自定义迭代器经
+// `impl Iterator for T { fn next(&mut self) -> Option<i64> }` 接入 for 循环
+// （check_for_iterator 检测 next() 方法，inherent 或 trait impl 均可）。
+// 泛型元素迭代器（如 StdinLines 返回 Option<String>）仍走方法式接入。
+trait Iterator {
+    fn next(&mut self) -> Option<i64>;
 }
 
 // ---------------------------------------------------------------------------
@@ -554,6 +602,14 @@ impl String {
         }
         buf
     }
+    // T1b：目标 API 别名 to_uppercase ≡ to_upper（ASCII 语义；Unicode 全角 / 多字节
+    // 大小写转换规划——MVP 字节级，与 to_upper 一致）。
+    fn to_uppercase(&self) -> String {
+        self.to_upper()
+    }
+    fn to_lowercase(&self) -> String {
+        self.to_lower()
+    }
     // 裁剪：剥离首尾空白（空格 32 / 制表 9 / 换行 10 / 回车 13），返回新缓冲。
     // 正向扫描跳过开头空白找 start，反向扫描跳过结尾空白找 end，再 substring；
     // 全空白串返回空串（start 推进到 len 后反向条件 end > start 不成立）。
@@ -589,6 +645,24 @@ impl String {
         // 结果经 `result` 变量返回（与 find 相同）：函数末尾直接返回
         // 方法调用结果（聚合值）会触发 codegen 返回类型错位
         let result = self.substring(start, end);
+        result
+    }
+    // T1b：字符列表——MVP 字节级：逐字节返回（字符 = 字节，与 to_upper / 索引
+    // 步长 1 字节一致；目标 `Chars` 迭代器 + UTF-8 码点解码规划）。
+    fn chars(&self) -> Vec<i64> {
+        let mut cs: Vec<i64> = Vec::new();
+        let mut i = 0;
+        while i < self.len {
+            cs.push(self.data[i]);
+            i = i + 1;
+        }
+        cs
+    }
+    // T1b：行切分——按换行符（\n = 10）切分，返回 Vec<String>（复用 split 语义，
+    // 连续换行产生空行段、尾随换行后有尾空行段）。目标 `Lines` 迭代器规划；
+    // MVP 差异：\r\n 行尾的 \r 保留（字节语义，未剥除）。
+    fn lines(&self) -> Vec<String> {
+        let result = self.split("\n");
         result
     }
     fn grow(&mut self) {
@@ -1047,6 +1121,17 @@ impl<K, V> HashMap<K, V> {
             i = i + 1;
         }
         vs
+    }
+    // T1c：迭代器——MVP 退化：返回键缓冲（目标 `Iter<'_, K, V>` 键值对迭代器
+    // 规划——键值对需元组支持，MVP 未提供；与 keys 同构，可配 values() 配对使用）。
+    fn iter(&self) -> Vec<K> {
+        let result = self.keys();
+        result
+    }
+    // T1c：可变取值——MVP 值语义：返回槽值拷贝（目标 `Option<&mut V>` 引用语义
+    // 规划——&mut 别名需借用检查支持可变引用返回，MVP 未提供，与 get 一致）。
+    fn get_mut(&mut self, k: K) -> Option<V> {
+        self.get(k)
     }
 }
 

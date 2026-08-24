@@ -24,4 +24,4 @@
 
 - **2026-08 归档**：设计稿由 `zeta-language/` 根目录移入本目录（`git mv`，历史保留）。
 - 各设计稿头部已加归档横幅；正文内容保持原样，**不再更新**。
-- 当前唯一权威进度文档：`docs/development-plan.md`（阶段 A–F 执行记录）。
+- 权威进度文档：`docs/development-plan.md`（阶段 A–F 执行记录，已完成）+ `docs/mvp-gaps-plan.md`（阶段 G–T 剩余任务消解计划，进行中）。

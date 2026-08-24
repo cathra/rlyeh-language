@@ -7,7 +7,10 @@
 //   架构；WASI/Windows 下注入返回 -1 的 stub（Unsupported，禁用文档化）。
 // - 线程函数须为 `fn() -> i64`（H1 函数指针值按地址整数经 extern i64 形参
 //   传入，codegen 做 ptrtoint）；闭包值跨线程捕获后续支持（S3）。
-// - MVP 无 TLS 需求（S0e）；join 返回值经 pthread_join 返回值槽读取。
+// - MVP 无 TLS 需求（S0e ✅）；join 返回值经 pthread_join 返回值槽读取。
+// - 默认栈大小（S0e ✅）：pthread_create attr=NULL 使用系统默认——Linux 约 8MB、
+//   macOS 约 512KB（stack_size 定制规划中）；栈溢出/数据竞争属调用方责任
+//   （与 C 内存模型一致）。
 // - 底层 extern（__zeta_*）声明于根模块 core.zeta 的 extern 集中区。
 
 // S0b：线程句柄（pthread_t 的 i64 视图）。
