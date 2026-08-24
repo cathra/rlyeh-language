@@ -2467,6 +2467,16 @@ fn check_call(
     if name == "json::parse" || name == "json::from_str" {
         return check_json_parse(ctx, args, type_args, span);
     }
+    // Q4 `toml` 模块（轻量 MVP）：`toml.to_string`/`toml.stringify` 序列化（基础标量 /
+    // 嵌套表（内联表）/ 数组），`toml.from_str`/`toml.parse` 反序列化（round-trip 对齐
+    // stringify 的紧凑输出）。MVP 无泛型 trait 约束（`T: Serialize` / `T: Deserialize`
+    // bound 不支持），签名退化为无 bound turbofish 形式（同 Q2 json）。
+    if name == "toml::stringify" || name == "toml::to_string" {
+        return check_toml_stringify(ctx, args, span);
+    }
+    if name == "toml::parse" || name == "toml::from_str" {
+        return check_toml_parse(ctx, args, type_args, span);
+    }
     // Q2b 流式 writer/reader（目标 `File`；TcpStream 留待流式 read_all 方法化）：
     // `json.to_writer(w, v)` → `w.write_all(json.stringify(v))`，返回
     // `Result<i64, io::error::IoError>`；`json.from_reader::<T>(r)` →
@@ -8251,6 +8261,1184 @@ fn json_parse_ast(
         }
         other => Err(TypeError::Unsupported {
             what: format!("json.parse：类型 `{other}` 反序列化"),
+            span,
+        }),
+    }
+}
+
+// ===========================================================================
+// Q4 `toml` 模块（轻量 MVP）：基础标量 / 嵌套表（内联表）/ 数组 stringify/parse
+// ===========================================================================
+
+/// Q4 `toml.to_string(v)` / `toml.stringify(v)` → TOML 文本（编译器内建，AST 层 desugar，
+/// 零新增 IR 节点）。MVP 无泛型 trait 约束（`T: Serialize` bound 不支持），签名退化为
+/// 无 bound 形式：类型由实参推断。
+///
+/// 支持类型：`i64` / `bool` / `String` / `&str` / 数组 `[T; N]` / `Vec<T>` / 结构体（嵌套
+/// 递归）；`HashMap<K, V>`（键限 `i64` / `String`，值递归）。
+///
+/// 输出格式（紧凑、无多余空白，与 `toml::from_str` 的 round-trip 对齐）：
+///   - 顶层结构体 → 多行：`f1 = v1\nf2 = v2`（每字段一行 `key = value`）
+///   - 嵌套结构体字段 → 内联表：`{x = 1, y = 2}`（MVP 用内联表；`[section]` 行式子表规划中）
+///   - 数组 / Vec → `[e1, e2]`；HashMap → `{"k" = v, "k2" = v2}`（键带引号，TOML 合法）
+///   - 标量：i64 → `int_to_string`；bool → `true` / `false`；String → `"` + json_escape + `"`
+///     （TOML 基本转义与 JSON 一致，复用 core.zeta `json_escape` / `json_unescape`）
+fn check_toml_stringify(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "toml.stringify".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    let (_, ty) = infer_expr(ctx, &args[0])?;
+    let text_ast = toml_serialize_ast(ctx, &ty, &args[0], span, true)?;
+    let (hir, _) = infer_expr(ctx, &text_ast)?;
+    Ok((hir, Type::Named("String".to_string(), Vec::new())))
+}
+
+/// 递归 TOML 序列化 AST 构建。`top_level`：顶层结构体输出多行 `key = value`（标准 TOML
+/// 顶层键值对），嵌套字段输出内联表 `{ ... }`。
+fn toml_serialize_ast(
+    ctx: &mut TypeContext,
+    ty: &Type,
+    arg: &AstExpr,
+    span: Span,
+    top_level: bool,
+) -> Result<AstExpr, TypeError> {
+    match ty {
+        // i64 → `int_to_string(x)`（std）
+        Type::I64 => Ok(mk_ident_call(
+            "int_to_string".to_string(),
+            vec![arg.clone()],
+            span,
+        )),
+        // bool → `if b { "true" } else { "false" }`
+        Type::Bool => {
+            let mk = |s: &str| string_from_lit_ast(s.to_string(), span);
+            Ok(AstExpr::new(
+                ExprKind::If {
+                    cond: arg.clone(),
+                    then_block: AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(mk("true")),
+                        span,
+                    },
+                    else_block: Some(AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(mk("false")),
+                        span,
+                    }),
+                },
+                span,
+            ))
+        }
+        // String → `"` + json_escape(s) + `"`（TOML 基本转义与 JSON 一致，复用）
+        Type::Named(n, _) if n == "String" => {
+            let quote = |s: &str| string_from_lit_ast(s.to_string(), span);
+            let esc = mk_ident_call("json_escape".to_string(), vec![arg.clone()], span);
+            Ok(fold_add(vec![quote("\""), esc, quote("\"")], span))
+        }
+        // &str / 字符串字面量 → `"` + json_escape(String::from(arg)) + `"`
+        Type::Str => {
+            let quote = |s: &str| string_from_lit_ast(s.to_string(), span);
+            let sf = mk_path_call(
+                vec!["String".to_string(), "from".to_string()],
+                vec![arg.clone()],
+                span,
+            );
+            let esc = mk_ident_call("json_escape".to_string(), vec![sf], span);
+            Ok(fold_add(vec![quote("\""), esc, quote("\"")], span))
+        }
+        // 数组 `[T; N]`：静态展开 `[e0,e1,...]`（长度编译期已知）
+        Type::Array(elem, len) => {
+            let mut parts = vec![string_from_lit_ast("[".to_string(), span)];
+            for i in 0..*len {
+                if i > 0 {
+                    parts.push(string_from_lit_ast(",".to_string(), span));
+                }
+                let idx = AstExpr::new(
+                    ExprKind::Index {
+                        expr: arg.clone(),
+                        index: AstExpr::new(ExprKind::IntLiteral(i as i128), span),
+                    },
+                    span,
+                );
+                parts.push(toml_serialize_ast(ctx, elem, &idx, span, false)?);
+            }
+            parts.push(string_from_lit_ast("]".to_string(), span));
+            Ok(fold_add(parts, span))
+        }
+        // Vec<T> → while 循环构建 `[e0,e1,...]`（须置于 struct 分支之前——Vec 是 std struct）
+        Type::Named(n, args) if n == "Vec" && args.len() == 1 => {
+            let elem_ty = substitute(&args[0], &ctx.generic_subst);
+            if matches!(elem_ty, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "toml.stringify：Vec 元素类型未确定（如 `let v: Vec<i64> = vec![...]` 注解）"
+                        .to_string(),
+                    span,
+                });
+            }
+            let out_name = ctx.fresh_temp();
+            let i_name = ctx.fresh_temp();
+            let out_id = AstExpr::new(ExprKind::Ident(out_name.clone()), span);
+            let i_id = AstExpr::new(ExprKind::Ident(i_name.clone()), span);
+            let push = |recv: AstExpr, val: AstExpr| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: "push_str".to_string(),
+                        args: vec![val],
+                    },
+                    span,
+                )
+            };
+            let mut body_stmts = vec![
+                AstStmt::Let {
+                    pattern: AstPattern::Ident(out_name),
+                    type_anno: None,
+                    init: mk_path_call(
+                        vec!["String".to_string(), "new".to_string()],
+                        Vec::new(),
+                        span,
+                    ),
+                    mutable: true,
+                },
+                AstStmt::Let {
+                    pattern: AstPattern::Ident(i_name),
+                    type_anno: None,
+                    init: AstExpr::new(ExprKind::IntLiteral(0), span),
+                    mutable: true,
+                },
+                AstStmt::Semi(push(out_id.clone(), string_from_lit_ast("[".to_string(), span))),
+            ];
+            // while __i < v.len()
+            let len_call = AstExpr::new(
+                ExprKind::MethodCall {
+                    receiver: arg.clone(),
+                    method: "len".to_string(),
+                    args: Vec::new(),
+                },
+                span,
+            );
+            let cond = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![i_id.clone(), len_call],
+                    operators: vec![CompareOp::Lt],
+                },
+                span,
+            );
+            let mut loop_stmts = Vec::new();
+            // if __i > 0 { __o.push_str(",") }
+            let gt_zero = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![
+                        i_id.clone(),
+                        AstExpr::new(ExprKind::IntLiteral(0), span),
+                    ],
+                    operators: vec![CompareOp::Gt],
+                },
+                span,
+            );
+            loop_stmts.push(AstStmt::Semi(AstExpr::new(
+                ExprKind::If {
+                    cond: gt_zero,
+                    then_block: AstBlock {
+                        stmts: vec![AstStmt::Semi(push(
+                            out_id.clone(),
+                            string_from_lit_ast(",".to_string(), span),
+                        ))],
+                        final_expr: None,
+                        span,
+                    },
+                    else_block: None,
+                },
+                span,
+            )));
+            // __o.push_str(<元素递归>)
+            let idx = AstExpr::new(
+                ExprKind::Index {
+                    expr: arg.clone(),
+                    index: i_id.clone(),
+                },
+                span,
+            );
+            let elem_ast = toml_serialize_ast(ctx, &elem_ty, &idx, span, false)?;
+            loop_stmts.push(AstStmt::Semi(push(out_id.clone(), elem_ast)));
+            // __i = __i + 1
+            loop_stmts.push(AstStmt::Semi(AstExpr::new(
+                ExprKind::Assign {
+                    target: i_id.clone(),
+                    op: AssignOp::Assign,
+                    value: bin_add(
+                        i_id.clone(),
+                        AstExpr::new(ExprKind::IntLiteral(1), span),
+                        span,
+                    ),
+                },
+                span,
+            )));
+            body_stmts.push(AstStmt::Semi(AstExpr::new(
+                ExprKind::While {
+                    cond,
+                    body: AstBlock {
+                        stmts: loop_stmts,
+                        final_expr: None,
+                        span,
+                    },
+                },
+                span,
+            )));
+            body_stmts.push(AstStmt::Semi(push(
+                out_id.clone(),
+                string_from_lit_ast("]".to_string(), span),
+            )));
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: body_stmts,
+                    final_expr: Some(out_id),
+                    span,
+                }),
+                span,
+            ))
+        }
+        // HashMap<K, V> → 内联表 `{"k" = v, ...}`（键带引号，TOML 合法；值递归）。
+        // desugar 为块表达式 + `for (k, v) in m`（check_for_hashmap 槽位遍历）：
+        // `{ let mut __o = String::new(); let mut __first = 1; __o.push_str("{");
+        //    for (k, v) in m {
+        //      if __first > 0 { __first = 0; } else { __o.push_str(","); }
+        //      __o.push_str(<键>); __o.push_str(" = "); __o.push_str(<值>);
+        //    }
+        //    __o.push_str("}"); __o }`
+        // 键：i64 → `"` + int_to_string(k) + `"`；String → json_escape(k)（自带引号）。
+        // 值：递归 `toml_serialize_ast`（top_level=false）。须置于 struct 分支之前（同 json）。
+        Type::Named(n, args) if n == "HashMap" && args.len() == 2 => {
+            let k_ty = substitute(&args[0], &ctx.generic_subst);
+            let v_ty = substitute(&args[1], &ctx.generic_subst);
+            if matches!(k_ty, Type::Infer) || matches!(v_ty, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "toml.stringify：HashMap 键/值类型未确定（如 `let m: HashMap<i64, i64> = map![...]` 注解定型）".to_string(),
+                    span,
+                });
+            }
+            let key_is_i64 = matches!(k_ty, Type::I64);
+            let key_is_string = matches!(&k_ty, Type::Named(kn, _) if kn == "String");
+            if !key_is_i64 && !key_is_string {
+                return Err(TypeError::Unsupported {
+                    what: format!("toml.stringify：HashMap 键类型 `{k_ty}`（MVP 支持 i64 / String）"),
+                    span,
+                });
+            }
+            let out_name = ctx.fresh_temp();
+            let first_name = ctx.fresh_temp();
+            let k_name = ctx.fresh_temp();
+            let v_name = ctx.fresh_temp();
+            let out_id = AstExpr::new(ExprKind::Ident(out_name.clone()), span);
+            let first_id = AstExpr::new(ExprKind::Ident(first_name.clone()), span);
+            let k_id = AstExpr::new(ExprKind::Ident(k_name.clone()), span);
+            let v_id = AstExpr::new(ExprKind::Ident(v_name.clone()), span);
+            let push = |recv: AstExpr, val: AstExpr| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: "push_str".to_string(),
+                        args: vec![val],
+                    },
+                    span,
+                )
+            };
+            // 键序列化：i64 → `"` + int_to_string(k) + `"`；String → json_escape(k)
+            let key_ser = if key_is_i64 {
+                fold_add(
+                    vec![
+                        string_from_lit_ast("\"".to_string(), span),
+                        mk_ident_call("int_to_string".to_string(), vec![k_id.clone()], span),
+                        string_from_lit_ast("\"".to_string(), span),
+                    ],
+                    span,
+                )
+            } else {
+                mk_ident_call("json_escape".to_string(), vec![k_id.clone()], span)
+            };
+            let val_ser = toml_serialize_ast(ctx, &v_ty, &v_id, span, false)?;
+            // `if __first > 0 { __first = 0 } else { __o.push_str(",") }`
+            let first_gt_zero = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![
+                        first_id.clone(),
+                        AstExpr::new(ExprKind::IntLiteral(0), span),
+                    ],
+                    operators: vec![CompareOp::Gt],
+                },
+                span,
+            );
+            let mut loop_stmts = vec![AstStmt::Semi(AstExpr::new(
+                ExprKind::If {
+                    cond: first_gt_zero,
+                    then_block: AstBlock {
+                        stmts: vec![AstStmt::Semi(AstExpr::new(
+                            ExprKind::Assign {
+                                target: first_id.clone(),
+                                op: AssignOp::Assign,
+                                value: AstExpr::new(ExprKind::IntLiteral(0), span),
+                            },
+                            span,
+                        ))],
+                        final_expr: None,
+                        span,
+                    },
+                    else_block: Some(AstBlock {
+                        stmts: vec![AstStmt::Semi(push(
+                            out_id.clone(),
+                            string_from_lit_ast(",".to_string(), span),
+                        ))],
+                        final_expr: None,
+                        span,
+                    }),
+                },
+                span,
+            ))];
+            // __o.push_str(<键>); __o.push_str(" = "); __o.push_str(<值>)
+            loop_stmts.push(AstStmt::Semi(push(
+                out_id.clone(),
+                key_ser,
+            )));
+            loop_stmts.push(AstStmt::Semi(push(
+                out_id.clone(),
+                string_from_lit_ast("=".to_string(), span),
+            )));
+            loop_stmts.push(AstStmt::Semi(push(out_id.clone(), val_ser)));
+            let for_expr = AstExpr::new(
+                ExprKind::For {
+                    pattern: AstPattern::Tuple(vec![
+                        AstPattern::Ident(k_name),
+                        AstPattern::Ident(v_name),
+                    ]),
+                    iterator: arg.clone(),
+                    body: AstBlock {
+                        stmts: loop_stmts,
+                        final_expr: None,
+                        span,
+                    },
+                },
+                span,
+            );
+            let body_stmts = vec![
+                AstStmt::Let {
+                    pattern: AstPattern::Ident(out_name),
+                    type_anno: None,
+                    init: mk_path_call(
+                        vec!["String".to_string(), "new".to_string()],
+                        Vec::new(),
+                        span,
+                    ),
+                    mutable: true,
+                },
+                AstStmt::Let {
+                    pattern: AstPattern::Ident(first_name),
+                    type_anno: None,
+                    init: AstExpr::new(ExprKind::IntLiteral(1), span),
+                    mutable: true,
+                },
+                AstStmt::Semi(push(
+                    out_id.clone(),
+                    string_from_lit_ast("{".to_string(), span),
+                )),
+                AstStmt::Semi(for_expr),
+                AstStmt::Semi(push(
+                    out_id.clone(),
+                    string_from_lit_ast("}".to_string(), span),
+                )),
+            ];
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: body_stmts,
+                    final_expr: Some(out_id),
+                    span,
+                }),
+                span,
+            ))
+        }
+        // 结构体（嵌套递归）。
+        // guard 排除 Vec / HashMap（两者是 std struct 但各有专用分支，须先于本分支命中）。
+        Type::Named(name, _)
+            if ctx.lookup_struct(name).is_some()
+                && ctx
+                    .resolve_full_name(name)
+                    .unwrap_or_else(|| name.clone())
+                    != "Vec"
+                && ctx
+                    .resolve_full_name(name)
+                    .unwrap_or_else(|| name.clone())
+                    != "HashMap" =>
+        {
+            let def = ctx.lookup_struct(name).cloned().ok_or_else(|| {
+                TypeError::UndefinedType {
+                    name: name.clone(),
+                    span,
+                }
+            })?;
+            if def.fields.is_empty() {
+                // 顶层空结构体 → 空文本；嵌套空结构体 → `{}` 内联表
+                if top_level {
+                    return Ok(mk_path_call(
+                        vec!["String".to_string(), "new".to_string()],
+                        Vec::new(),
+                        span,
+                    ));
+                }
+                return Ok(string_from_lit_ast("{}".to_string(), span));
+            }
+            // 字段访问 AST：`arg.field`
+            let field_arg = |fname: &str| {
+                AstExpr::new(
+                    ExprKind::FieldAccess {
+                        expr: arg.clone(),
+                        field: fname.to_string(),
+                    },
+                    span,
+                )
+            };
+            // 顶层：多行 `f1 = v1\nf2 = v2`（字段序 = 定义序）；嵌套：内联表 `{f1 = v1,f2 = v2}`
+            let mut parts = if top_level {
+                Vec::new()
+            } else {
+                vec![string_from_lit_ast("{".to_string(), span)]
+            };
+            for (i, (fname, fty_ast)) in def.fields.iter().enumerate() {
+                if i > 0 {
+                    let sep = if top_level { "\n" } else { "," };
+                    parts.push(string_from_lit_ast(sep.to_string(), span));
+                }
+                parts.push(string_from_lit_ast(format!("{fname}="), span));
+                let farg = field_arg(fname);
+                parts.push(toml_serialize_ast(ctx, fty_ast, &farg, span, false)?);
+            }
+            if !top_level {
+                parts.push(string_from_lit_ast("}".to_string(), span));
+            }
+            Ok(fold_add(parts, span))
+        }
+        other => Err(TypeError::Unsupported {
+            what: format!("toml.stringify：类型 `{other}` 序列化"),
+            span,
+        }),
+    }
+}
+
+/// Q4 `toml.from_str::<T>(s)` / `toml.parse::<T>(s)` → T（编译器内建，AST 层 desugar）。
+///
+/// MVP 支持（round-trip 对齐 `toml::to_string` 的紧凑输出，无多余空白）：
+/// `i64` / `bool` / `String`（引号剥离 + 转义还原）；`Vec<T>`（数组 `[e1,e2]`，元素限
+/// 标量）；`HashMap<K, V>`（内联表 `{"k" = v, ...}`，键/值限标量）；结构体（顶层多行
+/// `key = value` / 嵌套内联表 `{ ... }`）。数组类型 `[T; N]` 与 f64 报 Unsupported。
+fn check_toml_parse(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    type_args: &[AstType],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "toml.parse".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    if type_args.len() != 1 {
+        return Err(TypeError::Unsupported {
+            what: "toml.parse 需要 1 个类型实参（turbofish `toml.parse::<T>(s)`）".to_string(),
+            span,
+        });
+    }
+    let target = resolve_ast_type(ctx, &type_args[0], span)?;
+    let parse_ast = toml_parse_ast(ctx, &target, &args[0], span, false)?;
+    let (hir, _) = infer_expr(ctx, &parse_ast)?;
+    Ok((hir, target))
+}
+
+/// 递归 TOML 反序列化 AST 构建。`inline`：结构体目标的文本形态——`false` 顶层多行
+/// （`key = value` 行，`\n` 分隔，不剥括号）；`true` 内联表（`{ ... }`，剥首尾 `{ }`，
+/// `,` 分隔）。标量 / 数组 / HashMap 分支忽略 `inline`（数组自身剥 `[ ]`，HashMap 恒为
+/// 内联表）。
+fn toml_parse_ast(
+    ctx: &mut TypeContext,
+    ty: &Type,
+    arg: &AstExpr,
+    span: Span,
+    inline: bool,
+) -> Result<AstExpr, TypeError> {
+    // 统一实参转 String（TOML 文本实参可为字符串字面量 / String / &str）
+    let s = mk_path_call(
+        vec!["String".to_string(), "from".to_string()],
+        vec![arg.clone()],
+        span,
+    );
+    match ty {
+        // i64 → `string_to_int(s)`（std；数字文本无引号，MVP 直接解析）
+        Type::I64 => Ok(mk_ident_call(
+            "string_to_int".to_string(),
+            vec![s],
+            span,
+        )),
+        // bool → `if s == "true" { true } else { false }`
+        Type::Bool => {
+            let eq = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![s, string_from_lit_ast("true".to_string(), span)],
+                    operators: vec![CompareOp::Eq],
+                },
+                span,
+            );
+            Ok(AstExpr::new(
+                ExprKind::If {
+                    cond: eq,
+                    then_block: AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(AstExpr::new(ExprKind::BoolLiteral(true), span)),
+                        span,
+                    },
+                    else_block: Some(AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(AstExpr::new(ExprKind::BoolLiteral(false), span)),
+                        span,
+                    }),
+                },
+                span,
+            ))
+        }
+        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.zeta）
+        Type::Named(n, _) if n == "String" => Ok(mk_ident_call(
+            "json_unescape".to_string(),
+            vec![s],
+            span,
+        )),
+        // Vec<T> → 数组 `[e1,e2]` 反序列化（元素限标量 i64 / bool / String）。
+        // desugar 为块表达式 + `for x in vec`：
+        // `{ let __s = String::from(<arg>);                 // TOML 文本
+        //    let __body = __s.substring(1, __s.len() - 1);  // 剥离首尾 [ ]
+        //    let __parts = __body.split(",");               // 逗号分段
+        //    let mut __v: Vec<T> = Vec::new();              // 注解定型（空数组 [] 亦定型）
+        //    for __part in __parts {
+        //      let __e = <元素递归 toml_parse_ast>;
+        //      __v.push(__e);
+        //    }
+        //    __v }`
+        Type::Named(n, args) if n == "Vec" && args.len() == 1 => {
+            let elem_ty = substitute(&args[0], &ctx.generic_subst);
+            if matches!(elem_ty, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "toml.parse：Vec 元素类型未确定（turbofish 显式定型，如 `toml.parse::<Vec<i64>>(s)`）".to_string(),
+                    span,
+                });
+            }
+            let s_name = ctx.fresh_temp();
+            let body_name = ctx.fresh_temp();
+            let parts_name = ctx.fresh_temp();
+            let v_name = ctx.fresh_temp();
+            let part_name = ctx.fresh_temp();
+            let e_name = ctx.fresh_temp();
+            let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
+            let body_id = AstExpr::new(ExprKind::Ident(body_name.clone()), span);
+            let parts_id = AstExpr::new(ExprKind::Ident(parts_name.clone()), span);
+            let v_id = AstExpr::new(ExprKind::Ident(v_name.clone()), span);
+            let part_id = AstExpr::new(ExprKind::Ident(part_name.clone()), span);
+            let e_id = AstExpr::new(ExprKind::Ident(e_name.clone()), span);
+            let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: method.to_string(),
+                        args,
+                    },
+                    span,
+                )
+            };
+            let elem_parse = toml_parse_ast(ctx, &elem_ty, &part_id.clone(), span, false)?;
+            let for_expr = AstExpr::new(
+                ExprKind::For {
+                    pattern: AstPattern::Ident(part_name),
+                    iterator: parts_id.clone(),
+                    body: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(e_name),
+                                type_anno: None,
+                                init: elem_parse,
+                                mutable: false,
+                            },
+                            AstStmt::Semi(AstExpr::new(
+                                ExprKind::MethodCall {
+                                    receiver: v_id.clone(),
+                                    method: "push".to_string(),
+                                    args: vec![e_id],
+                                },
+                                span,
+                            )),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                },
+                span,
+            );
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(s_name),
+                            type_anno: None,
+                            init: s,
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(body_name),
+                            type_anno: None,
+                            init: mcall(
+                                s_id.clone(),
+                                "substring",
+                                vec![
+                                    AstExpr::new(ExprKind::IntLiteral(1), span),
+                                    AstExpr::new(
+                                        ExprKind::Binary {
+                                            op: BinaryOp::Sub,
+                                            left: mcall(s_id, "len", Vec::new()),
+                                            right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                        },
+                                        span,
+                                    ),
+                                ],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(parts_name),
+                            type_anno: None,
+                            init: mcall(
+                                body_id,
+                                "split",
+                                vec![string_from_lit_ast(",".to_string(), span)],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(v_name),
+                            type_anno: Some(AstType::Path(
+                                "Vec".to_string(),
+                                vec![ty_to_ast(&elem_ty)],
+                            )),
+                            init: mk_path_call(
+                                vec!["Vec".to_string(), "new".to_string()],
+                                Vec::new(),
+                                span,
+                            ),
+                            mutable: true,
+                        },
+                        AstStmt::Semi(for_expr),
+                    ],
+                    final_expr: Some(v_id),
+                    span,
+                }),
+                span,
+            ))
+        }
+        // HashMap<K, V> → 内联表 `{"k" = v, ...}` 反序列化（键/值限标量）。
+        // 与 json.parse 的 HashMap 分支同构，仅分隔符 `:` → ` = ` 与键剥引号路径一致：
+        // `{ let __s = String::from(<arg>);
+        //    let __body = __s.substring(1, __s.len() - 1);  // 剥离首尾 { }
+        //    let __parts = __body.split(",");
+        //    let mut __m: HashMap<K, V> = HashMap::new();
+        //    for __part in __parts {
+        //      let __c = __part.find(" = ");               // 等号分隔（键/值含等号 MVP 限制）
+        //      if __c >= 0 {
+        //        let __kpart = __part.substring(0, __c);
+        //        let __vpart = __part.substring(__c + 1, __part.len());
+        //        let __k = <键解析>;                        // i64: string_to_int(json_unescape(kpart))
+        //                                                    // String: json_unescape(kpart)
+        //        let __v = <值解析，递归标量>;
+        //        __m.insert(__k, __v);
+        //      }
+        //    }
+        //    __m }`
+        // 注意：stringify 键为带引号（`"1"` / `"a"`）——键段先 json_unescape 剥引号，
+        // i64 再经 string_to_int 转整数。须置于 struct 分支之前（同 stringify）。
+        Type::Named(n, args) if n == "HashMap" && args.len() == 2 => {
+            let k_ty = substitute(&args[0], &ctx.generic_subst);
+            let v_ty = substitute(&args[1], &ctx.generic_subst);
+            if matches!(k_ty, Type::Infer) || matches!(v_ty, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "toml.parse：HashMap 键/值类型未确定（turbofish 显式定型，如 `toml.parse::<HashMap<i64, i64>>(s)`）".to_string(),
+                    span,
+                });
+            }
+            let key_is_i64 = matches!(k_ty, Type::I64);
+            let key_is_string = matches!(&k_ty, Type::Named(kn, _) if kn == "String");
+            if !key_is_i64 && !key_is_string {
+                return Err(TypeError::Unsupported {
+                    what: format!("toml.parse：HashMap 键类型 `{k_ty}`（MVP 支持 i64 / String）"),
+                    span,
+                });
+            }
+            let s_name = ctx.fresh_temp();
+            let body_name = ctx.fresh_temp();
+            let parts_name = ctx.fresh_temp();
+            let m_name = ctx.fresh_temp();
+            let part_name = ctx.fresh_temp();
+            let c_name = ctx.fresh_temp();
+            let kpart_name = ctx.fresh_temp();
+            let vpart_name = ctx.fresh_temp();
+            let k_name = ctx.fresh_temp();
+            let v_name = ctx.fresh_temp();
+            let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
+            let body_id = AstExpr::new(ExprKind::Ident(body_name.clone()), span);
+            let parts_id = AstExpr::new(ExprKind::Ident(parts_name.clone()), span);
+            let m_id = AstExpr::new(ExprKind::Ident(m_name.clone()), span);
+            let part_id = AstExpr::new(ExprKind::Ident(part_name.clone()), span);
+            let c_id = AstExpr::new(ExprKind::Ident(c_name.clone()), span);
+            let kpart_id = AstExpr::new(ExprKind::Ident(kpart_name.clone()), span);
+            let vpart_id = AstExpr::new(ExprKind::Ident(vpart_name.clone()), span);
+            let k_id = AstExpr::new(ExprKind::Ident(k_name.clone()), span);
+            let v_id = AstExpr::new(ExprKind::Ident(v_name.clone()), span);
+            let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: method.to_string(),
+                        args,
+                    },
+                    span,
+                )
+            };
+            // 键解析：i64 → `string_to_int(json_unescape(kpart))`；String → `json_unescape(kpart)`
+            let k_unescaped = mk_ident_call("json_unescape".to_string(), vec![kpart_id.clone()], span);
+            let key_parse = if key_is_i64 {
+                mk_ident_call("string_to_int".to_string(), vec![k_unescaped], span)
+            } else {
+                k_unescaped
+            };
+            let val_parse = toml_parse_ast(ctx, &v_ty, &vpart_id.clone(), span, false)?;
+            let if_parse = AstExpr::new(
+                ExprKind::If {
+                    cond: AstExpr::new(
+                        ExprKind::ComparisonChain {
+                            elements: vec![c_id.clone(), AstExpr::new(ExprKind::IntLiteral(0), span)],
+                            operators: vec![CompareOp::Ge],
+                        },
+                        span,
+                    ),
+                    then_block: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(kpart_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id.clone(),
+                                    "substring",
+                                    vec![
+                                        AstExpr::new(ExprKind::IntLiteral(0), span),
+                                        c_id.clone(),
+                                    ],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(vpart_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id.clone(),
+                                    "substring",
+                                    vec![
+                                        AstExpr::new(
+                                            ExprKind::Binary {
+                                                op: BinaryOp::Add,
+                                                left: c_id.clone(),
+                                                right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                            },
+                                            span,
+                                        ),
+                                        mcall(part_id.clone(), "len", Vec::new()),
+                                    ],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(k_name),
+                                type_anno: None,
+                                init: key_parse,
+                                mutable: false,
+                            },
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(v_name),
+                                type_anno: None,
+                                init: val_parse,
+                                mutable: false,
+                            },
+                            AstStmt::Semi(AstExpr::new(
+                                ExprKind::MethodCall {
+                                    receiver: m_id.clone(),
+                                    method: "insert".to_string(),
+                                    args: vec![k_id, v_id],
+                                },
+                                span,
+                            )),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                    else_block: None,
+                },
+                span,
+            );
+            let for_expr = AstExpr::new(
+                ExprKind::For {
+                    pattern: AstPattern::Ident(part_name),
+                    iterator: parts_id.clone(),
+                    body: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(c_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id,
+                                    "find",
+                                    vec![string_from_lit_ast("=".to_string(), span)],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Semi(if_parse),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                },
+                span,
+            );
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(s_name),
+                            type_anno: None,
+                            init: s,
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(body_name),
+                            type_anno: None,
+                            init: mcall(
+                                s_id.clone(),
+                                "substring",
+                                vec![
+                                    AstExpr::new(ExprKind::IntLiteral(1), span),
+                                    AstExpr::new(
+                                        ExprKind::Binary {
+                                            op: BinaryOp::Sub,
+                                            left: mcall(s_id, "len", Vec::new()),
+                                            right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                        },
+                                        span,
+                                    ),
+                                ],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(parts_name),
+                            type_anno: None,
+                            init: mcall(
+                                body_id,
+                                "split",
+                                vec![string_from_lit_ast(",".to_string(), span)],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(m_name),
+                            type_anno: Some(AstType::Path(
+                                "HashMap".to_string(),
+                                vec![ty_to_ast(&k_ty), ty_to_ast(&v_ty)],
+                            )),
+                            init: mk_path_call(
+                                vec!["HashMap".to_string(), "new".to_string()],
+                                Vec::new(),
+                                span,
+                            ),
+                            mutable: true,
+                        },
+                        AstStmt::Semi(for_expr),
+                    ],
+                    final_expr: Some(m_id),
+                    span,
+                }),
+                span,
+            ))
+        }
+        // 结构体 → 顶层多行 `key = value` / 嵌套内联表 `{ ... }` 反序列化。
+        // 字段序 = 定义序；缺失字段保持零值，未知字段忽略。desugar 为块表达式 +
+        // `for x in vec`（复用 check_for_vec 遍历 split 结果）：
+        // `{ let __s = String::from(<arg>);
+        //    let __body = <inline ? __s.substring(1, __s.len() - 1) : __s>;  // 内联表剥 { }
+        //    let __parts = __body.split(<inline ? "," : "\n">);
+        //    let mut __p: Point = Point { x: 0, y: 0 };     // 零值构造
+        //    for __part in __parts {
+        //      let __c = __part.find("=");
+        //      if __c >= 0 {
+        //        let __name = __part.substring(0, __c);      // 裸键，直接比较
+        //        let __val = __part.substring(__c + 1, __part.len());
+        //        if __name == "x" { __p.x = <解析>; } else if ... else { }
+        //      }
+        //    }
+        //    __p }`
+        // 字段值限 toml_parse_ast 支持类型（i64 / bool / String / Vec / 嵌套 struct /
+        // HashMap）；嵌套 struct / HashMap 值为内联表 `{...}`（含逗号经 split 分段错误
+        // 的 MVP 限制与 json 一致）；泛型 struct MVP 不支持（与 json 一致）。
+        Type::Named(n, args) if ctx.lookup_struct(&n).is_some() && args.is_empty() => {
+            let def = ctx.lookup_struct(&n).cloned().unwrap();
+            if def.fields.is_empty() {
+                return Err(TypeError::Unsupported {
+                    what: format!("toml.parse：空结构体 `{n}` 反序列化"),
+                    span,
+                });
+            }
+            let s_name = ctx.fresh_temp();
+            let body_name = ctx.fresh_temp();
+            let parts_name = ctx.fresh_temp();
+            let p_name = ctx.fresh_temp();
+            let part_name = ctx.fresh_temp();
+            let c_name = ctx.fresh_temp();
+            let name_name = ctx.fresh_temp();
+            let val_name = ctx.fresh_temp();
+            let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
+            let body_id = AstExpr::new(ExprKind::Ident(body_name.clone()), span);
+            let parts_id = AstExpr::new(ExprKind::Ident(parts_name.clone()), span);
+            let p_id = AstExpr::new(ExprKind::Ident(p_name.clone()), span);
+            let part_id = AstExpr::new(ExprKind::Ident(part_name.clone()), span);
+            let c_id = AstExpr::new(ExprKind::Ident(c_name.clone()), span);
+            let name_id = AstExpr::new(ExprKind::Ident(name_name.clone()), span);
+            let val_id = AstExpr::new(ExprKind::Ident(val_name.clone()), span);
+            let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: method.to_string(),
+                        args,
+                    },
+                    span,
+                )
+            };
+            // 字段值解析（递归 toml_parse_ast，inline=true——嵌套值可能为内联表）
+            let field_parse = |ctx: &mut TypeContext, fty: &Type| {
+                toml_parse_ast(ctx, fty, &val_id.clone(), span, true)
+            };
+            // 零值构造（缺失字段保持零值）
+            let mut zero_fields = Vec::new();
+            for (fname, fty) in &def.fields {
+                zero_fields.push((fname.clone(), ty_to_zero_ast(ctx, fty, span)?));
+            }
+            let zero_ctor = AstExpr::new(
+                ExprKind::StructCtor {
+                    type_name: vec![n.clone()],
+                    fields: zero_fields,
+                },
+                span,
+            );
+            // if-else 链：`if __name == "x" { __p.x = <解析>; } else if ... else { }`
+            // 自后向前构建；最内层 else 为空块（未知字段忽略）
+            let mut chain: Option<AstExpr> = None;
+            for (fname, fty) in def.fields.iter().rev() {
+                let name_eq = AstExpr::new(
+                    ExprKind::ComparisonChain {
+                        elements: vec![
+                            name_id.clone(),
+                            string_from_lit_ast(fname.clone(), span),
+                        ],
+                        operators: vec![CompareOp::Eq],
+                    },
+                    span,
+                );
+                let inner = chain.take();
+                let then_block = AstBlock {
+                    stmts: vec![AstStmt::Semi(AstExpr::new(
+                        ExprKind::Assign {
+                            target: AstExpr::new(
+                                ExprKind::FieldAccess {
+                                    expr: p_id.clone(),
+                                    field: fname.clone(),
+                                },
+                                span,
+                            ),
+                            op: AssignOp::Assign,
+                            value: field_parse(ctx, fty)?,
+                        },
+                        span,
+                    ))],
+                    final_expr: None,
+                    span,
+                };
+                chain = Some(AstExpr::new(
+                    ExprKind::If {
+                        cond: name_eq,
+                        then_block,
+                        else_block: Some(AstBlock {
+                            stmts: Vec::new(),
+                            final_expr: inner,
+                            span,
+                        }),
+                    },
+                    span,
+                ));
+            }
+            let if_chain = chain.expect("struct 至少一个字段");
+            // `if __c >= 0 { let __name = ...; let __val = ...; <if 链> }`
+            let if_parse = AstExpr::new(
+                ExprKind::If {
+                    cond: AstExpr::new(
+                        ExprKind::ComparisonChain {
+                            elements: vec![
+                                c_id.clone(),
+                                AstExpr::new(ExprKind::IntLiteral(0), span),
+                            ],
+                            operators: vec![CompareOp::Ge],
+                        },
+                        span,
+                    ),
+                    then_block: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(name_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id.clone(),
+                                    "substring",
+                                    vec![
+                                        AstExpr::new(ExprKind::IntLiteral(0), span),
+                                        c_id.clone(),
+                                    ],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(val_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id.clone(),
+                                    "substring",
+                                    vec![
+                                        AstExpr::new(
+                                            ExprKind::Binary {
+                                                op: BinaryOp::Add,
+                                                left: c_id.clone(),
+                                                right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                            },
+                                            span,
+                                        ),
+                                        mcall(part_id.clone(), "len", Vec::new()),
+                                    ],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Semi(if_chain),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                    else_block: None,
+                },
+                span,
+            );
+            // `for __part in __parts { let __c = __part.find("="); <if 解析> }`
+            let for_expr = AstExpr::new(
+                ExprKind::For {
+                    pattern: AstPattern::Ident(part_name),
+                    iterator: parts_id.clone(),
+                    body: AstBlock {
+                        stmts: vec![
+                            AstStmt::Let {
+                                pattern: AstPattern::Ident(c_name),
+                                type_anno: None,
+                                init: mcall(
+                                    part_id,
+                                    "find",
+                                    vec![string_from_lit_ast("=".to_string(), span)],
+                                ),
+                                mutable: false,
+                            },
+                            AstStmt::Semi(if_parse),
+                        ],
+                        final_expr: None,
+                        span,
+                    },
+                },
+                span,
+            );
+            // 主体：inline → `substring(1, len-1)`（剥 { }）；否则原文本
+            let body_init = if inline {
+                mcall(
+                    s_id.clone(),
+                    "substring",
+                    vec![
+                        AstExpr::new(ExprKind::IntLiteral(1), span),
+                        AstExpr::new(
+                            ExprKind::Binary {
+                                op: BinaryOp::Sub,
+                                left: mcall(s_id.clone(), "len", Vec::new()),
+                                right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                            },
+                            span,
+                        ),
+                    ],
+                )
+            } else {
+                s_id.clone()
+            };
+            let sep = if inline { "," } else { "\n" };
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(s_name),
+                            type_anno: None,
+                            init: s,
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(body_name),
+                            type_anno: None,
+                            init: body_init,
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(parts_name),
+                            type_anno: None,
+                            init: mcall(
+                                body_id,
+                                "split",
+                                vec![string_from_lit_ast(sep.to_string(), span)],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(p_name),
+                            type_anno: Some(AstType::Path(n.clone(), Vec::new())),
+                            init: zero_ctor,
+                            mutable: true,
+                        },
+                        AstStmt::Semi(for_expr),
+                    ],
+                    final_expr: Some(p_id),
+                    span,
+                }),
+                span,
+            ))
+        }
+        other => Err(TypeError::Unsupported {
+            what: format!("toml.parse：类型 `{other}` 反序列化"),
             span,
         }),
     }

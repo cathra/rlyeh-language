@@ -30,7 +30,7 @@
 | §6.2 Channel | ✅ 已实现 | `channel()` → `ChannelPair { tx, rx }` + `Sender::send/try_send` + `Receiver::recv/try_recv/close/iter`（P1 ✅，`Rc<Channel>` 共享；MVP 非泛型、元素 `i64`、无界） | S3（async） |
 | §7 时间 | ✅ 已实现 | `Duration`/`Instant`（libc `clock()` extern） | — |
 | §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` trait + `Formatter` 已实现**（Q3 ✅，`fmt/mod.zeta`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`） | Q4 |
-| §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/mod.zeta`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；`Deserialize` trait（`-> Self` 未支持）与 TOML 规划 | Q4 |
+| §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/mod.zeta`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）规划 | — |
 | §10 异步运行时 | 🔧 部分 | 普通函数 `async fn`/`.await` 已支持（L1 ✅，MVP 同步语义）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；`Future`/executor 规划 | S（S0 线程 → S1–S3） |
 | §11 智能指针 | 🔧 部分 | `Box<T>`（K2）/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3）编译器内建已实现；`Gc<T>`（K4）✅ 已实现（MVP，见 §11）；目标 API 未全部补齐 | T3 |
 | §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；**`?` 运算符已实现**（K1）；`Error`/`From`/`Into` trait 与 `IoError` 定义规划 | M |
@@ -758,7 +758,7 @@ let s = format!("{} + {} = {}", a, b, a + b);
 
 ## 9. 序列化框架
 
-> **实现状态（2026-08-25）**：🔧 部分（Q1–Q2 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/mod.zeta` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 mvp-gaps-plan.md M2b）与 TOML 模块仍规划。
+> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/mod.zeta` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 mvp-gaps-plan.md M2b）与 TOML 模块仍规划。
 
 ### 9.1 JSON（L2 ✅，编译器内建）
 
@@ -839,7 +839,44 @@ mod toml {
     fn to_string<T: Serialize>(value: &T) -> Result<String, TomlError>;
     fn from_str<T: Deserialize>(s: &str) -> Result<T, TomlError>;
 }
+// 已实现（Q4 ✅，2026-08，§9.4 轻量 MVP，typecheck 内建接线，无 std 模块文件）：
+//   toml::to_string(v)  -> String   // ≡ toml::stringify(v)，无 bound、类型由实参推断
+//   toml::from_str::<T>(s) -> T     // ≡ toml::parse::<T>(s)，无 bound、turbofish 指定
+//   MVP 注：`T: Serialize`/`T: Deserialize` bound 未支持（无泛型 trait 约束）；
+//   无 `TomlError`（非 Result 包装，非法输入给默认值）；紧凑输出（TOML 语法合法）——
+//   标准 TOML 的 `key = value` 空格形式、`[section]` 行式子表、注释、多行字符串规划中。
+//   详见 §9.4。
 ```
+
+### 9.4 TOML（Q4 ✅，2026-08，轻量 MVP）
+
+```zeta
+// toml::to_string / toml::from_str（typecheck 内建 desugar，同 §9.1 模式）
+struct Config { name: String, enabled: bool, scores: Vec<i64>, point: Point }
+let c = Config { name: String::from("z"), enabled: true, scores: vec![1, 2],
+                 point: Point { x: 7, y: 9 } };
+let s = toml::to_string(c);
+// s = "name=\"z\"\nenabled=true\nscores=[1,2]\npoint={x=7,y=9}"
+// （顶层结构体 → 多行 `f1=v1\nf2=v2`；嵌套结构体字段 → 内联表 `{x=7,y=9}`；
+//   数组/Vec → `[e1,e2]`；HashMap → `{"k"=v,...}`（键带引号，限 i64/String）；
+//   标量：i64 → 十进制；bool → `true`/`false`；String → `"` + json_escape + `"`，
+//   TOML 基本转义与 JSON 一致，复用 core.zeta `json_escape`/`json_unescape`）
+let c2 = toml::from_str::<Config>(s);          // round-trip（字段序无关、缺失零值、未知忽略）
+let v = toml::from_str::<Vec<i64>>("[1,2,3]"); // 数组剥 [ ] + split(",")，元素限标量
+let m = toml::from_str::<HashMap<String, i64>>("{\"a\"=1,\"b\"=2}");  // 内联表剥 { } + find("=")
+// 嵌套结构体字段值为内联表 `{...}`（parse 剥 { } + split(",") 递归）
+```
+
+> Q4 语义说明：与 json（L2）同构——typecheck 内建（`check_toml_stringify` /
+> `check_toml_parse`），AST 层 desugar 为零新增 IR 节点。stringify 顶层结构体输出多行
+> `key=value`（标准 TOML 顶层键值对形态），嵌套结构体字段输出内联表 `{...}`（MVP 用
+> 内联表；`[section]` 行式子表规划中）；parse 的 struct 分支为行式 `split("\n")` /
+> 内联表 `split(",")` 两形态（`inline` 参数区分），字段名比较 if-else 链逐字段 `Assign`。
+> MVP 限制：紧凑输出（TOML 语法合法，parse 接受与 stringify 一致的紧凑文本；
+> 标准 TOML 的 `key = value` 空格形式、注释、多行字符串规划中）；数组反序列化仅
+> `Vec<T>`（元素限 i64/bool/String；数组类型 `[T; N]` 与 f64 报 Unsupported）；HashMap
+> 键/值限标量（嵌套内联表值报 Unsupported）；struct 字段值含逗号经 split 分段不可靠
+> （与 §9.1 json 一致）；无 std 模块文件（typecheck 内建接线）。
 
 ---
 
