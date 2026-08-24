@@ -46,8 +46,8 @@
 | 类型 | 文档 | 说明 |
 |------|------|------|
 | 项目总纲 | [CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
-| 设计文档 | [10_标准库规划](../design/10_标准库规划.md) | 模块规划（目标架构） |
-| 实现任务 | [P009](../prompts/P009_标准库核心模块.md) | 标准库实现 |
+| 设计文档 | [10_标准库规划](design/10_标准库规划.md) | 模块规划（目标架构） |
+| 实现纪要 | [附录 A](#附录-a实现纪要)（原 P009，已归档至 [design/prompts/](design/prompts/)） | 标准库落地状态 |
 | 剩余任务计划 | [mvp-gaps-plan.md](./mvp-gaps-plan.md) §3b | 阶段 M–T 开发计划（本表📋/🔧章节的规划归属） |
 
 ---
@@ -1144,6 +1144,32 @@ enum IoErrorKind {
     // ...
 }
 ```
+
+---
+
+## 附录 A：实现纪要
+
+> **说明**：本节提炼自开发任务书（原 `prompts/P009`，2026-08-24 归档至 [`design/prompts/`](design/prompts/)），
+> 记录标准库核心模块的落地形态与性能验收指标。API 设计见正文各章节。
+
+### A.1 标准库核心模块（对应 P009，2026-08-20 ✅）
+
+- **实现形态**：`crates/zeta-std/zeta/` 目录化模块——`core.zeta` 根模块（Option/Result/String/Vec/
+  HashMap 编译器特判类型）+ `time/`、`sync/`、`io/`、`net/`、`fs/` 子目录（`<name>/mod.zeta` +
+  类型独立文件）；driver 加载时经模块展开 + use 重新导出合入，用户侧裸名即用。
+- **纯 Zeta 实现**：Option/Result 为 `core.zeta` 中泛型 enum（`is_some`/`is_none`/`unwrap`/
+  `unwrap_or`/`expect` 等）；Vec/HashMap/String 为编译器特判类型 + 目标 API 补齐（见正文 §3 差异注记）。
+- **性能验收指标**（P009 基准，全部通过）：
+
+| 指标 | 目标 | 状态 |
+|------|------|------|
+| Vec | 100 万次 `push` < 50ms | ✅ |
+| String | 拼接 10KB < 1ms | ✅ |
+| HashMap | 10 万次插入 + 查找 < 100ms | ✅ |
+| Channel | 吞吐量 > 1M msg/s（单线程） | ✅ |
+
+- **后续扩展**：剩余规划模块（HashSet、路径/文件系统、异步事件驱动等）消解计划见
+  [`mvp-gaps-plan.md`](./mvp-gaps-plan.md)。
 
 ---
 

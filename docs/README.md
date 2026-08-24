@@ -22,13 +22,13 @@
 ## 2. 建议阅读顺序
 
 - **语言使用者**：`guide.md` →（按需）`std-lib.md` → `grammar.md` / `memory-model.md`
-- **编译器开发者**：`semantics.md` → `grammar.md` → `memory-model.md` → `actor-model.md` →（各文档尾部"实现任务"映射到 [`../prompts/`](../prompts/README.md)）
+- **编译器开发者**：`semantics.md` → `grammar.md` → `memory-model.md` → `actor-model.md` →（各文档尾部"实现纪要"附录，任务书归档于 [`../design/prompts/`](design/prompts/README.md)）
 - **标准库开发者**：`std-lib.md` + `design/10_标准库规划.md`
 - **团队排期**：`mvp-gaps-plan.md`（当前主线）→ `development-plan.md`（历史阶段）
 
 ## 3. 规范与一致性规则
 
-1. **规范冲突以本目录为准**：`design/`（早期设计稿）与 `prompts/`（任务书）仅作追溯，如与 `docs/` 根目录规范冲突，以根目录为准。
+1. **规范冲突以本目录为准**：`design/`（早期设计稿）与 `design/prompts/`（任务书，2026-08-24 归档）仅作追溯，如与 `docs/` 根目录规范冲突，以根目录为准。
 2. **规划标注惯例**：`grammar.md` / `semantics.md` / `memory-model.md` / `actor-model.md` 中以 `<!-- 规划 -->` 标注未实现特性；`std-lib.md` 以状态标记（✅/🔧/📋）标注实现程度。
 3. **进度文档衔接**：`development-plan.md`（阶段 A–F，已完成）与 `mvp-gaps-plan.md`（阶段 G–T，进行中）承接关系；新阶段任务从 `mvp-gaps-plan.md` 消解。
 4. **新增文档**：规范类 → 对应权威文档增补（不新建散文件）；任务执行记录 → `mvp-gaps-plan.md` / `development-plan.md`；历史归档 → `design/`。

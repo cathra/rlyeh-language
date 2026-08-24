@@ -15,8 +15,8 @@
 | 类型 | 文档 | 说明 |
 |------|------|------|
 | 项目总纲 | [CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
-| 设计文档 | [07_Actor并发模型](../design/07_Actor并发模型.md) | 模块设计 |
-| 实现任务 | [P006](../prompts/P006_Actor运行时.md) | Actor 运行时 |
+| 设计文档 | [07_Actor并发模型](design/07_Actor并发模型.md) | 模块设计 |
+| 实现纪要 | [附录 A](#附录-a实现纪要)（原 P006，已归档至 [design/prompts/](design/prompts/)） | Actor 运行时落地状态 |
 
 ---
 
@@ -447,6 +447,47 @@ supervisor {
     ]
 }
 ```
+
+---
+
+## 附录 A：实现纪要
+
+> **说明**：本节提炼自开发任务书（原 `prompts/P006`，2026-08-24 归档至 [`design/prompts/`](design/prompts/)），
+> 记录 Actor 运行时的实际落地架构与已知限制，供后续维护参考。
+
+### A.1 Actor 运行时架构（对应 P006，2026-08-20 ✅）
+
+```
+┌─────────────────────────────────────────┐
+│           Actor Runtime                  │
+│  ┌─────────────┐    ┌─────────────┐      │
+│  │ Scheduler   │    │ Supervisor  │      │
+│  │ (WorkSteal) │    │ Manager     │      │
+│  └──────┬──────┘    └──────┬──────┘      │
+│         │                   │            │
+│  ┌──────▼──────────────────▼──────┐      │
+│  │      Actor Registry             │      │
+│  │  id → ActorHandle              │      │
+│  └──────┬──────────────────┬──────┘      │
+│  ┌──────▼──────┐    ┌─────▼──────┐      │
+│  │ Actor Mailbox│    │ Actor State │      │
+│  │ (MPMC Queue)│    │ (Heap Alloc)│      │
+│  └─────────────┘    └────────────┘      │
+│  ┌─────────────────────────────────┐      │
+│  │   Worker Threads (N = CPU cores)│      │
+│  └─────────────────────────────────┘      │
+└─────────────────────────────────────────┘
+```
+
+- **调度**：工作窃取（Work-Stealing）调度器，Worker 线程数 = CPU 核数；同一 actor 消息按邮箱
+  FIFO 互斥处理（无锁冲突，每 actor 天然串行）。
+- **消息通道**：方法消息经「kind 槽 + 3 个 i64 消息槽」传递；`ask` 同步往返（reply 匹配 request id）、
+  `send` fire-and-forget。
+- **监督**：`new_supervised(n)`（0=OneForOne / 1=AllForOne / 2=RestartForOne）；返回 -1 触发崩溃协议，
+  runtime 经 `__state_new` 重建初始状态并重启；无监督则 actor 停止。
+- **落地要点**：邮箱互斥 + Supervisor 恢复 + Router + Timer + 优雅关闭；15 集成测试全过。
+- **已知限制**：`supervisor {}` 块、`ActorRef<T>`、channel、`ExitSignal` 监控 API 未实现（规划）；
+  消息槽仅支持 i64 载荷，跨进程/分布式消息传递规划中。
 
 ---
 

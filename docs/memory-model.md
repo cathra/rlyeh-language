@@ -15,8 +15,8 @@
 | 类型 | 文档 | 说明 |
 |------|------|------|
 | 项目总纲 | [CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
-| 设计文档 | [04_所有权与借用检查器](../design/04_所有权与借用检查器.md) / [05_区域内存管理系统](../design/05_区域内存管理系统.md) | 模块设计 |
-| 实现任务 | [P004](../prompts/P004_区域系统实现.md) / [P005](../prompts/P005_Transfer语义实现.md) / [P010](../prompts/P010_智能区域分配器.md) | 区域系统实现 |
+| 设计文档 | [04_所有权与借用检查器](design/04_所有权与借用检查器.md) / [05_区域内存管理系统](design/05_区域内存管理系统.md) | 模块设计 |
+| 实现纪要 | [附录 A](#附录-a实现纪要)（原 P004/P005/P010，已归档至 [design/prompts/](design/prompts/)） | 区域系统落地状态 |
 
 ---
 
@@ -508,6 +508,48 @@ gc_region {
 | Rc | 16 bytes（计数 + 对齐） |
 | Arc | 16 bytes + 原子操作开销 |
 | GC | 8-16 bytes（标记位 + 对齐） |
+
+---
+
+## 附录 A：实现纪要
+
+> **说明**：本节提炼自开发任务书（原 `prompts/P004`/`P005`/`P010`，2026-08-24 归档至 [`design/prompts/`](design/prompts/)），
+> 记录 L1 区域系统的实际落地状态、关键决策与已知限制，供后续维护参考。
+
+### A.1 区域系统运行时与检查器（对应 P004，2026-08-20 ✅）
+
+- **运行时**（`zeta-region-alloc`）：bump 分配器（块链表 + bump 指针），支持默认增长、
+  `adaptive`（EWMA 预测）、`with_size (N)`（精确预分配）、`strategy (bump)` 四策略；LIFO 析构
+  （`DestructorRegistry`，region 退出按注册逆序调用）。
+- **检查器**（`zeta-regionck`）：区域嵌套合法性、`in 'r` 对象归属、`transfer` 方向（§6.2）、
+  区域存活期/引用逃逸（escape）检查。
+- **落地偏差**：检查器未拆分 `escape.rs`/`transfer.rs`，全部并入 `checker.rs`；`GrowthStrategy`
+  以 struct 变体承载四策略；`Region::new()` 无参 + 默认增长参数；错误 `line`/`col` 占位 0；
+  `in 'r` 在 AST 中以包裹节点（`InRegion`）表达；引用逃逸检查待 HIR 引入引用节点后启用（防御性）。
+
+### A.2 Transfer 语义（对应 P005，2026-08-20 ✅）
+
+- **运行时**：`Region::execute_transfer<T>(&mut self, ptr) -> &'static mut T`（移除析构 + 标记已迁出 +
+  返回所有权句柄）；`is_transferred(ptr)` 状态查询；`mark_transferred` 为底层簿记入口。
+- **检查器**：`OuterRegionTransfer`（transfer 源必须是当前活跃区域栈栈顶，内层转外层报错）；
+  `PartialTransfer`（transfer 非变量表达式/调用结果，无法静态判定归属）。
+- **落地偏差 / 已知限制**：
+  - `execute_transfer` 归属 region 侧（原稿设计在 TransferChecker 内；运行时操作涉 `DestructorRegistry`
+    内部字段，放 Region 更内聚）；
+  - 未公开 `remove_destructor`（`mark_transferred` 内部完成"移除析构 + 标记"，保留单一入口防泄漏态）；
+  - `CannotTransferReference`/`UnsizedTransfer` 为**防御性变体**（typecheck 对 `&`/字段/元组索引
+    直接报 Unsupported，这些语法无法到达 regionck）；
+  - **transfer 后内存语义（ADR-003）**：零拷贝，对象仍位于区域块内；接收方须在区域 `destroy` **之前**
+    读取/修改/移出；销毁后句柄失效（真实"搬移到外部堆"由 MIR/代码生成阶段完成，规划中）；
+  - `use-after-move` 检查依赖借用检查器（semantics.md 附录 A.2），MVP 未覆盖。
+
+### A.3 智能区域分配器（对应 P010，2026-08-20 ✅）
+
+- **架构**：`StaticSizer`（编译期静态大小推断）→ `PgoAdvisor`（Profile 画像）→ `SizeAdvisor`
+  （综合决策初始容量）→ `AdaptiveBumpAllocator`（bump + 链表扩容 + EWMA 预测 + 碎片统计）→
+  `StatsCollector`（分配/扩容统计 + PGO 数据输出）。
+- **落地**：静态大小推断 + PGO 画像回灌 `adaptive` 初始容量 + EWMA 自适应扩容 + 碎片统计 +
+  criterion 基准；性能测试 28 项全过。
 
 ---
 

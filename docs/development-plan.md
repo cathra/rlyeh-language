@@ -167,5 +167,74 @@
 
 ---
 
+## 附录 A：实现纪要（编译器后端与工具链）
+
+> **说明**：本节提炼自开发任务书（原 `prompts/P007`/`P008`/`P011`/`P013`，2026-08-24 归档至
+> [`design/prompts/`](design/prompts/)），记录编译器后端与工具链的落地状态、关键决策与遗留问题。
+> 相关模块设计稿见 [`design/08_编译器后端与代码生成.md`](design/08_编译器后端与代码生成.md) 与
+> [`design/09_工具链设计.md`](design/09_工具链设计.md)。
+
+### A.1 MIR 中间表示（对应 P011，2026-08-20 ✅）
+
+- **落地**：`zeta-mir` 从占位 crate 落地为真实实现——`lib.rs`（数据结构：`MirProgram`/`MirFunction`/
+  `BasicBlock`/`MirStmt` 三地址指令/`MirTerminator`）+ `lower.rs`（HIR → CFG）+ `passes/`（优化流水线
+  **常量折叠 → DCE → 小函数内联 → DCE**）。
+- **区域操作显式化**：`RegionEnter`/`RegionExit`/`AllocInRegion`/`Transfer` 为一等指令。
+- **关键 bug 修复**：`new_block()` 切换当前块导致分支块创建后终止符发射错位——修复为创建前记录 entry、
+  创建完毕切回再发射终止符；DCE 误删副作用 `Call`（`print`/`println`）——修复为 Call 永不删除、参数标记活跃。
+- **落地偏差 / 已知限制**：
+  - **简化 SSA**：未引入 φ 节点，各分支写同一结果变量、merge 块读取，模拟 φ 语义；
+  - `break`/`continue` 边界未校验（非循环上下文 `break` 会跳转到失效块 id，待 typecheck 补上下文校验）；
+  - `transfer` 后仍可使用变量（use-after-transfer 依赖借用/区域检查器，未接线）；
+  - 循环条件含 `?` 提前返回会使 entry 块未终止（边缘情况，MVP 接受）；
+  - **MIR 未接线到 driver 主流水线**（M1.8 代码生成阶段补齐，见 A.4）。
+
+### A.2 增量编译引擎（对应 P007，2026-08-20 ✅，务实版）
+
+按**当前编译器实际能力**（单文件编译模型）落地为"务实版增量编译"，与原始设计偏差如下：
+
+| 本文档设计 | 实际落地 | 说明 |
+|-----------|---------|------|
+| 模块级缓存（`modules/`，HIR/MIR 序列化） | 单文件产物缓存（`artifacts/{hash}.ll`，缓存 LLVM IR 文本） | 序列化全 IR 类型成本高；缓存最终产物同样跳过全流水线 |
+| 缓存 HIR/MIR/LIR 各级 IR | 只缓存 LLVM IR 最终产物 | 命中时跳过 parse/typecheck/borrowck/regionck/MIR/LIR/codegen 全部环节 |
+| 并行编译（rayon） | 未引入 rayon | 单文件模型无并行对象；依赖图与受影响传播已实现并单测，待多模块接线 |
+| `use` 依赖提取 | `deps.json` 暂未生成 | 依赖图 API 已就绪（`add_edge`），依赖提取待模块系统落地 |
+| 可执行文件缓存 | 只缓存 LLVM IR | 命中后仍执行 clang（毫秒级）；exe 缓存为后续优化项 |
+
+**实际能力**：源码 SHA-256 + 模块接口哈希（函数签名，忽略函数体变化）；多版本产物缓存（ccache 语义）；
+跨进程持久化（`index.json` + `artifacts/`）；损坏自动全量重建；`clean_stale` 过期清理；依赖图拓扑排序/
+受影响传递闭包/循环检测；CLI `zeta run|build <file> [--cache-dir|--force|--verbose]`。
+**实测**：`arith-print.zeta` 全量 152ms → 增量命中 67ms（2.3x）。
+**实现文件**：`crates/zeta-driver/src/incremental/{hash,depgraph,cache}.rs`。
+
+### A.3 包管理器 Zep（对应 P008，2026-08-20 ✅）
+
+- **落地**：`zep/` crate——`zeta new` 项目初始化（`Zeta.toml`：`[package]`/`[dependencies]`/`[dev-dependencies]`/
+  `[build-dependencies]`/`[profile.*]`/`[workspace]`，支持 `path` 本地依赖）+ **PubGrub 依赖解析** +
+  本地/HTTP 注册表 + 打包解包 + 构建驱动。
+- **配置要点**：版本约束 `serde = "1.0"`；feature 声明 `tokio = { version = "2.0", features = ["full"] }`。
+- **质量**：29 项测试全过。
+
+### A.4 LLVM 后端与代码生成（对应 P013，2026-08-20 ✅，M1.8/M1.9）
+
+- **设计决策（ADR）**：
+
+| ADR | 决策 | 理由 |
+|-----|------|------|
+| ADR-LLVM-001 | 非 SSA 槽式存储（`alloca` + `load`/`store`） | 天然支持分支合并，LLVM `-O1` 自动 mem2reg 提升 |
+| ADR-LLVM-002 | LLVM IR 文本直出（不经 inkwell C API） | 零额外依赖、编译期快、错误定位直接 |
+| ADR-LLVM-003 | 临时值一律命名寄存器 `%rN` | 规避裸数字与命名寄存器编号冲突 |
+| ADR-LLVM-004 | `main` 特化为 `define i32 @main()`，`ret i32 0` | C 风格入口需要；MVP 不支持退出码 |
+| ADR-LLVM-005 | 区域指令后端忽略 | MVP 分配语义由 `zeta-region-alloc` 运行时提供 |
+
+- **流水线**：`compile_to_llvm`（lexer→parser→typecheck→borrowck→regionck→MIR(优化)→LIR→LLVM IR）→
+  `build_executable`（IR 落盘 → clang `-O1` 汇编链接）→ `run_source`（执行并捕获输出）。
+- **内建打印**：`print`/`println` → `printf`，格式串按类型分派（`%s`/`%lld`/`%f`/`%c`）；
+  布尔经 `select` 选 `"true"`/`"false"`；字符 `zext i8 → i32`。
+- **遗留问题**：用户函数重定义检查（当前 `sigs` 后写覆盖）；全局变量/常量支持；`&` 借用 → LLVM 指针语义；
+  递归深度校验/栈溢出保护；WASM 目标（M2.7，部分已由 L4 平台加固覆盖）。
+
+---
+
 > **维护者**：Zeta Language Team
 > **最后更新**：2026-08-22

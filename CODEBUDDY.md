@@ -81,9 +81,7 @@ zeta-language/
 │   ├── compile-fail/
 │   └── run-pass/
 │
-├── prompts/                  ← CodeBuddy Prompt 文档（P001–P013 已全部完成，索引 + 快速验证见 README.md）
-│   ├── README.md
-│   └── P001-P013_*.md
+│   ├── design/prompts/       ← 开发任务书归档（P001–P013 已全部完成，内容并入各规范文档"附录 A：实现纪要"）
 │
 └── .github/                  ← CI/CD
     └── workflows/

@@ -8,7 +8,7 @@
 
 | 类型 | 文档 | 说明 |
 |------|------|------|
-| 并发规范 | [docs/actor-model.md](./docs/actor-model.md) | Actor 模型规范 |
+| 并发规范 | [docs/actor-model.md](../actor-model.md) | Actor 模型规范 |
 | 实现任务 | [prompts/P006_Actor运行时.md](./prompts/P006_Actor运行时.md) | Actor 运行时实现 |
 
 ## 目标
