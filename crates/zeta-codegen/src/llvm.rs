@@ -12,7 +12,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use zeta_lir::{FieldScalar, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType, Local};
+use zeta_lir::{
+    FieldScalar, LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType,
+    Local,
+};
 
 use crate::error::CodegenError;
 
@@ -255,10 +258,24 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     out.push_str("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)\n");
     out.push_str("declare i32 @memcmp(i8*, i8*, i64)\n");
     // L3 region 接线：zeta-region-alloc 运行时（driver 链接 libzeta_region_alloc.a）
-    out.push_str("declare i8* @zeta_region_enter(i8*, i64, i64, i8, double, i8, i8, i8)\n");
-    out.push_str("declare i8* @zeta_region_alloc(i8*, i64, i64)\n");
-    out.push_str("declare void @zeta_region_transfer(i8*, i8*)\n");
-    out.push_str("declare void @zeta_region_exit(i8*)\n");
+    // noalias：enter/alloc 返回新分配内存（Box<Region> / 新块），与入参不 alias；
+    // nounwind：extern "C" 运行时不 unwind（C ABI 默认，显式标注供优化器推理）。
+    // 注意：不可标 argmemonly/readnone——运行时内部走 std::alloc（系统堆）。
+    out.push_str("declare noalias i8* @zeta_region_enter(i8*, i64, i64, i8, double, i8, i8, i8) nounwind\n");
+    out.push_str("declare noalias i8* @zeta_region_alloc(i8*, i64, i64) nounwind\n");
+    out.push_str("declare void @zeta_region_transfer(i8*, i8*) nounwind\n");
+    out.push_str("declare void @zeta_region_exit(i8*) nounwind\n");
+    // —— TBAA 访问域（module 级 metadata）——
+    // !0 根 → !1 内存域 → !2 Region 头、!3 Region 体。
+    // 打标规则（保守，防 UB）：仅 Region 头字段 load/store 标 !2、值镜像
+    // memcpy 标 !3；用户内存（栈/全局/堆对象）一律不标——Zeta 数组索引 /
+    // `&` 引用存在别名共享，用户对象间打标才是别名逃逸源头。Region 头
+    // 物理上独立于 bump 块与用户内存（Box<Region> ≠ std::alloc 块），
+    // 标 !2/!3 后 LLVM 可证「Region 头与用户数据不重叠」，重排/消除 reload。
+    out.push_str("!0 = !{!\"zeta_root\"}\n");
+    out.push_str("!1 = !{!\"zeta_mem\", !0}\n");
+    out.push_str("!2 = !{!\"zeta_region_header\", !1}\n");
+    out.push_str("!3 = !{!\"zeta_region_body\", !1}\n");
     for g in &emitter.globals {
         out.push_str(g);
         out.push('\n');
@@ -266,6 +283,423 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     out.push('\n');
     out.push_str(&emitter.body);
     Ok(out)
+}
+
+/// 循环级 region 状态提升（热路径优化，见 `find_loop_promo`）：
+///
+/// 识别「规范 while 循环内恰一个区域 bump 点」的模式，把 region 的
+/// base/cursor/limit 在循环 preheader 快照为 SSA 值（`%pcur`/`%pbase`/
+/// `%plim`），循环 header 用 phi（`%hcur`/`%hbase`/`%hlim`）维护，
+/// bump 快路径仅寄存器运算（零访存），慢路径 call 后 reload 并经 join
+/// 的 phi（`%ncur`/`%nbase`/`%nlim`）作为回边值，循环退出（header
+/// 条件为假跳出）时把 `%hcur` 写回 Region 头 cursor。
+///
+/// 背景：内联 bump 慢路径 `call @zeta_region_alloc` 会改写
+/// base/cursor/limit（grow 时 `self.base/limit/cursor` 均更新），LLVM
+/// 无法证明调用不写 Region 头，因此 LICM 无法把 base/limit/cursor 的
+/// load 提升出循环——每次分配都重复 3 次访存。本提升在 IR 层自行维护
+/// 状态（SSA phi），不依赖 LLVM 别名分析，热路径访存归零。
+#[derive(Clone)]
+struct PromoCtx {
+    /// 循环头块（被回边指向；条件检查所在）
+    header: usize,
+    /// 循环前驱块（header 的唯一非回边前驱；快照注入点）
+    preheader: usize,
+    /// 回边源块（循环体末尾；bump 点所在）
+    latch: usize,
+    /// 循环退出目标块（退出边源恒为 header，条件为假跳出）
+    exit_dst: usize,
+    /// 被提升的 region 名
+    region: String,
+    /// 提升的 bump 列表：(target, size)。循环内同 region 的多个定长
+    /// 分配批量提升：循环外一次聚合分配（Σsize），迭代内各对象指针
+    /// 由 hbase 偏移派生（对齐等价性见 `try_emit_region_batch`）。
+    bumps: Vec<(String, usize)>,
+    /// 预分配的 bump join label（回边值 `%n{cur,base,lim}_{h}` phi 所在块）。
+    /// 发射 header 时分配（`emit_function` 用 `find_loop_promo` 结果填充），
+    /// `emit_region_bump_promoted` 消费。join 是 latch 内 fast/slow 的汇合点。
+    join_label: String,
+    /// 预分配的 bump 后续 cont label（`AllocInRegion` 的 join 之后块）。
+    /// join 经 cont 才到达回边跳转，**cont 才是 header 在 LLVM CFG 中的
+    /// 真实前驱**，header phi 的回边 entry 必须引用它（而非 LIR latch 块号）。
+    cont_label: String,
+}
+
+/// 块的后继块集合。
+fn block_succs(b: &LirBlock) -> Vec<usize> {
+    match &b.terminator {
+        LirTerminator::Jump(t) => vec![*t],
+        LirTerminator::CondJump { then, otherwise, .. } => vec![*then, *otherwise],
+        LirTerminator::Return(_) => Vec::new(),
+    }
+}
+
+/// 迭代式支配集合计算（O(n²·E) 数据流；LIR 块数少，够用）。
+fn compute_dominators(f: &LirFunction) -> Vec<HashSet<usize>> {
+    let n = f.blocks.len();
+    let mut pred: Vec<Vec<usize>> = (0..n).map(|_| Vec::new()).collect();
+    for (i, b) in f.blocks.iter().enumerate() {
+        for s in block_succs(b) {
+            pred[s].push(i);
+        }
+    }
+    let all: HashSet<usize> = (0..n).collect();
+    let mut dom: Vec<HashSet<usize>> = (0..n)
+        .map(|i| {
+            if i == 0 {
+                let mut s = HashSet::new();
+                s.insert(0);
+                s
+            } else {
+                all.clone()
+            }
+        })
+        .collect();
+    loop {
+        let mut changed = false;
+        for b in 0..n {
+            if b == 0 {
+                continue;
+            }
+            // dom[b] = {b} ∪ (∩ dom[p] for p in pred[b])
+            let mut inter: HashSet<usize> = if let Some(p0) = pred[b].first() {
+                dom[*p0].clone()
+            } else {
+                HashSet::new()
+            };
+            for p in pred[b].iter().skip(1) {
+                inter = inter.intersection(&dom[*p]).cloned().collect();
+            }
+            inter.insert(b);
+            if inter != dom[b] {
+                dom[b] = inter;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    dom
+}
+
+/// 保守的循环提升分析：全部条件满足才返回 `Some`，否则维持原逻辑
+/// （每次 bump 从 Region 头 load，正确性不受影响）。
+///
+/// 条件：
+/// 1. 恰一条回边 `(latch → header)`（`header` 支配 `latch`），非自循环；
+/// 2. `header` 恰一个非回边前驱（preheader）；
+/// 3. 循环体内无 `RegionEnter`/`RegionExit`（region 生命周期不跨循环）；
+/// 4. 循环体内无嵌套循环（嵌套回边）；
+/// 5. 循环体内同 region 的 Ptr bump 点（可多个，批量提升）全部为
+///    `AllocInRegionDirect`（`size > 0`）且位于 latch 块内，并满足
+///    批量提升窗口兼容（bump 之间仅无副作用穿插）；
+/// 6. 恰一条退出边，且退出边源为 header（条件为假跳出）；
+/// 7. 退出目标块唯一前驱为 header。
+fn find_loop_promo(f: &LirFunction) -> Option<PromoCtx> {
+    let n = f.blocks.len();
+    let dom = compute_dominators(f);
+    // 全部回边：`(src → dst)` 且 `dst` 支配 `src`（`dom[src] ∋ dst`）
+    let mut back_edges: Vec<(usize, usize)> = Vec::new();
+    for (i, b) in f.blocks.iter().enumerate() {
+        for s in block_succs(b) {
+            if dom[i].contains(&s) {
+                back_edges.push((i, s));
+            }
+        }
+    }
+    if back_edges.len() != 1 {
+        return None;
+    }
+    let (latch, header) = back_edges[0];
+    // 单块自环循环（latch == header）同样可提升：header phi、join/cont
+    // 标签与回边值结构不依赖块分离，preheader 快照与 exit 写回不变。
+    // preheader：header 的非回边前驱，须恰一个
+    let preds_of_header: Vec<usize> = (0..n)
+        .filter(|p| block_succs(&f.blocks[*p]).contains(&header))
+        .collect();
+    let non_back: Vec<usize> = preds_of_header.iter().copied().filter(|p| *p != latch).collect();
+    if non_back.len() != 1 {
+        return None;
+    }
+    let preheader = non_back[0];
+    // 循环体：header 支配且可经前驱边回到 header 的块集合
+    // （退出目标块虽被 header 支配，但不在回 header 的路径上，排除）。
+    let mut body: HashSet<usize> = HashSet::new();
+    body.insert(header);
+    let mut stack = vec![header];
+    while let Some(b) = stack.pop() {
+        for (pi, pb) in f.blocks.iter().enumerate() {
+            if !dom[pi].contains(&header) {
+                continue;
+            }
+            if block_succs(pb).contains(&b) && !body.contains(&pi) {
+                body.insert(pi);
+                stack.push(pi);
+            }
+        }
+    }
+    // 条件 4：循环体内无嵌套回边
+    for (src, dst) in &back_edges {
+        if *src == latch && *dst == header {
+            continue;
+        }
+        if body.contains(src) && body.contains(dst) {
+            return None;
+        }
+    }
+    // 条件 3：循环体内无 region 生命周期指令
+    for &b in &body {
+        for s in &f.blocks[b].stmts {
+            if matches!(s, LirStmt::RegionEnter { .. } | LirStmt::RegionExit { .. }) {
+                return None;
+            }
+        }
+    }
+    // 条件 5：同 region 的 Ptr bump 点（可多个，批量提升），全部位于 latch。
+    // 仅收集 `AllocInRegionDirect`（直接构造）：值镜像 `AllocInRegion` 需
+    // memcpy 发射，无法窗口聚合（散落 bump 会与单发提升的回边 phi 重复
+    // 定义冲突）。
+    let mut bumps: Vec<(String, String, usize, usize)> = Vec::new(); // (region, target, size, block)
+    for &b in &body {
+        for s in &f.blocks[b].stmts {
+            let (target, region, size) = match s {
+                LirStmt::AllocInRegionDirect {
+                    target, region, size, ..
+                } => (target.as_str(), region.clone(), *size),
+                _ => continue,
+            };
+            if size == 0 || local_type(f, target) != LirType::Ptr {
+                continue;
+            }
+            if let Some((prev_region, _, _, _)) = bumps.first() {
+                if prev_region != &region {
+                    return None; // 不同 region 的分配不可聚合提升
+                }
+            }
+            bumps.push((region, target.to_string(), size, b));
+        }
+    }
+    if bumps.is_empty() {
+        return None;
+    }
+    let region = bumps[0].0.clone();
+    if bumps.iter().any(|(_, _, _, blk)| *blk != latch) {
+        return None; // 提升 phi 结构依赖 bump 位于 latch
+    }
+    // 条件 5b（批量提升窗口兼容预检）：latch 内**首个 bump 到末个 bump 之间**
+    // 仅允许无副作用穿插（`FieldSet`/`Assign`/`Binary`），保证发射期
+    // `try_emit_region_promo_batch` 的窗口必能聚合**全部** bump——否则散落
+    // 的 bump 走单发提升会产生重复 `%ncur_{hdr}` 回边 phi（IR 非法）。
+    // 注意 span 必须限定在 bump 区间内：末个 bump 之后的 `FieldGet`（如
+    // `sum + x1.a + x2.a...` 读取分配结果）属合法跟随，不得触发拒绝。
+    {
+        let stmts = &f.blocks[latch].stmts;
+        let mut bump_idx: Vec<usize> = Vec::new();
+        for (i, s) in stmts.iter().enumerate() {
+            if matches!(
+                s,
+                LirStmt::AllocInRegionDirect { target, .. }
+                    if bumps.iter().any(|(_, t, _, _)| t == target)
+            ) {
+                bump_idx.push(i);
+            }
+        }
+        if bump_idx.len() != bumps.len() {
+            return None; // 部分 bump 缺失（异常），保守拒绝
+        }
+        if let (Some(&first), Some(&last)) = (bump_idx.first(), bump_idx.last()) {
+            for (i, s) in stmts.iter().enumerate().take(last).skip(first + 1) {
+                let is_bump = bump_idx.contains(&i);
+                if !is_bump
+                    && !matches!(
+                        s,
+                        LirStmt::FieldSet { .. }
+                            | LirStmt::Assign { .. }
+                            | LirStmt::Binary { .. }
+                    )
+                {
+                    return None; // 窗口会中断：bump 散落
+                }
+            }
+        }
+    }
+    // 逃逸检查：bump target 及其指针拷贝不得逃逸循环
+    if !no_promo_escape(f, &body, &bumps) {
+        return None;
+    }
+    // 条件 6/7：恰一条退出边，源为 header，目标唯一前驱为 header
+    let mut exits: Vec<(usize, usize)> = Vec::new(); // (src, dst)
+    for &b in &body {
+        for s in block_succs(&f.blocks[b]) {
+            if !body.contains(&s) {
+                exits.push((b, s));
+            }
+        }
+    }
+    if exits.len() != 1 {
+        return None;
+    }
+    let (exit_src, exit_dst) = exits[0];
+    if exit_src != header {
+        return None;
+    }
+    let preds_of_exit: Vec<usize> = (0..n)
+        .filter(|p| block_succs(&f.blocks[*p]).contains(&exit_dst))
+        .collect();
+    if preds_of_exit != vec![header] {
+        return None;
+    }
+    Some(PromoCtx {
+        header,
+        preheader,
+        latch,
+        exit_dst,
+        region,
+        bumps: bumps.iter().map(|(_, t, s, _)| (t.clone(), *s)).collect(),
+        // label 在 emit_function 发射 header 时分配并回填
+        join_label: String::new(),
+        cont_label: String::new(),
+    })
+}
+
+/// 提升安全（逃逸）检查：bump target 及其指针拷贝（别名闭包）不得逃逸循环
+/// ——不得作调用实参、不得嵌入其他对象/引用、不得被循环外代码引用。
+/// 提升后每次迭代复用循环外分配的内存（批量提升为一次聚合分配 +
+/// 偏移派生），指针若逃逸（外部持有/循环后使用）复用会互相覆盖，故必须拒绝。
+/// 保守检查：宁可误报拒绝，不可漏报。
+fn no_promo_escape(
+    f: &LirFunction,
+    body: &HashSet<usize>,
+    bumps: &[(String, String, usize, usize)],
+) -> bool {
+    // 别名闭包：bump target + 经 Assign 拷贝传播的指针变量（不动点）
+    let mut aliases: HashSet<String> = HashSet::new();
+    for (_, t, _, _) in bumps {
+        aliases.insert(t.clone());
+    }
+    loop {
+        let mut changed = false;
+        for &b in body {
+            for s in &f.blocks[b].stmts {
+                if let LirStmt::Assign { target, value } = s {
+                    if let Some(x) = value.as_local() {
+                        if aliases.contains(x) && aliases.insert(target.clone()) {
+                            changed = true;
+                        }
+                        if aliases.contains(target) && aliases.insert(x.clone()) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    // 循环内逃逸点
+    for &b in body {
+        for s in &f.blocks[b].stmts {
+            match s {
+                LirStmt::Call { args, .. } | LirStmt::CallIndirect { args, .. } => {
+                    if args.iter().any(|a| aliases.contains(a)) {
+                        return false; // 对象指针作调用实参（外部可持有）
+                    }
+                }
+                LirStmt::FieldSet { value, .. } | LirStmt::IndexSet { value, .. } => {
+                    if aliases.contains(value) {
+                        return false; // 指针写入其他对象（嵌入）
+                    }
+                }
+                LirStmt::DerefWrite { value, .. } => {
+                    if aliases.contains(value) {
+                        return false; // 写入引用指向处（外部可持有）
+                    }
+                }
+                LirStmt::AddrOf { operand, .. } => {
+                    if aliases.contains(operand) {
+                        return false; // 引用化（可逃逸）
+                    }
+                }
+                LirStmt::Transfer { place, .. } => {
+                    if aliases.contains(place) {
+                        return false; // 所有权转移出循环
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // 循环外引用：任何非 body 块的操作数/返回值含别名 → 逃逸
+    for (bi, blk) in f.blocks.iter().enumerate() {
+        if body.contains(&bi) {
+            continue;
+        }
+        for s in &blk.stmts {
+            if stmt_used_locals(s).iter().any(|x| aliases.contains(*x)) {
+                return false;
+            }
+        }
+        if let LirTerminator::Return(Some(v)) = &blk.terminator {
+            if aliases.contains(v) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// 枚举指令中**被使用**的局部变量（不含定义的 target）。
+fn stmt_used_locals(st: &LirStmt) -> Vec<&String> {
+    let mut out = Vec::new();
+    fn push_local<'a>(out: &mut Vec<&'a String>, o: &'a LirOperand) {
+        if let LirOperand::Local(l) = o {
+            out.push(l);
+        }
+    }
+    match st {
+        LirStmt::Assign { value, .. } => push_local(&mut out, value),
+        LirStmt::Binary { lhs, rhs, .. } => {
+            push_local(&mut out, lhs);
+            push_local(&mut out, rhs);
+        }
+        LirStmt::Unary { operand, .. } => push_local(&mut out, operand),
+        LirStmt::Call { args, .. } => out.extend(args),
+        LirStmt::CallIndirect { callee, args, .. } => {
+            out.push(callee);
+            out.extend(args);
+        }
+        LirStmt::FieldGet { base, .. } => out.push(base),
+        LirStmt::FieldSet { base, value, .. } => {
+            out.push(base);
+            out.push(value);
+        }
+        LirStmt::IndexGet { base, index, .. } => {
+            out.push(base);
+            out.push(index);
+        }
+        LirStmt::IndexSet {
+            base, index, value, ..
+        } => {
+            out.push(base);
+            out.push(index);
+            out.push(value);
+        }
+        LirStmt::AddrOf { operand, .. } => out.push(operand),
+        LirStmt::DerefRead { base, .. } => out.push(base),
+        LirStmt::DerefWrite { base, value, .. } => {
+            out.push(base);
+            out.push(value);
+        }
+        LirStmt::AllocInRegion { .. }
+        | LirStmt::AllocInRegionDirect { .. }
+        | LirStmt::Alloc { .. }
+        | LirStmt::RegionEnter { .. }
+        | LirStmt::RegionExit { .. }
+        | LirStmt::Transfer { .. } => {}
+    }
+    out
 }
 
 /// LLVM IR 生成器状态。
@@ -292,6 +726,10 @@ struct LlvmEmitter {
     by_value_locals: HashMap<String, HashSet<String>>,
     /// 标量聚合按值优化：按值返回（返回 `{i64, i64}`）的函数名集合。
     ret_by_value: HashSet<String>,
+    /// 当前函数的循环提升上下文（`find_loop_promo` 结果；None = 不提升）
+    promo: Option<PromoCtx>,
+    /// 当前正在发射的基本块索引（emit_stmt 判断 bump 是否位于提升 latch）
+    current_block: usize,
 }
 
 /// 指针拷贝别名闭包传播：把函数内「从 `bvs` 中对象拷贝」的 `Assign` 左值
@@ -450,6 +888,8 @@ impl LlvmEmitter {
             body: String::new(),
             by_value_locals,
             ret_by_value,
+            promo: None,
+            current_block: 0,
         }
     }
 
@@ -613,12 +1053,95 @@ impl LlvmEmitter {
         }
 
         // 基本块
+        // —— 循环级 region 状态提升（热路径优化）——
+        // 命名约定统一以 header 块号作后缀：`%p{cur,base,lim}_{h}`（快照）、
+        // `%h{cur,base,lim}_{h}`（header phi）、`%n{cur,base,lim}_{h}`
+        // （latch 内 bump 汇合后的回边值）。header phi 引用 `%n{..}_{h}`
+        // 是文本 IR 前向引用（latch 在 header 之后发射），LLVM 解析合法。
+        let promo = find_loop_promo(f).map(|mut p| {
+            // 预分配 bump 的 join/cont label：header phi 文本上引用
+            // cont_label（LLVM CFG 中 latch 的真实回边块），故必须在
+            // 发射 header 前确定；join_label 供 bump 的 fast/slow 汇合点。
+            p.join_label = self.label();
+            p.cont_label = self.label();
+            p
+        });
+        self.promo = promo.clone();
         for (i, block) in f.blocks.iter().enumerate() {
+            self.current_block = i;
+            let is_promo_header = promo.as_ref().map(|p| p.header == i).unwrap_or(false);
+            let is_promo_preheader = promo.as_ref().map(|p| p.preheader == i).unwrap_or(false);
+            let is_promo_exit = promo.as_ref().map(|p| p.exit_dst == i).unwrap_or(false);
             if i > 0 {
                 body.push_str(&format!("b{i}:\n"));
             }
-            for stmt in &block.stmts {
-                self.emit_stmt(stmt, &mut body, f)?;
+            if is_promo_header {
+                let p = promo.as_ref().expect("promo header");
+                // 块 0（entry）的 label 是 `entry`，其余块是 `b{i}`
+                let pre_l = if p.preheader == 0 {
+                    "entry".to_string()
+                } else {
+                    format!("b{}", p.preheader)
+                };
+                // 回边 entry 必须引用 latch 实际跳回 header 的块
+                // （bump 提升后为预分配的 cont label，而非 LIR 块号）。
+                let latch_l = p.cont_label.clone();
+                body.push_str(&format!(
+                    "  %hcur_{i} = phi i64 [ %pcur_{i}, %{pre_l} ], [ %ncur_{i}, %{latch_l} ]\n"
+                ));
+                body.push_str(&format!(
+                    "  %hbase_{i} = phi i8* [ %pbase_{i}, %{pre_l} ], [ %nbase_{i}, %{latch_l} ]\n"
+                ));
+                body.push_str(&format!(
+                    "  %hlim_{i} = phi i64 [ %plim_{i}, %{pre_l} ], [ %nlim_{i}, %{latch_l} ]\n"
+                ));
+            }
+            if is_promo_exit {
+                // 循环退出：把 cursor 写回 Region 头。header phi 值
+                // `%hcur_{hdr}` 即"最近一次迭代后的 cursor"（header 入口
+                // 的 phi 值；零次迭代时为快照值，写回无害）。
+                let p = promo.as_ref().expect("promo exit");
+                let hdr = p.header;
+                let rh = self.reg();
+                body.push_str(&format!("  %{rh} = load i8*, i8** %{}.rh\n", p.region));
+                let g2 = self.reg();
+                body.push_str(&format!("  %{g2} = getelementptr i8, i8* %{rh}, i64 8\n"));
+                let cv = self.reg();
+                body.push_str(&format!("  %{cv} = bitcast i8* %{g2} to i64*\n"));
+                body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}\n"));
+            }
+            let mut si = 0;
+            while si < block.stmts.len() {
+                // 提升路径批量聚合优先（多 bump 循环提升），其次未提升批量，
+                // 最后单发
+                if let Some(n) = self.try_emit_region_promo_batch(&block.stmts, si, &mut body, f)?
+                {
+                    si += n;
+                } else if let Some(n) = self.try_emit_region_batch(&block.stmts, si, &mut body, f)?
+                {
+                    si += n;
+                } else {
+                    self.emit_stmt(&block.stmts[si], &mut body, f)?;
+                    si += 1;
+                }
+            }
+            if is_promo_preheader {
+                // 循环前快照：base/cursor/limit → `%p{..}_{hdr}`（terminator 之前）
+                let p = promo.as_ref().expect("promo preheader");
+                let hdr = p.header;
+                let rh = self.reg();
+                body.push_str(&format!("  %{rh} = load i8*, i8** %{}.rh\n", p.region));
+                body.push_str(&format!("  %pbase_{hdr} = load i8*, i8** %{rh}\n"));
+                let g2 = self.reg();
+                body.push_str(&format!("  %{g2} = getelementptr i8, i8* %{rh}, i64 8\n"));
+                let cv = self.reg();
+                body.push_str(&format!("  %{cv} = bitcast i8* %{g2} to i64*\n"));
+                body.push_str(&format!("  %pcur_{hdr} = load i64, i64* %{cv}\n"));
+                let g3 = self.reg();
+                body.push_str(&format!("  %{g3} = getelementptr i8, i8* %{rh}, i64 16\n"));
+                let lv = self.reg();
+                body.push_str(&format!("  %{lv} = bitcast i8* %{g3} to i64*\n"));
+                body.push_str(&format!("  %plim_{hdr} = load i64, i64* %{lv}\n"));
             }
             self.emit_terminator(&block.terminator, &mut body, is_main, f)?;
         }
@@ -1017,7 +1540,7 @@ impl LlvmEmitter {
                 let strategy = if options.strategy.is_some() { 1 } else { 0 };
                 let r = self.reg();
                 body.push_str(&format!(
-                    "  %{r} = call i8* @zeta_region_enter({nptr_arg}, i64 {nlen}, i64 {initial}, i8 {allow_growth}, double {factor_s}, i8 {exact}, i8 {adaptive}, i8 {strategy})\n"
+                    "  %{r} = call i8* @zeta_region_enter({nptr_arg}, i64 {nlen}, i64 {initial}, i8 {allow_growth}, double {factor_s}, i8 {exact}, i8 {adaptive}, i8 {strategy}) nounwind\n"
                 ));
                 body.push_str(&format!("  store i8* %{r}, i8** %{handle}\n"));
             }
@@ -1029,7 +1552,7 @@ impl LlvmEmitter {
                 let handle = format!("{key}.rh");
                 let r = self.reg();
                 body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
-                body.push_str(&format!("  call void @zeta_region_exit(i8* %{r})\n"));
+                body.push_str(&format!("  call void @zeta_region_exit(i8* %{r}) nounwind\n"));
             }
             LirStmt::AllocInRegion { target, region, size } => {
                 // 仅聚合对象（Ptr 槽）接线：区域内 bump 分配 + 值镜像；
@@ -1038,7 +1561,11 @@ impl LlvmEmitter {
                     let slot = self.alloc_slots[self.alloc_slot_cursor].clone();
                     self.alloc_slot_cursor += 1;
                     let handle = format!("{region}.rh");
-                    let p = self.emit_inline_region_bump(&handle, *size, &slot, body);
+                    let p = if let Some(hdr) = self.promo_header_for(region) {
+                        self.emit_region_bump_promoted(hdr, &handle, *size, &slot, body)
+                    } else {
+                        self.emit_inline_region_bump(&handle, *size, &slot, body)
+                    };
                     let v = self.operand_value(
                         &LirOperand::Local(target.clone()),
                         LirType::Ptr,
@@ -1046,9 +1573,14 @@ impl LlvmEmitter {
                         f,
                     )?;
                     body.push_str(&format!(
-                        "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{p}, i8* {v}, i64 {size}, i1 false)\n"
+                        "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{p}, i8* {v}, i64 {size}, i1 false), !tbaa !3\n"
                     ));
-                    let cont = self.label();
+                    // 提升模式下 cont 为预分配 label（header phi 引用它）
+                    let cont = if self.promo_header_for(region).is_some() {
+                        self.promo.as_ref().unwrap().cont_label.clone()
+                    } else {
+                        self.label()
+                    };
                     body.push_str(&format!("  br label %{cont}\n"));
                     body.push_str(&format!("{cont}:\n"));
                 }
@@ -1060,10 +1592,19 @@ impl LlvmEmitter {
                     let slot = self.alloc_slots[self.alloc_slot_cursor].clone();
                     self.alloc_slot_cursor += 1;
                     let handle = format!("{region}.rh");
-                    let p = self.emit_inline_region_bump(&handle, *size, &slot, body);
+                    let p = if let Some(hdr) = self.promo_header_for(region) {
+                        self.emit_region_bump_promoted(hdr, &handle, *size, &slot, body)
+                    } else {
+                        self.emit_inline_region_bump(&handle, *size, &slot, body)
+                    };
                     // target 槽 = 区域指针（后续 FieldSet 直接写区域内存）
                     body.push_str(&format!("  store i8* %{p}, i8** %{target}.addr\n"));
-                    let cont = self.label();
+                    // 提升模式下 cont 为预分配 label（header phi 引用它）
+                    let cont = if self.promo_header_for(region).is_some() {
+                        self.promo.as_ref().unwrap().cont_label.clone()
+                    } else {
+                        self.label()
+                    };
                     body.push_str(&format!("  br label %{cont}\n"));
                     body.push_str(&format!("{cont}:\n"));
                 }
@@ -1074,11 +1615,161 @@ impl LlvmEmitter {
                 body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
                 let v = self.operand_value(&LirOperand::Local(place.clone()), LirType::Ptr, body, f)?;
                 body.push_str(&format!(
-                    "  call void @zeta_region_transfer(i8* %{r}, i8* {v})\n"
+                    "  call void @zeta_region_transfer(i8* %{r}, i8* {v}) nounwind\n"
                 ));
             }
         }
         Ok(())
+    }
+
+    /// 提升路径的批量 bump（P4）：提升 latch 内**多个**同 region 定长分配
+    /// 合成**一次**提升 bump——快路径 1 次溢出检查 + 纯寄存器划出 Σsize，
+    /// 各对象指针由 `gep hbase, (al+offset)` 派生；慢路径 1 次扩容调用；
+    /// 回边 phi 仅一组（ncur/nbase/nlim）。对齐等价性同 `try_emit_region_batch`。
+    ///
+    /// 返回消费的 stmt 数；promo 未命中或窗口不足 2 个时返回 `None`
+    /// （调用方回落批量 bump / 单发）。
+    fn try_emit_region_promo_batch(
+        &mut self,
+        stmts: &[LirStmt],
+        start: usize,
+        body: &mut String,
+        f: &LirFunction,
+    ) -> Result<Option<usize>, CodegenError> {
+        // 窗口收集：同 `try_emit_region_batch`（`FieldSet`/`Assign`/`Binary`
+        // 无副作用穿插可跳过），但**不排除** promo 命中。
+        let mut allocs: Vec<(usize, String, String, usize)> = Vec::new();
+        let mut window_end = start;
+        for (j, st) in stmts.iter().enumerate().skip(start) {
+            match st {
+                LirStmt::AllocInRegionDirect { target, region, size } => {
+                    if *size == 0 || local_type(f, target) != LirType::Ptr {
+                        break;
+                    }
+                    if let Some((_, _, prev_region, _)) = allocs.first() {
+                        if prev_region != region {
+                            break;
+                        }
+                    }
+                    allocs.push((j, target.clone(), region.clone(), *size));
+                    window_end = j + 1;
+                }
+                LirStmt::FieldSet { .. } | LirStmt::Assign { .. } | LirStmt::Binary { .. } => {
+                    window_end = j + 1; // 无副作用穿插，不打断窗口
+                }
+                _ => break,
+            }
+        }
+        if allocs.len() < 2 {
+            return Ok(None);
+        }
+        let region = allocs[0].2.clone();
+        let hdr = match self.promo_header_for(&region) {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        let handle = format!("{region}.rh");
+        let total: usize = allocs.iter().map(|(_, _, _, s)| s).sum();
+        // 聚合提升 bump：各对象指针直接写各 target 槽
+        self.emit_region_bump_promoted_batch(hdr, &handle, &allocs, total, body);
+        // cont 为预分配 label（header phi 引用它）；穿插 stmt 落在 cont 内
+        let cont = self.promo.as_ref().unwrap().cont_label.clone();
+        body.push_str(&format!("  br label %{cont}\n"));
+        body.push_str(&format!("{cont}:\n"));
+        for j in start..window_end {
+            if allocs.iter().any(|(k, _, _, _)| *k == j) {
+                continue;
+            }
+            self.emit_stmt(&stmts[j], body, f)?;
+        }
+        Ok(Some(window_end - start))
+    }
+
+    /// 块级批量 bump（P3）：同一基本块内**连续出现**的同 region 定长分配
+    /// （`AllocInRegionDirect`，size 均为 8 的倍数）聚合为
+    /// **一次** bump——快路径 1 次溢出检查 + 1 次 cursor 写回，慢路径 1 次
+    /// 扩容调用；各对象指针由 `gep base, offset` 派生。仅对未提升路径生效
+    /// （提升路径已零访存，且其 cont label / header phi 结构不容跨 bump 聚合）。
+    ///
+    /// 语义等价性：size 为 `slot_count × 8`（8 的倍数），每次 bump 对齐后
+    /// cursor 恒保持 8 对齐，故「一次 bump(Σsize) + 偏移派生」与「N 次独立
+    /// bump(size_i)」逐字节一致；慢路径一次 `zeta_region_alloc(total)` 分配
+    /// 连续整块，与 N 次调用等价（仅 alloc_count 统计差异——内联快路径
+    /// 本就不计数，统计语义见 region.rs）。
+    ///
+    /// 返回消费的 stmt 数；起点非定长分配或窗口不足 2 个时返回 `None`
+    /// （调用方按单发处理）。
+    fn try_emit_region_batch(
+        &mut self,
+        stmts: &[LirStmt],
+        start: usize,
+        body: &mut String,
+        f: &LirFunction,
+    ) -> Result<Option<usize>, CodegenError> {
+        // (stmt_idx, target, region, size)：收集连续 `AllocInRegionDirect`；
+        // 窗口内允许穿插**无副作用** stmt（`FieldSet`/`Assign`/`Binary`，
+        // 只读/写 LIR 槽与对象字段，不碰 Region 头）——聚合后原样发射，
+        // 因其读的 target 槽已在聚合循环首部填充，顺序重排不改变语义。
+        // 其他 stmt（`Call`、`AllocInRegion` 值镜像等）一律断开窗口：
+        // 值镜像的 memcpy 源栈临时可能在窗口内才构造，提前 memcpy 会
+        // 读到未初始化槽；Call 可能触发慢路径/写 Region 头。
+        let mut allocs: Vec<(usize, String, String, usize)> = Vec::new();
+        let mut window_end = start; // 窗口末端（不含）
+        for (j, st) in stmts.iter().enumerate().skip(start) {
+            match st {
+                LirStmt::AllocInRegionDirect { target, region, size } => {
+                    if *size == 0 || local_type(f, target) != LirType::Ptr {
+                        break;
+                    }
+                    if self.promo_header_for(region).is_some() {
+                        break; // 提升路径零访存，无聚合收益且结构不允许
+                    }
+                    if let Some((_, _, prev_region, _)) = allocs.first() {
+                        if prev_region != region {
+                            break;
+                        }
+                    }
+                    allocs.push((j, target.clone(), region.clone(), *size));
+                    window_end = j + 1;
+                }
+                LirStmt::FieldSet { .. } | LirStmt::Assign { .. } | LirStmt::Binary { .. } => {
+                    window_end = j + 1; // 无副作用穿插，不打断窗口
+                }
+                _ => break,
+            }
+        }
+        if allocs.len() < 2 {
+            return Ok(None);
+        }
+        let region = allocs[0].2.clone();
+        let handle = format!("{region}.rh");
+        let total: usize = allocs.iter().map(|(_, _, _, s)| s).sum();
+        // 首个分配消费 1 个汇合槽；其余对象指针由 base gep 派生，无需槽
+        let slot0 = self.alloc_slots[self.alloc_slot_cursor].clone();
+        self.alloc_slot_cursor += 1;
+        let base = self.emit_inline_region_bump(&handle, total, &slot0, body);
+        let mut offset = 0usize;
+        for (idx, (_, target, _, size)) in allocs.iter().enumerate() {
+            let p = if idx == 0 {
+                base.clone() // offset 0：bump 返回指针即首对象
+            } else {
+                let r = self.reg();
+                body.push_str(&format!(
+                    "  %{r} = getelementptr i8, i8* %{base}, i64 {offset}\n"
+                ));
+                r
+            };
+            body.push_str(&format!("  store i8* %{p}, i8** %{target}.addr\n"));
+            offset += *size;
+        }
+        // 原样发射窗口内穿插的无副作用 stmt（target 槽已在聚合循环首部填充）
+        for j in start..window_end {
+            if allocs.iter().any(|(k, _, _, _)| *k == j) {
+                continue;
+            }
+            self.emit_stmt(&stmts[j], body, f)?;
+        }
+        Ok(Some(window_end - start))
     }
 
     /// 生成内联 bump 快路径（`AllocInRegion` / `AllocInRegionDirect` 共用）：
@@ -1108,15 +1799,15 @@ impl LlvmEmitter {
         let b = self.reg();
         body.push_str(&format!("  %{b} = load i8*, i8** %{handle}\n"));
         let base = self.reg();
-        body.push_str(&format!("  %{base} = load i8*, i8** %{b}\n"));
+        body.push_str(&format!("  %{base} = load i8*, i8** %{b}, !tbaa !2\n"));
         let (cg, cv) = (self.reg(), self.reg());
         let (cur, lg, lv, lim) = (self.reg(), self.reg(), self.reg(), self.reg());
         body.push_str(&format!("  %{cg} = getelementptr i8, i8* %{b}, i64 8\n"));
         body.push_str(&format!("  %{cv} = bitcast i8* %{cg} to i64*\n"));
-        body.push_str(&format!("  %{cur} = load i64, i64* %{cv}\n"));
+        body.push_str(&format!("  %{cur} = load i64, i64* %{cv}, !tbaa !2\n"));
         body.push_str(&format!("  %{lg} = getelementptr i8, i8* %{b}, i64 16\n"));
         body.push_str(&format!("  %{lv} = bitcast i8* %{lg} to i64*\n"));
-        body.push_str(&format!("  %{lim} = load i64, i64* %{lv}\n"));
+        body.push_str(&format!("  %{lim} = load i64, i64* %{lv}, !tbaa !2\n"));
         let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
         body.push_str(&format!("  %{m} = add i64 %{cur}, {amask}\n"));
         body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
@@ -1128,7 +1819,7 @@ impl LlvmEmitter {
         body.push_str(&format!("{fast}:\n"));
         // 快路径：更新 cursor。alloc_count 不在此递增——为换取热路径
         // 性能，内联快路径不计数（统计语义见 zeta-region-alloc/src/region.rs）。
-        body.push_str(&format!("  store i64 %{new}, i64* %{cv}\n"));
+        body.push_str(&format!("  store i64 %{new}, i64* %{cv}, !tbaa !2\n"));
         let fp = self.reg();
         body.push_str(&format!("  %{fp} = getelementptr i8, i8* %{base}, i64 %{al}\n"));
         body.push_str(&format!("  store i8* %{fp}, i8** %{slot}\n"));
@@ -1137,7 +1828,7 @@ impl LlvmEmitter {
         body.push_str(&format!("{slow}:\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @zeta_region_alloc(i8* %{b}, i64 {size}, i64 8)\n"
+            "  %{sp} = call i8* @zeta_region_alloc(i8* %{b}, i64 {size}, i64 8) nounwind\n"
         ));
         body.push_str(&format!("  store i8* %{sp}, i8** %{slot}\n"));
         body.push_str(&format!("  br label %{join}\n"));
@@ -1146,6 +1837,196 @@ impl LlvmEmitter {
         let p = self.reg();
         body.push_str(&format!("  %{p} = load i8*, i8** %{slot}\n"));
         p
+    }
+
+    /// 当前 bump 是否处于循环提升上下文（当前块 = 提升 latch 且 region
+    /// 匹配），返回 header 块号（命名后缀）。
+    fn promo_header_for(&self, region: &str) -> Option<usize> {
+        let p = self.promo.as_ref()?;
+        if p.latch == self.current_block && p.region == region {
+            Some(p.header)
+        } else {
+            None
+        }
+    }
+
+    /// 循环提升模式的 bump（热路径零访存，见 `PromoCtx` 注释）：
+    /// 直接用 header phi 值 `%h{cur,base,lim}_{hdr}` 计算划出，快路径
+    /// 无任何 Region 头访存；慢路径才 load handle、call 扩容并 reload
+    /// base/cursor/limit；join 处生成回边值 phi（`%n{cur,base,lim}_{hdr}`）
+    /// 供 header phi 的下一次迭代引用。
+    ///
+    /// 与 `emit_inline_region_bump` 相同：结果经 `slot` 汇合，返回 `%p`；
+    /// 序列以 `br %cont` + `{cont}:` 结尾由调用方补齐。
+    fn emit_region_bump_promoted(
+        &mut self,
+        hdr: usize,
+        handle: &str,
+        size: usize,
+        slot: &str,
+        body: &mut String,
+    ) -> String {
+        let align = 8u64; // 与 MemoryBlock::BASE_ALIGN 一致
+        let amask = align - 1; // 7
+        let not_amask = !amask; // 18446744073709551607
+        let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
+        body.push_str(&format!("  %{m} = add i64 %hcur_{hdr}, {amask}\n"));
+        body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
+        body.push_str(&format!("  %{new} = add i64 %{al}, {size}\n"));
+        body.push_str(&format!("  %{ok} = icmp ule i64 %{new}, %hlim_{hdr}\n"));
+        // join 为预分配 label（header phi 已引用它）；fast/slow 新建
+        debug_assert!(
+            self.promo
+                .as_ref()
+                .is_some_and(|p| p.bumps.iter().any(|(_, s)| *s == size)),
+            "promo bump size mismatch"
+        );
+        let join = self
+            .promo
+            .as_ref()
+            .map(|p| p.join_label.clone())
+            .expect("promo join label");
+        let (fast, slow) = (self.label(), self.label());
+        body.push_str(&format!("  br i1 %{ok}, label %{fast}, label %{slow}\n"));
+        // 快路径：纯寄存器运算（cursor 更新经 join phi，不写 Region 头）
+        body.push_str(&format!("{fast}:\n"));
+        let fp = self.reg();
+        body.push_str(&format!("  %{fp} = getelementptr i8, i8* %hbase_{hdr}, i64 %{al}\n"));
+        body.push_str(&format!("  store i8* %{fp}, i8** %{slot}\n"));
+        body.push_str(&format!("  br label %{join}\n"));
+        // 慢路径：先把快路径寄存器 cursor 写回 Region 头 cursor 槽——
+        // 提升后循环内 cursor 存于寄存器（phi），Region 头 cursor 保持进入
+        // 循环时的旧值；若不写回，运行时 try_bump 会基于旧 cursor 判断，
+        // 在「已分配区」重复返回指针（永远不扩容、快路径越界写）。
+        // 写回后 try_bump 从正确位置判断越界 → grow 扩容 → 新块。
+        // 扩容可能改写 base/limit/cursor（grow 三字段均更新），
+        // 故 call 后全部 reload 并经 join phi 修正回边值。
+        body.push_str(&format!("{slow}:\n"));
+        let h = self.reg();
+        body.push_str(&format!("  %{h} = load i8*, i8** %{handle}\n"));
+        let (cg, cv) = (self.reg(), self.reg());
+        body.push_str(&format!("  %{cg} = getelementptr i8, i8* %{h}, i64 8\n"));
+        body.push_str(&format!("  %{cv} = bitcast i8* %{cg} to i64*\n"));
+        body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}, !tbaa !2\n"));
+        let sp = self.reg();
+        body.push_str(&format!(
+            "  %{sp} = call i8* @zeta_region_alloc(i8* %{h}, i64 {size}, i64 8) nounwind\n"
+        ));
+        let rc = self.reg();
+        body.push_str(&format!("  %{rc} = load i64, i64* %{cv}, !tbaa !2\n"));
+        let rb = self.reg();
+        body.push_str(&format!("  %{rb} = load i8*, i8** %{h}, !tbaa !2\n"));
+        let (lg, lv) = (self.reg(), self.reg());
+        body.push_str(&format!("  %{lg} = getelementptr i8, i8* %{h}, i64 16\n"));
+        body.push_str(&format!("  %{lv} = bitcast i8* %{lg} to i64*\n"));
+        let rl = self.reg();
+        body.push_str(&format!("  %{rl} = load i64, i64* %{lv}, !tbaa !2\n"));
+        body.push_str(&format!("  store i8* %{sp}, i8** %{slot}\n"));
+        body.push_str(&format!("  br label %{join}\n"));
+        // 汇合：phi 必须位于块首（先 phi 后 load slot）
+        body.push_str(&format!("{join}:\n"));
+        body.push_str(&format!(
+            "  %ncur_{hdr} = phi i64 [ %{new}, %{fast} ], [ %{rc}, %{slow} ]\n"
+        ));
+        body.push_str(&format!(
+            "  %nbase_{hdr} = phi i8* [ %hbase_{hdr}, %{fast} ], [ %{rb}, %{slow} ]\n"
+        ));
+        body.push_str(&format!(
+            "  %nlim_{hdr} = phi i64 [ %hlim_{hdr}, %{fast} ], [ %{rl}, %{slow} ]\n"
+        ));
+        let p = self.reg();
+        body.push_str(&format!("  %{p} = load i8*, i8** %{slot}\n"));
+        p
+    }
+
+    /// 批量提升 bump 发射（fast/slow/join）：一次溢出检查划出 Σsize，
+    /// 各对象指针由 `gep hbase, (al+offset)`（快）/ `gep sp, offset`（慢）
+    /// 派生并写入各自 target 槽。快路径不写 Region 头（cursor 经 join phi
+    /// 回传）；慢路径先写回寄存器 cursor 再扩容（grow 改写 base/cursor/
+    /// limit，call 后全量 reload），join 处一组 ncur/nbase/nlim phi。
+    /// 对齐等价性同 `try_emit_region_batch`（size 均为 8 的倍数）。
+    fn emit_region_bump_promoted_batch(
+        &mut self,
+        hdr: usize,
+        handle: &str,
+        allocs: &[(usize, String, String, usize)],
+        total: usize,
+        body: &mut String,
+    ) {
+        let align = 8u64; // 与 MemoryBlock::BASE_ALIGN 一致
+        let amask = align - 1;
+        let not_amask = !amask;
+        let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
+        body.push_str(&format!("  %{m} = add i64 %hcur_{hdr}, {amask}\n"));
+        body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
+        body.push_str(&format!("  %{new} = add i64 %{al}, {total}\n"));
+        body.push_str(&format!("  %{ok} = icmp ule i64 %{new}, %hlim_{hdr}\n"));
+        let join = self
+            .promo
+            .as_ref()
+            .map(|p| p.join_label.clone())
+            .expect("promo join label");
+        let (fast, slow) = (self.label(), self.label());
+        body.push_str(&format!("  br i1 %{ok}, label %{fast}, label %{slow}\n"));
+        // 快路径：纯寄存器运算，各对象指针由 hbase 偏移派生
+        body.push_str(&format!("{fast}:\n"));
+        let mut offset = 0usize;
+        for (_, target, _, size) in allocs {
+            let fp = self.reg();
+            body.push_str(&format!(
+                "  %{fp} = getelementptr i8, i8* %hbase_{hdr}, i64 %{al}\n"
+            ));
+            let p = if offset == 0 {
+                fp
+            } else {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = getelementptr i8, i8* %{fp}, i64 {offset}\n"));
+                r
+            };
+            body.push_str(&format!("  store i8* %{p}, i8** %{target}.addr\n"));
+            offset += *size;
+        }
+        body.push_str(&format!("  br label %{join}\n"));
+        // 慢路径：写回寄存器 cursor → 扩容 → reload → 各对象指针
+        body.push_str(&format!("{slow}:\n"));
+        let h = self.reg();
+        body.push_str(&format!("  %{h} = load i8*, i8** %{handle}\n"));
+        let (cg, cv) = (self.reg(), self.reg());
+        body.push_str(&format!("  %{cg} = getelementptr i8, i8* %{h}, i64 8\n"));
+        body.push_str(&format!("  %{cv} = bitcast i8* %{cg} to i64*\n"));
+        body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}, !tbaa !2\n"));
+        let sp = self.reg();
+        body.push_str(&format!(
+            "  %{sp} = call i8* @zeta_region_alloc(i8* %{h}, i64 {total}, i64 8) nounwind\n"
+        ));
+        let rc = self.reg();
+        body.push_str(&format!("  %{rc} = load i64, i64* %{cv}, !tbaa !2\n"));
+        let rb = self.reg();
+        body.push_str(&format!("  %{rb} = load i8*, i8** %{h}, !tbaa !2\n"));
+        let (lg, lv) = (self.reg(), self.reg());
+        body.push_str(&format!("  %{lg} = getelementptr i8, i8* %{h}, i64 16\n"));
+        body.push_str(&format!("  %{lv} = bitcast i8* %{lg} to i64*\n"));
+        let rl = self.reg();
+        body.push_str(&format!("  %{rl} = load i64, i64* %{lv}, !tbaa !2\n"));
+        let mut offset = 0usize;
+        for (_, target, _, size) in allocs {
+            let fp = self.reg();
+            body.push_str(&format!("  %{fp} = getelementptr i8, i8* %{sp}, i64 {offset}\n"));
+            body.push_str(&format!("  store i8* %{fp}, i8** %{target}.addr\n"));
+            offset += *size;
+        }
+        body.push_str(&format!("  br label %{join}\n"));
+        // 汇合：phi 位于块首，一组回边值
+        body.push_str(&format!("{join}:\n"));
+        body.push_str(&format!(
+            "  %ncur_{hdr} = phi i64 [ %{new}, %{fast} ], [ %{rc}, %{slow} ]\n"
+        ));
+        body.push_str(&format!(
+            "  %nbase_{hdr} = phi i8* [ %hbase_{hdr}, %{fast} ], [ %{rb}, %{slow} ]\n"
+        ));
+        body.push_str(&format!(
+            "  %nlim_{hdr} = phi i64 [ %hlim_{hdr}, %{fast} ], [ %{rl}, %{slow} ]\n"
+        ));
     }
 
     /// 生成函数调用（内建 → `printf`；用户函数 → `call`）。
@@ -1591,7 +2472,7 @@ impl LlvmEmitter {
                             body.push_str(&format!("  %{s1} = load i64, i64* %{p1}\n"));
                             let v0 = self.reg();
                             body.push_str(&format!(
-                                "  %{v0} = insertvalue {{ i64, i64 }} undef, i64 %{s0}, 0\n"
+                                "  %{v0} = insertvalue {{ i64, i64 }} poison, i64 %{s0}, 0\n"
                             ));
                             let v1 = self.reg();
                             body.push_str(&format!(

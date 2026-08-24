@@ -1,7 +1,7 @@
 # Zeta 内存模型规范
 
 > 版本：v2.0  
-> 最后更新：2026-08-23
+> 最后更新：2026-08-24
 
 > **⚠️ 实现状态**：L1 区域系统（§3）**已实现**（bump 分配 + 批量释放 + `adaptive`/`with_size`/`strategy (bump)` +
 > **运行时接线（L3 ✅）**——region 指令调用 `zeta-region-alloc` C ABI 层（`zeta_region_enter`/`zeta_region_alloc`/
@@ -150,6 +150,13 @@ impl BumpAllocator {
 ```
 
 **性能**：每次分配仅 3-5 条指令，无锁、无链表查找。
+
+> **codegen 内联 bump 快路径**：LLVM 后端对 `AllocInRegion` 生成内联 bump 序列（对齐 + 越界检查 +
+> 指针递增），**不调用运行时函数**，仅越界时才 `call zeta_region_alloc`（慢路径扩容）。为进一步消除
+> 热循环中每次 bump 对 Region 头（base/cursor/limit 三字段）的访存，codegen 实施**循环级 region 状态提升**
+> （见 [附录 A.4](#a4-循环级-region-状态提升2026-08-24) 单 bump 点与 [附录 A.6](#a6-批量提升多-bump-点聚合2026-08-24)
+> 多 bump 点批量聚合）：preheader 快照 → header phi 维护提升状态 → latch 快路径零访存（仅寄存器运算）→
+> 循环退出写回 cursor 一次。
 
 ### 3.4 析构管理
 
@@ -509,6 +516,62 @@ gc_region {
 | Arc | 16 bytes + 原子操作开销 |
 | GC | 8-16 bytes（标记位 + 对齐） |
 
+### 7.4 区域循环分配实测（2026-08-24）
+
+基准用例（`examples/projects/benchmarks/region_alloc/region_alloc.zeta`，100 万次循环、每次 32B 聚合对象 `in 'r` bump 分配，
+30 次运行取中位数，Apple Silicon arm64 / clang -O3）：
+
+| 版本 | 100 万次 bump 耗时 | 热循环 Region 头访存/迭代 |
+|------|--------------------|----------------------------|
+| 优化前（无循环提升） | 6.847 ms | 3 次（`ldp [x19,#8]` + `ldr [x19]` + `str [x19,#8]`） |
+| 优化后（循环提升，单块不扩容） | 3.258 ms | 0 次（仅慢路径 reload + 循环退出写回 1 次） |
+
+**结论**：循环级 region 状态提升将 bump 分配热路径的 Region 头访存完全消除，分配本身收敛为纯寄存器运算
+（对齐 `and` + 越界 `cmp` + 基址 `add`）。上表"优化后"为热循环零访存的**理论形态**（单块不扩容场景）；
+**完整语义**（含附录 A.5 慢路径 cursor 回写修复、13 次真实扩容）下的最终基准见下表。
+
+#### Zeta 各 region 策略对比（同机同构 100 万次 32B 对象，10 次取中位数）
+
+| 策略 | 语法 | 块数（扩容次数） | 内存峰值 | 耗时 (ms) | 较最优 |
+|------|------|:---:|:---:|-----:|:---:|
+| plain（默认 bump） | `region 'r {}` | 14（13 次，1B→17.5MB） | 17.5MB | 5.512 | +3.4% |
+| adaptive（EWMA 画像） | `region 'r adaptive {}` | 21（20 次，调优初值） | ~17.5MB | 5.558 | +4.3% |
+| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 1（0 次） | 32MB | **5.331** | — |
+| `with_size (4KB)` | `region 'r with_size (4096) {}` | 9（8 次） | 26.8MB | 5.434 | +1.9% |
+| `strategy (bump)`（显式 bump） | `region 'r strategy (bump) {}` | 14（13 次） | 17.5MB | 5.420 | +1.7% |
+
+对照基线：空进程（无 region）2.755ms、空 `region` 3.202ms、空 `with_size(32MB)` 2.993ms——region 进出开销 < 0.5ms；
+单次 bump 分配成本约 **2.8 ns**（扣除进程基线后 1M 次分配 ~2.76ms）。
+
+**洞察**：
+
+1. **五种策略耗时全部落在 5.33–5.56ms（~4% 内）**——循环级状态提升后热循环分配为纯寄存器 bump，
+   策略差异只作用于慢路径扩容次数，被热路径完全掩盖；`adaptive` 的慢路径 EWMA 记账（20 次 vs 13 次扩容）
+   造成 < 0.3ms 的差距，扩容次数在提升后不再是性能敏感项。
+2. `with_size (32MB)` 零扩容最快；`with_size (4KB)` 以最小预分配 + 8 次快速扩容居中——印证
+   "预分配越大越好"的传统直觉在提升后不成立；日常代码可放心使用默认 `region`，仅在已知精确上限时
+   用 `with_size (N)` 规避全部扩容。
+
+#### 批量分配（多 bump 点，region_batch 基准：100 万循环 × 每次 4×32B 对象，真实写带宽对照）
+
+| 实现 | 分配方式 | 耗时 (ms) | 较 C |
+|------|----------|-----:|:---:|
+| Zeta（批量提升，P4） | 寄存器 bump：单次溢出检查 + 4 派生 | 13.684 | **1.04x** |
+| Zeta（批量 bump，P3，A/B 对照） | 每次迭代 Region 头访存 + 单次 bump | 13.39 | ~1.0x（内部对照） |
+| Rust | 手动 bump + `write_volatile` | 13.265 | 1.00x |
+| C | 手动 bump + `volatile` 写读 | 13.218 | 1.0x |
+| C++ | 手动 bump + `volatile` 写读 | 13.220 | 1.00x |
+| Go | 手动 bump（unsafe 指针写） | 13.531 | 1.02x |
+| Swift | 手动 bump + escape 黑盒读 | 15.303 | 1.16x |
+
+> 注：本表为同环境交替 A/B 对照（P3/P4 21 轮取中位，跨语言 7 轮取中位）。**对照修复说明**：旧 C/Rust/Swift
+> 对照为 `malloc`/`free` 与 `Box::new`/class 分配循环——bump 内存不 escape 时 LLVM 证明 store 全为死代码并
+> **整体消除**（C 热循环汇编只剩 10 条 SIMD 纯计算指令、零内存访问），测出 2.9/4.99/4.19ms 的「纯计算假数据」，
+> 造成 Zeta 4.8x 的假差距。修复后各语言强制真实内存写（volatile / `write_volatile` / escape 黑盒），
+> 128MB 线性写为带宽受限场景：**Zeta 与 C/C++/Rust 持平（1.04x，噪声内并列最快）**——批量提升已将
+> 热循环压到内存带宽极限，逐 bump 检查全部摊薄。完整跨语言对比见
+> [`benchmarks/README.md`](../examples/projects/benchmarks/README.md)。
+
 ---
 
 ## 附录 A：实现纪要
@@ -550,6 +613,76 @@ gc_region {
   `StatsCollector`（分配/扩容统计 + PGO 数据输出）。
 - **落地**：静态大小推断 + PGO 画像回灌 `adaptive` 初始容量 + EWMA 自适应扩容 + 碎片统计 +
   criterion 基准；性能测试 28 项全过。
+
+### A.4 循环级 region 状态提升（codegen 优化，2026-08-24 ✅）
+
+- **动机**：`AllocInRegion` 在 LLVM 后端生成内联 bump 快路径（对齐 + 越界检查 + 指针递增），仅越界时
+  `call zeta_region_alloc`。但慢路径 `Region::grow()`（`zeta-region-alloc/src/region.rs`）扩容时会改写
+  Region 头的 base/cursor/limit 三字段——LLVM 无法证明 call 不写 Region 头，LICM 失效，热循环每次 bump
+  均从内存重读三字段（反汇编为 `ldp [x19,#8]`/`ldr [x19]`/`str [x19,#8]` 3 次访存/迭代）。
+- **方案**（`zeta-codegen/src/llvm.rs`）：识别规范 while 循环并做循环级状态提升——
+  - **保守命中条件**（`find_loop_promo`）：恰一条回边（`dom[src] ∋ dst`，迭代数据流 O(n²·E)）、非自循环、
+    唯一 preheader、体内无 `RegionEnter`/`RegionExit`、无嵌套回边、latch 恰一个 `AllocInRegion` bump、
+    恰一条退出边（源为 header、退出目标唯一前驱为 header）。
+  - **preheader 快照**：terminator 前 load handle → `%p{base,cur,lim}` SSA 值。
+  - **header phi**：`%h{base,cur,lim} = phi [ %p.., %pre ], [ %n.., %latch ]`，循环内状态完全寄存器化。
+  - **latch bump**：快路径零访存（对齐 `and` + 越界 `cmp %new, %hlim` + 基址 `add %hbase`）；慢路径
+    load handle + call + reload 三字段；join 处 phi 回传快/慢路径新状态（`%n{base,cur,lim}`）。
+  - **退出写回**：循环退出块入口 `store %hcur, cursor`，Region 头状态最终一致。
+- **关键修复**：header phi 的回边 entry 必须引用 LLVM CFG 中 latch 的**真实回边块**——bump split
+  （fast/slow/join/cont 多 label）后为预分配的 join/cont label（发射 header 时 `self.label()` 回填
+  `PromoCtx`），而非 LIR 块号；否则 clang verifier 报 `PHI node entries do not match predecessors` /
+  `Instruction does not dominate all uses`（初版即踩此坑）。
+- **验证**：单块不扩容场景 100 万次 32B bump 实测 6.847 ms → 3.258 ms（中位数 30 次，约 2.1 倍，见 §7.4）；
+  热循环反汇编零 `[x19]` 访存；完整语义（含 A.5 修复、真实扩容）下五种策略 5.33–5.56ms，见 §7.4 策略对比表；
+  97 个集成测试全通过，无回归。
+
+### A.5 慢路径 cursor 回写修复（2026-08-24 ✅）
+
+- **缺陷**：循环提升后 bump 状态完全寄存器化，但寄存器 `%cur` 仅在循环**退出**时写回 Region 头一次。
+  当慢路径被触发（`call zeta_region_alloc`，如 plain 第 14 块、自适应第 21 块）时，运行时基于 Region 头中
+  **过时的 cursor/limit** 判定空间，可能返回与既有寄存器状态重叠的地址（或误判容量不足重复扩容），
+  语义错误且内存利用率失真。实测（调试日志）：block_count 停在 9、总容量 72KB、used≈48KB 但循环 100 万次
+  （应为 14 块、17.5MB），峰值 RSS 仅 2.3MB（应为 ~34MB）。
+- **修复**（`zeta-codegen/src/llvm.rs`，`emit_region_bump_promoted`）：在慢路径 `call zeta_region_alloc`
+  **之前**先 `store i64 %hcur_{hdr}, i64* %{cv}` 将寄存器状态写回 Region 头，令运行时基于最新状态扩容，
+  call 返回后 reload 三字段继续提升。快路径与循环退出写回不变。
+- **验证**：修复后 100 万次循环慢路径恰好 15 次调用（14 块扩容 + 1 次对齐补块），峰值 RSS 34.6MB；
+  200 万循环用例输出与 plain/ws32m 逐值一致（`999000000`）；97 个集成测试全通过。
+- **调试备忘**：`Region` 的 `base`/`cursor`/`limit` 为私有字段（E0616），运行时诊断经公开
+  `capacity()`/`used()`/`block_count()` 读取。
+
+### A.6 批量提升（多 bump 点聚合，2026-08-24 ✅）
+
+- **动机**：A.4 单对象提升覆盖循环内**单个** bump 点；批量场景（每次迭代分配多个对象）下每个 bump
+  点仍独立发射独立对齐/越界检查/指针推进，Region 头访存与检查冗余、代码体积膨胀。
+- **实现**（`zeta-codegen/src/llvm.rs`）：
+  - `find_loop_promo` 收集 latch 内**同 region 的全部** `AllocInRegionDirect` bump（多 bump 批量提升），
+    提升状态**整组共享一组 phi**（`%hcur_{hdr}`/`%hbase_{hdr}`/`%hlim_{hdr}`）；
+  - 发射期 `try_emit_region_promo_batch` 窗口聚合：首个 bump 做一次对齐 + 一次越界检查 + 一次推进
+    `total = Σ size`，各对象经 `gep` 派生（`__tmp0 = base+off0`、`__tmp1 = base+off0+size0` …）；
+    慢路径一次 `call zeta_region_alloc` 扩容；
+  - 窗口收集与 P3 批量 bump（`try_emit_region_batch`）共享穿插跳过规则（`FieldSet`/`Assign`/`Binary`
+    无副作用穿插可跳过），但**不排除** promo 命中。
+- **约束**：仅 `AllocInRegionDirect`（值镜像 `AllocInRegion` 需 memcpy 发射，不聚合，散落 bump 与单发
+  提升的回边 phi 重复定义冲突）；bump 全部位于 latch；bump 之间仅无副作用穿插（窗口兼容预检）。
+- **关键修复（span 越界 bug）**：窗口兼容预检须限定在**首个至末个 bump 的区间内**——末个 bump 之后
+  的 `FieldGet`（如 `sum = sum + x1.a + x2.a + x3.a + x4.a` 读取分配结果）属合法跟随，不得触发拒绝。
+  初版 `in_span` 置位后不复位导致 span 扩展到块尾，**所有含字段读取的批量循环被整体拒绝**（批量基准
+  19.5ms 退化至 P3 水平，IR 无 `%hcur_` phi）。
+- **验证**：`region_batch` 基准（100 万循环 × 每次 4×32B 对象，`examples/projects/benchmarks/region_batch/`）；
+  IR 确认一组 `%hcur_`/`%ncur_` phi 命中、慢路径 `zeta_region_alloc` 保持 2 处（扩容 + 对齐补块）；
+  同环境交替 A/B（交替测 21 轮取中位）：**P4 批量提升 12.70 ms vs P3 批量 bump 13.39 ms（+5.5%）**；
+  输出与 C/Go/Rust/Swift 对照严格一致（`2000497500000`）。
+- **对照修复（DSE 假差距揭穿，2026-08-24 追加）**：旧跨语言对照为 `malloc`/`free`（C/C++）、
+  `Box::new`（Rust）、class 分配（Swift）——bump 内存不 escape 时 LLVM 证明所有 store 为死代码并整体消除
+  （C 热循环汇编仅剩 10 条 SIMD 纯计算指令、零内存访问），测出「纯计算假数据」（C 2.62/2.91ms、Rust 4.99ms、
+  Swift 4.19ms），造成 Zeta 4.8x 假差距。修复：各语言对照统一为**手动 bump + 强制真实内存写**
+  （C/C++ `volatile` 写读、Rust `write_volatile`/`read_volatile`、Go `unsafe` 指针写、Swift 指针写 + escape 黑盒读），
+  与 region 线性 bump 语义对齐。修复后 128MB 线性写为带宽受限场景（§7.4 表）：**Zeta 13.684 vs
+  C 13.218 / C++ 13.220 / Rust 13.265（1.04x，噪声内并列最快）**；P3/P4 内部 A/B（+5.5%）仍为真实收益。
+  `region_alloc` 单对象场景修复后 Zeta 6.095 vs C 5.407（1.13x）——剩余差距为 region 语义必需的
+  逐对象越界检查（~1ns/迭代），非 codegen 缺陷。
 
 ---
 

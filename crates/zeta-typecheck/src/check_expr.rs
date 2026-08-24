@@ -483,6 +483,13 @@ pub(crate) fn infer_expr(
 
         ExprKind::Assign { target, op, value } => {
             let (t_hir, t_ty) = infer_expr(ctx, target)?;
+            // H4 去虚拟化失效：dyn 变量被重新赋值后绑定源具体类型不再成立，
+            // 后续调用回退 vtable 间接分派
+            if matches!(op, AssignOp::Assign) {
+                if let ExprKind::Ident(var) = &*target.kind {
+                    ctx.dyn_concrete.remove(var);
+                }
+            }
             let (v_hir, v_ty) = infer_expr(ctx, value)?;
             if !t_ty.compatible_with(&v_ty) {
                 return Err(TypeError::WrongType {
@@ -2150,9 +2157,9 @@ fn check_iterator_adapter(
 
 /// 检查 `HashMap<K, V>` 容器迭代的 for 循环：`for (k, v) in m { body }`。
 ///
-/// 在类型检查层 desugar 为索引遍历循环（复用 HashMap 6 槽布局：
+/// 在类型检查层 desugar 为索引遍历循环（复用 HashMap 7 槽布局：
 /// 槽 0 = keys 指针、槽 1 = vals 指针、槽 2 = states 指针（0=空 1=占用 2=墓碑）、
-/// 槽 3 = len、槽 4 = used、槽 5 = cap）。HashMap 是稀疏存储（删除产生墓碑），
+/// 槽 3 = len、槽 4 = used、槽 5 = cap、槽 6 = dist 距离数组）。HashMap 是稀疏存储（删除产生墓碑），
 /// 遍历必须按容量扫描并跳过 `states[i] != 1` 的空槽 / 墓碑：
 ///
 /// ```zeta
@@ -2717,7 +2724,7 @@ fn check_call(
                 _ => {}
             }
         }
-        // `HashMap` 构造器特判：`new()` / `with_capacity(n)`（6 槽开放寻址哈希表）
+        // `HashMap` 构造器特判：`new()` / `with_capacity(n)`（7 槽 Robin Hood 哈希表）
         if ty_full == "HashMap" && ctx.lookup_struct(&ty_full).is_some()
             && (method == "with_capacity" || method == "new")
         {
@@ -4203,11 +4210,12 @@ fn check_string_construct(
 
 /// `HashMap::with_capacity(cap)` / `HashMap::new()`：编译器直接展开。
 ///
-/// 与 `HashMap` 结构体字段顺序一致（6 槽）：槽 0 = keys 指针（`[K; 0]`）、
+/// 与 `HashMap` 结构体字段顺序一致（7 槽）：槽 0 = keys 指针（`[K; 0]`）、
 /// 槽 1 = vals 指针（`[V; 0]`）、槽 2 = states 指针（`[i64; 0]`）、
-/// 槽 3 = len = 0、槽 4 = used = 0、槽 5 = cap。三个动态数组均经
-/// `alloc_array` 分配（8 字节步长），默认容量 8。返回 `HashMap<Infer, Infer>`，
-/// 类型参数由上下文（如 `let m: HashMap<i64, i64> = ...` 注解）统一。
+/// 槽 3 = len = 0、槽 4 = used = 0、槽 5 = cap、槽 6 = dist 指针（`[i64; 0]`，
+/// Robin Hood 键探测距离）。四个动态数组均经 `alloc_array` 分配（8 字节步长），
+/// 默认容量 8。返回 `HashMap<Infer, Infer>`，类型参数由上下文
+/// （如 `let m: HashMap<i64, i64> = ...` 注解）统一。
 fn check_hashmap_construct(
     ctx: &mut TypeContext,
     method: &str,
@@ -4248,6 +4256,7 @@ fn check_hashmap_construct(
     let keys_tmp = ctx.fresh_temp();
     let vals_tmp = ctx.fresh_temp();
     let states_tmp = ctx.fresh_temp();
+    let dist_tmp = ctx.fresh_temp();
     let base = ctx.fresh_temp();
     let cap_for_alloc = cap_hir.clone();
     let stmts = vec![
@@ -4276,9 +4285,17 @@ fn check_hashmap_construct(
             mutable: false,
         },
         HirStmt::Let {
+            name: dist_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_hir.clone()],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
             name: base.clone(),
             init: HirExpr::Alloc {
-            slots: 6,
+            slots: 7,
             by_value: false,
         },
             mutable: false,
@@ -4318,6 +4335,12 @@ fn check_hashmap_construct(
             index: 5,
             value: Box::new(cap_hir),
             ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 6,
+            value: Box::new(HirExpr::Variable(dist_tmp)),
+            ty: FieldScalar::Ptr,
         }),
     ];
 
@@ -6628,6 +6651,16 @@ fn check_method_call(
     //   let __m    = Index(__vtp, 3+idx, Ptr);    // vtable[3+idx] 方法函数指针
     //   final: CallIndirect { callee: __m, args: [__data, ...实参], param_names, ret_name }
     if let Type::Dyn(trait_name) = &recv_ty {
+        // H4 去虚拟化：接收者为 dyn 局部变量且绑定源具体类型已知时，静态分派到
+        // 具体类型方法（vtable 调用在循环中受间接调用屏障阻止优化，静态调用
+        // 可被 LLVM 内联 / 常量折叠；dyn 变量被重新赋值时映射已失效回退 vtable）
+        if let HirExpr::Variable(var) = &recv_hir {
+            if let Some(devirt) =
+                devirtualize_dyn_call(ctx, var, trait_name, method, recv_hir.clone(), args, span)?
+            {
+                return Ok(devirt);
+            }
+        }
         let trait_def = ctx
             .trait_defs
             .get(trait_name)
@@ -6961,6 +6994,80 @@ fn check_method_call(
         },
         ret_ty,
     ))
+}
+
+/// H4 去虚拟化：`dyn` 绑定变量（`let d: dyn Trait = &obj;`）的方法调用
+/// 静态分派到具体类型实现，替代 vtable 间接调用。
+///
+/// 静态调用可被 LLVM 内联 / 常量折叠（vtable 调用在循环中受间接调用屏障
+/// 阻止优化）；dyn 变量被重新赋值时映射已失效，自动回退 vtable。
+/// 任何检查失败一律返回 `None`，由调用方走 vtable 分支（错误信息保持一致）。
+fn devirtualize_dyn_call(
+    ctx: &mut TypeContext,
+    var: &str,
+    trait_name: &str,
+    method: &str,
+    recv_hir: HirExpr,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<Option<(HirExpr, Type)>, TypeError> {
+    let Some(concrete_ty) = ctx.dyn_concrete.get(var).cloned() else {
+        return Ok(None);
+    };
+    // 找 `impl Trait for 具体类型`（与 coerce_to_dyn 相同的匹配规则）
+    let Some(impl_def) = ctx
+        .impl_defs
+        .iter()
+        .find(|d| d.trait_name.as_deref() == Some(trait_name) && d.self_type == concrete_ty)
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    // 具体实现方法 → mono 符号（含模块前缀 / 泛型实例化）
+    let Some(impl_method) = impl_def.methods.iter().find(|im| im.sig.name == method) else {
+        return Ok(None);
+    };
+    let subst = HashMap::new();
+    let fn_name = match instantiate_impl_method(ctx, &impl_def, impl_method, &subst, span) {
+        Ok(n) => n,
+        Err(_) => return Ok(None), // 实例化失败 → 回退 vtable（vtable 分支报错）
+    };
+    let sig = &impl_method.sig;
+    // 含 `Self` 的签名无法静态确定（vtable 分支报 Unsupported，此处回退）
+    if sig.params.iter().skip(1).any(type_mentions_self) || type_mentions_self(&sig.return_type) {
+        return Ok(None);
+    }
+    // 参数数量（vtable 分支报错）
+    if args.len() + 1 != sig.params.len() {
+        return Ok(None);
+    }
+    // 实参类型检查（与 vtable 分支一致；`&str` 实参升级）
+    let mut hir_args = Vec::with_capacity(args.len());
+    for (i, a) in args.iter().enumerate() {
+        let (h, t) = infer_expr(ctx, a)?;
+        let pty = substitute(&sig.params[i + 1], &HashMap::new());
+        let (h, t) = upgrade_str_arg(ctx, h, t, &pty, a)?;
+        if !t.compatible_with(&pty) {
+            return Ok(None);
+        }
+        hir_args.push(h);
+    }
+    // 数据指针 = 胖指针槽 0（与 vtable 分支一致）
+    let data = HirExpr::FieldGet {
+        base: Box::new(recv_hir),
+        index: 0,
+        ty: FieldScalar::Ptr,
+    };
+    let mut call_args = Vec::with_capacity(1 + hir_args.len());
+    call_args.push(data);
+    call_args.extend(hir_args);
+    Ok(Some((
+        HirExpr::Call {
+            callee: fn_name,
+            args: call_args,
+        },
+        sig.return_type.clone(),
+    )))
 }
 
 /// 泛型函数调用：由实参类型推断类型参数并实例化。

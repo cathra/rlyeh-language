@@ -295,6 +295,8 @@ impl<K, V> HashMap<K, V> where K: Hash + Eq {
 ```
 
 > **MVP 已实现（T1c ✅，`core.zeta`）**：`new`/`with_capacity`/`insert`/`get`/`remove`/`contains_key`/`len`/`is_empty`/`keys`/`values`/`clear`/`cap` 已有 ✅。**T1c 新增**：`iter`（MVP 退化——返回键缓冲，与 `keys` 同构（可配 `values()` 配对），目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（值拷贝，目标 `Option<&mut V>` 引用语义规划）。
+>
+> **实现注记（Robin Hood 线性探测）**：内部为 7 槽结构——`keys`/`vals`/`states`（0=空 1=占用 2=墓碑）/`len`/`used`/`cap`（2 的幂，位掩码定位）/`dist`（每槽键探测距离数组）。`insert` 与 `grow` 重插均执行「探测 + 交换」（穷者让位），链上键距离非减；`find` 以 `dist[idx] < d` 提前终止（O(1) 判不存在，无需再哈希）。负载因子 `used/cap >= 7/8` 时翻倍扩容（较 1/2 表小一半、扩容总量减半；早退控住高负载探测）。键限 `i64`（Knuth 乘法散列）/`String`（typecheck 特判展开 djb2 内容哈希）。`grow` 重插必须交换式——纯线性重插会破坏距离不变量导致 `find` 早退假阴性。
 
 ### 3.3 String
 

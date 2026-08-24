@@ -1048,6 +1048,7 @@ pub(crate) fn check_fn_body_with_self(
     // 升级查不到绑定内容）
     let saved = std::mem::take(&mut ctx.variables);
     let saved_inits = std::mem::take(&mut ctx.local_inits);
+    let saved_dyn_concrete = std::mem::take(&mut ctx.dyn_concrete);
     for p in &f.params {
         let ty = if p.name == "self" && self_ty.is_some() {
             self_ty.cloned().unwrap()
@@ -1111,6 +1112,7 @@ pub(crate) fn check_fn_body_with_self(
         if !downgraded {
             ctx.variables = saved;
             ctx.local_inits = saved_inits;
+            ctx.dyn_concrete = saved_dyn_concrete;
             return Err(TypeError::WrongType {
                 expected: return_type.to_string(),
                 found: body_ty.to_string(),
@@ -1121,5 +1123,6 @@ pub(crate) fn check_fn_body_with_self(
 
     ctx.variables = saved;
     ctx.local_inits = saved_inits;
+    ctx.dyn_concrete = saved_dyn_concrete;
     Ok(Some(hir_body))
 }

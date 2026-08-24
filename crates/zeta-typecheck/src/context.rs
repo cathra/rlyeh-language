@@ -89,6 +89,10 @@ pub struct TypeContext {
     pub type_params: Vec<String>,
     /// 当前泛型替换表（泛型参数名 → 具体类型，实例化 body 检查时有效）
     pub generic_subst: HashMap<String, Type>,
+    /// H4 去虚拟化：dyn 绑定变量 → 具体类型
+    /// （`let d: dyn Trait = &obj;` 时记录，`d.method()` 静态分派；
+    /// 变量被重新赋值或离开函数体时失效）。
+    pub dyn_concrete: HashMap<String, Type>,
     /// 临时变量名计数器
     pub temp_counter: usize,
     /// H2 无捕获闭包匿名函数名计数器（`__closure_{n}` 全局唯一）

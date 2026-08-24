@@ -489,6 +489,32 @@ supervisor {
 - **已知限制**：`supervisor {}` 块、`ActorRef<T>`、channel、`ExitSignal` 监控 API 未实现（规划）；
   消息槽仅支持 i64 载荷，跨进程/分布式消息传递规划中。
 
+### A.2 ask 快速路径（fast path，2026-08-24 ✅）
+
+**动机**：`actor_pingpong` 基准（5 万次 actor 同步往返）原始 341ms（28.3x 差距）——每次 `ask` 都要经
+调度器入队 + Worker 唤醒 + 邮箱往返，而 Zeta 的 `CallbackActor`（Zeta 语言生成的 handler）消息本可
+在调用线程直接同步处理。
+
+**实现**（`zeta-actor-runtime/src/runtime.rs`）：
+
+1. **句柄共享**：`ActorRef` 从持有 mailbox 改为持有 `Arc<ActorHandle>`（含 `id`、`Arc<Mutex<Option<Box<dyn ActorState>>>>`
+   的 state、`Arc<ArrayQueue<Envelope>>` mailbox、`running` CAS 标志、runtime 弱引用）。
+2. **`try_fast_ask`**：`ask_blocking` 先尝试快速路径——`running.swap(true)` CAS 抢占（与 Worker 同一互斥域）→
+   邮箱 `is_empty` 检查 → state `try_lock` → `CallbackActor` 经 **supertrait upcasting**（`&mut dyn ActorState`
+   → `&mut dyn Any`）直接 downcast → 调 Zeta handler（`extern "C"`，消息槽 u64 传递），全程零调度 / 零通道。
+3. **`FastPathOutcome` 枚举**（`Handled(Box<dyn Any>)` / `Fallback(Box<dyn Any>)`）：解决"消息提前消费"问题——
+   所有回退路径原样归还消息，慢路径（`Envelope::with_reply` + 回复 channel）行为与原先完全一致。
+4. **崩溃语义一致**：fast path 中 handler 返回 -1 同样回复 0、丢 state、保持 `running=true`，与慢路径协议一致。
+5. **降级条件**（全部自动回退慢路径）：`running` 被 Worker 占用 / 邮箱非空（有先到消息，保 FIFO）/ state
+   锁被 Worker 持有 / 非 `CallbackActor`（自定义 ActorState，如 `Counter`）。
+
+**效果**：341ms → 6.7ms（50.9x），超越 Go 12.3ms（1.8x）、C 192ms、Rust/Swift 173ms，成为 6 语言最快。
+回归测试：`zeta-actor-runtime/tests/fast_path_concurrency.rs`（多线程并发 ask/send、批量短时间片快速路径、
+自发送无死锁，19 个 crate 测试全过）。
+
+> **陷阱记录**：并发测试中 `Box::new(1)` 整数字面量默认推断为 `i32`，与 `downcast_ref::<i64>()` 不匹配导致
+> handler 不回复、回复通道断开（`recv_timeout` 立即返回 `Disconnected` 被映射为 `AskTimeout`）——测试消息须显式 `1i64`。
+
 ---
 
 > **维护者**：Zeta Language Team  

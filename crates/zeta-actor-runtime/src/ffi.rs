@@ -57,9 +57,11 @@ pub type ZetaFactory = unsafe extern "C" fn() -> *mut c_void;
 /// 槽位地址）+ 编译器生成的 handle 函数。
 pub struct CallbackActor {
     /// Zeta 侧状态槽值（u64，由 `__state_new` 返回；原生目标下即状态内存地址）。
-    state: u64,
+    ///
+    /// `pub(crate)`：ask 快速路径需直接读状态槽并同步调用 handler。
+    pub(crate) state: u64,
     /// 消息处理回调。
-    handler: ZetaHandler,
+    pub(crate) handler: ZetaHandler,
 }
 
 // 状态内存由 Zeta 侧分配，运行时对同一 Actor 的消息处理串行化

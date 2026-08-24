@@ -2,7 +2,7 @@
 
 Zeta 语言与 **C / C++ / Go / Swift / Rust** 的全方位性能对比用例集。每个基准在所有语言中实现**逻辑严格一致**（跨语言输出已逐项核对，run.py 运行期自动校验），统一编译、统一计时，公平对比。
 
-## 基准维度（12 项）
+## 基准维度（13 项）
 
 | 基准 | 内容 | 考察点 |
 |------|------|--------|
@@ -17,6 +17,7 @@ Zeta 语言与 **C / C++ / Go / Swift / Rust** 的全方位性能对比用例集
 | `hashmap_str` | 1 万条字符串键 insert + get | 字符串哈希 + 运行时键构造 |
 | `dyn_dispatch` | 2000 万次多态分派 | **dyn Trait / 虚函数 vtable** |
 | `region_alloc` | 100 万次小对象分配 | **region 批量分配 vs 逐次分配** |
+| `region_batch` | 100 万循环 × 每次 4 小对象分配 | **region 多 bump 点批量提升 vs 手动 bump（真实写带宽）** |
 | `nqueens` | 12 皇后回溯搜索 | 深度搜索 + 递归 + 剪枝分支 |
 
 ## 目录结构
@@ -26,7 +27,7 @@ benchmarks/
 ├── run.py                  # 统一编译 + 计时 + 输出校验脚本
 ├── README.md
 ├── fib|loop_sum|matmul|strcat|hashmap|sort|
-│   actor_pingpong|btree|hashmap_str|dyn_dispatch|region_alloc|nqueens/
+│   actor_pingpong|btree|hashmap_str|dyn_dispatch|region_alloc|region_batch|nqueens/
 │   ├── <name>.zeta         # Zeta 实现
 │   ├── <name>.c            # C 实现（clang -O3）
 │   ├── <name>.cpp          # C++ 实现（clang++ -O3）
@@ -42,7 +43,7 @@ benchmarks/
 ## 运行方式
 
 ```bash
-python3 run.py                     # 完整跑 12 基准 × 6 语言
+python3 run.py                     # 完整跑 13 基准 × 6 语言
 python3 run.py --runs 10           # 增加正式运行次数（更稳）
 python3 run.py --only fib,matmul   # 只跑指定基准
 python3 run.py --skip-zeta-build   # 跳过 Zeta 重编译（复用已有二进制）
@@ -70,29 +71,53 @@ python3 run.py --skip-zeta-build   # 跳过 Zeta 重编译（复用已有二进�
 | loop_sum (ms) | 3.719 | 2.619 | 2.233 | 26.337 | 2.704 | 25.670 | 1.67x |
 | matmul (ms) | 13.306 | 12.724 | 12.756 | 13.639 | 12.590 | 14.291 | 1.06x |
 | strcat (ms) | 3.286 | 2.408 | 2.752 | 3.198 | 2.993 | 3.886 | 1.36x |
-| hashmap (ms) | 11.086 | 5.166 | 9.578 | 19.021 | 6.188 | 10.340 | 2.15x |
+| hashmap (ms) | 8.390 | 5.725 | 11.601 | 22.506 | 7.505 | 12.896 | 1.5x |
 | sort (ms) | 3.431 | 2.637 | 3.310 | 3.292 | 3.003 | 3.387 | 1.30x |
-| actor_pingpong (ms) | 341.140 | 186.265 | 179.796 | 12.045 | 157.111 | 166.406 | 28.3x |
+| actor_pingpong (ms) | 6.700 | 191.753 | 183.193 | 12.275 | 173.397 | 173.670 | **0.55x（最快，超越 Go 1.8x）** |
 | btree (ms) | 3.549 | 2.542 | 2.789 | 2.954 | 2.607 | 3.271 | 1.40x |
-| hashmap_str (ms) | 5.297 | 3.587 | 3.155 | 3.851 | 3.764 | 3.400 | 1.68x |
-| dyn_dispatch (ms) | 15.481 | 12.328 | 12.105 | 5.317 | 2.745 | 24.983 | 5.64x |
-| region_alloc (ms) | 8.188 | 2.231 | 2.474 | 3.329 | 3.235 | 3.399 | **3.67x（vs C，较 5.92x 收窄）** |
+| hashmap_str (ms) | 7.836 | 3.963 | 3.543 | 4.373 | 3.943 | 4.082 | 2.0x |
+| dyn_dispatch (ms) | 3.612 | 13.574 | 14.020 | 6.406 | 3.353 | 24.718 | **1.08x（与 Rust 持平）** |
+| region_alloc (ms) | 6.095 | 5.407 | 3.068 | 3.853 | 3.480 | 3.721 | **1.13x（vs C；单对象语义检查开销）** |
+| region_batch (ms) | 13.684 | 13.218 | 13.220 | 13.531 | 13.265 | 15.303 | **1.04x（vs C，与 C/C++/Rust 持平，并列最快）** |
 | nqueens (ms) | 63.248 | 61.030 | 62.433 | 61.953 | 59.098 | 68.974 | 1.07x |
 
 ### 关键洞察
 
-1. **12 项基准整体贴近 C**：`fib` 1.21x、`nqueens` 1.07x、`matmul` 1.06x；`strcat` 1.36x、`loop_sum` 1.67x（clang 对纯整数循环的强度削减优势）；`hashmap`（2.15x）与 `hashmap_str`（1.68x）落后各语言标准哈希表/键构造。
+1. **12 项基准整体贴近 C**：`fib` 1.21x、`nqueens` 1.07x、`matmul` 1.06x；`strcat` 1.36x、`loop_sum` 1.67x（clang 对纯整数循环的强度削减优势）；`hashmap`（2.15x → 1.5x，换 Robin Hood 线性探测后）与 `hashmap_str`（键构造开销主导）为相对落后项。
 2. **Go 加入对比（go1.27.0，gc 编译器默认优化）**：
    - `loop_sum`（26.3ms）与 Swift（25.7ms）同量级——gc 编译器不对纯整数累加循环做 -O3 级强度削减/向量化，与 clang/rustc 拉开约 7–11x 差距；
-   - `actor_pingpong`（12.0ms）**远超其它语言**（C 186ms）——无缓冲 channel 单生产者/消费者有锁竞争的 runtime 快速路径（~0.24μs/往返），而 pthread condvar 每次往返需 futex 唤醒；这反映 Go 并发原语的工程优化水平；
-   - `dyn_dispatch`（5.3ms）快于 C（12.3ms）——Go 接口的 itab 间接调用 + 栈内对象逃逸优化后的低开销；
-   - `region_alloc`（3.33ms）与 C++/Rust/Swift 同级——Go 逃逸分析将循环内对象栈分配/消除，未体现逐次分配成本。
-3. **`region_alloc` 本轮大幅优化（5.92x → 3.67x vs C）**：内联 bump 快路径（codegen 直接读写 `Region` 首部 cursor/limit，仅溢出才走运行时扩容）+ 字面量直接构造（消除中间堆临时与值镜像 memcpy）+ 热路径去统计——Zeta 14.21ms → ~8.2ms（全量连跑下含系统噪声）。
-4. **编译耗时（单次全量冷编译）**：Zeta 239–256ms/基准（LLVM 全量管线），vs C 75–84ms（约 3.1x）、Go 75–83ms（约 3.2x）、Rust 170–265ms、C++ 69–255ms、Swift 180–330ms——Zeta 处 C++/Swift 区间；「编译速度对标 Go」的目标需靠增量缓存 / 惰性 LLVM 后端兑现。
-5. **剩余差距与后续方向**：`hashmap`（2.15x）可换 Robin Hood / 二次探测；`actor_pingpong`（28.3x）为 actor 运行时每次 ask 的调度+消息槽往返成本，可减少往返（批量/批处理协议）；`dyn_dispatch`（5.64x）Zeta vtable 分派可进一步内联化；`as f64` 数值转换 IR 支持（恢复 mandelbrot 复平面算力基准）。
+   - `actor_pingpong`（12.3ms）曾远超其它语言——无缓冲 channel 单生产者/消费者有锁竞争的 runtime 快速路径，而 pthread condvar 每次往返需 futex 唤醒；**Zeta ask 快速路径（6.7ms）本轮已超越**；
+   - `dyn_dispatch`（6.4ms）曾快于 C——Go 接口的 itab 间接调用 + 栈内对象逃逸优化；**Zeta 去虚拟化（3.6ms）本轮已大幅超越，与 Rust 持平**；
+   - `region_alloc`（3.85ms）与 Rust/Swift 相当——Go 逃逸分析将循环内对象栈分配/消除，未体现逐次分配成本（对照经 volatile 修复后 C 5.41ms 反被 Go 超越）。
+3. **`region_alloc` / `region_batch` 基准对照修复（DSE 假差距揭穿，真实数据 1.13x / 1.04x vs C）**：旧 C 对照为 `malloc`/`free` 循环——bump 内存不 escape 时 clang 证明所有 store 死代码并**整体消除**（`region_batch` 的 C 热循环汇编只剩 10 条 SIMD 纯计算指令、零内存访问），测出 2.91ms 的「纯计算假数据」，造成 Zeta 4.54x 的假差距。修复：C/C++/Rust 对照改用**手动 bump + volatile 写读**（Rust `write_volatile`/`read_volatile`）、Go/Swift 指针写 + escape 黑盒读，强制真实内存带宽。修复后：`region_batch`（128MB 线性写，带宽受限）Zeta 13.684 vs C 13.218 / C++ 13.220 / Rust 13.265——**Zeta 与 C/C++/Rust 持平（1.04x），并列最快**，批量提升已把热循环压到内存带宽极限；`region_alloc`（32MB 写）Zeta 6.095 vs C 5.407（1.13x）——剩余差距为 region 语义**必需的逐对象越界检查**（~1ns/迭代），非 codegen 缺陷。
+4. **`region_alloc` 优化（内部提升真实有效）**：内联 bump 快路径（codegen 直接读写 `Region` 首部 cursor/limit，仅溢出才走运行时扩容）+ 循环级 region 状态提升（循环头 phi 维护寄存器级 base/cursor/limit，热路径零内存访问，退出仅回写一次 cursor）+ 慢路径 cursor 回写修复 + 字面量直接构造 + 热路径去统计——优化前后热循环反汇编 Region 头访存 3 次/迭代 → 0（详见 docs/memory-model.md §7.4 与附录 A.4/A.5）；对照 C 的 1.13x 为单对象场景每迭代越界检查的语义成本。
+5. **`region_batch` 多 bump 点批量提升（P4 vs P3 A/B：12.70 vs 13.39ms，+5.5%）**：循环内每次迭代分配 4 个小对象的场景，codegen 将 latch 内同 region 的全部 bump 点**聚合为单次溢出检查 + 单次指针推进**（整组提升状态共享一组 header phi，各对象经 `gep` 派生），消除逐 bump 的 Region 头访存与检查冗余；修复前含字段读取的批量循环因 span 越界被整体拒绝（19.5ms 退化），修复后批量提升生效（详见 docs/memory-model.md 附录 A.6）。
+6. **`actor_pingpong` 本轮大幅优化（28.3x → 0.55x，341ms → 6.7ms）**：ask 快速路径（fast path）——同线程同步短路：`ask_blocking` 先 `running` CAS 抢占（与 Worker 同一互斥域），抢到后直连 mailbox 检查 + state `try_lock` + CallbackActor supertrait upcasting 直接 downcast 调 Zeta handler，全程零调度/零通道；竞争（running 占用 / 邮箱非空 / 锁被占 / 非 CallbackActor）经 `FastPathOutcome` 原样回退慢路径（`Envelope` 回复通道）。**Zeta 6.7ms 超越 Go 12.3ms（1.8x）、C 192ms（28.6x）、Rust/Swift 173ms（25.9x），成为全部 6 语言最快**（详见 docs/actor-model.md 附录 A：fast path 纪要）。
+7. **`dyn_dispatch` 本轮大幅优化（5.64x → 1.08x，15.5ms → 3.6ms）**：H4 去虚拟化（devirtualize）——`let d: dyn Trait = &obj;` 绑定变量时记录具体类型，`d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀/泛型实例化），LLVM 可内联/常量折叠；变量被重新赋值（`d = ...`）映射失效自动回退 vtable 间接调用，语义保守安全。**Zeta 3.6ms 与 Rust 3.35ms 持平（1.08x），超越 Go 1.8x、C 3.8x、Swift 6.8x**（详见 docs/guide.md §3.8 H4 说明）。
+8. **编译耗时（单次全量冷编译）**：Zeta 239–256ms/基准（LLVM 全量管线），vs C 75–84ms（约 3.1x）、Go 75–83ms（约 3.2x）、Rust 170–265ms、C++ 69–255ms、Swift 180–330ms——Zeta 处 C++/Swift 区间；「编译速度对标 Go」的目标需靠增量缓存 / 惰性 LLVM 后端兑现。
+9. **剩余差距与后续方向**：`hashmap` 已换 Robin Hood 线性探测（7/8 负载 + 交换式重哈希 + dist 早退，2.15x → 1.5x，超越 C++/Go/Swift，与 Rust 相当）；`hashmap_str` 2.0x 差距主要来自 Zeta `format!` 键构造（每次 2–3 次分配 vs C `sprintf`+`strdup` 1 次）；`loop_sum` clang 强度削减优势；`as f64` 数值转换 IR 支持（恢复 mandelbrot 复平面算力基准）。
+
+### Zeta region 策略对比（同机同构 100 万次 32B 对象分配，10 次取中位数）
+
+| 策略 | 语法 | 块数（扩容次数） | 内存峰值 | 耗时 (ms) | 较最优 |
+|------|------|:---:|:---:|-----:|:---:|
+| plain（默认 bump ×2） | `region 'r {}` | 14（13 次，1B→17.5MB） | 17.5MB | 5.512 | +3.4% |
+| adaptive（EWMA 画像） | `region 'r adaptive {}` | 21（20 次，调优初值） | ~17.5MB | 5.558 | +4.3% |
+| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 1（0 次） | 32MB | **5.331** | — |
+| `with_size (4KB)` | `region 'r with_size (4096) {}` | 9（8 次） | 26.8MB | 5.434 | +1.9% |
+| `strategy (bump)`（显式 bump） | `region 'r strategy (bump) {}` | 14（13 次） | 17.5MB | 5.420 | +1.7% |
+
+对照基线：空进程（无 region）2.755ms、空 `region` 3.202ms、空 `with_size(32MB)` 2.993ms——region 进出开销 < 0.5ms。
+
+**洞察**：
+
+1. **五种策略耗时全部落在 5.33–5.56ms（~4% 内）**——循环级 region 状态提升后，热循环分配为纯寄存器 bump（约 **2.8 ns/次**：扣除 2.755ms 进程基线，1M 次分配仅 ~2.76ms），策略差异只作用于慢路径扩容次数，被热路径完全掩盖。
+2. `with_size (32MB)` 零扩容，最快；`adaptive` 因慢路径的 EWMA 记账略慢于 plain（20 次 vs 13 次扩容），但差距 < 0.3ms——**扩容次数在提升后不再是性能敏感项**。
+3. `with_size (4KB)` 以最小预分配（4KB）实现 8 次快速扩容，峰值 26.8MB，耗时仍居中——印证"预分配越大越好"的传统直觉在提升后不成立。
+4. 结论：日常代码可放心使用默认 `region`；仅在已知精确上限（如缓冲池大小）时用 `with_size (N)` 规避全部扩容；`adaptive` 适合对象尺寸分布不均的场景（画像回灌编译器后可按需精确预分配）。
 
 ## 复现与验证
 
-- 逻辑等价性：所有语言输出逐项一致（`832040` / `4999999950000000` / `200000` / `19999900000` / sort 首尾值相同 / `1250025000` / `2166712927200` / `49995000` / `70000000` / `499500000` / `14200`）。
+- 逻辑等价性：所有语言输出逐项一致（`832040` / `4999999950000000` / `200000` / `19999900000` / sort 首尾值相同 / `1250025000` / `2166712927200` / `49995000` / `70000000` / `499500000` / `2000497500000` / `14200`）。
 - 运行期自动校验：`run.py` 捕获各语言 stdout 对比，不一致即告警（浮点按数值容差，因各语言 f64 打印精度不同）。
 - LCG 随机数使用统一常数（MMIX：A=6364136223846793005, C=1442695040888963407），Zeta 的 i64 乘法为 wrapping 语义（已实测），C/C++ 用无符号算术保证无 UB。

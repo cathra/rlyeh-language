@@ -24,7 +24,7 @@ ZETA_DRIVER = os.path.join(ROOT, "..", "..", "..", "target", "release", "zeta-dr
 
 BENCHMARKS = ["fib", "loop_sum", "matmul", "strcat", "hashmap", "sort",
               "actor_pingpong", "btree", "hashmap_str", "dyn_dispatch",
-              "region_alloc", "nqueens"]
+              "region_alloc", "region_batch", "nqueens"]
 
 LANGS = [
     ("Zeta",  "zeta",  "zeta"),
@@ -47,6 +47,7 @@ DESC = {
     "hashmap_str":    "1 万条字符串键 insert + get（字符串哈希 + 键构造）",
     "dyn_dispatch":   "2000 万次 dyn Trait / 虚函数多态分派",
     "region_alloc":   "100 万次小对象分配（Zeta region 批量 vs 逐次分配）",
+    "region_batch":   "100 万循环 × 每次 4 小对象分配（批量提升 vs 手动 bump 真实写带宽）",
     "nqueens":        "12 皇后回溯搜索（纯整数递归 + 剪枝分支）",
 }
 

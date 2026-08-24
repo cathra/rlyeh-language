@@ -295,6 +295,8 @@ fn main() {
 
 MVP 约束（见 §13）：trait 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用；vtable 的 drop/size/align 槽置 0（显式释放语义与 `Box`/`Rc` 一致）。
 
+**去虚拟化（2026-08-24 ✅）**：`let d: dyn Trait = &obj;` 绑定变量时记录来源具体类型，后续 `d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀 / 泛型实例化），LLVM 可内联 / 常量折叠——`dyn_dispatch` 基准 15.5ms → 3.6ms，与 Rust（rustc -O 去虚拟化）持平（1.08x）。保守回退：dyn 变量被重新赋值（`d = ...`）时映射失效，自动回退 vtable 间接调用，多态语义不变；仅局部 `let` 绑定变量适用（H4 本就限定 dyn 仅局部变量）。
+
 ##### `?` 错误传播运算符（K1）
 
 `expr?` 在 `Option<T>` / `Result<T, E>` 上下文解包成功值，失败时从当前函数早返回失败值：
@@ -628,7 +630,7 @@ region 't strategy (bump) {
 }
 ```
 
-**运行时接线（L3 ✅）**：`region` 块已从"编译期类型/借用分析"接入真实运行时——region 指令（`RegionEnter`/`AllocInRegion`/`RegionExit`/`Transfer`）调用 `zeta-region-alloc` 的 C ABI 层（`zeta_region_enter`/`zeta_region_alloc`/`zeta_region_transfer`/`zeta_region_exit`），对象 `in 'r` 时经 bump 分配器从区域批量分配（聚合对象为值镜像浅拷贝），区域退出时批量释放；`transfer x out of 'r` 调用 `zeta_region_transfer` 标记所有权移出（对象不再随区域释放）。`adaptive` 区域在 `zeta build --profile`（PGO 回灌，F2）时按画像建议注入初始容量；`with_size (N)` 精确预分配，容量不足时按 `allow_growth` 扩容（`strategy (bump)` 为默认无扩容 bump）。MVP 限制：聚合对象为值镜像（浅拷贝，不注册析构），标量/聚合引用语义与 `Box<T>` 同构。
+**运行时接线（L3 ✅）**：`region` 块已从"编译期类型/借用分析"接入真实运行时——region 指令（`RegionEnter`/`AllocInRegion`/`RegionExit`/`Transfer`）调用 `zeta-region-alloc` 的 C ABI 层（`zeta_region_enter`/`zeta_region_alloc`/`zeta_region_transfer`/`zeta_region_exit`），对象 `in 'r` 时经 bump 分配器从区域批量分配（聚合对象为值镜像浅拷贝），区域退出时批量释放；`transfer x out of 'r` 调用 `zeta_region_transfer` 标记所有权移出（对象不再随区域释放）。`adaptive` 区域在 `zeta build --profile`（PGO 回灌，F2）时按画像建议注入初始容量；`with_size (N)` 精确预分配，容量不足时按 `allow_growth` 扩容（`strategy (bump)` 为默认无扩容 bump）。MVP 限制：聚合对象为值镜像（浅拷贝，不注册析构），标量/聚合引用语义与 `Box<T>` 同构。**性能（2026-08-24 ✅）**：codegen 对 `AllocInRegion` 生成内联 bump 快路径（对齐 + 越界检查 + 指针递增，零函数调用），并在规范 while 循环内做**循环级 region 状态提升**——preheader 快照 Region 头、header phi 维护 base/cursor/limit、热循环零访存（纯寄存器运算）、循环退出写回一次；单块不扩容场景实测约 2.1 倍提速，完整语义（含慢路径 cursor 回写修复）下五种 region 策略 5.33–5.56ms、单次分配约 2.8ns（详见 [memory-model.md §7.4](./memory-model.md) 与 [附录 A.4](./memory-model.md) / [A.5](./memory-model.md)）。
 
 ### 8.3 堆分配：`Box<T>` / `Rc<T>` / `Arc<T>`（K2–K3 ✅）
 

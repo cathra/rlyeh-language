@@ -24,6 +24,9 @@ pub(crate) fn check_stmt(
             mutable,
         } => {
             let span = init.span;
+            // H4 去虚拟化：`let d: dyn T = &obj;` 时待记录的具体类型
+            // （在 Ident 分支按绑定名写入 ctx.dyn_concrete）
+            let mut pending_dyn_concrete: Option<Type> = None;
             // 闭包 let 绑定分四路：
             // - fn 类型注解 → H2 无捕获闭包按预期签名检查（`let f: fn(A) -> B = |x| ..;`）；
             // - 无注解且参数全带类型注解 → 闭包值对象（`let f = |x: i64| ..; f(..)`）；
@@ -65,8 +68,14 @@ pub(crate) fn check_stmt(
                     // （T 实现了该 trait）时，把 init 转成 trait 对象胖指针，
                     // 并同步绑定类型，使后续 `at.compatible_with(&ty)` 一致。
                     if let (Type::Dyn(trait_name), Type::Ref(inner, _)) = (&at, &ty) {
+                        let inner_ty = (**inner).clone();
                         h_init = coerce_to_dyn(ctx, h_init, inner, trait_name, span)?;
                         ty = at.clone();
+                        // H4 去虚拟化：记录绑定变量 → 具体类型
+                        // （后续 `dyn_var.method()` 可静态分派到具体类型实现）
+                        if let Type::Named(_, _) = &inner_ty {
+                            pending_dyn_concrete = Some(inner_ty);
+                        }
                     }
                     if !at.compatible_with(&ty) {
                         return Err(TypeError::WrongType {
@@ -89,6 +98,10 @@ pub(crate) fn check_stmt(
                         if let Some(d) = ctx.deferred_closures.last_mut() {
                             d.var_name = name.clone();
                         }
+                    }
+                    // H4 去虚拟化：dyn 绑定记录具体类型名
+                    if let Some(concrete) = pending_dyn_concrete.take() {
+                        ctx.dyn_concrete.insert(name.clone(), concrete);
                     }
                     ctx.insert_variable(name.clone(), bind_ty);
                     // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定

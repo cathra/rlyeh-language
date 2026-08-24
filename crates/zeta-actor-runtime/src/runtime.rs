@@ -11,6 +11,7 @@ use dashmap::DashMap;
 use crate::actor::{ActorContext, ActorState, ActorStatus};
 use crate::envelope::Envelope;
 use crate::error::ActorError;
+use crate::ffi::{CallbackActor, ZetaMsg};
 use crate::scheduler::Scheduler;
 use crate::supervisor::{RestartStrategy, Supervisor, SupervisorDecision, SupervisorStrategy};
 use crate::{ActorId, ASK_TIMEOUT};
@@ -22,10 +23,12 @@ pub const MAILBOX_CAPACITY: usize = 4096;
 pub(crate) struct ActorHandle {
     /// Actor 私有状态。
     ///
-    /// 用 `Option` 支持「处理期间移出」（见 [`RuntimeHandle::process_actor`]）：
-    /// Worker 处理消息时把 state 从句柄中取出、释放 DashMap 写锁后再调用
-    /// `handle_message`，从而避免 `ctx.send` 重入同一 shard 写锁导致的自死锁。
-    pub state: Option<Box<dyn ActorState>>,
+    /// - `Option` 支持「处理期间移出」（见 [`RuntimeHandle::process_actor`]）：
+    ///   Worker 处理消息时把 state 从句柄中取出、释放锁后再调用
+    ///   `handle_message`，避免 `ctx.send` 重入同一 shard 写锁导致的自死锁；
+    /// - `Arc<Mutex<..>>`：`ActorRef` 直接持有句柄（免去每次 DashMap 查找），
+    ///   state 的可变访问需经锁；快速路径用 `try_lock`（无竞争 ~20ns）。
+    pub state: Arc<Mutex<Option<Box<dyn ActorState>>>>,
     /// 无锁邮箱。
     pub mailbox: Arc<ArrayQueue<Envelope>>,
     /// 是否正在被某个 Worker 处理（CAS 保护，保证同一时刻单 Worker 访问）。
@@ -39,7 +42,7 @@ pub(crate) struct ActorHandle {
 impl ActorHandle {
     fn new(state: Box<dyn ActorState>) -> Self {
         Self {
-            state: Some(state),
+            state: Arc::new(Mutex::new(Some(state))),
             mailbox: Arc::new(ArrayQueue::new(MAILBOX_CAPACITY)),
             running: AtomicBool::new(false),
             status: AtomicU8::new(ActorStatus::Idle.as_u8()),
@@ -48,10 +51,27 @@ impl ActorHandle {
     }
 }
 
+/// 占位状态：仅用于 `create_ref` 在 Actor 不存在时的 fallback 句柄
+/// （send / ask 仍会经注册表检查报 `ActorStopped`，此处不处理任何消息）。
+struct EmptyState;
+
+impl ActorState for EmptyState {
+    fn handle_message(
+        &mut self,
+        _msg: Box<dyn Any + Send>,
+        _ctx: &mut ActorContext,
+    ) -> Result<bool, ActorError> {
+        Ok(false)
+    }
+}
+
 /// 运行时句柄（供 Actor 内部与 Worker 使用）。
 pub struct RuntimeHandle {
     /// Actor 注册表：ID → 句柄。
-    pub(crate) actors: DashMap<ActorId, ActorHandle>,
+    ///
+    /// 值用 `Arc<ActorHandle>`：`ActorRef` 直接持有句柄引用，
+    /// 使 ask / send 热路径免于每次 DashMap 分片锁查找。
+    pub(crate) actors: DashMap<ActorId, Arc<ActorHandle>>,
     /// 调度器。
     pub(crate) scheduler: Arc<Scheduler>,
     /// Supervisor 管理器。
@@ -141,7 +161,7 @@ impl RuntimeHandle {
             return Err(ActorError::InitFailed { reason: e.to_string() });
         }
         let id = ActorId::new();
-        self.actors.insert(id, ActorHandle::new(state));
+        self.actors.insert(id, Arc::new(ActorHandle::new(state)));
         Ok(id)
     }
 
@@ -155,14 +175,16 @@ impl RuntimeHandle {
 
     /// 创建指向指定 Actor 的引用句柄。
     pub(crate) fn create_ref(&self, id: ActorId) -> ActorRef {
-        let mailbox = self
+        let handle = self
             .actors
             .get(&id)
-            .map(|h| h.mailbox.clone())
-            .unwrap_or_else(|| Arc::new(ArrayQueue::new(MAILBOX_CAPACITY)));
+            .map(|h| h.clone())
+            // Actor 不存在（如已停止后被 resolve）：返回占位句柄，后续
+            // send / ask 仍会经注册表检查报 `ActorStopped`。
+            .unwrap_or_else(|| Arc::new(ActorHandle::new(Box::new(EmptyState))));
         ActorRef {
             id,
-            mailbox,
+            handle,
             runtime: self.weak_self.upgrade().expect("runtime alive"),
         }
     }
@@ -174,7 +196,7 @@ impl RuntimeHandle {
         // 否则处理期间 `ctx.send` → `actors.get` 需要同一 shard 的读锁，
         // DashMap 锁不可重入，会造成确定性死锁（偶发触发取决于 hash 分片）。
         let (mut state, mailbox) = {
-            let Some(mut handle) = self.actors.get_mut(&id) else {
+            let Some(handle) = self.actors.get_mut(&id) else {
                 // Actor 不存在：该批次结束
                 sched.pending_sub();
                 return;
@@ -194,7 +216,7 @@ impl RuntimeHandle {
             }
             handle.status.store(ActorStatus::Processing.as_u8(), Ordering::Release);
             // 提取 state + 共享 mailbox，随后立即释放写锁
-            let state = handle.state.take().expect("actor state present");
+            let state = handle.state.lock().unwrap().take().expect("actor state present");
             let mailbox = handle.mailbox.clone();
             drop(handle);
             (state, mailbox)
@@ -231,7 +253,7 @@ impl RuntimeHandle {
 
         // ---- 第三阶段：放回 state，做收尾决策 ----
         {
-            let Some(mut handle) = self.actors.get_mut(&id) else {
+            let Some(handle) = self.actors.get_mut(&id) else {
                 // 处理期间 Actor 被移除（如监督 Stop 路径）：state 直接丢弃
                 sched.pending_sub();
                 let _ = state.on_stop();
@@ -243,10 +265,10 @@ impl RuntimeHandle {
                 // 完成前取到旧 handle 处理后续消息（否则新消息会被旧 state
                 // 处理，重启语义失效）。重启完成后由 handle_crash 之后的
                 // 分支重置 running 并重新调度。
-                handle.state = None;
+                *handle.state.lock().unwrap() = None;
             } else {
                 handle.running.store(false, Ordering::Release);
-                handle.state = Some(state);
+                *handle.state.lock().unwrap() = Some(state);
                 if stop_after {
                     handle.status.store(ActorStatus::Stopping.as_u8(), Ordering::Release);
                 }
@@ -315,14 +337,14 @@ impl RuntimeHandle {
             handle.mailbox = old_mailbox;
         }
         // 监督策略保留（restart_actor 不 unregister supervisor）
-        self.actors.insert(id, handle);
+        self.actors.insert(id, Arc::new(handle));
     }
 
     /// 移除 Actor：调用 `on_stop` 并清理监督关系。
     fn remove_actor(&self, id: ActorId) {
-        if let Some((_, mut handle)) = self.actors.remove(&id) {
+        if let Some((_, handle)) = self.actors.remove(&id) {
             handle.status.store(ActorStatus::Stopped.as_u8(), Ordering::Release);
-            if let Some(mut state) = handle.state.take() {
+            if let Some(mut state) = handle.state.lock().unwrap().take() {
                 let _ = state.on_stop();
             }
         }
@@ -335,8 +357,19 @@ impl RuntimeHandle {
 pub struct ActorRef {
     /// 目标 Actor ID。
     pub id: ActorId,
-    mailbox: Arc<ArrayQueue<Envelope>>,
+    /// 目标 Actor 的内部句柄（`Arc` 共享，热路径免去 DashMap 查找）。
+    handle: Arc<ActorHandle>,
+    /// 运行时句柄。
     runtime: Arc<RuntimeHandle>,
+}
+
+/// ask 快速路径尝试结果：`Handled`（已同步处理，携带回复）或 `Fallback`
+/// （条件不满足，携带原消息归还调用方走慢路径）。
+enum FastPathOutcome {
+    /// 已由调用线程同步处理完成，携带回复。
+    Handled(Box<dyn Any + Send>),
+    /// 条件不满足，携带原消息回退 Worker 队列慢路径。
+    Fallback(Box<dyn Any + Send>),
 }
 
 impl ActorRef {
@@ -348,7 +381,8 @@ impl ActorRef {
         if !self.runtime.actors.contains_key(&self.id) {
             return Err(ActorError::ActorStopped);
         }
-        self.mailbox
+        self.handle
+            .mailbox
             .push(Envelope::new(None, msg))
             .map_err(|_| ActorError::MailboxFull)?;
         self.runtime.scheduler.notify_ready(self.id);
@@ -360,13 +394,35 @@ impl ActorRef {
     /// 接收方需在 `handle_message` 中调用 `ctx.reply(response)` 完成回复。
     /// 超时上限为 [`ASK_TIMEOUT`](crate::ASK_TIMEOUT)（默认 10 秒），
     /// 超时返回 [`ActorError::AskTimeout`]。
+    ///
+    /// # 快速路径（同步短路）
+    ///
+    /// 当目标 Actor 空闲（无 Worker 正在处理）且邮箱为空时，消息由**调用线程**
+    /// 直接同步处理（无跨线程调度、无 channel 分配、无锁），大幅降低 ask 往返
+    /// 开销；否则回退完整 Worker 队列路径。快速路径条件不满足（邮箱非空 /
+    /// 非 Zeta 回调 Actor / 有 Worker 处理中）时语义与慢路径完全一致。
     pub fn ask_blocking<R: Any + Send>(&self, msg: Box<dyn Any + Send>) -> Result<R, ActorError> {
+        if self.runtime.stopping.load(Ordering::Acquire) {
+            return Err(ActorError::ShuttingDown);
+        }
         if !self.runtime.actors.contains_key(&self.id) {
             return Err(ActorError::ActorStopped);
         }
+        // ---- 快速路径：空闲 + 空邮箱 → 调用线程直接处理 ----
+        let msg = match self.try_fast_ask(msg) {
+            FastPathOutcome::Handled(reply) => {
+                return reply
+                    .downcast::<R>()
+                    .map(|b| *b)
+                    .map_err(|_| ActorError::WrongReplyType);
+            }
+            FastPathOutcome::Fallback(msg) => msg,
+        };
+        // ---- 慢路径：完整 Worker 队列（原有语义） ----
         let (tx, rx) = crossbeam_channel::bounded::<Box<dyn Any + Send>>(1);
         let env = Envelope::with_reply(None, msg, tx);
-        self.mailbox
+        self.handle
+            .mailbox
             .push(env)
             .map_err(|_| ActorError::MailboxFull)?;
         self.runtime.scheduler.notify_ready(self.id);
@@ -384,6 +440,104 @@ impl ActorRef {
     /// 阻塞调用线程直到收到回复。
     pub async fn ask<R: Any + Send>(&self, msg: Box<dyn Any + Send>) -> Result<R, ActorError> {
         self.ask_blocking(msg)
+    }
+
+    /// 快速路径尝试：空闲 + 空邮箱时由调用线程直接同步处理消息。
+    ///
+    /// 返回 `FastPathOutcome::Handled(reply)` 表示已同步处理完成；`Fallback`
+    /// 表示条件不满足（原消息原样归还），调用方应回退 Worker 队列慢路径
+    /// （语义与慢路径完全一致）。
+    ///
+    /// 正确性论证：
+    /// - **互斥**：`running` CAS 抢占处理权，与 Worker 的
+    ///   [`process_actor`](RuntimeHandle::process_actor) 同一互斥机制；
+    /// - **FIFO**：邮箱非空（先入队消息存在）时回退慢路径，不插队；
+    /// - **并发安全**：处理期间入队（含 self-ask）由收尾的"邮箱非空 →
+    ///   `notify_ready`"兜底：被唤醒的 Worker 会再次尝试抢占并处理，
+    ///   `running` 已释放故能成功；
+    /// - **崩溃语义**：返回 `-1` 时回复 0、丢弃旧状态、保持 `running=true`
+    ///   并交由 supervisor 决策，与 [`process_actor`](RuntimeHandle::process_actor)
+    ///   崩溃分支一致。
+    ///
+    /// 注意：本方法在 `running` CAS 成功后**不得提前消费 `msg`**（所有
+    /// 回退路径需把原消息归还给慢路径），故 `ZetaMsg` 的 downcast 延迟到
+    /// 所有前置条件确认之后。
+    fn try_fast_ask(&self, msg: Box<dyn Any + Send>) -> FastPathOutcome {
+        let handle = &self.handle;
+        // CAS 抢占处理权：已有 Worker 处理中则回退慢路径。
+        if handle.running.swap(true, Ordering::AcqRel) {
+            return FastPathOutcome::Fallback(msg);
+        }
+        // FIFO 约束：邮箱已有先入队消息时不可插队。
+        // 抢锁窗口内可能已有 send 触发 notify，收尾再补一次 notify 确保排队
+        // 消息被调度（若 Worker 恰好处理完则该调用为无害空转）。
+        if !handle.mailbox.is_empty() {
+            handle.running.store(false, Ordering::Release);
+            self.runtime.scheduler.notify_ready(self.id);
+            return FastPathOutcome::Fallback(msg);
+        }
+        // state 访问经 Arc<Mutex<..>>；快速路径用 try_lock（无竞争 ~20ns），
+        // 抢锁失败（罕见：Worker 恰好移出 state）则回退慢路径。
+        let mut state_guard = match handle.state.try_lock() {
+            Ok(g) => g,
+            Err(_) => {
+                handle.running.store(false, Ordering::Release);
+                self.runtime.scheduler.notify_ready(self.id);
+                return FastPathOutcome::Fallback(msg);
+            }
+        };
+        // 仅对 Zeta 生成的 CallbackActor 启用快速路径（自定义 ActorState 一律
+        // 回退慢路径）。利用 supertrait upcasting：`&mut dyn ActorState` →
+        // `&mut dyn Any`（rustc >= 1.86）。
+        let mut state_opt = state_guard.as_mut(); // &mut Option<Box<dyn ActorState>>
+        let cb = match state_opt.as_mut().and_then(|s| {
+            let state: &mut dyn ActorState = s.as_mut();
+            let any: &mut dyn Any = state;
+            any.downcast_mut::<CallbackActor>()
+        }) {
+            Some(cb) => cb,
+            None => {
+                handle.running.store(false, Ordering::Release);
+                self.runtime.scheduler.notify_ready(self.id);
+                return FastPathOutcome::Fallback(msg);
+            }
+        };
+        // 前置条件全部满足，此时才消费消息。
+        let zm = match msg.downcast::<ZetaMsg>() {
+            Ok(m) => *m,
+            Err(msg) => {
+                handle.running.store(false, Ordering::Release);
+                self.runtime.scheduler.notify_ready(self.id);
+                return FastPathOutcome::Fallback(msg);
+            }
+        };
+        let handler = cb.handler;
+        let state_val = cb.state;
+        // 同线程直接调用 Zeta handle（状态槽内存按 u64 传递，与 Worker 一致）。
+        #[allow(unsafe_code)] // FFI 调用 Zeta extern "C" handler，必要且已校验符号存在
+        let ret = unsafe { handler(state_val, zm.kind, zm.a, zm.b, zm.c) };
+        if ret == u64::MAX {
+            // 崩溃：回复 0、丢弃旧 state、保持 running=true（防止重启完成前
+            // 其他 Worker 取旧句柄处理后续消息），交由 supervisor 决策。
+            *state_guard = None;
+            self.runtime.handle_crash(
+                self.id,
+                ActorError::Panic {
+                    reason: "zeta handle 返回 -1（处理出错）".into(),
+                },
+            );
+            // 重启成功后（新句柄 running=false）遗留消息需要重新调度。
+            if self.runtime.actors.contains_key(&self.id) && !handle.mailbox.is_empty() {
+                self.runtime.scheduler.notify_ready(self.id);
+            }
+            return FastPathOutcome::Handled(Box::new(0u64));
+        }
+        handle.running.store(false, Ordering::Release);
+        // 处理期间新入队消息（含 self-ask / 并发 send）→ 重新调度。
+        if !handle.mailbox.is_empty() {
+            self.runtime.scheduler.notify_ready(self.id);
+        }
+        FastPathOutcome::Handled(Box::new(ret))
     }
 
     /// 请求目标 Actor 停止。
@@ -590,11 +744,11 @@ impl Runtime {
             let _ = t.join();
         }
         // 3. 剩余 Actor 清理（调用 on_stop）
-        for mut entry in self.handle.actors.iter_mut() {
+        for entry in self.handle.actors.iter_mut() {
             entry
                 .status
                 .store(ActorStatus::Stopped.as_u8(), Ordering::Release);
-            if let Some(mut state) = entry.state.take() {
+            if let Some(mut state) = entry.state.lock().unwrap().take() {
                 let _ = state.on_stop();
             }
         }
