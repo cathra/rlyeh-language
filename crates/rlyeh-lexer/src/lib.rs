@@ -868,6 +868,7 @@ fn keyword_or_ident(text: &str) -> Token {
         "spawn" => Token::Spawn,
         "send" => Token::Send,
         "recv" => Token::Recv,
+        "mod" => Token::Mod,
         "module" => Token::Mod,
         "import" => Token::Use,
         "as" => Token::As,

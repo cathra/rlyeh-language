@@ -248,7 +248,7 @@ fn main() {{
         }},
         Err(_) => println(-1),
     }}
-    match File::open(String::from("/tmp/rlyeh-sendfile-src.txt"), io::OpenMode::Read) {{
+    match File::open(String::from("/tmp/rlyeh-sendfile-src.txt")) {{
         Ok(f) => {{
             let file_fd = fileno(f.handle);
             match TcpStream::connect(SocketAddr {{ ip: String::from("127.0.0.1"), port: {port} }}) {{
@@ -272,8 +272,10 @@ fn main() {{
 "#
     );
     let out = run(&src);
-    assert_eq!(out, "13\n1\n13\n1\n");
-    assert_eq!(handle.join().expect("mock 线程失败"), "rlyeh-sendfile");
+    // write 返回 14（"rlyeh-sendfile" 14 字节）；sendfile count=13 仅传 13 字节
+    assert_eq!(out, "14\n1\n13\n1\n");
+    // mock 对端精确读 13 字节（count=13 的部分传输语义）
+    assert_eq!(handle.join().expect("mock 线程失败"), "rlyeh-sendfil");
 }
 
 /// R3：`File::sendfile_to(sock_fd, offset)`——offset 起至 EOF 零拷贝传输，
@@ -302,7 +304,7 @@ fn main() {{
         }},
         Err(_) => println(-1),
     }}
-    match File::open(String::from("/tmp/rlyeh-sendfile-method.txt"), io::OpenMode::Read) {{
+    match File::open(String::from("/tmp/rlyeh-sendfile-method.txt")) {{
         Ok(f) => {{
             match TcpStream::connect(SocketAddr {{ ip: String::from("127.0.0.1"), port: {port} }}) {{
                 Ok(s) => {{

@@ -820,16 +820,35 @@ impl LlvmEmitter {
                 f,
             );
         }
-        // 4) 判定「按值返回」函数 + 调用点 target 并入的不动点循环。
+        // 4) 判定「按值返回」函数 + 调用点 target 并入 + 逃逸剔除的不动点循环。
         //    调用「按值返回函数」的 target 会解包写入其栈槽，故并入按值集合；
         //    `fn f() { g() }`（直接返回调用结果）依赖 g 判定后 f 才可判定，
-        //    因此二者需迭代至不动点。extern / main / 被取址函数不参与。
+        //    因此二者需迭代至不动点。extern / main / 被取址函数不参与
+        //    ret_by_value 判定（但逃逸剔除对所有函数生效——main 内同样可能
+        //    构造 `Result::Ok(Thread { .. })` 嵌入逃逸对象）。
+        //
+        //    逃逸剔除：by_value 对象（栈槽 `[2 x i64]`）的「地址」若被存入
+        //    其他聚合对象（FieldSet 的 value，base 非自身）或作实参传出
+        //    （Call / CallIndirect，被调方可能持有该地址），该地址在函数返回
+        //    后悬垂——被调方 / 堆对象持有指向已退出栈帧的指针（如
+        //    `Result::Ok(Thread { tid })` 把 Thread 栈槽地址嵌入 Result 堆对象
+        //    再返回，调用方解包读到的 tid 指向已释放栈帧）。此类对象必须改走
+        //    calloc 堆分配（Alloc 发射处按 bvs 成员判定），不能使用栈槽。
+        //    剔除是「永久」的（记录在 `escaped` 中）：否则 4a 每轮会把同一
+        //    target 重新并入，与 4b 的剔除互相震荡。
         let mut ret_by_value: HashSet<String> = HashSet::new();
+        // 每函数已确认逃逸（须改走 calloc）的 by_value 对象（永久剔除）
+        let mut escaped: HashMap<String, HashSet<String>> = HashMap::new();
+        for f in &program.functions {
+            escaped.insert(f.name.clone(), HashSet::new());
+        }
         loop {
             let mut changed = false;
             // 4a) 调用「按值返回函数」的 target 纳入调用方按值集合
+            //     （已确认逃逸的 target 跳过：其本体改由 calloc 分配）
             for f in &program.functions {
                 let bvs = by_value_locals.get_mut(&f.name).expect("by_value_locals entry");
+                let esc = &escaped[&f.name];
                 let mut grew = false;
                 for b in &f.blocks {
                     for s in &b.stmts {
@@ -839,7 +858,10 @@ impl LlvmEmitter {
                             ..
                         } = s
                         {
-                            if ret_by_value.contains(callee) && bvs.insert(t.clone()) {
+                            if ret_by_value.contains(callee)
+                                && !esc.contains(t)
+                                && bvs.insert(t.clone())
+                            {
                                 grew = true;
                             }
                         }
@@ -850,25 +872,135 @@ impl LlvmEmitter {
                     changed = true;
                 }
             }
-            // 4b) 判定：所有非 Unit 的 Return 都返回 by_value 对象，且至少一个
+            // 4b) 逃逸诊断 + 剔除（所有函数，含 main / extern / 被取址函数）
             for f in &program.functions {
-                if f.is_extern || f.name == "main" || taken.contains(&f.name) {
-                    continue;
-                }
-                let bvs = &by_value_locals[&f.name];
-                let mut ok = true;
-                let mut has_by_ret = false;
+                let bvs = by_value_locals.get_mut(&f.name).expect("by_value_locals entry");
+                // owned 拷贝：避免持 `escaped` 借用时更新它（E0502）
+                let esc = escaped.get(&f.name).cloned().unwrap_or_default();
+                // 4b-i) 逃逸种子：by_value 对象的地址被写入其他聚合对象
+                //       （FieldSet 的 value，base 非自身）或作实参传出
+                //       （Call / CallIndirect，被调方可能持有该地址）。
+                let mut esc2 = esc.clone();
                 for b in &f.blocks {
-                    if let LirTerminator::Return(Some(x)) = &b.terminator {
-                        if bvs.contains(x) {
-                            has_by_ret = true;
-                        } else {
-                            ok = false;
+                    for s in &b.stmts {
+                        match s {
+                            LirStmt::FieldSet { base, value, .. } => {
+                                if value != base && bvs.contains(value) {
+                                    esc2.insert(value.clone());
+                                }
+                            }
+                            LirStmt::Call { args, .. } | LirStmt::CallIndirect { args, .. } => {
+                                for a in args {
+                                    if bvs.contains(a) {
+                                        esc2.insert(a.clone());
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
-                if ok && has_by_ret && !ret_by_value.contains(&f.name) {
+                // 4b-ii) 逃逸双向别名闭包：`T = S` 指针拷贝后同地址，
+                //        任一侧逃逸则另一侧也逃逸。
+                loop {
+                    let mut c2 = false;
+                    for b in &f.blocks {
+                        for s in &b.stmts {
+                            if let LirStmt::Assign {
+                                target,
+                                value: LirOperand::Local(rhs),
+                            } = s
+                            {
+                                if esc2.contains(target) && esc2.insert(rhs.clone()) {
+                                    c2 = true;
+                                }
+                                if esc2.contains(rhs) && esc2.insert(target.clone()) {
+                                    c2 = true;
+                                }
+                            }
+                        }
+                    }
+                    if !c2 {
+                        break;
+                    }
+                }
+                // 4b-v) 剔除逃逸成员（永久记录，防 4a 重插震荡）。
+                //       Alloc 发射处对不在 bvs 的 by_value 目标改走 calloc，
+                //       Return / 解包对不在 bvs 的对象走 i8* / calloc。
+                for e in &esc2 {
+                    if bvs.remove(e) {
+                        changed = true;
+                    }
+                }
+                // 连带剔除 & ret_by_value 判定仅对非 extern / main / 被取址函数
+                if f.is_extern || f.name == "main" || taken.contains(&f.name) {
+                    if esc2 != esc {
+                        escaped.insert(f.name.clone(), esc2);
+                        changed = true;
+                    }
+                    continue;
+                }
+                // 4b-iii) 判定：所有非 Unit 的 Return 都返回 by_value 对象，
+                //         且至少一个（保持「f ∈ ret_by_value ⟺ 全部 Return
+                //         ∈ bvs」不变量，否则 emit_terminator 对残留成员打包
+                //         而调用点按 i8* 接收，签名不一致）。
+                let mut ret_vals: Vec<Local> = Vec::new();
+                for b in &f.blocks {
+                    if let LirTerminator::Return(Some(x)) = &b.terminator {
+                        ret_vals.push(x.clone());
+                    }
+                }
+                let mut ok = !ret_vals.is_empty();
+                for x in &ret_vals {
+                    if !bvs.contains(x) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if ok && !ret_by_value.contains(&f.name) {
                     ret_by_value.insert(f.name.clone());
+                    changed = true;
+                } else if !ok && ret_by_value.contains(&f.name) {
+                    ret_by_value.remove(&f.name);
+                    changed = true;
+                }
+                // 4b-iv) 连带剔除：非 by_value 返回函数的全部 Return 值
+                //        也须剔除（连同别名），保证上述不变量。
+                if !ok {
+                    for x in &ret_vals {
+                        esc2.insert(x.clone());
+                    }
+                    loop {
+                        let mut c3 = false;
+                        for b in &f.blocks {
+                            for s in &b.stmts {
+                                if let LirStmt::Assign {
+                                    target,
+                                    value: LirOperand::Local(rhs),
+                                } = s
+                                {
+                                    if esc2.contains(target) && esc2.insert(rhs.clone()) {
+                                        c3 = true;
+                                    }
+                                    if esc2.contains(rhs) && esc2.insert(target.clone()) {
+                                        c3 = true;
+                                    }
+                                }
+                            }
+                        }
+                        if !c3 {
+                            break;
+                        }
+                    }
+                    for e in &esc2 {
+                        if bvs.remove(e) {
+                            changed = true;
+                        }
+                    }
+                }
+                // 更新 escaped（本函数处理完统一落账）
+                if esc2 != esc {
+                    escaped.insert(f.name.clone(), esc2);
                     changed = true;
                 }
             }
@@ -1256,7 +1388,18 @@ impl LlvmEmitter {
                 // 时为 poison——与普通聚合一致，读取须先写；按值聚合的
                 // 构造序列 `Alloc → FieldSet(tag) → FieldSet(payload)`
                 // 保证返回前两槽均已写入）。
-                if *by_value {
+                //
+                // 注意：预扫描（`LlvmEmitter::new` 步骤 4）已做逃逸诊断——
+                // 若对象地址被存入其他聚合 / 作实参传出（跨函数生命周期），
+                // 该对象已从 `by_value_locals` 剔除，此处必须回退 calloc
+                // 堆分配；否则栈槽地址逃逸为悬垂指针。
+                let in_bvs = *by_value
+                    && self
+                        .by_value_locals
+                        .get(&f.name)
+                        .map(|s| s.contains(target))
+                        .unwrap_or(false);
+                if in_bvs {
                     let r = self.reg();
                     body.push_str(&format!(
                         "  %{r} = bitcast [2 x i64]* %{target}.obj to i8*\n"
@@ -2127,27 +2270,52 @@ impl LlvmEmitter {
                 body.push_str(&format!("  %{e0} = extractvalue {{ i64, i64 }} %{r}, 0\n"));
                 let e1 = self.reg();
                 body.push_str(&format!("  %{e1} = extractvalue {{ i64, i64 }} %{r}, 1\n"));
-                // Apple clang 21 不接受聚合类型 GEP 引用函数局部值
-                // （`getelementptr inbounds ([2 x i64], [2 x i64]* %x, ...)` 报
-                // `invalid use of function-local name`），按项目惯例改 i8 字节
-                // 偏移：bitcast 为 i8* → `getelementptr i8` → bitcast 回 i64*。
-                let b0 = self.reg();
-                body.push_str(&format!("  %{b0} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
-                let g0 = self.reg();
-                body.push_str(&format!("  %{g0} = getelementptr i8, i8* %{b0}, i64 0\n"));
-                let p0 = self.reg();
-                body.push_str(&format!("  %{p0} = bitcast i8* %{g0} to i64*\n"));
-                body.push_str(&format!("  store i64 %{e0}, i64* %{p0}\n"));
-                let b1 = self.reg();
-                body.push_str(&format!("  %{b1} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
-                let g1 = self.reg();
-                body.push_str(&format!("  %{g1} = getelementptr i8, i8* %{b1}, i64 8\n"));
-                let p1 = self.reg();
-                body.push_str(&format!("  %{p1} = bitcast i8* %{g1} to i64*\n"));
-                body.push_str(&format!("  store i64 %{e1}, i64* %{p1}\n"));
-                let p = self.reg();
-                body.push_str(&format!("  %{p} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
-                body.push_str(&format!("  store i8* %{p}, i8** %{t}.addr\n"));
+                // target 被预扫描判定为逃逸（地址将被存入堆对象 / 传出）：
+                // 本体改由 calloc 堆承载两槽（by_value 约定 ≤2 槽，固定
+                // 16 字节），不能写 entry 栈槽（会悬垂）。
+                let in_bvs = self
+                    .by_value_locals
+                    .get(&f.name)
+                    .map(|s| s.contains(t))
+                    .unwrap_or(false);
+                if in_bvs {
+                    // Apple clang 21 不接受聚合类型 GEP 引用函数局部值
+                    // （`getelementptr inbounds ([2 x i64], [2 x i64]* %x, ...)`
+                    // 报 `invalid use of function-local name`），按项目惯例改
+                    // i8 字节偏移：bitcast 为 i8* → `getelementptr i8` →
+                    // bitcast 回 i64*。
+                    let b0 = self.reg();
+                    body.push_str(&format!("  %{b0} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
+                    let g0 = self.reg();
+                    body.push_str(&format!("  %{g0} = getelementptr i8, i8* %{b0}, i64 0\n"));
+                    let p0 = self.reg();
+                    body.push_str(&format!("  %{p0} = bitcast i8* %{g0} to i64*\n"));
+                    body.push_str(&format!("  store i64 %{e0}, i64* %{p0}\n"));
+                    let b1 = self.reg();
+                    body.push_str(&format!("  %{b1} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
+                    let g1 = self.reg();
+                    body.push_str(&format!("  %{g1} = getelementptr i8, i8* %{b1}, i64 8\n"));
+                    let p1 = self.reg();
+                    body.push_str(&format!("  %{p1} = bitcast i8* %{g1} to i64*\n"));
+                    body.push_str(&format!("  store i64 %{e1}, i64* %{p1}\n"));
+                    let p = self.reg();
+                    body.push_str(&format!("  %{p} = bitcast [2 x i64]* %{t}.obj to i8*\n"));
+                    body.push_str(&format!("  store i8* %{p}, i8** %{t}.addr\n"));
+                } else {
+                    let r64 = self.reg();
+                    body.push_str(&format!("  %{r64} = call i64 @calloc(i64 1, i64 16)\n"));
+                    let p = self.reg();
+                    body.push_str(&format!("  %{p} = inttoptr i64 %{r64} to i8*\n"));
+                    let b0 = self.reg();
+                    body.push_str(&format!("  %{b0} = bitcast i8* %{p} to i64*\n"));
+                    body.push_str(&format!("  store i64 %{e0}, i64* %{b0}\n"));
+                    let g1 = self.reg();
+                    body.push_str(&format!("  %{g1} = getelementptr i8, i8* %{p}, i64 8\n"));
+                    let b1 = self.reg();
+                    body.push_str(&format!("  %{b1} = bitcast i8* %{g1} to i64*\n"));
+                    body.push_str(&format!("  store i64 %{e1}, i64* %{b1}\n"));
+                    body.push_str(&format!("  store i8* %{p}, i8** %{t}.addr\n"));
+                }
             }
         } else {
             let r = self.reg();

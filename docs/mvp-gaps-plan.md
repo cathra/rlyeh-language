@@ -170,7 +170,7 @@
 | 任务 | 内容 | 状态 |
 |------|------|------|
 | N1a | **`OpenMode` + Rust 绑定层**：`enum OpenMode { Read, Write, Append, ReadWrite, Create }` + 新增 `rlyeh-std/src/file.rs`（`std::fs::OpenOptions`/`File` 封装 C ABI：open/create/read/write/flush/metadata/close） | ✅ 已完成（绑定层修订：验证 rlyeh-driver 不链接 rlyeh-std crate，Rust 绑定层无法接线，改为 io.rl 直接 libc extern（fopen 族）+ `open_mode_str` 模式字符串映射，跨平台无 `O_*` flags 差异） |
-| N1b | **`File` 对象化**：`File::open(path, mode)`/`File::create` + 句柄封装 + `close`（Rlyeh 无 Drop，MVP 显式 `close()` 语义） | ✅ 已完成 |
+| N1b | **`File` 对象化**：`File::open_with(path, mode)`/`File::create` + 句柄封装 + `close`（Rlyeh 无 Drop，MVP 显式 `close()` 语义；Y1 起 `File::open(path)` 为默认只读兼容壳） | ✅ 已完成 |
 | N1c | **读写与元数据方法**：`read_to_string`/`read(&mut [u8])`/`write(&[u8])`/`write_all`/`flush`/`metadata`/`size` | ✅ 已完成（切片实参降级：`read(cap)`/`write(String)`，`&[u8]` 留待切片借用成熟；`metadata` MVP 返回文件大小） |
 | N2a | **stdout/stderr 模块**：`stdout`/`stderr`（`write`/`writeln`/`flush`）+ 绑定层 | ✅ 已完成（新增 extern `write(fd,..)`；`flush` MVP no-op） |
 | N2b | **stdin 增强**：`read_to_string`/`lines`（迭代行读取，复用 J1 循环形态） | ✅ 已完成（测试套件无 stdin 注入，`stdin_enhance.rl` 覆盖空 stdin 路径；多行/跨 256B 缓冲逻辑经 `rlyeh build` 产物 + shell 管道手动验证） |
@@ -258,7 +258,7 @@
 | S0b | **`Thread::start(f: fn() -> i64)`**：语言侧 `thread` 模块（`spawn` 为保留关键字，方法名取 `start`）；函数指针值按地址整数经 extern i64 形参传递（typecheck 放宽 Fn→I64 + codegen ptrtoint） | ✅ 已完成 |
 | S0c | **`join` + 返回值传递**：`Thread::join` 返回值槽读取（pthread_join i64*）；启动失败映射 `IoError`（M1b） | ✅ 已完成 |
 | S0d | **WASI/Windows 短路**：注入层 os 码 4/5 返回 -1 的 stub，`Thread::start` 返回 `Err`（Unsupported） | ✅ 已完成 |
-| S0e | **加固**：栈分配（默认栈大小确认）、线程局部状态确认、内存模型文档化（MVP 无 TLS 需求） | ✅ 已完成（pthread_create attr=NULL 系统默认栈：Linux glibc 约 8MB、macOS 约 512KB，stack_size 定制规划中；MVP 无 TLS 已确认；内存模型——共享数据经同步原语、数据竞争 UB 调用方负责，与 C 并发模型一致；thread_builtin_ir 注释 + thread/module.rl 头注释文档化） |
+| S0e | **加固**：栈分配（默认栈大小确认）、线程局部状态确认、内存模型文档化（MVP 无 TLS 需求） | ✅ 已完成（pthread_create attr=NULL 系统默认栈：Linux glibc 约 8MB、macOS 约 512KB；stack_size 定制已由 Y8 ✅ 落地——`thread::Builder` pthread_attr_setstacksize；MVP 无 TLS 已确认；内存模型——共享数据经同步原语、数据竞争 UB 调用方负责，与 C 并发模型一致；thread_builtin_ir 注释 + thread/module.rl 头注释文档化） |
 | S1a | **`Future`/`Poll` trait 定义**：`enum Poll<T> { Ready(T), Pending }` + `trait Future { fn poll(&mut self) -> Poll<i64>; }`——关联类型 `type Output` / `Pin<&mut Self>` / `Context` 验证不可行（parser 无 trait `type` 成员、dyn 不可作函数参数），按计划退化指示 Output 固定 i64；`rlyeh-std/rlyeh/future.rl` + core.rl 重导出 | ✅ 已完成 |
 | S1b | **`block_on` 手动轮询 MVP**：`block_on<T>(f: &mut T) -> i64` 泛型形态（loop+match 轮询，实例化时按具体类型解析 poll，无约束宽松语义） | ✅ 已完成 |
 | S1c | **`async fn` 状态机**：L1 同步语义改造为真实状态机（`await` 挂起/恢复）——desugar（`rlyeh-desugar`：analyze 段切分 + generate 结构体/impl/构造器生成），状态编号 `2k`/`2k+1`（首轮询/恢复），跨 await 变量提升，`block_on` 轮询驱动 | ✅ 已完成 |
@@ -286,6 +286,116 @@
 **验收**：`tests/run-pass/vec_api.{rlyeh,out}`（T1a ✅：iter 快照 + for 求和 15、get_mut 值拷贝 8、sort_by 闭包降序 `5 4 3 1 1` 与升序 `1 1 3 4 5`）+ `string_api.{rlyeh,out}`（T1b ✅：chars 字节级 3/65/33、lines 3 行含尾空行段、to_uppercase/to_lowercase 别名与原名一致 true）+ `hashmap_api.{rlyeh,out}`（T1c ✅：iter 键求和 3、iter/keys 同构 3、get_mut 200/-1/300）+ `iterator_trait.{rlyeh,out}`（T2 ✅：Counter/Step 自定义迭代器 `impl Iterator` 经 for 接入，输出 `10/0/12` + 直接 next 调用 `1/2/3/-1`）+ `box_leak.{rlyeh,out}`（T3a ✅：`*mut i64` 读写 42/99、Box\<String\>/Box\<Point\> 解引用 4/3、类型注解 `*mut i64` 7）+ T3b ✅（rc_new.rl 已全覆盖核对）+ 全量回归（30+ 测试集 + suite_test 全绿）。
 
 > **T 阶段已知限制**（实测发现）：typecheck 变量环境 `variables: HashMap<String, Type>` 按名全局索引、**无作用域隔离**——同名遮蔽（如 match 臂绑定与后续 let 绑定同名）时类型互相覆盖，后续按类型分支的输出可能异常（实测 i64 200 被以 `%p` 打印为 `0xc8`）；当前建议避免同名变量遮蔽，作用域栈重构（按作用域分层存储变量类型）规划中。
+
+---
+
+## 3c. 标准库后续完善计划（阶段 U–Z：目标 API 对齐与编译器能力补齐）
+
+> **需求来源**：[`std-lib.md`](./std-lib.md) 各章节「目标 API（规划）」「MVP 退化」「规划中」标注，以及阶段 M–T 完成后遗留的**已知退化项**（M2b/Q1a/S1a/T1a/T1b/T1c/T2/T3a 的 MVP 降级实现）。
+> **前置**：阶段 G–T 已全部完成（2026-08-24），MVP 标准库完整可用（错误体系 / IO 对象化 / 网络 / 并发 / 序列化 / NIO / 线程 / 异步状态机 / 集合收尾）。
+> **定位**：本计划不做新语言特性，聚焦 ① 消除已实测验证的编译器能力缺口（阶段 U，全部为 std 完整化的硬前置），② 把 MVP 退化项升级为 std-lib.md 目标 API（阶段 V–Y）。
+>
+> **编译器能力缺口盘点（阶段 U 集中解决）**：
+>
+> | # | 缺口 | 实测依据 | 影响面 |
+> |---|------|---------|--------|
+> | 1 | typecheck 变量环境**按名全局索引、无作用域栈**，同名遮蔽互相覆盖（后续按类型分支输出异常） | T 阶段已知限制（§3b.9 / std-lib.md 顶部） | `get_mut` 引用语义、借用迭代器、引用返回值 |
+> | 2 | trait **关联类型** `type Item` / `type Output` 无载体 | S1a/T2 已验证（parser/typecheck 无 trait `type` 成员） | `Iterator` 泛型元素、`Future` 泛型 Output |
+> | 3 | **泛型 trait 约束** `T: Bound`（where 子句 / bound）不可用 | M2b 已验证（blanket impl 不可行） | `json::to_string<T: Serialize>`、`timeout<F: Future>` |
+> | 4 | trait 方法返回 **`-> Self`** 未支持（typecheck `undefined type Self`） | M2b/Q1a 已验证 | `Deserialize::from_json`、`From::from`、`Into::into` |
+> | 5 | **MIR `AddrOf` 仅支持变量取址** | T3a 已验证（`&*b` 堆地址取引用不可行） | `Box::leak` 目标签名 `&'static mut T` |
+
+### 3c.1 计划总览（阶段 U–Z）
+
+| 阶段 | 主题 | 子任务（关键交付，按序） | 子任务数 | 依赖 | 状态 |
+|------|------|---------|:---:|------|------|
+| **U** | 编译器地基（std 完整化前置） | U1 作用域栈重构、U2 trait 关联类型、U3 泛型约束 where、U4 `-> Self` 返回、U5 MIR AddrOf 任意目标、U6 数值转换 Cast IR | 6 | G、T 已知限制 | 📋 规划 |
+| **V** | 集合与迭代器完整化 | V1 借用迭代器（`Iter`/`IterMut`/`Iter<'_, K, V>`）、V2 String 码点迭代器（`Chars`/`Lines`）、V3 Iterator 默认方法 + 适配器迁移、V4 `get_mut` 引用语义、V5 新集合（HashSet/BTreeMap/VecDeque） | 5 | U1/U2/U3 | 📋 规划 |
+| **W** | 异步运行时完整化 | W1 Future 泛型化（Output/Pin/Context）、W2 await 状态机扩展（控制流/表达式嵌套/引用跨 await）、W3 事件驱动 executor（epoll/kqueue/io_uring + Future 挂起）、W4 `join_all`/`timeout` Future 版 + `TimeoutError`、W5 `recv_async`/HTTP async 真异步、W6 async 泛型/递归 + 闭包跨线程捕获 | 6 | U、R（Poller）、S1c | 📋 规划 |
+| **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime 完整 API、X2 标准 TOML（空格形式/`[section]`/注释/多行字符串）+ 解析鲁棒性、X3 `Deserialize` trait + Serializer/Deserializer 框架 + `JsonError`/`TomlError`、X4 Formatter 完整化（`Result<(), FmtError>`） | 4 | U3/U4、Q | 📋 规划 |
+| **Y** | IO/网络/并发/智能指针收尾 | Y1 File `open_with`/`read(&mut [u8])`/`write(&[u8])`/Metadata、Y2 NIO 高性能后端（epoll/kqueue）、Y3 HTTP 连接复用 + sendfile Windows `TransmitFile`、Y4 Mutex/RwLock guard 完整 + Channel 泛型化/bounded、Y5 `Box::leak` 目标签名、Y6 `Error::source` + `Into::into` 自动转换、Y7 UDP（`net/udp.rl`）、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 📋 规划 |
+
+> **推荐执行路线**：
+> - **快赢线**（独立性强、不依赖 U 全量，可先行交付）：X1（Duration 构造器/读取器补齐，纯 std）→ Y8（stack_size，driver 注入扩展）→ Y1（`File::open_with`，libc extern 扩展）→ Y3（sendfile Windows 平台分支）。
+> - **主线（依赖驱动）**：U1（作用域栈，解锁引用语义）→ U2（关联类型）→ U3（泛型约束）→ U4（`Self` 返回）→ V（V1→V4→V3→V2→V5，随 U 逐项解锁）→ X3/X4（依赖 U3/U4）→ W（W1→W2→W4→W3→W5→W6，W3 事件驱动为最大单点）→ Y 收尾。
+> - **优先级建议**：U1（消除已知限制、风险最低收益最广）> V4（`get_mut` 引用语义，集合 API 高频）> X1（时间 API 补全，零依赖）> U2（解锁 Iterator/Future 泛型化）> W2（await 控制流块，日常编写收益大）> W3（事件驱动 executor，收益最大但风险最高）> 其余。
+
+### 3c.2 阶段 U — 编译器地基（std 完整化前置）
+
+> 现状：MVP 已验证 5 个能力缺口（见上表）。此阶段为纯编译器工程，无 std 侧产出，但解锁全部后续阶段；每项独立可验收（编译/运行用例），改动面集中在 `rlyeh-typecheck`（U1–U4）与 `rlyeh-mir`/`rlyeh-lir`/`rlyeh-codegen`（U5）。
+
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| U1 | **作用域栈重构**：typecheck 变量环境 `variables: HashMap<String, Type>` → 按作用域分层（`Vec<HashMap>` 栈，块/函数/method/闭包/for 循环体各自压栈弹出），同名遮蔽按最近作用域解析；`local_inits` 同步分层；消灭 T 阶段已知限制（match 臂绑定与后续 let 同名互不覆盖）。**风险**：变量环境是全 typecheck 的共享状态（check_expr/check_item/check_stmt/closures 均读写），分层后所有读写点需走作用域 API；回归面大，须全量回归 | 📋 规划 |
+| U2 | **trait 关联类型**：parser 支持 `trait T { type Item; ... }`（`TypeMember` AST 节点，多条 type 声明允许）；typecheck 绑定 `Type::Assoc(name, trait)` 解析（`Self::Item`/`Self::Output` 在 impl 实例化时替换为具体类型，unify 分支）；`Iterator::Item`/`Future::Output` 泛型化（§2.3/§10 目标 API 的前置）。**风险**：关联类型的解析/替换走通 trait/impl 全链路，涉及 `substitute`/`unify` 递归；MVP 可先支持非泛型 trait（复用 H4 约束） | 📋 规划 |
+| U3 | **泛型 trait 约束（where / bound）**：parser 支持 `fn f<T: Bound>(...)` / `impl<K, V> HashMap<K, V> where K: Hash + Eq { ... }`；typecheck 记录约束并在调用点/实例化点校验；`T: Serialize`/`F: Future`/`B: FromIterator<T>` 签名落地。**风险**：约束推导（impl 的 where 与调用点约束联动）是核心复杂度，MVP 可先支持「声明 + 单 bound + 调用点宽松校验」（不推导） | 📋 规划 |
+| U4 | **`-> Self` 返回**：typecheck 支持 trait 方法签名返回 `Self`（解析 `Self` 为当前 impl 的具体类型，`substitute` 替换）；落地 `Deserialize::from_json(s) -> Self`、`From::from(v) -> Self`、`Into::into() -> Self`。**风险**：`Self` 在参数位置（关联返回）与 dyn 场景（H4 限制）保持禁止；仅实现返回位置 | 📋 规划 |
+| U5 | **MIR `AddrOf` 任意目标表达式**：`AddrOf` 从「仅变量」扩展为任意表达式（先求值到临时槽再取址，与 MIR `lower_expr` 既有兜底同构）；落地 `Box::leak` 目标签名 `&'static mut T`（`&*b` 堆地址取引用）。**风险**：取临时地址的活跃性/DCE 正确性（H1 CallIndirect 曾踩坑），须补 MIR 测试 | 📋 规划 |
+| U6 | **数值转换 Cast IR**：`as` 转换在 typecheck 被**静默擦除**（`check_expr` Cast 分支直接返回 inner hir、类型改标 target，MIR/LIR/codegen 无转换指令——benchmark_report 已列为后续任务）；实现 HIR/MIR/LIR Cast 节点 + codegen 转换指令（`f64→i64` = `fptosi`、`i64→f64` = `sitofp`、整数截断/扩展 = `trunc`/`sext`/`zext`）；解锁 `Duration::from_secs_f64`（X1 注记项）+ mandelbrot 基准。**风险**：涉及 HIR→MIR→LIR→codegen 全链 lower + LLVM 指令映射，回归面大；HIR 仅对「数值→数值」Cast 产出节点（其余保持擦除，如指针/引用转换） | 📋 规划 |
+
+**验收**：`crates/rlyeh-driver/tests/` 新增 `scoping_test.rs`（U1：同名遮蔽独立类型、嵌套块、match 臂/let 互不覆盖、for 循环体遮蔽）+ `assoc_type_test.rs`（U2：trait `type Item` 声明/解析/实例化替换）+ `bound_test.rs`（U3：泛型约束声明 + 调用点校验）+ `self_ret_test.rs`（U4：`-> Self` 返回的 trait/impl + 调用）+ `addr_of_test.rs`（U5：`&*p`/`&(e.field)` 取址）；每项全量回归 + clippy 0 警告。
+
+### 3c.3 阶段 V — 集合与迭代器完整化
+
+> 现状：T 阶段已实现 MVP 退化版（`iter` 返回值拷贝缓冲、`get_mut` 值拷贝、`chars` 字节级、`Iterator` 元素固定 i64、适配器内建 desugar）；目标 API（§2.3/§3）为借用迭代器 + 泛型元素 + trait 默认方法。
+
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| V1 | **借用迭代器**：`Vec::iter(&self) -> Iter<'_, T>` / `iter_mut(&mut self) -> IterMut<'_, T>`、`HashMap::iter(&self) -> Iter<'_, K, V>`——迭代器结构体（持有容器瘦指针 + 游标槽）+ `next() -> Option<&T>` / `Option<(&K, &V)>`（J2 方法式接入，元素为引用值，U1 解锁返回引用）；`for x in v.iter()` 解引用迭代（自动剥层） | 📋 规划 |
+| V2 | **String 码点迭代器**：`chars(&self) -> Chars`（UTF-8 码点解码——首字节定宽 + 连续字节校验，返回 `Option<char>` 迭代器）替代 MVP 字节级；`lines(&self) -> Lines`（按 `\n`/`\r\n` 分行迭代器，替代 `split("\n")` 的 Vec 拷贝）；`trim(&self) -> &str` 引用视图（目标签名，替代字符串拷贝） | 📋 规划 |
+| V3 | **Iterator 默认方法 + 适配器迁移**：`Iterator` trait 补默认方法 `count`/`sum`/`chain`/`enumerate`/`find`/`any`/`all`（依赖 U2 关联类型 + U3 约束）；内置适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 从「typecheck 内建 desugar」迁移为 trait 默认方法（目标签名 `-> Map<Self, B>` 等包装迭代器类型；**风险**：迁移重构面大（J3 全部调用点），可保留内建 + 新增默认方法双轨，逐一迁移后删内建） | 📋 规划 |
+| V4 | **`get_mut` 引用语义**：`Vec::get_mut(&mut self, i) -> Option<&mut T>`、`HashMap::get_mut(&mut self, k) -> Option<&mut V>`（U1 解锁返回引用；经 `*` 写回原容器，取代 MVP 值拷贝） | 📋 规划 |
+| V5 | **新集合**（std-lib.md §1 目标架构目录）：`HashSet<T>`（`collections/hashset.rl`，复用 HashMap 7 槽存储 + djb2/Knuth 散列，`insert`/`contains`/`remove`/`iter`/`union`/`intersection`/`difference`）；`BTreeMap<K, V>`（`btree.rl`，有序键——数组二分插入 + 移动，`first`/`last`/`range` 规划 MVP 限 `i64` 键）；`VecDeque<T>`（`deque.rl`，环形缓冲，`push_front`/`push_back`/`pop_front`/`pop_back`） | 📋 规划 |
+
+**验收**：`tests/run-pass/iter_ref.{rlyeh,out}`（V1：`iter` 求和/`iter_mut` 写回/`for (k, v) in m.iter()`）+ `chars_lines.{rlyeh,out}`（V2：UTF-8 多字节码点、`\r\n` 分行、`trim` 视图）+ `iterator_defaults.{rlyeh,out}`（V3：count/sum/chain/enumerate/find/any/all + 适配器迁移回归）+ `get_mut_ref.{rlyeh,out}`（V4：写回原容器）+ `hashset_btree_deque.{rlyeh,out}`（V5）+ 全量回归。
+
+### 3c.4 阶段 W — 异步运行时完整化
+
+> 现状：S 阶段已实现线程、`Future`/`Poll`/`block_on`、async fn 状态机（S1c）、线程版 `join_all`、`timeout`（MVP 退化）、`recv_async`/HTTP async（阻塞语义退化）；目标 API（§10）为泛型 Future + 事件驱动 executor。
+
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| W1 | **Future 泛型化**：`trait Future { type Output; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>; }`（依赖 U2 关联类型；`Context`/`Pin<&mut Self>` 为占位类型——`Pin` 语义 MVP 可退化 `&mut Self`）；async fn desugar 输出 `Output` 泛型化（当前固定 i64） | 📋 规划 |
+| W2 | **await 状态机扩展**：await 位置扩展到控制流块内（if/match/loop 体，状态机段切分按控制流图而非直线）、表达式中间嵌套 await（`a.await + b.await`）；跨 await 变量从 `i64` 扩展到引用类型（依赖 U1）；消除 S1c 显式报错限制 | 📋 规划 |
+| W3 | **事件驱动 executor**：`rlyeh-async-runtime`（或语言侧 `async/executor.rl` + `task.rl`）——基于 R1 Poller（poll(2)，后续接 epoll/kqueue，见 Y2）的事件循环 + 任务队列 + Waker/唤醒注册：`block_on` 从忙等轮询改为「poll Pending → 注册 fd/定时器 → 事件就绪唤醒」；为 W5 提供真异步底座。**风险**：单线程事件循环 + Future 状态机 + fd 注册表三者联动是 MVP 后最大子系统，建议分两步——先「定时器唤醒」（sleep/超时事件驱动），再「fd 事件唤醒」 | 📋 规划 |
+| W4 | **`join_all`/`timeout` Future 版**：`join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output>`（依赖 W1 + 泛型集合；并发轮询，非线程版）；`timeout<F: Future>(d, fut) -> Result<F::Output, TimeoutError>` + `TimeoutError` 类型（§12 错误体系扩展），替代 `Err(-1)` 退化 | 📋 规划 |
+| W5 | **`recv_async`/HTTP async 真异步**：`Receiver::recv_async` 挂起直到数据/close（事件驱动，替代阻塞等价语义）；`HttpClient::get_async`/`post_async` 经 NIO 非阻塞连接 + 事件驱动读写（依赖 W3 + Y2） | 📋 规划 |
+| W6 | **async 泛型/递归 + 闭包跨线程捕获**：async fn 泛型参数（依赖 U3）、递归 async fn（状态机字段自引用，防无限结构体——指针槽）；闭包值跨线程捕获（`Thread::start` 接收有捕获闭包，§10.1 约束消除，依赖 H5 扩展） | 📋 规划 |
+
+**验收**：`crates/rlyeh-driver/tests/` 新增 `async_full_test.rs`（W1/W2：控制流内 await、嵌套 await、引用跨 await、泛型 async fn）+ `executor_test.rs`（W3：定时器事件驱动 `sleep` 不忙等、fd 事件驱动）+ `join_all_fut_test.rs`（W4）+ `recv_async_http_test.rs`（W5）+ 现有 `async-fns`/`timeout` 用例保持全绿；**所有运行时测试带超时保护**（§5 约定）。
+
+### 3c.5 阶段 X — 序列化/格式化/时间完整化
+
+> 现状：Q 阶段已实现 json 内建 + Serialize trait（退化）+ TOML 轻量 MVP + `Display`/`Debug`（签名降级）；时间仅 `seconds`/`milliseconds` 构造器 + `secs`/`millis`/`micros`/`nanos` 读方法 + 墙钟 `Instant`。
+
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| X1 | **时间 API 完整**：`Duration` 补 `microseconds`/`nanoseconds` 构造器、`as_secs`/`as_millis`/`as_nanos`（u128 返回——`as_nanos` 可退化为 i64 注记）、布局对齐目标 `nanos: u64`（内部 micros: i64 迁移）；`Instant::duration_since(&self, earlier)`；新增 `time/system.rl`：`SystemTime`（墙钟纪元，`UNIX_EPOCH`/`now`/`duration_since`，`__rlyeh_clock_realtime` 注入，Windows 差异屏蔽） | 🔧 部分完成（见 §4） |
+| X2 | **标准 TOML + 解析鲁棒性**：`toml::to_string` 输出标准形式——`key = value` 空格、`[section]` 行式子表（替代内联表 `{...}`）、`#` 注释、多行字符串（`"""`）；`toml::from_str` 接受注释/空格/子表；修复 §9.4 已知限制——值含逗号/嵌套容器分段不可靠（替换 `split(",")` 为逐字符/引号感知解析）、`[T; N]` 数组反序列化、f64 支持 | 📋 规划 |
+| X3 | **`Deserialize` trait + Serializer/Deserializer 框架**：`trait Deserialize { fn from_json(s: String) -> Self; }`（依赖 U4 `-> Self`，替换「解析统一走内建」退化）；`Serializer`/`Deserializer` 访问器框架（目标签名 `serialize(&self, &mut Serializer) -> Result<(), SerError>`，U3 约束泛型化 `to_string<T: Serialize>` 落地）；`JsonError`/`TomlError` 类型（§12，替代非 Result 包装/死循环语义）；`json::parse` 非法输入改返回 `Err` | 📋 规划 |
+| X4 | **Formatter 完整化**：`Formatter` 从占位类型升级为真实格式化器（对齐/宽度/精度/填充状态字段）；`trait Display { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError>; }`（目标签名，依赖 U3/U4，替换 `-> String` 降级；`Debug::fmt_debug` 改名对齐 `Debug::fmt`——方法同名冲突的 MVP 限制随 impl 查找改进消除）；`FmtError` 类型 | 📋 规划 |
+
+**验收**：`tests/run-pass/duration_full.{rlyeh,out}`（X1：micros/nanos 构造 + as_secs/as_millis 读取 + from_secs_f64 + duration_since + SystemTime 前后关系）+ `toml_std.{rlyeh,out}`（X2：标准空格形式 round-trip + `[section]` + 注释 + 嵌套容器值）+ `deserialize_trait.{rlyeh,out}`（X3：手写 `impl Deserialize` + `from_json` 调用 + `Result` 化错误）+ `fmt_result.{rlyeh,out}`（X4：`fmt -> Result` 对齐/宽度）+ 全量回归。
+
+### 3c.6 阶段 Y — IO/网络/并发/智能指针收尾
+
+> 现状：N/O/P/R 阶段已实现 File/Path/fs、TCP/HTTP、Mutex/RwLock/Condvar/Barrier/Channel、NIO（poll 版）、sendfile（macOS）；T 阶段 `Box::leak` 退化为裸指针。本阶段逐项对齐目标 API + 平台补全。
+
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| Y1 | **File 目标 API**：`open_with(path, OpenMode)`（`open(path)` 保留兼容壳）；`read(&mut [u8])`/`write(&[u8])` 切片实参（§4.1 目标签名，替代 `read(cap)`/`write(String)` 降级——依赖切片借用成熟 + 数组切片参数化）；`metadata` 返回完整 `Metadata`（size/mtime/is_file/is_dir，替代仅返回大小的 MVP） | ✅ 部分完成（2026-08：**open_with + open 兼容壳 + 完整 Metadata 已落地**——`io/file.rl`：`open(path)` 默认只读兼容壳 ≡ `open_with(path, Read)`，`open_with(path, mode)` 保留原双参逻辑；`struct Metadata{size, mtime, is_file, is_dir}` + `File::metadata() -> Result<Metadata, IoError>`（4 槽非按值 calloc 堆对象）；driver 注入 `__rlyeh_file_size/mtime/mode` 平台内建（POSIX stat(2) 直读 `struct stat` 字段——Linux x86_64 mode@24/size@48/mtime@88、macOS mode@4/size@96/mtime@48（偏移经本机 clang offsetof 实测）、其余平台 -1 stub；extern String 实参经 codegen 自动取 data 指针，语言侧统一 `(path: String) -> i64` 签名；S_IFMT=0xF000 掩码判定 is_file(S_IFREG=0x8000)/is_dir(S_IFDIR=0x4000)）。**`read(&mut [u8])`/`write(&[u8])` 切片实参挂 U1**（动态切片借用 + 数组切片参数化，MVP 保留 `read(cap)`/`write(String)` 降级）；验收：`tests/run-pass/file_open_with.{rlyeh,out}` + `io_file_test.rs` 新增 `file_open_with_modes`/`file_metadata_complete`（11/11 全绿）） |
+| Y2 | **NIO 高性能后端**：`io/nio.rl` 的 poll(2) 后端之上增加 `Interest` 平台后端抽象——Linux `epoll`（`epoll_create1`/`epoll_ctl`/`epoll_wait`，O(1) 事件）、macOS `kqueue`（`kqueue`/`kevent`，`EVFILT_READ`/`EVFILT_WRITE`）；`Poller` 内部按 `__rlyeh_target_os()` 分派；为 W3 事件驱动 executor 提供平台后端 | 📋 规划 |
+| Y3 | **HTTP 连接复用 + sendfile 平台补全**：`HttpClient` 连接池（keep-alive：`Connection: keep-alive` + 复用空闲连接，替代每请求新建 + close）；sendfile Windows `TransmitFile` 分支（§4.5「非 Unix 返回 Unsupported」消除） | 🔧 部分完成（2026-08：**HTTP 连接复用已落地**——`io/file.rl` 无涉、`net/http.rl` 重构：`HttpClient` 加池字段 `{conn_fd, conn_host, conn_port}`（`_unit` 占位保留），`get/post`/`get_async`/`post_async` 改**实例方法**（`&mut self`），新增 `request_one`/`read_response`/`find_header_end`/`parse_content_length` 内部函数：请求带 `Connection: keep-alive`、body 优先按 Content-Length 精确读（无则回退 EOF）、同 host:port 复用 + 失效自动丢弃重建重试一次；**sendfile Windows `TransmitFile` 分支保留**——本机（macOS）无法编译验证 Windows 代码，避免交付未经验证的分支，`__rlyeh_sendfile` 非 Unix 仍返回 Unsupported（§4.5）；验收：新增 `http_keepalive_test.rs` 5 用例（复用/双实例/失效重试/POST 复用/无 CL 回退，mock 服务器每连接一线程 + 连接计数断言，net_http_test.rs 5 用例同步迁移实例调用，10/10 全绿）） |
+| Y4 | **锁 guard 完整 + Channel 泛型化**：`Mutex<T>`/`RwLock<T>` 泛型化（目标签名 `lock(&self) -> MutexGuard<T>`，替代裸 `lock/unlock` + `lock_guard()` 命名特判——方法名对齐目标 API）；`RwLockWriteGuard`/`RwLockReadGuard`（P2b 规划）；`Deref`/`DerefMut` 语义（`*guard` 解引用访问数据，替代 MVP 独立访问器）；`Channel<T>` 泛型化（元素不再限 i64）、`bounded_channel(capacity)` 有界队列（send 满阻塞）、`SendError<T>`/`RecvError`/`TryRecvError` 错误类型（替代 `Option` 退化）、`Arc<LockFreeQueue>`（跨线程 Sender/Receiver，依赖 U3） | 📋 规划 |
+| Y5 | **`Box::leak` 目标签名**：`fn leak(self) -> &'static mut T`（依赖 U5 AddrOf 任意目标，替代 `*mut T` 裸指针退化）；`'static` 宽松丢弃（G4 现状） | 📋 规划 |
+| Y6 | **错误体系完整化**：`trait Error { fn message(&self) -> String; fn source(&self) -> Option<&dyn Error>; }`（补 `source` 链，M2a 现状仅 message）；`Into::into()` 自动转换 + `?` 运算符的 From 自动转换（目标：`?` 在 `E: Into<F>` 时自动转——依赖 U3/U4，`io::Error` → 自定义错误；MVP 无 where 约束时退化显式 `into()` 调用） | 📋 规划 |
+| Y7 | **UDP**：`net/udp.rl`（§1 目标架构目录）——`UdpSocket::bind`/`send_to`/`recv_from`/`local_addr`（libc `socket(AF_INET, SOCK_DGRAM)` + `sendto`/`recvfrom`，平台 sockaddr_in 双布局复用 O1a，WASI 短路） | ✅ 已完成（2026-08：`net/udp.rl` 新建——`UdpPacket{data, from}`/`UdpSocket{fd, addr}`，`bind`（socket SOCK_DGRAM + `bind` + 端口 0 经 getsockname 读实际端口）、`local_addr`、`send_to`/`recv_from`（sendto/recvfrom extern，sockaddr 构造/解析复用 net::byteorder，recv 回填解析源地址 `from`）、`set_nonblocking`/`is_nonblocking`（R2 fcntl 复用）；core.rl 增加 `extern fn sendto/recvfrom` 声明 + `import net::udp::UdpSocket/UdpPacket` 提升（std 预置符号须经 core.rl import 才能裸名访问，TcpListener/SocketAddr 同模式）；WASI 短路；验收：`crates/rlyeh-driver/tests/udp_test.rs` 3 用例（自回环/双 socket 互发源端口/多包按序，bind(0) 免端口冲突）+ run-pass `udp_echo.rl`（输出确定 9/rlyeh-udp/true），suite 全量回归全绿） |
+| Y8 | **`thread::Builder::stack_size`**：`Builder::new()/stack_size(bytes)/spawn(f)`——`pthread_attr_setstacksize`（S0e 规划项，替代 attr=NULL 默认栈：Linux 8MB/macOS 512KB 的定制手段） | ✅ 已完成（2026-08：`thread/module.rl` 增加 `Builder`（`new`/`stack_size(&mut self, n)`/`start(&self, f)`）+ driver 注入 `__rlyeh_thread_spawn_stack`（attr 定制，n<=0 → attr=NULL 等价 `Thread::start`）；修复 codegen by_value 逃逸 bug——聚合对象地址经 FieldSet 嵌入堆对象（如 `Result::Ok(Thread{..})`）时栈槽悬垂，预扫描逃逸诊断回退 calloc；验收：`crates/rlyeh-driver/tests/thread_test.rs` 新增 `builder_default_stack_spawn`/`builder_stack_size_deep_recursion`（64MB 栈 100000 层深递归，默认栈 SIGSEGV 反证定制生效）） |
+
+**验收**：`tests/run-pass/file_open_with.{rlyeh,out}`（Y1 ✅：open_with + Metadata；切片 read/write 挂 U1）+ `crates/rlyeh-driver/tests/nio_epoll_test.rs`（Y2，Linux）/`nio_kqueue_test.rs`（Y3 macOS 或 CI 矩阵）+ `http_keepalive_test.rs`（Y3 ✅：连接复用 + 失效重试 + 无 CL 回退；sendfile Windows TransmitFile 分支未验证保留）+ `mutex_generic.{rlyeh,out}`（Y4：泛型 Mutex + Deref guard + bounded Channel + 错误类型）+ `box_leak_ref.{rlyeh,out}`（Y5）+ `error_source.{rlyeh,out}`（Y6）+ `udp_echo.{rlyeh,out}`（Y7 ✅：UDP 自回环）+ `udp_test.rs`（Y7 ✅：自回环/双 socket 互发源端口/多包按序）+ `thread_test.rs::builder_*`（Y8：`builder_default_stack_spawn`/`builder_stack_size_deep_recursion`）+ 全量回归；**运行时测试带超时保护**（§5 约定）。
+
+> **总依赖关系**：U（全部）→ V（V1/V3/V4 依赖 U1–U3；V2/V5 依赖 V1）+ X3/X4（依赖 U3/U4）→ W（W1 依赖 U2；W2 依赖 U1；W3 依赖 R + Y2 可选；W4/W6 依赖 U3）→ Y（Y1 依赖 U1 切片成熟；Y4/Y6 依赖 U3/U4；Y2 独立；Y3/Y7/Y8 独立）。
+> **跟踪与验收约定**：沿用 §5——每阶段 `cargo test --workspace` 全绿 + clippy 0 警告；运行时/并发类测试带超时保护；完成后同步更新 std-lib.md 状态总览（勾销对应规划章节）+ 本文档状态标识 + CODEBUDDY.md §5.5。
 
 ---
 
@@ -320,6 +430,8 @@
 - [x] **`str` 值一等类型（Str 值升级为 String 对象）**（2026-08，G2 后续补全）：`let s = "hi"` 绑定的 `s`（`Type::Str`，运行时为指向静态字面量数据的 `i8*` 指针，无 String 的 len/cap 槽）参与字符串操作时自动**升级为 String 对象**（编译期长度展开，复用 `check_string_from` 字面量/绑定变量分支，`pub(crate)` 化）。**① 方法调用**——`check_method_call` 中 `Type::Str` 值接收者（非 `&str` 引用）升级 `recv_hir`/`recv_ty` 后按 String impl 解析（`s.len()`/`substring`/`contains`/`as_str` 均可用）；`&str` 引用接收者保持直接归一（String 对象瘦指针）。**② 拼接**——`check_expr` 二元 `+` 分支 `l_str`/`r_str` 纳入 `Type::Str` 值（`comparison::is_str_value`）与 `&str` 视图，Str 值操作数升级后走既有 clone+push_str 拼接（`s + "!"`/`"ab" + "cd"`/`s + s`）。**③ 比较**——`comparison.rs` `lhs_str`/`rhs_str` 纳入 Str 值，字典序/相等分支升级操作数后走 `string_lt_hir`/`string_eq_hir` 内容比较（Str 值 ↔ 字面量/String/`&str`）；字符串组合豁免 `check_comparison` 的类型兼容检查（`s == String::from("hi")` 此前报 ChainTypeMismatch）。**④ 关键根因修复**：`check_fn_body_with_self`（check_item.rs）隔离 `ctx.variables` 但**未隔离 `ctx.local_inits`**——std 方法体检查把同名局部变量（如 `s`）insert 进全局 `local_inits`，覆盖调用方 `let s = "hi"` 的字面量绑定追踪（`s` 的 init 被覆盖为 `Variable("start")`），使后续 `String::from(s)` / Str 值升级查不到内容报 Unsupported；补上 `saved_inits` take/恢复（Err 提前返回与正常返回两处）。**边界**：运行期 `str` 值（如 `fn f(s: str)` 函数参数，内容/长度运行期未知）无法升级，方法调用报 Unsupported；`m.push_str("!")` 方法实参字面量不升级（既有行为，须 `String::from("!")`）。产出 `tests/run-pass/str_value.{rlyeh,out}`（17 输出：方法/拼接/比较/视图/升级组合）+ 全量 122 套件 685 测试 0 失败 + clippy 0 警告。
 - [x] **G2 `str` 切片与 String 补齐**（2026-08）：`&str` 引用切片 + `String::from` 运行期内容。**块一**：`String::from(runtime_string)` desugar 为 `s.clone()`（标准库深拷贝，运行期读 len 槽——消除 §13 约束 4 的"长度表达未实现"；签名相同的重声明不受影响）。**块二**：`&str` 视图（`&str` 运行时 = 指向 String 对象的瘦指针，复用 G1 聚合引用机制，MIR/LIR/codegen 布局零改动）：`String::as_str()` 特判 desugar 为 `HirExpr::Ref`（对象指针拷贝）返回 `Ref(Str)`；`resolve_ast_type` 识别 `str` 类型关键字；方法调用把 `Ref(Str)` 接收者归一为 String impl（len/substring 等）；`check_index`/`check_slice` 对 `&str` 先取 data 槽（同 String 对象）；`String::from(&str)` 读 data/len 槽深拷贝（alloc_bytes + copy_bytes + 三槽）；`compatible_with` 允许 `&str` ↔ `&String` 互视 + 视图与 String 值比较互用；`comparison.rs` 字符串内容比较纳入 `&str`。**设计决策**：计划原文"substring 返回引用而非拷贝"改为**兼容方案**——`substring` 保持 String 拷贝返回（避免破坏大量现有调用者与文档 API），零拷贝切片以新增 `as_str()` 借用视图体现。产出 `string_from_runtime_test.rs` 6 用例 + `str_ref_test.rs` 9 用例 + 全量 114 套件回归绿 + clippy 0 警告。
 - [x] **G1 引用类型与表达式**（2026-08）：`&T`/`&mut T` 类型 + `&x`/`&mut x`/`*` 表达式全链路打通（parser → typecheck → HIR → MIR → LIR → LLVM）。核心设计：**标量引用存 `i8*` 值槽、聚合引用存对象指针拷贝**；`*p` 读取/写入时按标量种类 `bitcast i8*` 转换；字段访问/方法调用自动 `peel_ref`（`p.x`/`v.len()` 免显式解引用）；`&mut T` 兼容 `&T` 参数（宽松规则，严格可变性互斥留给 borrowck）。关键修复：① MIR inline 补 `AddrOf`/`DerefRead`/`DerefWrite` 三指令映射（否则内联丢弃引用指令、标量读取输出垃圾）；② MIR DCE 活跃性分析纳入 Deref* 读操作（`*p = *p + 1` 的临时变量免被删）；③ codegen `operate_value` 与 `store_to` 指针拷贝避免 `%%` 转义；④ **顶层同名遮蔽**：用户顶层 `fn read` 与 std extern `read` 重名时，用户侧声明注册为 `read@shadow<N>` mangle 名（仅签名不同时），std 原名保留——std 模块（如 `io.rl` 内部 `read(0, tmp, 256)`）仍绑定 extern 原版，用户顶层代码经 `fn_shadow_of` 绑定自身版本，下游符号名唯一不冲突；签名相同的重声明（如 `extern fn __rlyeh_target_os()`）视为无害重声明保留原名。产出 `reference_test.rs` 10 用例（标量读写/复合赋值、struct 读写、vec 方法、引用链、别名拷贝、返回引用、`&mut`→`&` 传递）+ 全量 112 套件回归绿。
+
+- [x] **X1 时间 API 完整化（3c 阶段 X 首个快赢项）**（2026-08-25）：`Duration` 补目标 API 构造器 `microseconds`/`nanoseconds` + 读方法 `as_secs`/`as_millis`/`as_nanos`（u64/u128 → i64 实现，溢出未检查；`secs`/`millis`/`micros`/`nanos` 保留兼容别名）+ `Instant::duration_since` + 新增 `time/system.rl` `SystemTime`（`now`/`unix_epoch`/`duration_since`）。**driver**：`time_builtin_ir` 重构为共享 `__rlyeh_clock_now(clk_id)` + 两个内建 `__rlyeh_clock_monotonic`（CLOCK_MONOTONIC：Linux=1/Darwin=6）与 `__rlyeh_clock_realtime`（CLOCK_REALTIME：两平台均 0，`SystemTime` 用），非支持平台均返回 -1（语言侧 `SystemTime::now` 退回 UNIX 纪元）。**关键教训**：① `time/system.rl` 是 time 的**子模块**（`module system;`），完整路径 `time::system::SystemTime`（同 `io::file::File` 双段模式），import 写 `time::SystemTime` 报 undefined type；② **`module system;` 声明须置于 time/module.rl 文件末尾**——module 声明顺序即收集期注册顺序（io 惯例），放顶部会使 system.rl 展开内容插在 `Duration` 定义之前，其签名引用 `time::Duration` 报 undefined（首次全量回归 99 用例失败即此因）。**`from_secs_f64` 剔除**：依赖 as 转换 IR——typecheck `Cast` 分支现直接透传 inner hir、类型改标 target（MIR/LIR/codegen 无转换指令，`f64` 位模式被当 `i64` 用），已列入 **U6 数值转换 Cast IR**（`fptosi`/`sitofp`/`trunc`/`sext`，解锁 from_secs_f64 + mandelbrot 基准）；X1 状态 🔧 部分完成。产出 `tests/run-pass/duration_full.{rlyeh,out}`（9 输出：microseconds/nanoseconds 构造、as_millis/as_secs/as_nanos 读取、duration_since 同刻差 0、SystemTime 距纪元秒数范围断言、先后关系断言）+ 全量套件 99+ 用例全绿（34.15s）+ cargo test 全绿。文档：std-lib.md §7 状态标注（X1 ✅ / U6）+ 头部说明 + mvp-gaps-plan.md §3c.1/§3c.5/§4 + CODEBUDDY.md §2 结构描述。
 
 ---
 

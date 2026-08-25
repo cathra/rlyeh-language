@@ -5,7 +5,9 @@
 //! 状态码 / body 文本 / `json::parse::<T>` 反序列化（L2）。
 //!
 //! 覆盖：`get`（200 + JSON body）、`post`（Content-Length + 服务器端 echo）、
-//! `404` 状态解析。
+//! `404` 状态解析、async 退化（S3b）。Y3 起 `get/post` 为实例方法
+//! （`let mut c = HttpClient::new(); c.get(url)`）；连接复用用例见
+//! `http_keepalive_test.rs`。
 //!
 //! 需要系统 clang（与 std_test.rs / net_socket_test.rs 相同）。
 
@@ -100,9 +102,9 @@ fn http_get_json() {
     let src = format!(
         r#"
 fn main() {{
-    let c = HttpClient::new();
-    println(c._unit == 0);   // 无状态占位字段（O3a 构造）
-    match HttpClient::get(String::from("http://127.0.0.1:{port}/api/v1")) {{
+    let mut c = HttpClient::new();
+    println(c._unit == 0);   // 占位字段（O3a 构造）
+    match c.get(String::from("http://127.0.0.1:{port}/api/v1")) {{
         Result::Ok(r) => {{
             println(r.status());
             println(r.text());
@@ -128,7 +130,8 @@ fn http_post_echo() {
     let src = format!(
         r#"
 fn main() {{
-    match HttpClient::post(String::from("http://127.0.0.1:{port}/submit"), String::from("rlyeh-post")) {{
+    let mut c = HttpClient::new();
+    match c.post(String::from("http://127.0.0.1:{port}/submit"), String::from("rlyeh-post")) {{
         Result::Ok(r) => {{
             println(r.status());
             println(r.text());
@@ -151,7 +154,8 @@ fn http_not_found_status() {
     let src = format!(
         r#"
 fn main() {{
-    match HttpClient::get(String::from("http://127.0.0.1:{port}/missing")) {{
+    let mut c = HttpClient::new();
+    match c.get(String::from("http://127.0.0.1:{port}/missing")) {{
         Result::Ok(r) => println(r.status()),
         Result::Err(e) => println(-1),
     }}
@@ -172,7 +176,8 @@ fn http_get_async() {
     let src = format!(
         r#"
 fn main() {{
-    match HttpClient::get_async(String::from("http://127.0.0.1:{port}/async")) {{
+    let mut c = HttpClient::new();
+    match c.get_async(String::from("http://127.0.0.1:{port}/async")) {{
         Result::Ok(r) => {{
             println(r.status());
             println(r.text());
@@ -197,7 +202,8 @@ fn http_post_async() {
     let src = format!(
         r#"
 fn main() {{
-    match HttpClient::post_async(String::from("http://127.0.0.1:{port}/async-submit"), String::from("rlyeh-post-async")) {{
+    let mut c = HttpClient::new();
+    match c.post_async(String::from("http://127.0.0.1:{port}/async-submit"), String::from("rlyeh-post-async")) {{
         Result::Ok(r) => {{
             println(r.status());
             println(r.text());

@@ -31,7 +31,8 @@ fn run(src: &str) -> String {
     out
 }
 
-/// 等长、首字节不同：memcmp 在首个不同字节即定大小（'a' < 'b'，'r' < 'z'）。
+/// 等长、首字节不同：memcmp 在首个不同字节即定大小（'a' < 'b'）。
+/// 注意 `"rlyeh" > "rust"`：逐字节 r==r、l(0x6c) < u(0x75) → false。
 #[test]
 fn prefix_diff_same_len() {
     let out = run(
@@ -44,7 +45,7 @@ fn main() {
 }
 "#,
     );
-    assert_eq!(out, "true\nfalse\ntrue\nfalse\n");
+    assert_eq!(out, "true\nfalse\nfalse\ntrue\n");
 }
 
 /// 前缀相同、长度不同：前缀字节全等时短者更小（长度兜底）。

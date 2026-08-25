@@ -198,7 +198,7 @@ fn main() {
     let s = "hello rlyeh";
     let t = String::from(s);
     println(t);                    // hello rlyeh
-    println(t.len());              // 10
+    println(t.len());              // 11
     println(t == String::from("hello rlyeh"));
     // 字面量直用仍可用
     let u = String::from("direct");
@@ -209,5 +209,5 @@ fn main() {
 }
 "#,
     );
-    assert_eq!(out, "hello rlyeh\n10\ntrue\ntrue\nhello rlyeh!\n");
+    assert_eq!(out, "hello rlyeh\n11\ntrue\ntrue\nhello rlyeh!\n");
 }

@@ -241,11 +241,33 @@ fn run_generic_impl() {
     assert_eq!(out, "5\n-1\n");
 }
 
+/// 非标量聚合（>2 槽）构造：走堆分配（calloc）+ GEP 槽访问。
+/// （≤2 槽标量聚合走 by_value 栈槽优化、免 calloc，见 `run_enum_match`。）
+const LARGE_AGG: &str = r#"
+struct Big {
+    a: i64,
+    b: i64,
+    c: i64,
+    d: i64,
+}
+
+fn main() {
+    let p = Big { a: 1, b: 2, c: 3, d: 4 };
+    println(p.a + p.b + p.c + p.d);
+}
+"#;
+
 #[test]
 fn compile_agg_llvm() {
-    // 聚合对象代码生成：calloc（清零分配）+ GEP 槽访问
-    let ll = compile_to_llvm(ENUM_MATCH).expect("编译失败");
+    // 聚合对象代码生成：非标量聚合（>2 槽）calloc（清零分配）+ GEP 槽访问
+    let ll = compile_to_llvm(LARGE_AGG).expect("编译失败");
     assert!(ll.contains("declare i8* @malloc(i64)"), "应声明 malloc");
     assert!(ll.contains("call i64 @calloc"), "应有堆分配（calloc 清零）");
     assert!(ll.contains("getelementptr"), "应有槽寻址 GEP");
+}
+
+#[test]
+fn run_large_agg() {
+    let out = run_source(LARGE_AGG).expect("运行失败");
+    assert_eq!(out, "10\n");
 }

@@ -878,11 +878,12 @@ pub fn target_os_code(target: Option<&str>) -> i32 {
 fn platform_builtin_ir(target: Option<&str>) -> String {
     let os = target_os_code(target);
     format!(
-        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n",
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n",
         os,
         sendfile_builtin_ir(os),
         thread_builtin_ir(os),
-        time_builtin_ir(os)
+        time_builtin_ir(os),
+        file_stat_builtin_ir(os)
     )
 }
 
@@ -963,6 +964,9 @@ declare i32 @pthread_create(i64*, i64*, i64 (i8*)*, i8*)
 declare i32 @pthread_join(i64, i64*)
 declare i64 @pthread_self()
 declare i32 @usleep(i32)
+declare i32 @pthread_attr_init(i8*)
+declare i32 @pthread_attr_destroy(i8*)
+declare i32 @pthread_attr_setstacksize(i8*, i64)
 define internal i64 @__rlyeh_thread_spawn(i64 %ep_addr, i64 %arg) {
 entry:
   %tid = alloca i64
@@ -976,6 +980,56 @@ done:
   %tv = load i64, i64* %tid
   ret i64 %tv
 fail:
+  ret i64 -1
+}
+; Y8：__rlyeh_thread_spawn_stack(entry, arg, stack_size)
+; stack_size <= 0 → 系统默认栈（null attr，与 __rlyeh_thread_spawn 等价）；
+; 否则 pthread_attr_setstacksize 定制线程栈（须 >= PTHREAD_STACK_MIN）。
+define internal i64 @__rlyeh_thread_spawn_stack(i64 %ep_addr, i64 %arg, i64 %stack_size) {
+entry:
+  %tid0 = alloca i64
+  %tid = alloca i64
+  %attr = alloca i8, i64 128, align 16
+  %usep = icmp sgt i64 %stack_size, 0
+  br i1 %usep, label %withattr, label %noattr
+noattr:
+  %ep0 = inttoptr i64 %ep_addr to i8*
+  %start0 = bitcast i8* %ep0 to i64 (i8*)*
+  %argp0 = inttoptr i64 %arg to i8*
+  %r0 = call i32 @pthread_create(i64* %tid0, i64* null, i64 (i8*)* %start0, i8* %argp0)
+  %ok0 = icmp eq i32 %r0, 0
+  br i1 %ok0, label %done0, label %fail0
+done0:
+  %tv0 = load i64, i64* %tid0
+  ret i64 %tv0
+fail0:
+  ret i64 -1
+withattr:
+  %ai = call i32 @pthread_attr_init(i8* %attr)
+  %aiok = icmp eq i32 %ai, 0
+  br i1 %aiok, label %setss, label %fail_ai
+setss:
+  %ss = call i32 @pthread_attr_setstacksize(i8* %attr, i64 %stack_size)
+  %ssok = icmp eq i32 %ss, 0
+  br i1 %ssok, label %create, label %fail_ss
+create:
+  %ep = inttoptr i64 %ep_addr to i8*
+  %start = bitcast i8* %ep to i64 (i8*)*
+  %argp = inttoptr i64 %arg to i8*
+  %attrp = bitcast i8* %attr to i64*
+  %r = call i32 @pthread_create(i64* %tid, i64* %attrp, i64 (i8*)* %start, i8* %argp)
+  call i32 @pthread_attr_destroy(i8* %attr)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %done, label %fail
+done:
+  %tv = load i64, i64* %tid
+  ret i64 %tv
+fail:
+  ret i64 -1
+fail_ss:
+  call i32 @pthread_attr_destroy(i8* %attr)
+  ret i64 -1
+fail_ai:
   ret i64 -1
 }
 define internal i64 @__rlyeh_thread_join(i64 %tid) {
@@ -1016,6 +1070,10 @@ define internal i64 @__rlyeh_thread_spawn(i64 %ep_addr, i64 %arg) {
 entry:
   ret i64 -1
 }
+define internal i64 @__rlyeh_thread_spawn_stack(i64 %ep_addr, i64 %arg, i64 %stack_size) {
+entry:
+  ret i64 -1
+}
 define internal i64 @__rlyeh_thread_join(i64 %tid) {
 entry:
   ret i64 -1
@@ -1037,23 +1095,26 @@ entry:
 /// - `__rlyeh_clock_monotonic() -> i64`：`clock_gettime(CLOCK_MONOTONIC)` 微秒值。
 ///   Linux（os 1）/macOS（os 2）为真实现，timespec 经 [2 x i64] 缓冲传指针，
 ///   `tv_sec*1e6 + tv_nsec/1000`；失败返回 -1。
-///   注意：CLOCK_MONOTONIC 常量随平台不同——Linux = 1，Darwin(macOS) = 6。
-/// - 其他平台（freebsd/windows/wasi）：返回 -1（Unsupported，语言侧 `Instant`
-///   now/elapsed 退回 `clock()` CPU 时钟，保持可用）。
+///   注意：CLOCK_MONOTONIC 常量随平台不同——Linux = 1，Darwin(macOS) = 6；
+///   CLOCK_REALTIME 在 Linux / Darwin 均为 0（X1，SystemTime 用）。
+/// - 其他平台（freebsd/windows/wasi）：两个内建均返回 -1（Unsupported，
+///   语言侧 `Instant::now/elapsed` 退回 `clock()` CPU 时钟、`SystemTime::now`
+///   退回 UNIX 纪元，保持可用）。
 fn time_builtin_ir(os: i32) -> String {
     if os == 1 || os == 2 {
         let monotonic = if os == 2 { 6 } else { 1 };
+        let realtime = 0;
         format!(
             r#"
-; --- 时间平台内建（墙钟：clock_gettime CLOCK_MONOTONIC={monotonic}）---
+; --- 时间平台内建（墙钟：clock_gettime CLOCK_MONOTONIC={monotonic} / CLOCK_REALTIME={realtime}）---
 declare i32 @clock_gettime(i32, i64*)
-define internal i64 @__rlyeh_clock_monotonic() {{
+define internal i64 @__rlyeh_clock_now(i32 %clk_id) {{
 entry:
   %ts = alloca [2 x i64]
   %tsb = bitcast [2 x i64]* %ts to i8*
   %tsg0 = getelementptr i8, i8* %tsb, i64 0
   %p = bitcast i8* %tsg0 to i64*
-  %r = call i32 @clock_gettime(i32 {monotonic}, i64* %p)
+  %r = call i32 @clock_gettime(i32 %clk_id, i64* %p)
   %ok = icmp eq i32 %r, 0
   br i1 %ok, label %done, label %fail
 done:
@@ -1068,18 +1129,161 @@ done:
 fail:
   ret i64 -1
 }}
+define internal i64 @__rlyeh_clock_monotonic() {{
+entry:
+  %r = call i64 @__rlyeh_clock_now(i32 {monotonic})
+  ret i64 %r
+}}
+define internal i64 @__rlyeh_clock_realtime() {{
+entry:
+  %r = call i64 @__rlyeh_clock_now(i32 {realtime})
+  ret i64 %r
+}}
 "#
         )
         .to_string()
     } else {
         r#"
-; --- 时间平台内建（其他平台禁用，退回 clock()）---
+; --- 时间平台内建（其他平台禁用，退回 clock()/UNIX 纪元）---
 define internal i64 @__rlyeh_clock_monotonic() {
+entry:
+  ret i64 -1
+}
+define internal i64 @__rlyeh_clock_realtime() {
 entry:
   ret i64 -1
 }
 "#
         .to_string()
+    }
+}
+
+/// Y1（2026-08）：文件元数据平台内建（`File::metadata` 的 size/mtime/mode）。
+///
+/// 统一语言侧签名 `__rlyeh_file_size/mtime/mode(path: String) -> i64`——
+/// extern String 实参经 codegen 自动取 data 指针（与 `fopen` 同款），故
+/// 此处入参为 `i8*`（NUL 结尾 C 路径）。三个入口各自 `stat(2)` 一次并
+/// 读取对应 `struct stat` 字段；失败（路径不存在等）返回 -1。
+///
+/// 字段偏移为平台 ABI（`<sys/stat.h>` 布局，macOS 偏移经本机 clang
+/// `offsetof` 实测：st_mode@4 / st_size@96 / st_mtimespec.tv_sec@48）：
+/// - Linux x86_64：st_mode@24（mode_t u32）/ st_size@48（off_t i64）/ st_mtime@88（timespec.tv_sec）；
+/// - macOS：st_mode@4（mode_t u16）/ st_size@96 / st_mtime@48（mtimespec.tv_sec）；
+/// - 其余平台（Windows/WASI 等）：无 POSIX stat，注入返回 -1 的 stub。
+fn file_stat_builtin_ir(os: i32) -> String {
+    match os {
+        1 => r#"
+; --- Y1 文件元数据（Linux x86_64 struct stat：mode@24 / size@48 / mtime@88）---
+declare i32 @stat(i8*, i8*)
+define internal i64 @__rlyeh_file_size(i8* %path) {
+entry:
+  %st = alloca [160 x i8], align 8
+  %r = call i32 @stat(i8* %path, i8* %st)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %okbb, label %err
+err:
+  ret i64 -1
+okbb:
+  %p = getelementptr i8, i8* %st, i64 48
+  %pv = bitcast i8* %p to i64*
+  %v = load i64, i64* %pv
+  ret i64 %v
+}
+define internal i64 @__rlyeh_file_mtime(i8* %path) {
+entry:
+  %st = alloca [160 x i8], align 8
+  %r = call i32 @stat(i8* %path, i8* %st)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %okbb, label %err
+err:
+  ret i64 -1
+okbb:
+  %p = getelementptr i8, i8* %st, i64 88
+  %pv = bitcast i8* %p to i64*
+  %v = load i64, i64* %pv
+  ret i64 %v
+}
+define internal i64 @__rlyeh_file_mode(i8* %path) {
+entry:
+  %st = alloca [160 x i8], align 8
+  %r = call i32 @stat(i8* %path, i8* %st)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %okbb, label %err
+err:
+  ret i64 -1
+okbb:
+  %p = getelementptr i8, i8* %st, i64 24
+  %pv = bitcast i8* %p to i32*
+  %m32 = load i32, i32* %pv
+  %m = zext i32 %m32 to i64
+  ret i64 %m
+}
+"#
+        .to_string(),
+        2 => r#"
+; --- Y1 文件元数据（macOS struct stat：mode@4 u16 / size@96 / mtime@48）---
+declare i32 @stat(i8*, i8*)
+define internal i64 @__rlyeh_file_size(i8* %path) {
+entry:
+  %st = alloca [160 x i8], align 8
+  %r = call i32 @stat(i8* %path, i8* %st)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %okbb, label %err
+err:
+  ret i64 -1
+okbb:
+  %p = getelementptr i8, i8* %st, i64 96
+  %pv = bitcast i8* %p to i64*
+  %v = load i64, i64* %pv
+  ret i64 %v
+}
+define internal i64 @__rlyeh_file_mtime(i8* %path) {
+entry:
+  %st = alloca [160 x i8], align 8
+  %r = call i32 @stat(i8* %path, i8* %st)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %okbb, label %err
+err:
+  ret i64 -1
+okbb:
+  %p = getelementptr i8, i8* %st, i64 48
+  %pv = bitcast i8* %p to i64*
+  %v = load i64, i64* %pv
+  ret i64 %v
+}
+define internal i64 @__rlyeh_file_mode(i8* %path) {
+entry:
+  %st = alloca [160 x i8], align 8
+  %r = call i32 @stat(i8* %path, i8* %st)
+  %ok = icmp eq i32 %r, 0
+  br i1 %ok, label %okbb, label %err
+err:
+  ret i64 -1
+okbb:
+  %p = getelementptr i8, i8* %st, i64 4
+  %pv = bitcast i8* %p to i16*
+  %m16 = load i16, i16* %pv
+  %m = zext i16 %m16 to i64
+  ret i64 %m
+}
+"#
+        .to_string(),
+        _ => r#"
+; --- Y1 文件元数据 stub（非 Linux/macOS：无 POSIX stat，返回 -1）---
+define internal i64 @__rlyeh_file_size(i8* %path) {
+entry:
+  ret i64 -1
+}
+define internal i64 @__rlyeh_file_mtime(i8* %path) {
+entry:
+  ret i64 -1
+}
+define internal i64 @__rlyeh_file_mode(i8* %path) {
+entry:
+  ret i64 -1
+}
+"#
+        .to_string(),
     }
 }
 

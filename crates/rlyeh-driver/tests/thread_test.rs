@@ -7,6 +7,11 @@
 //! - `Thread::join()`：阻塞等待 + 返回值槽读取（pthread_join）
 //! - 并发执行验证：两个线程 join 求和
 //! - `Thread::current()`：当前线程 id 为正整数（pthread_self）
+//! - Y8：`Builder::stack_size(&mut self, n)` + `Builder::start(&self, f)`：
+//!   定制线程栈（pthread_attr_setstacksize）——64MB 栈跑 100000 层深递归
+//!   （默认栈 macOS 约 512KB / Linux 约 8MB 必 SIGSEGV，可区分）；
+//!   `Builder::new()` 默认（stack_size = 0 → null attr，与 start 等价）。
+//!   注：`spawn` 为保留关键字（actor 派生），Builder 定制启动方法名取 `start`。
 //!
 //! 需要系统 clang（与 nio_test.rs / net_socket_test.rs 相同）。
 
@@ -178,4 +183,70 @@ fn main() {
 "#,
     );
     assert_eq!(out, "1\n");
+}
+
+/// Y8：`Builder::stack_size` 定制线程栈（pthread_attr_setstacksize）。
+/// 深递归（100000 层，需求 > 默认栈：macOS 约 512KB / Linux 约 8MB）在
+/// 64MB 定制栈下正常完成——若 attr 未生效（仍用默认栈）测试进程将 SIGSEGV，
+/// 故本测试同时正证定制栈生效。返回 rec(100000) = 100000。
+/// 注：`Builder::start` 线程函数须为 `fn() -> i64`（无参），带参 `rec(n)`
+/// 经零参数包装函数 `run_rec` 适配（H1 函数指针约束，与 Thread::start 一致）。
+#[test]
+fn builder_stack_size_deep_recursion() {
+    let out = run(
+        r#"
+fn rec(n: i64) -> i64 {
+    if n <= 0 {
+        0
+    } else {
+        rec(n - 1) + 1
+    }
+}
+fn run_rec() -> i64 {
+    rec(100000)
+}
+fn main() {
+    let mut b = Builder::new();
+    let r = b.stack_size(64 * 1024 * 1024);
+    if r != 0 {
+        println(-2);
+    } else {
+        match b.start(run_rec) {
+            Ok(t) => println(t.join()),
+            Err(_) => println(-1),
+        }
+    }
+}
+"#,
+    );
+    assert_eq!(out, "100000\n");
+}
+
+/// Y8：`Builder::new()` 默认构建器（stack_size = 0 → 系统默认栈，
+/// 走 null attr 路径，与 `Thread::start` 等价）。
+#[test]
+fn builder_default_stack_spawn() {
+    let out = run(
+        r#"
+fn w() -> i64 { 42 }
+fn main() {
+    // 对照：Builder 定制启动 vs Thread::start
+    match Thread::start(w) {
+        Ok(t) => println(t.join()),
+        Err(_) => println(-1),
+    }
+    let mut b = Builder::new();
+    let r = b.stack_size(0);
+    if r != 0 {
+        println(-2);
+    } else {
+        match b.start(w) {
+            Ok(t) => println(t.join()),
+            Err(_) => println(-1),
+        }
+    }
+}
+"#,
+    );
+    assert_eq!(out, "42\n42\n");
 }

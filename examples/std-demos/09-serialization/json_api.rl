@@ -42,7 +42,7 @@ fn main() {
     }
 
     // Q2b：from_reader 读文件（round-trip）
-    let r = File::open(String::from("/tmp/rlyeh_q2.json"), OpenMode::Read);
+    let r = File::open(String::from("/tmp/rlyeh_q2.json"));
     match r {
         Ok(file) => {
             let mut file = file;

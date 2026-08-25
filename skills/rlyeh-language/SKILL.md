@@ -1,6 +1,6 @@
 ---
 name: rlyeh-language
-description: Rlyeh 系统级编程语言技能（v0.2.0，随工具链发布）。用于编写、阅读、审查、修复或迁移 Rlyeh 语言代码（.rl 文件）；解释 Rlyeh 的语法、语义、分层内存模型与 Actor 并发模型；使用 rlyeh 工具链（build/run/test/check/fmt/bench/doc/lsp/profile）编译验证；以及在 rlyeh-language 仓库内开发编译器（rlyeh-lexer/parser/typecheck/codegen 等 crates）。当用户提到 Rlyeh 语言、rlyeh 代码、.rl 文件、Rlyeh 编译错误、actor/region/比较链/in 表达式语法时触发。
+description: Rlyeh 系统级编程语言技能（v0.1.0，随工具链发布）。用于编写、阅读、审查、修复或迁移 Rlyeh 语言代码（.rl 文件）；解释 Rlyeh 的语法、语义、分层内存模型与 Actor 并发模型；使用 rlyeh 工具链（build/run/test/check/fmt/bench/doc/lsp/profile）编译验证；以及在 rlyeh-language 仓库内开发编译器（rlyeh-lexer/parser/typecheck/codegen 等 crates）。当用户提到 Rlyeh 语言、rlyeh 代码、.rl 文件、Rlyeh 编译错误、actor/region/比较链/in 表达式语法时触发。
 ---
 
 # Rlyeh Language
@@ -69,6 +69,6 @@ Skill references 是 `docs/` 权威规范的提炼速查。深度问题回源：
 - **源码位置**：仓库 `.codebuddy/skills/rlyeh-language/`（SKILL.md + `references/`）
 - **本地安装**：`toolchains/install.sh` 将整个目录复制到 `<prefix>/skills/rlyeh-language/`（默认 `~/.rl/skills/rlyeh-language/`）
 - **归档发布**：`toolchains/build.sh` 归档 `rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可被 CodeBuddy 等 IDE 作为项目级技能加载（`<prefix>/skills/rlyeh-language/SKILL.md`）
-- **版本同步**：Skill 版本与工具链发布节奏一致（当前 v0.2.0）
+- **版本同步**：Skill 版本与工具链发布节奏一致（当前 v0.1.0）
 
 重建或发布工具链后，若 IDE 未自动发现新版本技能，可重新加载技能或重启 IDE 会话。

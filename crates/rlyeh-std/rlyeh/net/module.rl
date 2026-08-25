@@ -4,7 +4,8 @@
 //   net/byteorder.rl（字节打包：htons/sockaddr_in4_with_layout/sockaddr_in4/int_buf4/octets_to_string/parse_sockaddr）
 //   net/addr.rl    （Ipv4Octets/ipv4_octets/SocketAddr/Shutdown）
 //   net/tcp.rl     （TcpStream/TcpListener）
-//   net/http.rl    （ParsedUrl/parse_url/read_all/parse_status/Response/HttpClient/parse_response）
+//   net/udp.rl     （UdpSocket/UdpPacket，Y7）
+//   net/http.rl    （ParsedUrl/parse_url/find_header_end/parse_content_length/read_response/parse_status/Response/HttpClient）
 // 位运算全链路打通（& | ^ << >>）后启用：
 // - sockaddr_in 经 String 缓冲逐字节打包（sockaddr_in4）
 // - socketpair 的 fd 数组经 String 缓冲字节解释（fd_at，小端 int32）
@@ -20,6 +21,7 @@
 module addr;
 module byteorder;
 module tcp;
+module udp;
 module http;
 
 // 创建全双工字节流套接字对（AF_UNIX SOCK_STREAM，无需 sockaddr）。

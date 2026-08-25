@@ -10,9 +10,42 @@ struct File {
     mode: io::OpenMode,
 }
 
+// Y1（2026-08）：文件元数据对象（std-lib.md §4.1 目标 Metadata）。
+// size/mtime 为 i64（u64 目标 API 按项目惯例 i64 化）；is_file/is_dir
+// 为 bool（经 st_mode & S_IFMT 掩码判定）。4 槽（2×i64 + 2×bool）→
+// 非按值，指针稳定（calloc 堆对象，Result<Metadata> 泛型枚举亦禁用按值）。
+// 注：须在 impl File 之前定义（typecheck 单遍顺序检查，前向引用报
+// `undefined type`）。
+struct Metadata {
+    size: i64,
+    mtime: i64,
+    is_file: bool,
+    is_dir: bool,
+}
+
+impl Metadata {
+    // 文件大小（字节）。
+    fn size(self) -> i64 {
+        self.size
+    }
+    // 最后修改时间（epoch 秒，i64 化）。
+    fn mtime(self) -> i64 {
+        self.mtime
+    }
+    // 是否为普通文件。
+    fn is_file(self) -> bool {
+        self.is_file
+    }
+    // 是否为目录。
+    fn is_dir(self) -> bool {
+        self.is_dir
+    }
+}
+
 impl File {
-    // 按模式打开文件（"r"/"w"/"a"/"r+"/"w"，经 open_mode_str 映射）。
-    fn open(path: String, mode: io::OpenMode) -> Result<io::file::File, io::error::IoError> {
+    // Y1（2026-08）：按模式打开文件（"r"/"w"/"a"/"r+"，经 open_mode_str 映射）。
+    // §4.1 目标签名 `open_with(path, mode)`——保留原双参语义。
+    fn open_with(path: String, mode: io::OpenMode) -> Result<io::file::File, io::error::IoError> {
         let cpath = c_str(path);
         let ms = io::open_mode_str(mode);
         let f = fopen(cpath, ms);
@@ -23,6 +56,18 @@ impl File {
             ));
         }
         Result::Ok(io::file::File { handle: f, path: path, mode: mode })
+    }
+    // Y1：打开文件（默认只读模式，§4.1 兼容壳 ≡ open_with(path, Read)）。
+    fn open(path: String) -> Result<io::file::File, io::error::IoError> {
+        let cpath = c_str(path);
+        let f = fopen(cpath, String::from("r"));
+        if f == 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::NotFound,
+                String::from("failed to open file"),
+            ));
+        }
+        Result::Ok(io::file::File { handle: f, path: path, mode: io::OpenMode::Read })
     }
     // 创建文件（"w" 截断创建，与 write_file 语义一致）。
     fn create(path: String) -> Result<io::file::File, io::error::IoError> {
@@ -102,9 +147,29 @@ impl File {
         let _set = fseek(self.handle, 0, cur);
         Result::Ok(size)
     }
-    // 元数据：MVP 仅文件大小（完整 Metadata 对象随后续版本）。
-    fn metadata(&mut self) -> Result<i64, io::error::IoError> {
-        self.size()
+    // Y1：完整元数据（size/mtime/is_file/is_dir）。stat 经 driver 注入的
+    // __rlyeh_file_mode/size/mtime 平台内建（Linux/macOS 原生 stat，其他
+    // 平台 stub 返回 -1）；失败（路径不存在等）返回 Err(IoError)。
+    fn metadata(&mut self) -> Result<io::file::Metadata, io::error::IoError> {
+        let cpath = c_str(self.path);
+        let mode = __rlyeh_file_mode(cpath);
+        if mode < 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::NotFound,
+                String::from("stat failed"),
+            ));
+        }
+        let size = __rlyeh_file_size(cpath);
+        let mtime = __rlyeh_file_mtime(cpath);
+        // POSIX S_IFMT = 0xF000；S_IFREG = 0x8000（普通文件），S_IFDIR = 0x4000。
+        let is_file = (mode & 0xF000) == 0x8000;
+        let is_dir = (mode & 0xF000) == 0x4000;
+        Result::Ok(io::file::Metadata {
+            size: size,
+            mtime: mtime,
+            is_file: is_file,
+            is_dir: is_dir,
+        })
     }
     // R3（2026-08）：零拷贝发送本文件到 socket（offset 起至 EOF）。
     // FILE* 经 fileno 取底层 fd 后走 sendfile(2)；返回实际发送字节数；

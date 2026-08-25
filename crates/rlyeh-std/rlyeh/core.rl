@@ -1314,6 +1314,10 @@ extern fn clock() -> i64;
 // （time_builtin_ir，见 rlyeh-driver lib.rs）；不支持的平台返回 -1，
 // 语言侧 `Instant::now/elapsed` 退回 clock()（CPU 时钟）。
 extern fn __rlyeh_clock_monotonic() -> i64;
+// X1：系统时间（clock_gettime CLOCK_REALTIME，返回微秒）。driver 注入 define
+// （time_builtin_ir，见 rlyeh-driver lib.rs）；不支持的平台返回 -1，
+// 语言侧 `SystemTime::now` 退回 UNIX 纪元。
+extern fn __rlyeh_clock_realtime() -> i64;
 
 // --- io.rl：libc stdio + POSIX read ---
 extern fn fopen(path: String, mode: String) -> i64;
@@ -1324,6 +1328,13 @@ extern fn fseek(f: i64, offset: i64, whence: i64) -> i64;
 extern fn ftell(f: i64) -> i64;
 extern fn fflush(f: i64) -> i32;   // N1c：File::flush（stdio 缓冲刷盘）
 extern fn read(fd: i64, buf: String, count: i64) -> i64;   // 控制台读取（fd 0 = stdin）
+// Y1（2026-08）：文件元数据（stat 平台差异由 driver 注入 define，见
+// rlyeh-driver lib.rs file_stat_builtin_ir）：统一签名 (path) → 字段值；
+// 失败（路径不存在等）返回 -1；非 Linux/macOS 平台注入 -1 stub。
+// st_mode & S_IFMT 掩码：S_IFREG = 0x8000（普通文件），S_IFDIR = 0x4000。
+extern fn __rlyeh_file_size(path: String) -> i64;
+extern fn __rlyeh_file_mtime(path: String) -> i64;
+extern fn __rlyeh_file_mode(path: String) -> i64;
 
 // --- io/nio.rl + io/sendfile.rl：非阻塞 IO + 零拷贝传输（R 阶段，2026-08）---
 extern fn fcntl(fd: i64, cmd: i64, arg: i64) -> i32;   // F_GETFL=3 / F_SETFL=4（O_NONBLOCK=0x4）；i32 返回 → extern_ret32 清洗
@@ -1344,6 +1355,7 @@ extern fn __rlyeh_thread_spawn(entry: i64, arg: i64) -> i64;
 extern fn __rlyeh_thread_join(tid: i64) -> i64;
 extern fn __rlyeh_thread_self() -> i64;
 extern fn __rlyeh_thread_sleep(micros: i64) -> i64;
+extern fn __rlyeh_thread_spawn_stack(entry: i64, arg: i64, stack_size: i64) -> i64;  // Y8：Builder::stack_size 定制线程栈（<=0 → 默认栈）
 
 // --- fs.rl：路径 + 文件系统 ---
 extern fn access(path: String, mode: i64) -> i32;   // N3a：F_OK=0 存在性
@@ -1375,6 +1387,10 @@ extern fn shutdown(fd: i64, how: i64) -> i32;
 // `send`/`recv` 为 actor 保留字，用原始标识符 `r#` 绕开（lexer 解为 Ident）
 extern fn r#send(fd: i64, buf: String, len: i64, flags: i64) -> i64;
 extern fn r#recv(fd: i64, buf: String, len: i64, flags: i64) -> i64;
+// Y7（2026-08）：UDP——sendto/recvfrom（ssize_t i64 承载；recvfrom 的
+// addr/addrlen 为输出回填缓冲 String，codegen 取 data 指针，与 accept/getsockname 一致）
+extern fn sendto(fd: i64, buf: String, len: i64, flags: i64, addr: String, addrlen: i64) -> i64;
+extern fn recvfrom(fd: i64, buf: String, len: i64, flags: i64, addr: String, addrlen: String) -> i64;
 // 编译器注入的平台内建：返回当前目标 OS 码（0=未知 1=linux 2=macos 3=windows 4=freebsd）。
 // 由 rlyeh-driver 在汇编阶段注入 `define internal i32 @__rlyeh_target_os()`；
 // codegen 对 `__rlyeh_` 前缀 extern 不生成 declare（避免同符号 declare+define 冲突）。
@@ -1429,6 +1445,7 @@ module fmt;
 import serde::Serialize;
 import time::Duration;
 import time::Instant;
+import time::system::SystemTime;
 import io::error::IoErrorKind;
 import io::error::IoError;
 import io::error::Error;
@@ -1459,6 +1476,8 @@ import net::addr::ipv4_octets;
 import net::addr::SocketAddr;
 import net::tcp::TcpListener;
 import net::tcp::TcpStream;
+import net::udp::UdpSocket;
+import net::udp::UdpPacket;
 import net::addr::Shutdown;
 import net::http::HttpClient;
 import net::http::Response;
@@ -1480,6 +1499,7 @@ import io::nio::set_nonblocking;
 import io::nio::is_nonblocking;
 import io::sendfile::sendfile;
 import thread::Thread;
+import thread::Builder;   // Y8：线程栈定制构建器
 import thread::sleep;
 import thread::join_all;
 import future::Future;

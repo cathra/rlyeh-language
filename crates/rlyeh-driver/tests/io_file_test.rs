@@ -45,7 +45,7 @@ fn file_write_read_roundtrip() {
 fn main() {{
     let path = String::from("{p}");
     match write_file(path, String::from("Hello Rlyeh!")) {{
-        Ok(w) => println(w),             // 11 字节
+        Ok(w) => println(w),             // 12 字节（"Hello Rlyeh!"）
         Err(e) => println(-1),
     }}
     match read_file(path) {{
@@ -55,7 +55,7 @@ fn main() {{
 }}
 "#,
     ));
-    assert_eq!(out, "11\nHello Rlyeh!\n");
+    assert_eq!(out, "12\nHello Rlyeh!\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -114,14 +114,14 @@ fn file_utf8_content() {
     let dir = temp_dir();
     let path = dir.join("utf8.txt");
     let p = path.to_str().unwrap();
-    // "你好，Rlyeh！" UTF-8 编码 = 3*3 + 1*4 + 3 = 16 字节
+    // "你好，Rlyeh！" UTF-8 编码 = 3*3（你好，）+ 5（Rlyeh）+ 3（！）= 17 字节
     let out = run(&format!(
         r#"
 fn main() {{
     let path = String::from("{p}");
     let text = String::from("你好，Rlyeh！");
     match write_file(path, text) {{
-        Ok(w) => println(w),             // 16 字节
+        Ok(w) => println(w),             // 17 字节
         Err(e) => println(-1),
     }}
     match read_file(path) {{
@@ -131,7 +131,7 @@ fn main() {{
 }}
 "#,
     ));
-    assert_eq!(out, "16\n你好，Rlyeh！\n");
+    assert_eq!(out, "17\n你好，Rlyeh！\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -250,7 +250,7 @@ fn main() {{
             match read_file(path) {{
                 Ok(again) => {{
                     println(again);            // rlyeh-lang
-                    println(again.len);        // 9
+                    println(again.len);        // 10（"rlyeh-lang" 10 字符）
                 }}
                 Err(e) => println(-1),
             }}
@@ -260,6 +260,92 @@ fn main() {{
 }}
 "#,
     ));
-    assert_eq!(out, "rlyeh-lang\n9\n");
+    assert_eq!(out, "rlyeh-lang\n10\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// Y1（2026-08）：File::open_with（§4.1 目标签名）+ open 兼容壳 + 完整 Metadata
+// ---------------------------------------------------------------------------
+
+/// open_with(ReadWrite) 写 → open(path) 兼容壳（默认 Read）读回。
+#[test]
+fn file_open_with_modes() {
+    let dir = temp_dir();
+    let path = dir.join("y1.txt");
+    let p = path.to_str().unwrap();
+    let out = run(&format!(
+        r#"
+fn main() {{
+    let path = String::from("{p}");
+    // open_with(Append)：追加写入（"a"，定位文件末尾）
+    let _ = write_file(path, String::from("rlyeh"));
+    match File::open_with(path, OpenMode::Append) {{
+        Ok(file) => {{
+            let mut file = file;
+            match file.write_all(String::from("-y1")) {{
+                Ok(n) => println(n),             // 3
+                Err(e) => println(-1),
+            }}
+            file.close();
+        }}
+        Err(e) => println(-1),
+    }}
+    // open 兼容壳（默认 Read）：读回验证
+    match File::open(path) {{
+        Ok(file) => {{
+            let mut file = file;
+            match file.read_to_string() {{
+                Ok(v) => println(v),             // rlyeh-y1
+                Err(e) => println(-1),
+            }}
+            file.close();
+        }}
+        Err(e) => println(-1),
+    }}
+}}
+"#,
+    ));
+    assert_eq!(out, "3\nrlyeh-y1\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// metadata() 返回完整 Metadata：size / is_file / is_dir / mtime（epoch 秒 > 0）。
+#[test]
+fn file_metadata_complete() {
+    let dir = temp_dir();
+    let path = dir.join("meta.txt");
+    let p = path.to_str().unwrap();
+    let out = run(&format!(
+        r#"
+fn main() {{
+    let path = String::from("{p}");
+    let _ = write_file(path, String::from("10bytes!!"));   // 9 字符
+    match File::open(path) {{
+        Ok(file) => {{
+            let mut file = file;
+            match file.metadata() {{
+                Ok(m) => {{
+                    println(m.size());           // 9
+                    println(m.is_file());        // true（S_IFREG）
+                    println(m.is_dir());         // false
+                    println(m.mtime() > 0);      // true（epoch 秒恒正）
+                }}
+                Err(e) => println(-1),
+            }}
+            file.close();
+        }}
+        Err(e) => println(-1),
+    }}
+    // 失败路径：stat 不存在的路径 → Err(NotFound)
+    let ghost = String::from("{p}") + String::from("-ghost");
+    match File::open(ghost) {{
+        Ok(file) => {{ file.close(); println(0); }}
+        Err(e) => println(-1),
+    }}
+}}
+"#,
+    ));
+    assert_eq!(out, "9\ntrue\nfalse\ntrue\n-1\n");
     let _ = std::fs::remove_dir_all(&dir);
 }

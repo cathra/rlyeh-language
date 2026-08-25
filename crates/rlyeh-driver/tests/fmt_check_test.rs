@@ -22,7 +22,8 @@ fn collect_rlyeh_sources() -> Vec<std::path::PathBuf> {
         let entries = std::fs::read_dir(&dir).expect("dir exists");
         for e in entries.flatten() {
             let p = e.path();
-            if p.extension().is_some_and(|x| x == "rlyeh") {
+            // 项目源码扩展名为 `.rl`（旧名 `.rlyeh` 兼容保留）
+            if p.extension().is_some_and(|x| x == "rl" || x == "rlyeh") {
                 files.push(p);
             }
         }

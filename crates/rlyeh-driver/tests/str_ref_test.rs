@@ -66,7 +66,7 @@ fn main() {
 }
 "#,
     );
-    assert_eq!(out, "4\n4\n");
+    assert_eq!(out, "5\n5\n");
 }
 
 /// 返回 `&str` 并继续链式使用。
