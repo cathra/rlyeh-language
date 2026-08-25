@@ -1,6 +1,6 @@
 # Zeta 标准库 API 规范
 
-> 版本：v2.0  
+> 版本：0.1.0  
 > 最后更新：2026-08-22
 
 > **⚠️ 实现状态**：本文为**目标标准库规范**（含规划中 API）。MVP 已实现部分位于
@@ -12,16 +12,16 @@
 
 ## MVP 实现状态总览
 
-> **规划阶段标注**：剩余任务（📋/🔧）的开发计划见 [`mvp-gaps-plan.md`](./mvp-gaps-plan.md) §3b（阶段 M–T，表格末列标注归属阶段）。
+> **规划阶段标注**：📋/🔧 状态任务的消解记录见 [`mvp-gaps-plan.md`](./mvp-gaps-plan.md)（阶段 G–T 已全部完成，表格末列标注归属阶段）。
 
 | 章节 | 状态 | MVP 实际形态 | 规划阶段 |
 |------|------|--------------|---------|
 | §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 | — |
 | §2.3 Iterator | ✅ 已实现（MVP 退化） | `trait Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core.zeta 顶部；关联类型 `type Item` 规划——parser/typecheck 无 trait `type` 成员载体）；自定义迭代器 `impl Iterator for T` 经 for 接入（J2）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar | — |
 | §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`（退化元素拷贝缓冲）/`get_mut`（值拷贝）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（值拷贝）；详见 §3.1/§3.2/§3.3 差异注记 | — |
-| §4.1 File | 🔧 部分（自由函数已实现） | `read_file/write_file/append_file`（libc stdio 封装，M3a 起 Result 化：`Result<T, IoError>`） | N1（前置 M，M3a 已完成） |
+| §4.1 File | ✅ 已实现 | `File::open/create/close` + `read_to_string/read/write/write_all/flush/metadata/size`（N1 ✅）+ 自由函数 `read_file/write_file/append_file`（`Result<T, IoError>`） | — |
 | §4.2 标准输入输出 | ✅ 已实现 | `stdout`/`stderr` 模块（`write`/`writeln`/`flush`）+ stdin `read_to_string`/`lines` + `eprintln!`/`eprint!` 宏（N4 ✅） | — |
-| §4.3 路径与文件系统 | 📋 规划 | — | N3 |
+| §4.3 路径与文件系统 | ✅ 已实现 | `Path::new/join/parent/file_name/extension/exists/is_file/is_dir`（N3a ✅，`fs.zeta`）+ `fs::read_to_string/write/copy/remove_file/remove_dir_all/rename/create_dir/create_dir_all/read_dir`（N3 ✅） | — |
 | §4.4 NIO | ✅ 已实现 | `Interest`/`Event`/`Poller` + `set_nonblocking`/`is_nonblocking`（R1a/R1b/R2 ✅，`io/nio.zeta` 基于 poll(2) 封装 + fcntl O_NONBLOCK，`Result<T, IoError>`） | — |
 | §4.5 sendfile | ✅ 已实现 | `sendfile` 自由函数 + `File::sendfile_to`（R3 ✅，driver 注入平台内建 `__zeta_sendfile`，macOS sendfile(2) 6 参签名零拷贝） | — |
 | §5.1 TCP | ✅ 已实现 | `SocketAddr`/`TcpListener`/`TcpStream` + `read/write/read_line/shutdown`（O1/O2 ✅，libc extern FFI，`Result<T, IoError>`）；旧自由函数保留兼容 | — |
@@ -33,7 +33,7 @@
 | §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/module.zeta`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）规划 | — |
 | §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；事件驱动 executor 与多线程调度规划（R1 Poller） | R1 |
 | §11 智能指针 | ✅ 已实现 | `Box<T>`（K2，含 **`Box::leak`**（T3a ✅，返回 `*mut T` 裸指针，目标 `&'static mut T` 规划））/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3 全覆盖：`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade`，T3b ✅ 核对）/ `Gc<T>`（K4）✅ 已实现（MVP，见 §11） | — |
-| §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；**`?` 运算符已实现**（K1）；`Error`/`From`/`Into` trait 与 `IoError` 定义规划 | M |
+| §12 错误处理 | ✅ 已实现 | `Option`/`Result` + `expect/unwrap_or`；**`?` 运算符**（K1 ✅）；**`IoError`/`IoErrorKind`**（M1 ✅，`io/error.zeta`）+ **`Error` trait**（M2a ✅：`fn message(&self) -> String`）；`From`/`Into` 泛型 trait 声明可解析、`-> Self` 返回未支持（M2b ✅）；`Into::into()` 自动转换规划 | — |
 
 > 状态标记：✅ 已实现　🔧 部分实现（注明差异）　📋 规划中（目标 API，MVP 未实现）
 

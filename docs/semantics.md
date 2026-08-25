@@ -1,11 +1,11 @@
 # Zeta 语言语义规则
 
-> 版本：v2.0  
+> 版本：0.1.0  
 > 最后更新：2026-08-22
 
-> **⚠️ 实现状态**：本文为**目标语义规范**，其中所有权/借用/生命周期（§1）、`?` 运算符（§6）、
-> 闭包（§10）、引用类型等为规划特性。**MVP 实际为值拷贝/移动语义**：`&self`/`&mut self` 仅作方法
-> 接收者；`&x`/`&T`/`*T`/闭包/`?` 未实现（typecheck 显式报 Unsupported）。
+> **⚠️ 实现状态**：本文为**目标语义规范**。所有权/借用（§1）、`?` 运算符（§6）、闭包（§10）、
+> 引用类型等均已实现（G1 引用与借用 / G2 `&str` / G3 裸指针 / H1–H5 闭包与一等函数 / K1 `?`）。
+> `Copy` trait 与生命周期严格验证仍为规划（MVP：值拷贝/移动语义 + 宽松借用检查，`'a` 语法接受后丢弃）。
 > 已实现语义的教程见 [`guide.md`](./guide.md)，已知限制见其 §13。
 
 ## 相关文档
@@ -21,9 +21,9 @@
 
 ## 1. 所有权与借用
 
-> **MVP 状态**：本节为**目标语义（规划）**。MVP 实现了简化语义：`let s2 = s1` 为值拷贝（对象为堆数据
-> 拷贝，见 §8 聚合对象），对象修改需 `let mut`；`&self`/`&mut self` 仅限方法接收者；
-> `Copy` trait、`&`/`&mut` 借用、生命周期规则均**未实现**。
+> **MVP 状态**：本节为**目标语义（规划）**。MVP 已实现：`let s2 = s1` 为值拷贝（对象为堆数据
+> 拷贝，见 §8 聚合对象），对象修改需 `let mut`；`&self`/`&mut self` 方法接收者、`&x`/`&mut x` 表达式、
+> `&T`/`&mut T` 参数与返回、`*` 解引用与借用检查（G1 ✅）；`Copy` trait 与生命周期严格验证规划中。
 
 ### 1.1 所有权规则（目标）
 
@@ -40,16 +40,16 @@ let y = x;         // x 被拷贝，x 仍然有效
 println(x);        // MVP 内建打印（无宏 / 无格式化占位符）
 ```
 
-### 1.2 借用规则（规划）
+### 1.2 借用规则（G1 ✅ 已实现，目标语义）
 
-> MVP 未实现 `&` 引用表达式与 `&T` 参数类型，本示例为规划示意：
+> `&` 引用表达式与 `&T` 参数类型已实现（G1 ✅），本示例为目标语义：
 
 1. 同一时刻，要么有**多个不可变引用**，要么有**一个可变引用**。
 2. 引用必须始终有效（生命周期 ≤ 被引用对象的生命周期）。
 
 ```zeta
-// 目标语法（MVP 未实现）：
-let mut data = vec![1, 2, 3];    // MVP：用 Vec::new() + push 构造
+// 目标语法（已实现，G1 ✅）：
+let mut data = vec![1, 2, 3];
 
 let r1 = &data;     // 不可变引用
 let r2 = &data;     // 另一个不可变引用，OK
@@ -312,12 +312,12 @@ supervisor {
 
 ## 6. 错误处理语义
 
-> **MVP 状态**：`Option`/`Result` 枚举与 `unwrap/unwrap_or/expect` 等已实现；`?` 运算符、
-> `Into::into()` 自动转换、`std::fs` 模块为**规划**（MVP 用 `read_file` 自由函数）。
+> **MVP 状态**：`Option`/`Result` 枚举与 `unwrap/unwrap_or/expect` 等已实现；`?` 运算符已实现（K1 ✅，
+> desugar 为 `match` + 早返回）；`Into::into()` 自动转换规划中；`std::fs` 模块已实现（N3 ✅）。
 
-### 6.1 Result 传播（规划）
+### 6.1 Result 传播（K1 ✅ 已实现）
 
-`?` 运算符自动传播错误（目标语法，MVP 未实现）：
+`?` 运算符自动传播错误（desugar 为 `match expr { Ok(v) => v, Err(e) => return Err(e) }`）：
 
 ```zeta
 fn read_config() -> Result<Config, IoError> {
@@ -513,10 +513,12 @@ struct RawPointer(*mut u8);  // 不实现 Send 和 Sync
 └─────────────────────┘
 ```
 
-### 10.3 异步执行（规划）
+### 10.3 异步执行（S1 ✅ 已实现 MVP）
 
-> **MVP 状态**：本小节为规划。actor 方法的 `async` 关键字 + `.await`/`send` 已实现（消息往返语义，
-> 见 [`guide.md`](./guide.md) §9）；`Future` trait、执行器、`join_all` 未实现。
+> **MVP 状态**：普通 `async fn` 已实现（S1 ✅：`Future`/`Poll`/`block_on` + 状态机 desugar + `.await`
+> 挂起/恢复，参数 `i64`、返回 `i64`/`()`）；`join_all`/`timeout`/`sleep` 已实现（S2 ✅）。事件驱动执行器与
+> 泛型 `Future` 关联输出（`Output` 固定 `i64`、`Pin`/`Context`）规划中。actor 方法的 `async` + `.await`/
+> `send` 为独立机制（消息往返，见 [`guide.md`](./guide.md) §9）。
 
 `async fn` 返回 `Future`，由执行器（executor）调度：
 

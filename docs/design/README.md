@@ -26,4 +26,4 @@
 - 各设计稿头部已加归档横幅；正文内容保持原样，**不再更新**。
 - **2026-08-24 任务书归档**：开发任务书（原 `prompts/P001–P013`）随其内容并入
   `docs/` 权威文档（各文档"附录 A：实现纪要"）后，一并归档至本目录 [`prompts/`](./prompts/README.md)。
-- 权威进度文档：`docs/development-plan.md`（阶段 A–F 执行记录，已完成）+ `docs/mvp-gaps-plan.md`（阶段 G–T 剩余任务消解计划，进行中）。
+- 权威进度文档：`docs/development-plan.md`（阶段 A–F 执行记录，已完成）+ `docs/mvp-gaps-plan.md`（阶段 G–T 剩余任务消解计划，已完成）。

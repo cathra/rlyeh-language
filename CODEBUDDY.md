@@ -1,7 +1,7 @@
 # CODEBUDDY.md — Zeta 系统级编程语言
 
 > **项目代号**：Zeta  
-> **版本**：v2.0  
+> **版本**：0.1.0  
 > **状态**：MVP 开发中  
 > **目标平台**：Linux / macOS / Windows / WASM  
 > **实现语言**：Rust（自举编译器，bootstrap 阶段用 Rust 实现）

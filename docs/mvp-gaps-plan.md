@@ -14,8 +14,8 @@
 | # | 限制（guide.md §13） | 编译器现状依据 | 归属阶段 |
 |---|---------------------|---------------|---------|
 | 1 | **宏系统**：✅ 已解决——I1 声明式宏（`macro_rules!` + `$x:expr`/`ident`/`ty`/`tt` + 重复 `*`/`+`/`?`，parse 期展开）、I2 内置格式化宏（`println!`/`print!`/`format!`/`dbg!`，`{}`/`{:?}` 占位）与 I3 集合宏（`arr!`/`vec!`/`map!`）均已实现（见 §4 执行记录） | grammar.md §2.14 `macro_rules!` EBNF 已实现（新 crate `zeta-macro`）；lexer `Dollar`/`Question` token；typecheck `check_format_macro`/`check_dbg_macro`；parser `parse_collection_macro`（`arr!` → `ArrayLit`，`vec!`/`map!` → 块表达式 `with_capacity` + `push`/`insert`）；std-lib.md §8 `Display`/`Debug` 仍为规划 API | **I**（I1/I2/I3 ✅） |
-| 2 | **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 | grammar.md Type 规则含 `'&' Lifetime? 'mut'? Type`、UnaryExpr 含 `'*' | '&' 'mut'?`、Pattern 含 `'ref'`（均已定义未实现）；typecheck `UnaryOp::Deref/AddrOf/AddrOfMut` → Unsupported（check_expr.rs）；borrowck crate 仅服务 `&self` 接收者 | **G** |
-| 3 | **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported | parser 已产出 `AstExpr::Closure`；typecheck 报 Unsupported（check_expr.rs） | **H** |
+| 2 | **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 | grammar.md Type 规则含 `'&' Lifetime? 'mut'? Type`、UnaryExpr 含 `'*' | '&' 'mut'?`、Pattern 含 `'ref'`（均已定义未实现）；typecheck `UnaryOp::Deref/AddrOf/AddrOfMut` → Unsupported（check_expr.rs）；borrowck crate 仅服务 `&self` 接收者 | **G**（G1–G4 ✅） |
+| 3 | **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported | parser 已产出 `AstExpr::Closure`；typecheck 报 Unsupported（check_expr.rs） | **H**（H1–H5 ✅） |
 | 4 | **运算符**：✅ 已解决——K1 `?` 错误传播、H1 函数指针、H4 `dyn Trait` 均已实现（见 §4 执行记录） | grammar.md 含 `'dyn' TraitBound` 与后缀 `'?'`（已实现）；`Option`/`Result` + `expect`/`unwrap_or` 已实现 | ✅ |
 | 5 | **所有权层级**：✅ 已解决——K2 `Box<T>` / K3 `Rc<T>`/`Arc<T>`/`Weak<T>`（引用计数）/ K4 `Gc<T>`（MVP 保守标记-清除 + `gc_region` 生命周期）均已实现（见 §4 执行记录） | memory-model.md §4（Rc/Arc）/§5（Gc）规范完备（含布局、转换矩阵、开销表）；`Box<T>` 亦为 §3 目标 API | **K** |
 | 6 | **并发**：`serde`/`fmt` 模块为规划；actor 的 `async` 方法 + `.await`/`send` 已实现；普通函数 `async fn`/`await` 已支持（L1 ✅，MVP 同步语义）；`json` 序列化已实现（L2 ✅：stringify/parse 支持标量/数组/struct/Vec/**HashMap**，见 §4 执行记录） | std-lib.md §8（fmt）规划标注 / §9（serde）已部分实现（`json::stringify`/`json::parse::<T>` 内建，§9.1，含 HashMap 序列化 L2f / 反序列化 L2g）；§10（async 运行时）已部分实现；actor 异步为独立机制，L1 抽象复用其同步语义 | fmt→**I**，serde→L2 ✅，async→L1 ✅ |
@@ -155,7 +155,7 @@
 |------|------|------|
 | M1a | **`IoErrorKind` 枚举**：`enum IoErrorKind { NotFound, PermissionDenied, AlreadyExists, InvalidInput, WouldBlock, TimedOut, Other }`（复用 enum/match ✅，独立可验收） | ✅ 已完成 |
 | M1b | **`IoError` 结构**：`struct IoError { kind, message: String }` + 构造器/`kind()`/`message()` 访问器（正式 `Display` trait 随 Q3，MVP 先用 `message()`） | ✅ 已完成 |
-| M2a | **`Error` trait**：`trait Error { fn message(&self) -> String; }` + `impl Error for IoError` + `describe(e: &dyn Error)` 验证（H4 dyn Trait ✅） | 待开始 |
+| M2a | **`Error` trait**：`trait Error { fn message(&self) -> String; }` + `impl Error for IoError` + `describe(e: &dyn Error)` 验证（H4 dyn Trait ✅） | ✅ 已完成（2026-08，`zeta-std/zeta/io/error.zeta`：`trait Error { fn message(&self) -> String; }` + `impl Error for IoError`（`message()` 读 `self.message` 字段）；H4 限制——dyn Trait 仅可作局部变量绑定，`describe` 类调用于函数体内构造 `let d: dyn Error = ...`；验收 `tests/run-pass/error_trait.zeta`） |
 | M2b | **错误转换约定**（`From`/`Into` 泛型 trait 验证）：验证结论——泛型 trait 声明可解析（`trait From<T>`），但 trait 方法返回 `Self` 未支持（typecheck `undefined type Self`），且 parser 无 where 子句（blanket impl `impl<T, U> Into<U> for T where U: From<T>` 不可行）。**MVP 回退**：`IoError::from_kind(kind)` 窄化转换入口（kind → 默认 message），语义等同 `From::from` | 已完成 |
 | M3a | **io 自由函数 Result 化**：`read_file`/`write_file`/`append_file`/`read_line` 从"空串/-1"升级为 `Result<T, IoError>`（io.zeta + 绑定层返回码映射） | ✅ 已完成 |
 | M3b | **net 自由函数 Result 化**：`tcp_connect`/`send_all`/`recv_some`/`hostname` 同步升级（net.zeta） | ✅ 已完成 |

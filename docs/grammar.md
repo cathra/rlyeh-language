@@ -1,6 +1,6 @@
 # Zeta 语言语法规范 (EBNF)
 
-> 版本：v2.0  
+> 版本：0.1.0  
 > 最后更新：2026-08-23
 
 > **⚠️ 实现状态**：本文为**目标语法规范**（EBNF），其中部分语法为规划特性，MVP 编译器尚未实现：
@@ -8,7 +8,7 @@
 > 内置格式化宏 `println!`/`print!`/`format!`/`dbg!` 与集合宏 `arr!`/`vec!`/`map!` 均已实现（I3 ✅，parse 期 desugar，见 §2.14 下方说明）、
 > 闭包 `|x| ...`（typecheck 报 Unsupported）、引用类型 `&T` 已实现
 > （G1 ✅：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、`*` 解引用；`&str` 只读借用视图已实现
-> （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*T` 仍规划）、
+> （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*const T`/`*mut T` 已实现（G3 ✅））、
 > `dyn Trait`、`?` 运算符、生命周期参数 `'a` 等。
 > 普通函数 `async fn`/`await` 已实现（S1c ✅：`FnDecl`/`ActorMethod` 的 `async?` 与 `expr.await` 语法全程接受，
 > 状态机 desugar——`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，

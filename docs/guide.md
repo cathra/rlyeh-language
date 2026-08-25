@@ -1,6 +1,6 @@
 # Zeta 编程语言指南
 
-> 版本：v2.0（MVP）
+> 版本：0.1.0（MVP）
 > 本文为面向读者的**语言教程**（主文档）。所有示例均为 `examples/`、`tests/run-pass/` 中可编译运行的已验证代码（或其简化）。
 > 新手入门（安装 → 第一个程序 → 实战）见 [tutorial.md](./tutorial.md)；语言速查 / 命令参考见 [manual.md](./manual.md)。
 > 权威规范见：[grammar.md](./grammar.md)（EBNF）、[semantics.md](./semantics.md)（语义）、[memory-model.md](./memory-model.md)、[actor-model.md](./actor-model.md)、[std-lib.md](./std-lib.md)。
@@ -797,7 +797,7 @@ fn main() {
 - **MVP 限制**：async fn 参数限 `i64`、返回限 `i64`/`()`；控制流块内 await 与表达式嵌套 await（`a.await + b.await`）不支持；递归 async fn 不支持。
 - 与 actor 机制分工：actor 方法 `.await` = ask 同步往返（§9.1）；普通 `async fn` 为独立状态机（与 actor 互不相关）。
 
-> **规划中**：泛型 `join_all`（Future 版）/ `timeout`（Result 版）/ `sync` 并发原语（std-lib §10）；await 位于控制流块 / 表达式中间、按引用捕获（std-lib §10.3）。
+> **规划中**：泛型 `join_all`（Future 版）/ `timeout`（Result 版）；await 位于控制流块 / 表达式中间、按引用捕获（std-lib §10.3）。`sync` 并发原语（Mutex/RwLock/Condvar/Barrier/Channel，P1–P3 ✅）已实现。
 
 ---
 

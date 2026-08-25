@@ -1,0 +1,68 @@
+// manual_state_machine.zeta：手写状态机对照（S1c 排查用）
+// 与 desugar 输出完全同构：&mut Self 签名 + 函数构造器 + 字段赋值。
+struct G {
+    state: i64,
+    x: i64,
+}
+
+fn mk_g(x: i64) -> G {
+    G { state: 0, x: x }
+}
+
+impl Future for G {
+    fn poll(&mut self) -> Poll<i64> {
+        if self.state == 0 {
+            return Poll::Ready(self.x + 1);
+        }
+        Poll::Ready(0)
+    }
+}
+
+struct F {
+    state: i64,
+    __fut_0: G,
+    v: i64,
+}
+
+fn mk_f() -> F {
+    F { state: 0, __fut_0: mk_g(0), v: 0 }
+}
+
+impl Future for F {
+    fn poll(&mut self) -> Poll<i64> {
+        if self.state == 0 {
+            self.__fut_0 = mk_g(41);
+            match self.__fut_0.poll() {
+                Poll::Ready(__v) => {
+                    self.v = __v;
+                    self.state = 2;
+                }
+                Poll::Pending => {
+                    self.state = 1;
+                    return Poll::Pending;
+                }
+            }
+        }
+        if self.state == 1 {
+            match self.__fut_0.poll() {
+                Poll::Ready(__v) => {
+                    self.v = __v;
+                    self.state = 2;
+                }
+                Poll::Pending => {
+                    return Poll::Pending;
+                }
+            }
+        }
+        if self.state == 2 {
+            return Poll::Ready(self.v + 1);
+        }
+        Poll::Ready(0)
+    }
+}
+
+fn main() {
+    let mut fut = mk_f();
+    let v = block_on(&mut fut);
+    println(v);
+}

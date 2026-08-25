@@ -1,14 +1,16 @@
 # Zeta 内存模型规范
 
-> 版本：v2.0  
+> 版本：0.1.0  
 > 最后更新：2026-08-24
 
 > **⚠️ 实现状态**：L1 区域系统（§3）**已实现**（bump 分配 + 批量释放 + `adaptive`/`with_size`/`strategy (bump)` +
 > **运行时接线（L3 ✅）**——region 指令调用 `zeta-region-alloc` C ABI 层（`zeta_region_enter`/`zeta_region_alloc`/
 > `zeta_region_transfer`/`zeta_region_exit`），聚合对象 `in 'r` 经 bump 分配器分配（值镜像浅拷贝，不注册析构），
 > `transfer x out of 'r` 标记所有权移出；PGO 数据回灌（F2，`.zeta_profile`，简化格式）注入 `adaptive` 初始容量）；
-> L0（§2）为**部分实现**（值拷贝/移动语义 + 方法接收者 `&self`；`Box`/`Copy` trait/借用规则规划中）；
-> L2 引用计数（§4）与 L3 可选 GC（§5）**未实现**（规划）。区域用法见 [`guide.md`](./guide.md) §8。
+> L0（§2）已实现（值拷贝/移动语义 + 方法接收者 + `&`/`&mut` 引用与宽松借用检查 G1 ✅ + `Box` K2 ✅；
+> `Copy` trait 规划中）；L2 引用计数（§4）已实现（K3 ✅：`Rc`/`Arc`/`Weak`，含 `strong_count`/`downgrade`/
+> `try_unwrap`）；L3 可选 GC（§5）已实现（K4 ✅：保守标记-清除 `Gc<T>`，多线程/增量回收规划中）。
+> 区域用法见 [`guide.md`](./guide.md) §8。
 
 ## 相关文档
 
@@ -56,7 +58,7 @@ Stack Frame:
 └──────────────┘
 ```
 
-**堆分配**（大小运行时确定；`Box` 为目标 API，MVP 未实现，堆分配经 std `Vec`/`String` 内部完成）：
+**堆分配**（大小运行时确定；`Box` 已实现（K2 ✅，含 `Box::leak` T3a ✅ 返回 `*mut T`），堆分配经 std `Vec`/`String` 内部完成）：
 ```zeta
 let boxed = Box::new(42);  // 目标语法：堆上分配 8 字节
 // boxed 本身在栈上（指针 + 元数据），指向堆上的数据

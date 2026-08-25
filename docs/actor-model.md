@@ -1,14 +1,14 @@
 # Zeta Actor 并发模型规范
 
-> 版本：v2.0  
+> 版本：0.1.0  
 > 最后更新：2026-08-22
 
 > **⚠️ 实现状态**：本文为**目标规范**。MVP 已实现子集：`actor` 声明（字段/默认值/方法）、
 > `Counter::new()` 普通 spawn、`Counter::new_supervised(n)` 监督 spawn（n=0/1/2 对应 OneForOne/
 > AllForOne/RestartForOne）、方法调用 `.await`（ask 往返）、`send`（fire-and-forget）、返回 -1 触发
-> 崩溃协议（无监督停止 / 监督重启）。**未实现（规划）**：`supervisor {}` 块、`ActorRef<T>`、
-> `panic!`/`format!`/`println!` 宏（`!` 为 `not` 运算符）、`dyn Trait` actor 字段、channel、
-> `ExitSignal` 监控 API。可运行示例见 [`guide.md`](./guide.md) §9。
+> 崩溃协议（无监督停止 / 监督重启）。内置格式化宏 `println!`/`format!` 等已实现（I2 ✅，`!` 为 `not`
+> 运算符）；`sync::Channel` 已实现（P1 ✅，`recv_async` S3a ✅）。**未实现（规划）**：`supervisor {}` 块、
+> `ActorRef<T>`、`panic!` 宏、`dyn Trait` actor 字段、`ExitSignal` 监控 API。可运行示例见 [`guide.md`](./guide.md) §9。
 
 ## 相关文档
 
@@ -486,7 +486,7 @@ supervisor {
 - **监督**：`new_supervised(n)`（0=OneForOne / 1=AllForOne / 2=RestartForOne）；返回 -1 触发崩溃协议，
   runtime 经 `__state_new` 重建初始状态并重启；无监督则 actor 停止。
 - **落地要点**：邮箱互斥 + Supervisor 恢复 + Router + Timer + 优雅关闭；15 集成测试全过。
-- **已知限制**：`supervisor {}` 块、`ActorRef<T>`、channel、`ExitSignal` 监控 API 未实现（规划）；
+- **已知限制**：`supervisor {}` 块、`ActorRef<T>`、`ExitSignal` 监控 API 未实现（规划）；
   消息槽仅支持 i64 载荷，跨进程/分布式消息传递规划中。
 
 ### A.2 ask 快速路径（fast path，2026-08-24 ✅）

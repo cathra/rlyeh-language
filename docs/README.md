@@ -20,7 +20,7 @@
 | [module-system.md](./module-system.md) | 模块系统规范 | 编译器开发者 / 使用者 | 模块系统设计（语法/语义/编译模型/包集成 + 演进路线） |
 | [std-lib.md](./std-lib.md) | 标准库 API | 编译器开发者 / 使用者 | 各模块目标 API（✅ 已实现 / 📋 规划），MVP 差异注记 |
 | [development-plan.md](./development-plan.md) | 进度记录 | 团队 | 阶段 A–F 执行记录（已完成） |
-| [mvp-gaps-plan.md](./mvp-gaps-plan.md) | 进度计划 | 团队 | 阶段 G–T 剩余任务消解计划（进行中） |
+| [mvp-gaps-plan.md](./mvp-gaps-plan.md) | 进度计划 | 团队 | 阶段 G–T 剩余任务消解计划（已完成） |
 
 ## 2. 建议阅读顺序
 
@@ -33,7 +33,7 @@
 
 1. **规范冲突以本目录为准**：`design/`（早期设计稿）与 `design/prompts/`（任务书，2026-08-24 归档）仅作追溯，如与 `docs/` 根目录规范冲突，以根目录为准。
 2. **规划标注惯例**：`grammar.md` / `semantics.md` / `memory-model.md` / `actor-model.md` 中以 `<!-- 规划 -->` 标注未实现特性；`std-lib.md` / `module-system.md` 以状态标记（✅/🔧/📋）标注实现程度。
-3. **进度文档衔接**：`development-plan.md`（阶段 A–F，已完成）与 `mvp-gaps-plan.md`（阶段 G–T，进行中）承接关系；新阶段任务从 `mvp-gaps-plan.md` 消解。
+3. **进度文档衔接**：`development-plan.md`（阶段 A–F，已完成）与 `mvp-gaps-plan.md`（阶段 G–T，已完成）承接关系；新阶段任务从 `mvp-gaps-plan.md` 消解。
 4. **新增文档**：规范类 → 对应权威文档增补（不新建散文件）；任务执行记录 → `mvp-gaps-plan.md` / `development-plan.md`；历史归档 → `design/`。
 
 ---

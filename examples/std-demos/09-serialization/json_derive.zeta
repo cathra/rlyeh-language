@@ -1,0 +1,66 @@
+// 阶段 Q1 验收：Serialize/Deserialize trait + #[derive(Serialize, Deserialize)] 标记
+// + struct JSON 反序列化（json_parse_ast 字段名匹配 desugar）。
+// - Q1a：`trait Serialize { fn to_json(&self) -> String; }`（serde/module.zeta）+ 手写 impl
+//   （自定义类型方法调用可解析；`-> Self` 的 Deserialize trait 未支持，见 io/error.zeta M2b）
+// - Q1b：`#[derive(...)]` attribute 解析（lexer Pound + parser，AST 存储 derive 列表）
+// - Q1c：`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略；
+//   嵌套 struct 值含逗号 MVP 限制）
+// 输出与 json_derive.out 精确对比
+#[derive(Serialize, Deserialize)]
+struct Point { x: i64, y: i64 }
+
+#[derive(Serialize, Deserialize)]
+struct Person {
+    name: String,
+    age: i64,
+    alive: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Inner { a: i64 }
+
+#[derive(Serialize, Deserialize)]
+struct Outer { tag: i64, inner: Inner }
+
+// Q1a：自定义类型手写 Serialize impl（to_json 方法调用可用）
+struct Wrapped { v: i64 }
+
+impl Serialize for Wrapped {
+    fn to_json(&self) -> String {
+        format!("{{\"w\":{}}}", self.v)
+    }
+}
+
+fn main() {
+    // Q1a：手写 impl 的 to_json 间接调用
+    let w = Wrapped { v: 7 };
+    println(w.to_json());          // {"w":7}
+
+    // Q1c：derive 标记 struct 序列化（stringify 内建，字段序 = 定义序）
+    let p = Point { x: 1, y: 2 };
+    let s = json::stringify(p);
+    println(s);                    // {"x":1,"y":2}
+
+    // Q1c：struct 反序列化（round-trip）
+    let q = json::parse::<Point>(s);
+    println(q.x + q.y);            // 3
+
+    // Q1c：字段顺序任意（按字段名匹配）
+    let q2 = json::parse::<Point>("{\"y\":20,\"x\":10}");
+    println(q2.x + q2.y);          // 30
+
+    // Q1c：缺失字段保持零值（空对象 → 全零）
+    let q3 = json::parse::<Point>("{}");
+    println(q3.x + q3.y);          // 0
+
+    // Q1c：String / bool 字段
+    let pers = json::parse::<Person>("{\"name\":\"zeta\",\"age\":7,\"alive\":true}");
+    println(pers.age);             // 7
+    if pers.alive { println(1) } else { println(0) }   // 1
+    println(pers.name);            // zeta
+
+    // Q1c：嵌套 struct（值不含逗号）+ round-trip
+    let o = json::parse::<Outer>("{\"tag\":5,\"inner\":{\"a\":9}}");
+    println(o.tag + o.inner.a);    // 14
+    println(json::stringify(o));   // {"tag":5,"inner":{"a":9}}
+}
