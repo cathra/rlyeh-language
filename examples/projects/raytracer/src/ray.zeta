@@ -5,10 +5,10 @@
 //   令 oc = o - c，a = |d|²，b = oc·d，c = oc·oc - r²（均 ×1000 量纲），
 //   则判别式 D = b² - a·c（×1e6 量纲），t = (-b - √D) / a。
 
-use fixed::SCALE;
-use fixed::fsqrt;
-use vec3::Vec3;
-use color::Color;
+import fixed::SCALE;
+import fixed::fsqrt;
+import vec3::Vec3;
+import color::Color;
 
 pub struct Ray {
     pub origin: Vec3,

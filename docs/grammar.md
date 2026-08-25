@@ -56,7 +56,7 @@ RawIdent    ::= 'r#' Ident
 > 2. **根命名空间显式引用**：在模块内部调用 `r#foo(...)` 时跳过模块内优先解析（`resolve_callable`），
 >    直接绑定**根命名空间**的 `foo`——模块内 `fn foo` 与之同名不构成遮蔽
 >    （例：fs 模块内 `fn rename` 与根 extern `r#rename` 同名，`r#rename(...)` 绑定根 extern，
->    裸名 `rename(...)` 绑定 `fs::rename`）。函数声明名（`fn r#foo`）与 use 导入路径在
+>    裸名 `rename(...)` 绑定 `fs::rename`）。函数声明名（`fn r#foo`）与 import 导入路径在
 >    符号注册时归一化为无前缀名。
 
 ### 1.3 字面量
@@ -126,8 +126,8 @@ ModuleItem  ::= FnDecl
               | EnumDecl
               | TraitDecl
               | ImplBlock
-              | ModDecl
-              | UseDecl
+              | ModuleDecl
+              | ImportDecl
               | ConstDecl
               | StaticDecl
               | ActorDecl
@@ -138,12 +138,19 @@ ModuleItem  ::= FnDecl
 ### 2.2 模块系统
 
 ```
-ModDecl     ::= 'mod' Ident ';'
-              | 'mod' Ident '{' ModuleItem* '}'
-UseDecl     ::= 'use' UsePath ';'
-UsePath     ::= Path (':' ':' '{' UseList '}')?
-UseList     ::= UsePath (',' UsePath)* (','? | ',')
+ModuleDecl  ::= 'module' Ident ';'                              <!-- 外部文件模块 -->
+              | 'module' Ident '{' ModuleItem* '}'              <!-- 内联模块 -->
+              | 'pub' ModuleDecl                                <!-- 规划：公开模块 -->
+ImportDecl  ::= 'import' ImportTree ';'
+              | 'pub' 'import' ImportTree ';'                   <!-- 规划：再导出（re-export） -->
+ImportTree  ::= Path                                            <!-- 单路径导入（含 as 别名） -->
+              | Path ':' ':' '{' ImportList '}'                 <!-- 规划：组导入 -->
+              | Path ':' ':' '*'                                <!-- 规划：glob 导入 -->
+ImportList  ::= ImportTree (',' ImportTree)* ','?
+Path        ::= Ident (':' ':' Ident)*                          <!-- 扁平路径：模块名::item（无 crate/super/self） -->
 ```
+
+> 详细语义与编译模型设计见 [`module-system.md`](./module-system.md)。
 
 ### 2.3 函数
 

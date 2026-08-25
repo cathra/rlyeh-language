@@ -9,7 +9,7 @@
 // 分配用 `calloc` 而非 `malloc`：内建 alloc_array/alloc_bytes 已按
 // `i8* @malloc(i64)` 声明 malloc，再以 i64 返回声明会触发 LLVM
 // "invalid redefinition of function 'malloc'"；calloc 符号无内建冲突。
-// 目录化（2026-08）：sync/mod.zeta = 原 sync.zeta（模块规模小，保持单文件）。
+// 目录化（2026-08）：sync/module.zeta = 原 sync.zeta（模块规模小，保持单文件）。
 
 // ===== MutexGuard（P2，2026-08）：作用域守卫自动解锁 =====
 // `let g = m.lock_guard();` 后编译器在所在块尾自动注入 `g.unlock();`
@@ -155,7 +155,7 @@ struct ChannelPair { tx: sync::Sender, rx: sync::Receiver }
 
 fn channel() -> sync::ChannelPair {
     // 构造调用用裸名（`sync::Mutex::new()` 路径 typecheck 不支持；
-    // 裸名经 core.zeta `use sync::Mutex` 别名解析为 sync::Mutex）
+    // 裸名经 core.zeta `import sync::Mutex` 别名解析为 sync::Mutex）
     let ch = Rc::new(sync::Channel {
         m: Mutex::new(),
         cv: Condvar::new(),

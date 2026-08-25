@@ -414,17 +414,17 @@ r.is_ok() / r.is_err() / r.unwrap() / r.unwrap_or(0)
 ## 8. 模块系统
 
 ```zeta
-mod math {
+module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
 }
 
-use math::PI;                   // 别名导入
-use math::square as sq;
+import math::PI;                   // 别名导入
+import math::square as sq;
 ```
 
-- 多文件模块：`mod foo;` → `foo.zeta` / `foo/mod.zeta`
-- 跨模块路径：`mod::Enum::Variant` / `mod::CONST`
+- 多文件模块：`module foo;` → `foo.zeta` / `foo/module.zeta`
+- 跨模块路径：`模块名::Enum::Variant` / `模块名::CONST`（扁平名字空间，无 `crate`/`super`/`self`）
 
 ---
 

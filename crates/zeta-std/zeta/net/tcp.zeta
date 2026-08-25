@@ -1,6 +1,6 @@
 // net/tcp.zeta：TCP 流与监听者（std-lib.md §5.1）。
 // 目录化（2026-08）：由原 net.zeta 拆分。符号完整路径 net::tcp::TcpStream 等；
-// SocketAddr 经 net::addr:: 前缀引用；send_all/recv_some 为 net/mod.zeta 顶层函数。
+// SocketAddr 经 net::addr:: 前缀引用；send_all/recv_some 为 net/module.zeta 顶层函数。
 
 // O1c：TCP 流。read/write/read_line 复用 recv_some/send_all（O2）。
 struct TcpStream {

@@ -2,7 +2,7 @@
 
 本目录承载 Zeta 工具链的**构建、测试、发布、归档**全流程脚本与文档。
 
-工具链组成：`zeta` 编译器命令（run/build/test/fmt/check/doc/bench/new/publish/lsp/profile）+ 独立工具（`zeta-fmt` / `zeta-check` / `zeta-doc` / `zeta-bench`）+ 包管理器 `zep` + 标准库 `zeta-std`。
+工具链组成：`zeta` 编译器命令（run/build/test/fmt/check/doc/bench/new/publish/lsp/profile）+ 独立工具（`zeta-fmt` / `zeta-check` / `zeta-doc` / `zeta-bench`）+ 包管理器 `zep` + 标准库 `zeta-std` + zeta-language 技能（`SKILL.md` + `references/`，随工具链发布）。
 
 ## 目录结构
 
@@ -44,8 +44,8 @@ zeta new hello && cd hello && zeta run src/main.zeta
 
 ## 构建产物
 
-- **本地安装**：`~/.zeta/`（bin/ + std/ + registry/，可重定位）
-- **归档**：`toolchains/dist/zeta-toolchain-<ver>-<os>-<arch>.tar.gz`（解压后 `bin` 加入 PATH 即可用，wrapper 自动定位同目录 std）
+- **本地安装**：`~/.zeta/`（bin/ + std/ + skills/ + registry/，可重定位）
+- **归档**：`toolchains/dist/zeta-toolchain-<ver>-<os>-<arch>.tar.gz`（解压后 `bin` 加入 PATH 即可用，wrapper 自动定位同目录 std；`skills/zeta-language/` 为项目级技能，可被 CodeBuddy 等 IDE 加载）
 
 ## 环境要求
 

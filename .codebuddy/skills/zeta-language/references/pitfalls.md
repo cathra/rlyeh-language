@@ -38,7 +38,7 @@
 
 ## E. FFI / 链接
 
-20. `extern fn` 符号名必须与 libc/系统库**完全一致**（模块/use 前缀改名 → 链接失败）。
+20. `extern fn` 符号名必须与 libc/系统库**完全一致**（模块/import 前缀改名 → 链接失败）。
 21. 链接报 `_main` undefined → 检查源文件是否有 `fn main()`。
 22. 链接报 extern 符号 undefined → 检查签名类型与 libc 是否一致（如 `u32` vs `c_uint`）。
 

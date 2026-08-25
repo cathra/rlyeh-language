@@ -104,13 +104,14 @@ let b = v[lo...hi];          // Vec 动态切片（越界 clamp 到 [0, len]，s
 ## 10. 模块系统
 
 ```zeta
-mod math {
+module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
 }
-use math::PI;
-use math::square as sq;
-// 多文件：mod foo; → foo.zeta / foo/mod.zeta；跨模块 mod::Enum::Variant
+import math::PI;
+import math::square as sq;
+// 多文件：module foo; → foo.zeta / foo/module.zeta；跨模块 模块名::Enum::Variant
+// （扁平名字空间：无 crate/super/self，路径即「模块名::」；可见性仅 pub / 私有）
 ```
 
 ## 11. 区域（Region）

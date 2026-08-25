@@ -1,8 +1,8 @@
 // ===== 颜色（i64 定点分量，0..SCALE 对应 0..1）=====
 
-use fixed::SCALE;
-use fixed::fmul;
-use fixed::clamp;
+import fixed::SCALE;
+import fixed::fmul;
+import fixed::clamp;
 
 pub struct Color {
     pub r: i64,

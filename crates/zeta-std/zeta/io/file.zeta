@@ -1,6 +1,6 @@
 // io/file.zeta：File 对象 + 文件级自由函数（std-lib.md §4.1）。
 // 目录化（2026-08）：由原 io.zeta 拆分。符号完整路径 io::file::File 等；
-// OpenMode / c_str 保持 io::OpenMode / io::c_str（io/mod.zeta 顶层）。
+// OpenMode / c_str 保持 io::OpenMode / io::c_str（io/module.zeta 顶层）。
 
 // N1b（2026-08）：File 对象（句柄封装，std-lib.md §4.1）。
 // Zeta 无 Drop，MVP 显式 close() 语义；字段对用户可见（MVP 无可见性控制）。

@@ -3,8 +3,8 @@
 # Zeta 工具链本地发布脚本
 #
 # 将编译好的 Zeta 工具链（编译器 zeta 命令 + fmt/check/doc/bench + zep 包管理器
-# + 标准库）发布到本地目录，默认 $HOME/.zeta（与本地 zep 注册表 ~/.zeta/registry 同根）。
-# 可由 build.sh 调用，也可单独运行。
+# + 标准库 + zeta-language 技能）发布到本地目录，默认 $HOME/.zeta
+# （与本地 zep 注册表 ~/.zeta/registry 同根）。可由 build.sh 调用，也可单独运行。
 #
 # 用法:
 #   ./install.sh                      # 发布到默认位置 ~/.zeta
@@ -18,6 +18,7 @@
 #   │   ├── zeta-fmt|check|doc|bench   # 独立工具
 #   │   └── zep               # 包管理器
 #   ├── std/                  # 标准库源码（core.zeta + time/io/net/... 模块）
+#   ├── skills/               # zeta-language 技能（SKILL.md + references/）
 #   └── registry/             # 本地 zep 注册表（publish 目标，自动创建）
 #
 set -euo pipefail
@@ -48,7 +49,7 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 # 2. 创建目录布局
-mkdir -p "$PREFIX/bin" "$PREFIX/std" "$PREFIX/registry"
+mkdir -p "$PREFIX/bin" "$PREFIX/std" "$PREFIX/skills" "$PREFIX/registry"
 
 # 3. 复制二进制
 for b in "${BINARIES[@]}"; do
@@ -63,7 +64,18 @@ mkdir -p "$PREFIX/std"
 cp -R "$STD_SRC"/. "$PREFIX/std/"
 echo "    标准库 -> $PREFIX/std"
 
-# 5. 生成 zeta 入口命令
+# 5. 复制 zeta-language 技能（SKILL.md + references/，随工具链发布）
+SKILL_SRC="$REPO/.codebuddy/skills/zeta-language"
+if [[ -d "$SKILL_SRC" ]]; then
+    rm -rf "$PREFIX/skills/zeta-language"
+    mkdir -p "$PREFIX/skills"
+    cp -R "$SKILL_SRC" "$PREFIX/skills/"
+    echo "    技能 -> $PREFIX/skills/zeta-language"
+else
+    echo "!! 未找到技能目录（$SKILL_SRC），跳过"
+fi
+
+# 6. 生成 zeta 入口命令
 #    可重定位：bin/ 与 std/ 同级，归档解压到任意位置均可自洽。
 #    用户环境变量 ZETA_STD_PATH 优先。
 cat > "$PREFIX/bin/zeta" <<EOF
@@ -74,7 +86,7 @@ exec "\$(dirname "\$0")/zeta-driver" "\$@"
 EOF
 chmod +x "$PREFIX/bin/zeta"
 
-# 6. PATH 提示
+# 7. PATH 提示
 case ":$PATH:" in
     *":$PREFIX/bin:"*) : ;;
     *)
@@ -84,7 +96,7 @@ case ":$PATH:" in
         ;;
 esac
 
-# 7. 冒烟验证
+# 8. 冒烟验证
 echo
 echo "==> 验证"
 "$PREFIX/bin/zeta" --version || true

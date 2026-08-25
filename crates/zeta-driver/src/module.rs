@@ -1,16 +1,16 @@
 //! # 模块加载
 //!
-//! 将入口文件及其全部外部子模块（`mod foo;`）展开为单文件等价源码。
+//! 将入口文件及其全部外部子模块（`module foo;`）展开为单文件等价源码。
 //!
 //! 文件解析规则（对齐 Rust）：
-//! - 入口 `main.zeta` 中 `mod math;` → `<项目目录>/math.zeta` 或 `<项目目录>/math/mod.zeta`
-//! - `a.zeta` 中 `mod b;` → `<项目目录>/a/b.zeta` 或 `<项目目录>/a/b/mod.zeta`
-//! - `a/b/mod.zeta` 中 `mod c;` → `<项目目录>/a/b/c.zeta`
+//! - 入口 `main.zeta` 中 `module math;` → `<项目目录>/math.zeta` 或 `<项目目录>/math/module.zeta`
+//! - `a.zeta` 中 `module b;` → `<项目目录>/a/b.zeta` 或 `<项目目录>/a/b/module.zeta`
+//! - `a/b/module.zeta` 中 `module c;` → `<项目目录>/a/b/c.zeta`
 //!
 //! 展开方式为文本级变换：解析每个文件，利用 AST span 精确定位外部
-//! `mod name;` 声明，替换为 `mod name { <子模块源码> }`（递归展开）。
-//! 展开结果交给既有的单文件流水线（typecheck 已支持嵌套 `mod` 与扁平
-//! 符号名 `mod::item`），增量缓存哈希天然覆盖全部模块文件。
+//! `module name;` 声明，替换为 `module name { <子模块源码> }`（递归展开）。
+//! 展开结果交给既有的单文件流水线（typecheck 已支持嵌套 `module` 与扁平
+//! 符号名 `module::item`），增量缓存哈希天然覆盖全部模块文件。
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -67,10 +67,10 @@ fn load_file(
         if !m.external {
             continue;
         }
-        // 保留 `mod foo;` 之前的源码
+        // 保留 `module foo;` 之前的源码
         out.push_str(&source[cursor..m.span.start]);
-        // 展开为内联模块 `mod foo { <子模块源码> }`
-        out.push_str(&format!("mod {} {{\n", m.name));
+        // 展开为内联模块 `module foo { <子模块源码> }`
+        out.push_str(&format!("module {} {{\n", m.name));
         out.push_str(&load_submodule(mod_root, &m.name, project_dir, visited)?);
         out.push_str("\n}\n");
         cursor = m.span.end;
@@ -82,7 +82,7 @@ fn load_file(
 }
 
 /// 定位并加载子模块：优先 `<project>/<mod_root>/<name>.zeta`，
-/// 回退 `<project>/<mod_root>/<name>/mod.zeta`。
+/// 回退 `<project>/<mod_root>/<name>/module.zeta`。
 fn load_submodule(
     mod_root: &Path,
     name: &str,
@@ -91,7 +91,7 @@ fn load_submodule(
 ) -> Result<String, DriverError> {
     let sub_root = mod_root.join(name);
     let file_candidate = project_dir.join(&sub_root).with_extension("zeta");
-    let dir_candidate = project_dir.join(&sub_root).join("mod.zeta");
+    let dir_candidate = project_dir.join(&sub_root).join("module.zeta");
     if file_candidate.is_file() {
         load_file(&file_candidate, &sub_root, project_dir, visited)
     } else if dir_candidate.is_file() {

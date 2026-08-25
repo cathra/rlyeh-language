@@ -1,5 +1,5 @@
 // 阶段 Q3 验收：Display / Debug trait + Formatter（Q3a）+ 格式化引擎接入（Q3b）。
-// - Q3a：std `fmt/mod.zeta` 定义 `trait Display { fn fmt(&self, f: &mut Formatter) -> String }`
+// - Q3a：std `fmt/module.zeta` 定义 `trait Display { fn fmt(&self, f: &mut Formatter) -> String }`
 //   与 `trait Debug { fn fmt_debug(&self, f: &mut Formatter) -> String }`（方法名 `fmt_debug`
 //   避免与 Display::fmt 同名冲突——MVP 方法调用按名查找 impl）；`Formatter { buf: String }`
 //   + `Formatter::new()`。MVP 签名降级：fmt 直接返回显示字符串（String 拼接模式，

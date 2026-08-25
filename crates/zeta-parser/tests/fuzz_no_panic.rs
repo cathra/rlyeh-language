@@ -28,7 +28,7 @@ impl XorShift {
 const FRAGMENTS: &[&str] = &[
     "fn", "let", "mut", "if", "else", "while", "loop", "for", "in", "match", "region", "'r",
     "transfer", "out of", "actor", "struct", "enum", "trait", "impl", "pub", "async", "unsafe",
-    "use", "mod", "const", "static", "and", "not", "return", "break", "continue", "send", "move",
+    "import", "module", "const", "static", "and", "not", "return", "break", "continue", "send", "move",
     "ref", "self", "Self", "as", "0", "42", "3.14", "true", "false", "\"str\"", "'c'", "9am",
     "6pm", "x", "y", "data", "u32", "f64", "Result", "Vec", "String", "+", "-", "*", "/", "%", "=",
     "+=", "-=", "*=", "/=", "==", "!=", "<", "<=", ">", ">=", "&&", "||", "!", "&", "&mut", "|",

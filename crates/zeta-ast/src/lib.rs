@@ -207,7 +207,7 @@ pub struct AstModDecl {
     pub name: String,
     /// 模块内项（`mod foo;` 外部文件形式为空）
     pub items: Vec<AstItem>,
-    /// 是否为外部文件形式（`mod foo;` → 内容在 `foo.zeta` 或 `foo/mod.zeta`）
+    /// 是否为外部文件形式（`module foo;` → 内容在 `foo.zeta` 或 `foo/module.zeta`）
     pub external: bool,
     /// 源码位置
     pub span: Span,

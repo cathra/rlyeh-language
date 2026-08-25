@@ -1,5 +1,5 @@
 // fs 模块（std-lib.md §4.3 Path / §4.4 fs）。
-// 目录化（2026-08）：原 fs.zeta 拆分 → fs/mod.zeta（自由函数 + mod 声明）+ fs/path.zeta（Path）。
+// 目录化（2026-08）：原 fs.zeta 拆分 → fs/module.zeta（自由函数 + module 声明）+ fs/path.zeta（Path）。
 // 实现说明（N3a/N3b/N3c）：
 // - driver 不链接 zeta-std crate，无 Rust 绑定层，直接 libc extern（N1a 修订）。
 // - `Path` 为纯字符串封装（无规范化/解析）；exists 用 POSIX access(F_OK)；
@@ -9,7 +9,7 @@
 //   会被模块内优先解析绑定到 fs::rename（递归，返回 Result 与 0 比较触发
 //   ChainTypeMismatch）；`r#` 前缀使 typecheck 跳过模块内优先，直接绑定根 extern（N3c）。
 
-mod path;
+module path;
 
 // N3b：读取整个文件（io::read_file 包装）。
 fn read_to_string(path: String) -> Result<String, io::error::IoError> {

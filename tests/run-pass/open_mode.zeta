@@ -13,7 +13,7 @@ fn main() {
     // 变体构造 + match（裸名 re-export 与完整路径均可）
     println(match_code(OpenMode::Read));                  // 1
     println(match_code(io::OpenMode::Write));             // 2
-    // 模式字符串映射（mod 内 helper，跨模块完整路径调用）
+    // 模式字符串映射（module 内 helper，跨模块完整路径调用）
     println(io::open_mode_str(io::OpenMode::Read));       // r
     println(io::open_mode_str(io::OpenMode::Write));      // w
     println(io::open_mode_str(io::OpenMode::Append));     // a

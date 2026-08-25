@@ -51,8 +51,8 @@ cargo test --workspace
 ~/.zeta/bin/zeta --version
 ~/.zeta/bin/zeta run examples/hello-world.zeta
 
-# 5) 归档（可选）
-tar -C ~/.zeta -czf toolchains/dist/zeta-toolchain.tar.gz bin std
+# 5) 归档（可选，含技能目录）
+tar -C ~/.zeta -czf toolchains/dist/zeta-toolchain.tar.gz bin std skills
 ```
 
 ## 4. 验证清单
@@ -78,6 +78,9 @@ zeta-bench examples/hello-world.zeta --runs 3   # 基准
 zeta new demo && cd demo
 zeta publish                      # → 已发布 demo 0.1.0
 zep search demo                   # → 能查到
+
+# zeta-language 技能（随工具链发布）
+ls ~/.zeta/skills/zeta-language    # → SKILL.md + references/
 ```
 
 ## 5. 交叉编译（可选，WASM）

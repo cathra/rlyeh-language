@@ -8,10 +8,10 @@
 //   /list         → 查看在线列表
 //   /quit 或 Ctrl-D → 退出聊天
 
-mod protocol;
-mod client;
+module protocol;
+module client;
 
-use client::run_client;
+import client::run_client;
 
 fn main() {
     println("chatd client: connecting to 127.0.0.1:9888 ...");

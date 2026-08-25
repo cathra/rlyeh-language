@@ -1,4 +1,4 @@
-//! zeta-driver 多文件模块集成测试：`mod foo;` 外部模块自动加载。
+//! zeta-driver 多文件模块集成测试：`module foo;` 外部模块自动加载。
 //!
 //! 运行完整流水线需要系统 clang（汇编 / 链接）。
 
@@ -56,8 +56,8 @@ fn compile_module_llvm() {
     p.write(
         "main.zeta",
         r#"
-mod math;
-use math::add;
+module math;
+import math::add;
 fn main() {
     println(add(2, 3));
 }
@@ -71,7 +71,7 @@ pub fn add(a: i64, b: i64) -> i64 { a + b }
     );
     let ll = compile_file_to_llvm(&p.entry("main.zeta")).expect("编译失败");
     assert!(ll.contains("define i32 @main()"));
-    // 组合源码应把子模块展开为内联 mod（typecheck 扁平符号名 math::add）
+    // 组合源码应把子模块展开为内联 module（typecheck 扁平符号名 math::add）
     assert!(ll.contains("math::add"));
 }
 
@@ -82,8 +82,8 @@ fn run_module_basic() {
     p.write(
         "main.zeta",
         r#"
-mod math;
-use math::add;
+module math;
+import math::add;
 fn main() {
     println(add(2, 3));
 }
@@ -99,15 +99,15 @@ pub fn add(a: i64, b: i64) -> i64 { a + b }
     assert_eq!(out, "5\n");
 }
 
-/// use 别名跨模块调用。
+/// import 别名跨模块调用。
 #[test]
 fn run_module_alias() {
     let p = TempProject::new();
     p.write(
         "main.zeta",
         r#"
-mod math;
-use math::mul as times;
+module math;
+import math::mul as times;
 fn main() {
     println(times(6, 7));
 }
@@ -123,22 +123,22 @@ pub fn mul(a: i64, b: i64) -> i64 { a * b }
     assert_eq!(out, "42\n");
 }
 
-/// 目录形式子模块：`<name>/mod.zeta`。
+/// 目录形式子模块：`<name>/module.zeta`。
 #[test]
 fn run_module_dir_form() {
     let p = TempProject::new();
     p.write(
         "main.zeta",
         r#"
-mod foo;
-use foo::bar;
+module foo;
+import foo::bar;
 fn main() {
     println(bar());
 }
 "#,
     );
     p.write(
-        "foo/mod.zeta",
+        "foo/module.zeta",
         r#"
 pub fn bar() -> i64 { 42 }
 "#,
@@ -147,15 +147,15 @@ pub fn bar() -> i64 { 42 }
     assert_eq!(out, "42\n");
 }
 
-/// 两级嵌套模块：`a.zeta` 内部再声明 `pub mod b;`。
+/// 两级嵌套模块：`a.zeta` 内部再声明 `pub module b;`。
 #[test]
 fn run_module_nested() {
     let p = TempProject::new();
     p.write(
         "main.zeta",
         r#"
-mod a;
-use a::b::deep;
+module a;
+import a::b::deep;
 fn main() {
     println(deep());
 }
@@ -164,7 +164,7 @@ fn main() {
     p.write(
         "a.zeta",
         r#"
-pub mod b;
+pub module b;
 "#,
     );
     p.write(
@@ -184,14 +184,14 @@ fn module_missing_error() {
     p.write(
         "main.zeta",
         r#"
-mod nope;
+module nope;
 fn main() { println(1); }
 "#,
     );
     let err = run_source_file(&p.entry("main.zeta")).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("nope"), "错误应提及模块名: {msg}");
-    assert!(msg.contains("mod.zeta"), "错误应提示查找路径: {msg}");
+    assert!(msg.contains("module.zeta"), "错误应提示查找路径: {msg}");
 }
 
 /// 模块循环引用报错（通过 symlink 使 `a.zeta` 指回入口文件触发）。
@@ -204,8 +204,8 @@ fn module_cycle_error() {
     p.write(
         "main.zeta",
         r#"
-mod a;
-use a::f;
+module a;
+import a::f;
 fn main() { println(f()); }
 "#,
     );

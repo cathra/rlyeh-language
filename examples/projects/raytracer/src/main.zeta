@@ -6,20 +6,20 @@
 //
 // 运行：zeta run src/main.zeta（或 scripts/run.sh）
 
-mod fixed;
-mod vec3;
-mod color;
-mod ray;
-mod camera;
-mod scene;
-mod render;
+module fixed;
+module vec3;
+module color;
+module ray;
+module camera;
+module scene;
+module render;
 
-use fixed::SCALE;
-use vec3::Vec3;
-use color::Color;
-use camera::Camera;
-use scene::build_scene;
-use render::render;
+import fixed::SCALE;
+import vec3::Vec3;
+import color::Color;
+import camera::Camera;
+import scene::build_scene;
+import render::render;
 
 fn main() {
     // 渲染参数（内置；修改后重新编译即可出图）
@@ -35,7 +35,7 @@ fn main() {
     // 场景
     let scene = build_scene();
 
-    // 计时渲染（std 的 `use time::Instant` 全局可见，短名调用）
+    // 计时渲染（std 的 `import time::Instant` 全局可见，短名调用）
     let t0 = Instant::now();
     let mut body = String::with_capacity(width * height * 12);
     render(cam, scene, width, height, depth, &mut body);

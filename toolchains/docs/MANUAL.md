@@ -85,7 +85,16 @@ Options:
 | `ZETA_PREFIX` | `$HOME/.zeta` | 工具链安装前缀（install.sh 使用） |
 | `PATH` | — | 需包含 `$HOME/.zeta/bin` 才能直接使用 `zeta` |
 
-## 5. 常用工作流
+## 5. zeta-language 技能（CodeBuddy Skill）
+
+工具链随附 `zeta-language` 技能（`SKILL.md` + `references/`），供 CodeBuddy 等 IDE 加载为项目级技能，辅助编写 / 审查 / 调试 Zeta 代码：
+
+- **安装位置**：`<prefix>/skills/zeta-language/`（默认 `~/.zeta/skills/zeta-language/`，install.sh 自动复制）
+- **归档包含**：`zeta-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可使用
+- **内容**：语法 / 语义 / 标准库 / MVP 陷阱速查（`references/language.md` / `semantics.md` / `std-lib.md` / `pitfalls.md`）
+- **使用**：IDE 将 `<prefix>/skills/` 注册为技能目录后自动发现；更新工具链后重载技能即可同步
+
+## 6. 常用工作流
 
 ### 5.1 Hello World
 
@@ -140,7 +149,7 @@ zeta bench fib.zeta --runs 5
 zeta lsp     # LSP over stdio，诊断推送；配合 zeta-lsp crate 使用
 ```
 
-## 6. 示例项目导航
+## 7. 示例项目导航
 
 仓库 `examples/` 下已有大量可运行示例：
 

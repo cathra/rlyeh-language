@@ -185,7 +185,7 @@ impl TypeContext {
     }
 
     /// 查找模块常量（支持短名 → 完整名解析，与 struct/actor 一致：
-    /// 裸名查表，失败后回退 `use` 导入别名）。
+    /// 裸名查表，失败后回退 `import` 导入别名）。
     pub fn lookup_constant(&self, name: &str) -> Option<&(HirExpr, Type)> {
         if let Some(v) = self.constants.get(name) {
             return Some(v);
@@ -211,7 +211,7 @@ impl TypeContext {
             return Some(a.clone());
         }
         // Q3a 修复：模块内 trait/impl 方法签名在收集阶段解析参数类型时 use 段
-        // 尚未注册，模块内短名须按 `mod::Name` 前缀定位（如 `fmt/mod.zeta` 中
+        // 尚未注册，模块内短名须按 `module::Name` 前缀定位（如 `fmt/module.zeta` 中
         // `trait Display { fn fmt(&self, f: &mut Formatter) }`）。
         // 枚举同样按前缀定位（`protocol::Msg`），否则模块内裸名枚举类型注解
         // （`fn encode(m: Msg)`）与 match 模式解析失败。
@@ -239,7 +239,7 @@ impl TypeContext {
     ///
     /// 内置类型名（`i64`、`bool` 等）直接映射到 [`Type`]；
     /// 其余名称查结构体 / 枚举表与别名表，并支持 `math::Point` 形式的模块路径
-    /// 与 `use` 导入的别名。当前作用域的泛型参数返回 [`Type::Generic`]；
+    /// 与 `import` 导入的别名。当前作用域的泛型参数返回 [`Type::Generic`]；
     /// 若存在泛型替换表则返回替换后的具体类型。查不到时返回
     /// [`TypeError::UndefinedType`]。
     pub fn resolve_named_type(&self, name: &str, span: Span) -> Result<Type, TypeError> {

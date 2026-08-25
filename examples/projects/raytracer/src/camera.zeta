@@ -6,9 +6,9 @@
 // 光线方向：forward·focal + right·u + up·v（u/v 为像素归一化坐标 ×1000），
 // focal 即"焦距"比例（越大视野越窄），无需三角函数。
 
-use fixed::SCALE;
-use vec3::Vec3;
-use ray::Ray;
+import fixed::SCALE;
+import vec3::Vec3;
+import ray::Ray;
 
 pub struct Camera {
     pub eye: Vec3,

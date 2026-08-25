@@ -503,17 +503,17 @@ let ch = s[0];                          // 字符串按字符索引（步长 1 �
 ## 7. 模块系统
 
 ```zeta
-mod math {
+module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
 }
 
-use math::PI;                   // 别名导入
-use math::square as sq;
+import math::PI;                   // 别名导入
+import math::square as sq;
 ```
 
-- 多文件模块：`mod foo;` → `foo.zeta` / `foo/mod.zeta`
-- 跨模块路径：`mod::Enum::Variant` / `mod::CONST`
+- 多文件模块：`module foo;` → `foo.zeta` / `foo/module.zeta`
+- 跨模块路径：`模块名::Enum::Variant` / `模块名::CONST`（扁平名字空间，无 `crate`/`super`/`self`）
 
 ---
 
@@ -1095,7 +1095,7 @@ extern fn gethostname(name: String, len: i64) -> i64;
 - **迭代器协议**：✅ J1–J3 已实现（见 §3.2 迭代器与适配器小节）：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` / `for x in arr`（数组迭代）容器迭代可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 可用（返回 `Vec<T>` 可链式）。`Iterator` trait 定义（std-lib §2.3）仍为规划 API（适配器为编译器内建 desugar，非 trait 实现）。
 
 **实现约束**：
-- **std 模块化**：标准库位于 `zeta-std/zeta/`，`core.zeta` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `use` 重新导出，用户侧裸名即用。
+- **std 模块化**：标准库位于 `zeta-std/zeta/`，`core.zeta` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `import` 重新导出，用户侧裸名即用。
 - **net**：`tcp_connect` 依赖平台特定 `sockaddr_in4` 布局（已由 `__zeta_target_os` 双布局化）；WASI 下网络不可用，**明确禁用**（L4 ✅：`net.zeta` 网络函数在 `__zeta_target_os() == 5`（WASI）时短路返回，不会链接 socket 符号；其余平台行为不变）。
 - **Actor 运行时**：✅ 交叉编译 / WASM 目标下 actor 程序已支持（L4，§11.3：driver 注入静态 `zeta_actor_resolve` 符号表替代 dlsym + WASI 单线程同步运行时；需先 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`）。
 - **`String::from(s)`**：✅ 支持字符串字面量（及绑定字面量的变量）、运行期 `String` 变量（desugar 为 `s.clone()` 深拷贝）与 `&str` 视图（读 data/len 槽深拷贝）；G2 已消除"非字面量长度表达未实现"。

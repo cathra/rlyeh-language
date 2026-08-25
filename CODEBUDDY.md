@@ -67,6 +67,7 @@ zeta-language/
 │   ├── semantics.md          ← 语义规则（含规划标注）
 │   ├── memory-model.md       ← 分层内存管理规范（含规划标注）
 │   ├── actor-model.md        ← Actor 并发模型规范（含规划标注）
+│   ├── module-system.md      ← 模块系统规范（语法/语义/编译模型，含规划标注）
 │   ├── std-lib.md            ← 标准库 API 规范（已实现 / 规划）
 │   ├── development-plan.md   ← 开发计划（阶段 A–F 执行记录，已完成）
 │   ├── mvp-gaps-plan.md      ← 剩余任务消解（阶段 G–T，进行中）
@@ -212,15 +213,15 @@ let p = Point { x: 1, y: 2 };
 ### 3.6 模块系统
 
 ```zeta
-mod math {
+module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
 }
-use math::PI;                 // 别名导入
-use math::square as sq;
+import math::PI;                 // 别名导入
+import math::square as sq;
 
-// 多文件模块：mod foo; → foo.zeta / foo/mod.zeta
-// 跨模块路径：mod::Enum::Variant / mod::CONST
+// 多文件模块：module foo; → foo.zeta / foo/module.zeta（扁平名字空间，路径即「模块名::」）
+// 跨模块路径：模块名::Enum::Variant / 模块名::CONST
 ```
 
 ### 3.7 数组与索引访问
@@ -745,8 +746,8 @@ fn main() {
 
 - 使用 `zeta fmt` 格式化（D2 已实现：`zeta fmt <file.zeta> [-w]`）
 - 文件扩展名：`.zeta`
-- 模块声明：`mod foo { ... }`
-- 导入：`use foo::bar;`
+- 模块声明：`module foo { ... }`
+- 导入：`import foo::bar;`
 
 ### 7.3 提交规范
 

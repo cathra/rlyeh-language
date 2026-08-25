@@ -1,5 +1,5 @@
-// 模块 + use 导入：编译必须成功
-mod math {
+// 模块 + import 导入：编译必须成功
+module math {
     pub const PI: f64 = 3.14159;
 
     pub fn square(x: i64) -> i64 {
@@ -7,8 +7,8 @@ mod math {
     }
 }
 
-use math::PI;
-use math::square as sq;
+import math::PI;
+import math::square as sq;
 
 fn main() {
     println(sq(9));

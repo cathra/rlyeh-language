@@ -5,20 +5,20 @@
 // 阴影：交点向光源发射遮挡检测光线（硬阴影）。
 // 定点量纲：颜色分量与光照系数均为 ×1000（0..SCALE = 0..1）。
 
-use fixed::SCALE;
-use fixed::fmul;
-use fixed::fdiv;
-use fixed::clamp;
-use fixed::max0;
-use fixed::fpow;
-use vec3::Vec3;
-use color::Color;
-use ray::Ray;
-use ray::Sphere;
-use ray::hit_sphere;
-use ray::hit_plane;
-use scene::Scene;
-use camera::Camera;
+import fixed::SCALE;
+import fixed::fmul;
+import fixed::fdiv;
+import fixed::clamp;
+import fixed::max0;
+import fixed::fpow;
+import vec3::Vec3;
+import color::Color;
+import ray::Ray;
+import ray::Sphere;
+import ray::hit_sphere;
+import ray::hit_plane;
+import scene::Scene;
+import camera::Camera;
 
 // 渲染图像：逐像素 trace 并把量化后的 RGB 追加到 out（PPM 正文，无文件头）。
 pub fn render(cam: Camera, s: Scene, width: i64, height: i64, depth: i64, dst: &mut String) {

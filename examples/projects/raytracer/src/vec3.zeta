@@ -1,10 +1,10 @@
 // ===== 三维向量（i64 定点分量）=====
 // 向量运算全部返回定点量纲（×1000），由 fixed 模块保证数值一致性。
 
-use fixed::SCALE;
-use fixed::fmul;
-use fixed::fdiv;
-use fixed::fsqrt;
+import fixed::SCALE;
+import fixed::fmul;
+import fixed::fdiv;
+import fixed::fsqrt;
 
 pub struct Vec3 {
     pub x: i64,

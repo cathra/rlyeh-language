@@ -19,7 +19,7 @@ fn tokens(source: &str) -> Vec<Token> {
 fn test_all_keywords() {
     let src = "let mut const static fn return pub priv if else match for while loop break \
                continue true false and or not struct enum trait impl type where Self region in \
-               transfer out of unsafe actor async await spawn send recv mod use as extern";
+               transfer out of unsafe actor async await spawn send recv module import as extern";
     let toks = tokens(src);
     let expected = [
         Token::Let,

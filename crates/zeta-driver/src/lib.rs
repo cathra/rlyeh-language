@@ -73,10 +73,10 @@ pub fn run_source(source: &str) -> Result<String, DriverError> {
     Ok(out)
 }
 
-/// 编译入口文件（含 `mod foo;` 外部模块）为 LLVM IR 文本，无缓存。
+/// 编译入口文件（含 `module foo;` 外部模块）为 LLVM IR 文本，无缓存。
 ///
-/// 入口文件所在目录下的 `<name>.zeta` 或 `<name>/mod.zeta` 会被自动加载，
-/// 所有模块文件合并为单一符号空间（扁平符号名 `mod::item`）。
+/// 入口文件所在目录下的 `<name>.zeta` 或 `<name>/module.zeta` 会被自动加载，
+/// 所有模块文件合并为单一符号空间（扁平符号名 `模块名::item`）。
 /// 标准库预置（`zeta-std/zeta/core.zeta`，若存在）自动注入为前缀。
 pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;

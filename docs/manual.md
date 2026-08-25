@@ -283,16 +283,16 @@ desugar 为 Future 结构体 + poll 状态机；`.await` 挂起/恢复。MVP：�
 ## 7. 模块与可见性
 
 ```zeta
-mod math {
+module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
     fn hidden() {}          // 私有
 }
 
-use math::PI;
-use math::square as sq;
-mod foo;                    // 多文件：foo.zeta / foo/mod.zeta
-mod::Enum::Variant          // 跨模块路径
+import math::PI;
+import math::square as sq;
+module foo;                    // 多文件：foo.zeta / foo/module.zeta
+模块名::Enum::Variant          // 跨模块路径（扁平名字空间，路径即「模块名::」）
 ```
 
 ---
@@ -654,7 +654,7 @@ Options:
 - 无自动 drop（`Box`/`Rc`/`Vec`/`String` 显式释放语义规划中）
 
 **实现约束**：
-- 标准库位于 `zeta-std/zeta/`（core.zeta 根模块 + time/io/net/sync/fs 子目录），driver 模块展开 + use 重导出，用户侧裸名即用
+- 标准库位于 `zeta-std/zeta/`（core.zeta 根模块 + time/io/net/sync/fs 子目录），driver 模块展开 + import 重导出，用户侧裸名即用
 - WASI 下 `net` 模块明确禁用（`__zeta_target_os == 5` 短路）
 - 闭包捕获不跨函数边界；trait 非泛型；`HashMap` 键限 i64/String
 

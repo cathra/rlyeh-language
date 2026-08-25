@@ -1,6 +1,6 @@
 // ===== io 模块（B2，2026-08）：libc stdio 文件 IO + 控制台 IO =====
 // 目录化（2026-08）：原 io.zeta 拆分 →
-//   io/mod.zeta   （模块根：OpenMode / open_mode_str / c_str + mod 声明）
+//   io/module.zeta   （模块根：OpenMode / open_mode_str / c_str + module 声明）
 //   io/error.zeta （IoErrorKind / IoError / Error trait / kind_message）
 //   io/file.zeta  （File 对象 + read_file/write_file/append_file）
 //   io/console.zeta（Stdout/Stderr/stdout/stderr + stdin 读取/lines）
@@ -50,11 +50,11 @@ fn c_str(s: String) -> String {
     buf
 }
 
-// mod 声明顺序即收集期注册顺序：error（IoError 基底）→ sendfile
+// module 声明顺序即收集期注册顺序：error（IoError 基底）→ sendfile
 // （file.zeta 的 File::sendfile_to 引用 io::sendfile::sendfile）→
 // file → nio（依赖 error）→ console。
-mod error;
-mod sendfile;
-mod file;
-mod nio;
-mod console;
+module error;
+module sendfile;
+module file;
+module nio;
+module console;

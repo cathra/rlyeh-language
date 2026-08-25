@@ -55,7 +55,7 @@
 ## 7. FFI 行为
 
 - `extern fn` 生成 LLVM `declare`（链接器解析），普通 fn 生成 `define`。
-- extern 符号名必须与 libc/系统库**完全一致**（模块/use 前缀改名会导致链接失败——标准库的全部 extern 因此集中在根模块）。
+- extern 符号名必须与 libc/系统库**完全一致**（模块/import 前缀改名会导致链接失败——标准库的全部 extern 因此集中在根模块）。
 - 未知名类型在 extern 签名中回退为 `Ptr`。
 
 ## 8. 常量折叠与编译期检查

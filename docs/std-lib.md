@@ -5,8 +5,8 @@
 
 > **⚠️ 实现状态**：本文为**目标标准库规范**（含规划中 API）。MVP 已实现部分位于
 > `crates/zeta-std/zeta/`（**目录化模块**：`core.zeta` 根模块 + `time/`、`sync/`、`io/`、
-> `net/`、`fs/` 子目录（`<name>/mod.zeta` + 类型独立文件），driver 加载时经模块展开 +
-> use 重新导出合入，用户侧裸名即用）。
+> `net/`、`fs/` 子目录（`<name>/module.zeta` + 类型独立文件），driver 加载时经模块展开 +
+> import 重新导出合入，用户侧裸名即用）。
 > 根模块保留 String / Vec / HashMap / Option / Result 等编译器特判类型；未实现章节属规划（详见下方总览）。
 > 教程与可运行示例见 [`guide.md`](./guide.md)；实际 API 以各模块源码为准。
 
@@ -26,11 +26,11 @@
 | §4.5 sendfile | ✅ 已实现 | `sendfile` 自由函数 + `File::sendfile_to`（R3 ✅，driver 注入平台内建 `__zeta_sendfile`，macOS sendfile(2) 6 参签名零拷贝） | — |
 | §5.1 TCP | ✅ 已实现 | `SocketAddr`/`TcpListener`/`TcpStream` + `read/write/read_line/shutdown`（O1/O2 ✅，libc extern FFI，`Result<T, IoError>`）；旧自由函数保留兼容 | — |
 | §5.2 HTTP | ✅ 已实现（同步 MVP + async 形状） | `HttpClient::get/post` + `Response::status/text` + `json::parse::<T>` 反序列化（O3 ✅，`Connection: close` 无复用）；**async 版已实现**（S3b ✅：`HttpClient::get_async/post_async`，MVP 退化同步语义，等价 get/post；事件驱动规划随 S3 事件循环 + §4.4 NIO） | — |
-| §6.1 Mutex | ✅ 已实现 | `Mutex`/`RwLock` 裸 `lock/unlock/try_*` + `lock_guard()` guard 语义（作用域尾自动解锁注入）；`Condvar::wait/notify_one/notify_all` + `Barrier`（P1–P3 ✅，`sync/mod.zeta` pthread extern FFI） | — |
+| §6.1 Mutex | ✅ 已实现 | `Mutex`/`RwLock` 裸 `lock/unlock/try_*` + `lock_guard()` guard 语义（作用域尾自动解锁注入）；`Condvar::wait/notify_one/notify_all` + `Barrier`（P1–P3 ✅，`sync/module.zeta` pthread extern FFI） | — |
 | §6.2 Channel | ✅ 已实现 | `channel()` → `ChannelPair { tx, rx }` + `Sender::send/try_send` + `Receiver::recv/try_recv/close/iter` + **`recv_async`**（P1 ✅ + S3a ✅，`Rc<Channel>` 共享；MVP 非泛型、元素 `i64`、无界；recv_async MVP 退化阻塞语义，事件驱动规划随 R1 Poller） | — |
 | §7 时间 | ✅ 已实现 | `Duration`/`Instant`（libc `clock()` extern） | — |
-| §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` trait + `Formatter` 已实现**（Q3 ✅，`fmt/mod.zeta`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`） | Q4 |
-| §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/mod.zeta`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）规划 | — |
+| §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` trait + `Formatter` 已实现**（Q3 ✅，`fmt/module.zeta`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`） | Q4 |
+| §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/module.zeta`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）规划 | — |
 | §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；事件驱动 executor 与多线程调度规划（R1 Poller） | R1 |
 | §11 智能指针 | ✅ 已实现 | `Box<T>`（K2，含 **`Box::leak`**（T3a ✅，返回 `*mut T` 裸指针，目标 `&'static mut T` 规划））/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3 全覆盖：`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade`，T3b ✅ 核对）/ `Gc<T>`（K4）✅ 已实现（MVP，见 §11） | — |
 | §12 错误处理 | 🔧 部分 | `Option`/`Result` + `expect/unwrap_or` 已实现；**`?` 运算符已实现**（K1）；`Error`/`From`/`Into` trait 与 `IoError` 定义规划 | M |
@@ -55,22 +55,22 @@
 ## 1. 标准库架构
 
 > **实现状态（2026-08-23）**：已完成**目录化模块拆分**（对齐下述目标架构的目录 + 类型独立文件
-> 形式；`pub use` 以根模块 `use` 重新导出等价实现）。实际布局为
+> 形式；`pub import` 以根模块 `import` 重新导出等价实现）。实际布局为
 > `zeta-std/zeta/core.zeta`（根模块：String / Vec / HashMap / Option / Result + 全部 extern 声明 +
-> `mod` 声明 + use 重新导出，指向各类型文件完整路径）+ 子目录：
-> `time/`（Duration / Instant）、`sync/`（pthread 锁）、`io/`（mod.zeta 聚合 OpenMode/c_str +
-> error.zeta 错误类型 + file.zeta 文件对象 + console.zeta 控制台）、`net/`（mod.zeta 聚合 socket
+> `module` 声明 + import 重新导出，指向各类型文件完整路径）+ 子目录：
+> `time/`（Duration / Instant）、`sync/`（pthread 锁）、`io/`（module.zeta 聚合 OpenMode/c_str +
+> error.zeta 错误类型 + file.zeta 文件对象 + console.zeta 控制台）、`net/`（module.zeta 聚合 socket
 > 自由函数 + byteorder.zeta 字节打包 + addr.zeta 地址 + tcp.zeta 流与监听 + http.zeta HTTP 客户端）、
-> `fs/`（mod.zeta 聚合 fs 函数 + path.zeta 路径对象）。
+> `fs/`（module.zeta 聚合 fs 函数 + path.zeta 路径对象）。
 > **符号完整路径随拆分变更**：如 `io::IoError` → `io::error::IoError`、`net::SocketAddr` →
 > `net::addr::SocketAddr`、`net::TcpStream` → `net::tcp::TcpStream`、`fs::Path` → `fs::path::Path`；
-> 用户侧裸名 API 不变（core.zeta use 重新导出）。下述**目标架构**（规划：按 crate 目录 + 各类型
-> 独立文件 + `pub use` 重导出）中 alloc/collections/fmt/serde/async 等目录为规划内容。
+> 用户侧裸名 API 不变（core.zeta import 重新导出）。下述**目标架构**（规划：按 crate 目录 + 各类型
+> 独立文件 + `pub import` 重导出）中 alloc/collections/fmt/serde/async 等目录为规划内容。
 
 ```
 zeta-std/
 ├── core/           ← 最核心的类型和 trait（无依赖）
-│   ├── mod.zeta
+│   ├── module.zeta
 │   ├── option.zeta
 │   ├── result.zeta
 │   ├── iter.zeta
@@ -118,7 +118,7 @@ zeta-std/
 │   └── format.zeta
 │
 ├── serde/         ← 序列化框架
-│   ├── mod.zeta
+│   ├── module.zeta
 │   ├── json.zeta
 │   └── toml.zeta
 │
@@ -374,19 +374,19 @@ impl File {
 ### 4.2 标准输入输出
 
 ```zeta
-mod stdin {
+module stdin {
     fn read_line() -> Result<String, IoError>;
     fn read_to_string() -> Result<String, IoError>;
     fn lines() -> Lines;
 }
 
-mod stdout {
+module stdout {
     fn write(s: &str) -> Result<(), IoError>;
     fn writeln(s: &str) -> Result<(), IoError>;
     fn flush() -> Result<(), IoError>;
 }
 
-mod stderr {
+module stderr {
     fn write(s: &str) -> Result<(), IoError>;
     fn writeln(s: &str) -> Result<(), IoError>;
 }
@@ -411,7 +411,7 @@ impl Path {
 }
 
 // 文件系统操作
-mod fs {
+module fs {
     fn read_to_string(path: &str) -> Result<String, IoError>;
     fn write(path: &str, contents: &str) -> Result<(), IoError>;
     fn copy(from: &str, to: &str) -> Result<usize, IoError>;
@@ -507,7 +507,7 @@ loop {
 适用于静态文件响应、大文件传输代理等场景。
 
 ```zeta
-mod sendfile {
+module sendfile {
     /// 将 in_fd 从 offset 处开始的内容零拷贝发送到 out_fd；
     /// count == 0 表示发送到文件末尾（EOF）
     fn sendfile(out_fd: i32, in_fd: i32, offset: u64, count: usize) -> Result<usize, IoError>;
@@ -533,7 +533,7 @@ let n = sendfile(conn.fd, file.fd, 64, 4096)?; // 只发送中间一段
 
 ## 5. 网络模块
 
-> O 阶段（2026-08）✅：TCP 对象化 + HTTP 同步 MVP 已实现。实现方式为 `net/` 子目录（`net/mod.zeta` 聚合 socket 自由函数 + `net/byteorder.zeta` 字节打包 + `net/addr.zeta` 地址 + `net/tcp.zeta` 流与监听 + `net/http.zeta` HTTP 客户端）直接 libc extern FFI（无 Rust 绑定层），`socklen_t` 以 8 字节小端缓冲传递；平台自适应 sockaddr_in 布局（macOS `sin_len` 头 vs Linux `sin_family`，`__zeta_target_os()` 区分）；WASI（码 5）网络函数短路返回 `Err`。符号完整路径见各文件（如 `net::addr::SocketAddr`）；示例见 `tests/run-pass/tcp_addr.zeta`、`tcp_echo.zeta` 与 `crates/zeta-driver/tests/net_http_test.rs`。
+> O 阶段（2026-08）✅：TCP 对象化 + HTTP 同步 MVP 已实现。实现方式为 `net/` 子目录（`net/module.zeta` 聚合 socket 自由函数 + `net/byteorder.zeta` 字节打包 + `net/addr.zeta` 地址 + `net/tcp.zeta` 流与监听 + `net/http.zeta` HTTP 客户端）直接 libc extern FFI（无 Rust 绑定层），`socklen_t` 以 8 字节小端缓冲传递；平台自适应 sockaddr_in 布局（macOS `sin_len` 头 vs Linux `sin_family`，`__zeta_target_os()` 区分）；WASI（码 5）网络函数短路返回 `Err`。符号完整路径见各文件（如 `net::addr::SocketAddr`）；示例见 `tests/run-pass/tcp_addr.zeta`、`tcp_echo.zeta` 与 `crates/zeta-driver/tests/net_http_test.rs`。
 
 ### 5.1 TCP（✅ 已实现）
 
@@ -674,7 +674,7 @@ impl<T> Receiver<T> {
 }
 ```
 
-> **MVP 已实现（P1 ✅ + S3a ✅，`sync/mod.zeta`）**：目标 API 为泛型 + `Arc` 无锁队列；MVP 为非泛型 `i64` 元素 + `Rc<Channel>` 共享（Mutex + Condvar 队列），构造为 `let p = channel(); p.tx / p.rx`（`ChannelPair` 结构体含 `tx`/`rx` 槽，未提供多元组返回）。差异：`try_send` 无界队列恒 `true`；`recv`/`try_recv` 返回 `Option<i64>`（空/close 后 `None`）；**`recv_async` 已实现（S3a ✅）——MVP 退化阻塞语义（等价 `recv`），事件驱动版规划随 R1 Poller + 事件循环**（跨线程数据流 MVP 不可测：线程入口零参数 + `Rc` 非线程安全，文档化）。
+> **MVP 已实现（P1 ✅ + S3a ✅，`sync/module.zeta`）**：目标 API 为泛型 + `Arc` 无锁队列；MVP 为非泛型 `i64` 元素 + `Rc<Channel>` 共享（Mutex + Condvar 队列），构造为 `let p = channel(); p.tx / p.rx`（`ChannelPair` 结构体含 `tx`/`rx` 槽，未提供多元组返回）。差异：`try_send` 无界队列恒 `true`；`recv`/`try_recv` 返回 `Option<i64>`（空/close 后 `None`）；**`recv_async` 已实现（S3a ✅）——MVP 退化阻塞语义（等价 `recv`），事件驱动版规划随 R1 Poller + 事件循环**（跨线程数据流 MVP 不可测：线程入口零参数 + `Rc` 非线程安全，文档化）。
 
 ---
 
@@ -750,7 +750,7 @@ let s = format!("{} + {} = {}", a, b, a + b);
 ```
 > **已实现（Q3 ✅，2026-08，§8 格式化引擎接入）**：`println!`/`print!`/`format!`/`dbg!` 宏
 > （I2）+ N4 `eprintln!`/`eprint!`（stderr）已实现；**`Display`/`Debug` trait + `Formatter` 已实现**
-> （std `fmt/mod.zeta`，`core.zeta` `mod fmt;` + `use fmt::{Display, Debug, Formatter}`）。
+> （std `fmt/module.zeta`，`core.zeta` `module fmt;` + `import fmt::{Display, Debug, Formatter}`）。
 > MVP 签名降级（与上述目标 API 差异）：
 > - `trait Display { fn fmt(&self, f: &mut Formatter) -> String; }`——fmt 直接返回显示字符串
 >   （String 拼接模式，与 `serde::Serialize::to_json` 同构；目标 `Result<(), FmtError>` 未支持）。
@@ -762,20 +762,20 @@ let s = format!("{} + {} = {}", a, b, a + b);
 > - `{}` 占位符：内建类型（i64/bool/String/&str/字符串字面量）走内建转换；自定义类型查
 >   `Display` impl（存在 `fmt` 方法）走 `x.fmt(&mut Formatter::new())`；无 impl 报 Unsupported
 >   提示 `impl Display`。`{:?}` 同构走 `Debug`（`fmt_debug`）；`dbg!` 用 Debug 格式。
-> 配套修复：模块内 trait/impl 方法签名收集阶段即 `resolve_ast_type`，use 段尚未注册——
+> 配套修复：模块内 trait/impl 方法签名收集阶段即 `resolve_ast_type`，import 段尚未注册——
 > `resolve_full_name` 加当前模块前缀回退 + `collect_item_decls`/`collect_mod_types_inner`/
-> `check_item` 的 ModDecl 分支设置 `module_prefix`（模块内短名按 `mod::Name` 定位）。
+> `check_item` 的 ModDecl 分支设置 `module_prefix`（模块内短名按 `module::Name` 定位）。
 
 ---
 
 ## 9. 序列化框架
 
-> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/mod.zeta` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 mvp-gaps-plan.md M2b）与 TOML 模块仍规划。
+> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/module.zeta` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 mvp-gaps-plan.md M2b）与 TOML 模块仍规划。
 
 ### 9.1 JSON（L2 ✅，编译器内建）
 
 ```zeta
-mod json {
+module json {
     fn stringify(value: T) -> String;   // ✅ 内建：i64 / bool / String / &str / 数组 / struct / Vec / HashMap
     fn parse<T>(s: String) -> T;        // ✅ 内建：i64 / bool / String / HashMap（turbofish 泛型实参 `::<T>`）
 }
@@ -789,7 +789,7 @@ mod json {
 ### 9.1b Serialize trait / derive 标记 / struct 反序列化（Q1 ✅，2026-08）
 
 ```zeta
-// Q1a：Serialize trait 定义（std serde/mod.zeta；core.zeta 全局 use serde::Serialize）
+// Q1a：Serialize trait 定义（std serde/module.zeta；core.zeta 全局 import serde::Serialize）
 trait Serialize {
     fn to_json(&self) -> String;
 }
@@ -831,7 +831,7 @@ trait Deserialize {
     fn deserialize(deserializer: &mut Deserializer) -> Result<Self, DeError>;
 }
 
-mod json {
+module json {
     fn to_string<T: Serialize>(value: &T) -> Result<String, JsonError>;
     fn from_str<T: Deserialize>(s: &str) -> Result<T, JsonError>;
     fn to_writer<T: Serialize>(writer: &mut Writer, value: &T) -> Result<(), JsonError>;
@@ -847,7 +847,7 @@ mod json {
 //   std 文件 io/file.zeta + typecheck 内建（check_json_to_writer / check_json_from_reader）。
 
 // TOML
-mod toml {
+module toml {
     fn to_string<T: Serialize>(value: &T) -> Result<String, TomlError>;
     fn from_str<T: Deserialize>(s: &str) -> Result<T, TomlError>;
 }
@@ -924,7 +924,7 @@ async fn join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output>;
 async fn timeout<F: Future>(duration: Duration, future: F) -> Result<F::Output, TimeoutError>;
 
 /// 并发原语
-mod sync {
+module sync {
     fn mutex<T>(value: T) -> AsyncMutex<T>;
     fn rwlock<T>(value: T) -> AsyncRwLock<T>;
     fn notify() -> Notify;
@@ -937,7 +937,7 @@ mod sync {
 线程支持为异步运行时前置工程：driver 注入平台内建 `__zeta_thread_spawn` /
 `__zeta_thread_join` / `__zeta_thread_self` / `__zeta_thread_sleep`（pthread_create/
 join/self + usleep 绑定，与 sendfile 相同架构），语言侧 `thread` 模块
-（`crates/zeta-std/zeta/thread/mod.zeta`）。
+（`crates/zeta-std/zeta/thread/module.zeta`）。
 
 ```zeta
 // 线程句柄（pthread_t 的 i64 视图）
@@ -1157,8 +1157,8 @@ enum IoErrorKind {
 ### A.1 标准库核心模块（对应 P009，2026-08-20 ✅）
 
 - **实现形态**：`crates/zeta-std/zeta/` 目录化模块——`core.zeta` 根模块（Option/Result/String/Vec/
-  HashMap 编译器特判类型）+ `time/`、`sync/`、`io/`、`net/`、`fs/` 子目录（`<name>/mod.zeta` +
-  类型独立文件）；driver 加载时经模块展开 + use 重新导出合入，用户侧裸名即用。
+  HashMap 编译器特判类型）+ `time/`、`sync/`、`io/`、`net/`、`fs/` 子目录（`<name>/module.zeta` +
+  类型独立文件）；driver 加载时经模块展开 + import 重新导出合入，用户侧裸名即用。
 - **纯 Zeta 实现**：Option/Result 为 `core.zeta` 中泛型 enum（`is_some`/`is_none`/`unwrap`/
   `unwrap_or`/`expect` 等）；Vec/HashMap/String 为编译器特判类型 + 目标 API 补齐（见正文 §3 差异注记）。
 - **性能验收指标**（P009 基准，全部通过）：

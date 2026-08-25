@@ -26,7 +26,7 @@ use crate::types::{
 ///
 /// 两遍流程：
 /// 1. 收集结构体 / 枚举 / trait / impl 定义、类型别名与所有函数签名
-///    （支持函数间互调），并注册 `use` 导入别名；
+///    （支持函数间互调），并注册 `import` 导入别名；
 /// 2. 检查函数体与 const 初始值，生成 HIR（模块项以 `mod::item` 扁平化命名）。
 ///
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
@@ -124,7 +124,7 @@ fn collect_item_decls(
             let new_prefix = full_name(prefix, &m.name);
             // Q3a 修复：模块内符号（struct/trait/impl）的短名解析须感知模块前缀。
             // 模块内 trait/impl 方法签名在收集阶段即 resolve_ast_type（如
-            // `fmt/mod.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
+            // `fmt/module.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
             // 此时文件后部的 use 段尚未注册 use_aliases，须按 `mod::Name` 前缀回退。
             let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {
@@ -912,7 +912,7 @@ fn collect_mod_types_inner(
 ) -> Result<(), TypeError> {
     let new_prefix = full_name(prefix, &m.name);
     // Q3a：与 `collect_item_decls` 的 ModDecl 分支一致，模块内短名解析须感知
-    // 模块前缀（`fmt/mod.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
+    // 模块前缀（`fmt/module.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
     // 等——collect_impl/collect_trait 收集阶段即 resolve_ast_type，use 段未注册）。
     let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
     for inner in &m.items {

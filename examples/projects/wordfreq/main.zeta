@@ -3,13 +3,13 @@
 // 读取 sample.txt → 切词 → 统计频次 → 按频次排序 → 终端表格 + 写 freq.txt。
 // MVP 无命令行参数 API：输入文件硬编码为 "sample.txt"（相对运行时 cwd）。
 
-mod tokenizer;
-mod stats;
+module tokenizer;
+module stats;
 
-use tokenizer::tokenize;
-use stats::count_freq;
-use stats::ranked;
-use stats::WordFreq;
+import tokenizer::tokenize;
+import stats::count_freq;
+import stats::ranked;
+import stats::WordFreq;
 
 fn main() {
     let text = match read_file(String::from("sample.txt")) {

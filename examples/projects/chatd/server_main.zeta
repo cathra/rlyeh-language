@@ -4,12 +4,12 @@
 // MVP 无命令行参数 API（args），端口硬编码于此，修改后重新编译。
 // 构建：scripts/build.sh；运行：./chatd-server
 
-mod protocol;
-mod hub;
-mod server;
+module protocol;
+module hub;
+module server;
 
-use hub::Hub;
-use server::run_server;
+import hub::Hub;
+import server::run_server;
 
 fn main() {
     println("chatd server: 127.0.0.1:9888 (Ctrl-C to stop)");

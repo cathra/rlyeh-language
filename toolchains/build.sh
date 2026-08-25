@@ -80,14 +80,14 @@ else
     echo "==> [4/5] 冒烟验证（跳过：--no-install）"
 fi
 
-# 5. 归档打包（可重定位 tar 包：bin + std）
+# 5. 归档打包（可重定位 tar 包：bin + std + skills）
 if [[ "$RUN_TAR" == 1 ]]; then
     DIST="$REPO/toolchains/dist"
     mkdir -p "$DIST"
     TARBALL="$DIST/zeta-toolchain-$VERSION-$OS-$ARCH.tar.gz"
     echo
     echo "==> [5/5] 归档打包"
-    tar -C "$PREFIX" -czf "$TARBALL" bin std
+    tar -C "$PREFIX" -czf "$TARBALL" bin std skills
     echo "    归档: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
 fi
 

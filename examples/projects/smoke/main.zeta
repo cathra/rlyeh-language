@@ -1,6 +1,6 @@
 // smoke2：多文件 + NIO（纯 i64，避开 f64）
-mod math;
-mod util;
+module math;
+module util;
 
 fn main() {
     println(math::square(7));          // 49

@@ -5,7 +5,7 @@
 //   S2b；driver 注入 define，不支持平台返回 -1）。
 // `Instant::now/elapsed` 优先墙钟（睡眠期间推进），-1 时退回 clock()。
 // 语言层无常量定义，1e6 以字面量 1000000 使用。
-// 目录化（2026-08）：time/mod.zeta = 原 time.zeta（模块规模小，保持单文件）。
+// 目录化（2026-08）：time/module.zeta = 原 time.zeta（模块规模小，保持单文件）。
 
 // 时长：以微秒为唯一存储单位，各单位视图由换算方法提供。
 struct Duration {

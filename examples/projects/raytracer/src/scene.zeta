@@ -1,10 +1,10 @@
 // ===== 场景：几何体、光源、环境参数 =====
 // 坐标全部为定点（×1000），如 x=-3500 即 -3.5 个单位。
 
-use fixed::SCALE;
-use vec3::Vec3;
-use color::Color;
-use ray::Sphere;
+import fixed::SCALE;
+import vec3::Vec3;
+import color::Color;
+import ray::Sphere;
 
 pub struct Scene {
     pub spheres: Vec<Sphere>,

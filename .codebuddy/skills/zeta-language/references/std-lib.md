@@ -1,8 +1,8 @@
 # Zeta 标准库速查（v0.1.0）
 
 > 实际布局（2026-08-22 模块化拆分）：`zeta-std/zeta/core.zeta` 根模块（String / Vec / HashMap / Option /
-> Result + 全部 extern 声明 + `mod` 声明 + `use` 重新导出）+ 子模块文件 `time.zeta` / `io.zeta` /
-> `net.zeta` / `sync.zeta`。**裸名即用**（`use time::Duration;` 等已在根模块重导出）。
+> Result + 全部 extern 声明 + `module` 声明 + `import` 重新导出）+ 子模块文件 `time.zeta` / `io.zeta` /
+> `net.zeta` / `sync.zeta`（目录形式 `time/module.zeta` 等）。**裸名即用**（`import time::Duration;` 等已在根模块重导出）。
 > ⚠️ `docs/std-lib.md` 中的完整 API 为**目标架构（规划）**，MVP 只实现了下列 ✅ 子集。编写代码只可用 ✅ 项。
 
 ## 内建（无需导入）
@@ -47,7 +47,7 @@ let idx = v.binary_search(&30);  // 返回 index（要求已排序）
 ```zeta
 let m: HashMap<String, i64> = HashMap::new();
 m.insert(String::from("a"), 1);
-let v = m.get(String::from("a"));   // 取值
+let v = m.get(String::from("a"));   // 返回 Option<V>（不存在 → None）
 ```
 
 ⚠️ 规划（未实现）：`remove` / `contains_key` / `iter` / `with_capacity`。
