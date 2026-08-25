@@ -5,7 +5,7 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased] - 2026-08-23
+## [0.1.0] 补充记录（2026-08-23 开发迭代，随 v0.1.0 首发）
 
 ### 新增
 
@@ -35,9 +35,9 @@
 - **嵌套 `gc_region` 中外层逃逸对象被误回收**（`collect` 存活提升）：提升条件由 `marked && epoch == s.epoch` 改为全部被标记对象，确保嵌套块释放旧 root 后外层逃逸对象（`epoch < s.epoch` 存活但未标记可达）仍受保护。
 - **按值（栈内联）聚合判定不安全致 `tcp_addr` SIGSEGV**（zeta-typecheck `check_expr.rs`）：`struct_by_value`/`enum_by_value` 此前仅查槽数（struct ≤2 字段 / enum ≤2 槽），不查字段类型——按值对象以 `[2 x i64]` 栈槽存储，当其作为另一聚合（enum/struct）的字段/payload 时以"对象地址"语义写入外层 Ptr 槽；若该对象含聚合字段（如 `SocketAddr { ip: String, port: i64 }`，`Result<SocketAddr, _>::Ok(sa)`），写入的是**内部对象栈地址**，函数返回/跨调用后悬垂 → 后续 String 操作读垃圾指针（`strnlen` 崩溃于 0x200）。修复：按值判定增加安全约束——① 对象所有字段须为**具体标量槽**（`field_is_scalar_slot`：非泛型/未推断 + `field_scalar_of != Ptr`）；② **泛型枚举（`Option`/`Result` 等）保守禁用按值**——定义时无法预知类型实参是否聚合，且同一枚举 `None`/`Some` 等各构造路径须判定一致（退化回 calloc 堆分配，指针稳定）。`Ipv4Octets`（4 标量字段）等纯标量聚合不受影响；全量 `suite_test` 回归全绿；基准重测无性能退化（hashmap 11.09 / hashmap_str 5.30 / strcat 3.29 ms，与修复前持平或更好）。
 
-## [0.1.0] - 2026-08-22
+## [0.1.0] - 2026-08-25
 
-首个公开版本。Zeta 编译器、标准库与工具链的里程碑能力汇总。
+首个公开版本（2026-08-25 首发）。Zeta 编译器、标准库与工具链的里程碑能力汇总；2026-08-23 开发迭代内容（模块系统更名、region 选项、Gc、dyn Trait、闭包补全、严格借用检查、WASM 修复、region 性能优化、HashMap Robin Hood 重写等）见上方「补充记录」。
 
 ### 新增
 

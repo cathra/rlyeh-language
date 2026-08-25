@@ -44,8 +44,8 @@ zeta new hello && cd hello && zeta run src/main.zeta
 
 ## 构建产物
 
-- **本地安装**：`~/.zeta/`（bin/ + std/ + skills/ + registry/，可重定位）
-- **归档**：`toolchains/dist/zeta-toolchain-<ver>-<os>-<arch>.tar.gz`（解压后 `bin` 加入 PATH 即可用，wrapper 自动定位同目录 std；`skills/zeta-language/` 为项目级技能，可被 CodeBuddy 等 IDE 加载）
+- **本地安装**：`~/.zeta/`（bin/ + std/ + skills/ + examples/ + registry/，可重定位）
+- **归档**：`toolchains/dist/zeta-toolchain-<ver>-<os>-<arch>.tar.gz`（解压后 `bin` 加入 PATH 即可用，wrapper 自动定位同目录 std；`skills/zeta-language/` 为项目级技能，可被 CodeBuddy 等 IDE 加载；`examples/std-demos/` 为标准库各功能点用例项目，纯代码随包分发，不编译）
 
 ## 环境要求
 

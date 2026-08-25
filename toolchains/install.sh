@@ -19,6 +19,7 @@
 #   │   └── zep               # 包管理器
 #   ├── std/                  # 标准库源码（core.zeta + time/io/net/... 模块）
 #   ├── skills/               # zeta-language 技能（SKILL.md + references/）
+#   ├── examples/             # std-demos 用例项目（纯代码，不编译）
 #   └── registry/             # 本地 zep 注册表（publish 目标，自动创建）
 #
 set -euo pipefail
@@ -26,7 +27,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 PREFIX="${ZETA_PREFIX:-$HOME/.zeta}"
-RELEASE="$REPO/target/release"
+RELEASE="${ZETA_RELEASE_DIR:-$REPO/target/release}"
 
 BINARIES=(zeta-driver zeta-fmt zeta-check zeta-doc zeta-bench zep)
 STD_SRC="$REPO/crates/zeta-std/zeta"
@@ -73,6 +74,17 @@ if [[ -d "$SKILL_SRC" ]]; then
     echo "    技能 -> $PREFIX/skills/zeta-language"
 else
     echo "!! 未找到技能目录（$SKILL_SRC），跳过"
+fi
+
+# 5b. 复制 std-demos 用例项目（纯代码，不编译）
+DEMOS_SRC="$REPO/examples/std-demos"
+if [[ -d "$DEMOS_SRC" ]]; then
+    rm -rf "$PREFIX/examples/std-demos"
+    mkdir -p "$PREFIX/examples"
+    cp -R "$DEMOS_SRC" "$PREFIX/examples/"
+    echo "    用例项目 -> $PREFIX/examples/std-demos"
+else
+    echo "!! 未找到用例项目目录（$DEMOS_SRC），跳过"
 fi
 
 # 6. 生成 zeta 入口命令

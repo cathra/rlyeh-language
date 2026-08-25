@@ -87,7 +87,7 @@ if [[ "$RUN_TAR" == 1 ]]; then
     TARBALL="$DIST/zeta-toolchain-$VERSION-$OS-$ARCH.tar.gz"
     echo
     echo "==> [5/5] 归档打包"
-    tar -C "$PREFIX" -czf "$TARBALL" bin std skills
+    tar -C "$PREFIX" -czf "$TARBALL" bin std skills examples
     echo "    归档: $TARBALL ($(du -h "$TARBALL" | cut -f1))"
 fi
 
