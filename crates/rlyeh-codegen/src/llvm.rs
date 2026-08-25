@@ -2875,7 +2875,12 @@ fn fn_llvm_type(param_tys: &[LirType], ret_ty: LirType) -> Result<String, Codege
         .map(|t| llvm_type(*t).map(ToString::to_string))
         .collect::<Result<Vec<_>, _>>()?
         .join(", ");
-    let ret = llvm_type(ret_ty)?;
+    // 返回 `()` 的函数指针：void 返回（函数定义侧 `define void`，见 gen_function）
+    let ret = if ret_ty == LirType::Unit {
+        "void".to_string()
+    } else {
+        llvm_type(ret_ty)?.to_string()
+    };
     Ok(format!("{ret}({params})*"))
 }
 

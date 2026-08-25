@@ -163,7 +163,7 @@ impl Printer {
         head.push_str("fn ");
         head.push_str(&f.name);
         if !f.generics.is_empty() {
-            head.push_str(&format!("<{}>", f.generics.join(", ")));
+            head.push_str(&format!("<{}>", fmt_generics(&f.generics)));
         }
         head.push('(');
         let params = f
@@ -190,7 +190,7 @@ impl Printer {
     fn print_struct_decl(&mut self, s: &AstStructDecl) {
         let mut head = format!("struct {}", s.name);
         if !s.generics.is_empty() {
-            head.push_str(&format!("<{}>", s.generics.join(", ")));
+            head.push_str(&format!("<{}>", fmt_generics(&s.generics)));
         }
         head.push_str(" {");
         let fields = s
@@ -208,7 +208,7 @@ impl Printer {
     fn print_enum_decl(&mut self, e: &AstEnumDecl) {
         let mut head = format!("enum {}", e.name);
         if !e.generics.is_empty() {
-            head.push_str(&format!("<{}>", e.generics.join(", ")));
+            head.push_str(&format!("<{}>", fmt_generics(&e.generics)));
         }
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
@@ -222,7 +222,7 @@ impl Printer {
     fn print_trait_decl(&mut self, t: &AstTraitDecl) {
         let mut head = format!("trait {}", t.name);
         if !t.generics.is_empty() {
-            head.push_str(&format!("<{}>", t.generics.join(", ")));
+            head.push_str(&format!("<{}>", fmt_generics(&t.generics)));
         }
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
@@ -236,7 +236,7 @@ impl Printer {
     fn print_impl_block(&mut self, i: &AstImplBlock) {
         let mut head = String::from("impl");
         if !i.generics.is_empty() {
-            head.push_str(&format!("<{}>", i.generics.join(", ")));
+            head.push_str(&format!("<{}>", fmt_generics(&i.generics)));
         }
         head.push(' ');
         match &i.trait_name {
@@ -954,6 +954,21 @@ fn fmt_type(t: &AstType) -> String {
         ),
         AstType::Infer => "_".to_string(),
     }
+}
+
+/// 格式化泛型参数列表：`T: Bound1 + Bound2`（U3）。
+fn fmt_generics(generics: &[AstTypeParam]) -> String {
+    generics
+        .iter()
+        .map(|p| {
+            if p.bounds.is_empty() {
+                p.name.clone()
+            } else {
+                format!("{}: {}", p.name, p.bounds.join(" + "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn fmt_param(p: &AstParam) -> String {

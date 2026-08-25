@@ -52,13 +52,22 @@ pub enum AstItem {
     Statement(Box<AstStmt>),
 }
 
+/// 泛型参数（U3：携带 trait bound，`T: Bound1 + Bound2`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct AstTypeParam {
+    /// 参数名
+    pub name: String,
+    /// 约束 trait 名列表（`T: A + B`；MVP 支持简单 trait 路径 ident）
+    pub bounds: Vec<String>,
+}
+
 /// 函数声明。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstFnDecl {
     /// 函数名
     pub name: String,
-    /// 泛型参数名列表
-    pub generics: Vec<String>,
+    /// 泛型参数列表
+    pub generics: Vec<AstTypeParam>,
     /// 参数列表
     pub params: Vec<AstParam>,
     /// 返回类型（缺省为 `()`）
@@ -124,7 +133,8 @@ pub struct AstStructDecl {
     /// 结构体名
     pub name: String,
     /// 泛型参数名列表
-    pub generics: Vec<String>,
+    /// 泛型参数列表
+    pub generics: Vec<AstTypeParam>,
     /// 命名字段
     pub fields: Vec<AstStructField>,
     /// 派生 trait 名列表（`#[derive(Serialize, Deserialize)]`，阶段 Q1b）
@@ -152,7 +162,8 @@ pub struct AstEnumDecl {
     /// 枚举名
     pub name: String,
     /// 泛型参数名列表
-    pub generics: Vec<String>,
+    /// 泛型参数列表
+    pub generics: Vec<AstTypeParam>,
     /// 变体列表
     pub variants: Vec<AstEnumVariant>,
     /// 源码位置
@@ -178,7 +189,10 @@ pub struct AstTraitDecl {
     /// Trait 名
     pub name: String,
     /// 泛型参数名列表
-    pub generics: Vec<String>,
+    /// 泛型参数列表
+    pub generics: Vec<AstTypeParam>,
+    /// 关联类型声明名列表（`type Item;`）
+    pub types: Vec<String>,
     /// 抽象方法列表
     pub methods: Vec<AstFnDecl>,
     /// 源码位置
@@ -193,7 +207,10 @@ pub struct AstImplBlock {
     /// 被实现的类型名
     pub type_name: String,
     /// 泛型参数名列表
-    pub generics: Vec<String>,
+    /// 泛型参数列表
+    pub generics: Vec<AstTypeParam>,
+    /// 关联类型定义列表（`type Item = Concrete;`）
+    pub types: Vec<(String, AstType)>,
     /// 方法列表
     pub methods: Vec<AstFnDecl>,
     /// 源码位置

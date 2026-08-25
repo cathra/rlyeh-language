@@ -91,6 +91,22 @@ let y: f64 = 3.14;               // 显式类型注解
 let mut v = Vec::new();          // 可变绑定（对象修改用）
 ```
 
+**块级遮蔽**（U1 ✅）：块内 `let x` 覆盖外层同名变量，块内引用指向新绑定，块结束后原变量恢复；函数/闭包体为隔离边界（看不到外层函数的局部变量），块 / 循环体 / `match` 臂可穿透所属函数层。
+
+```rlyeh
+let x = 10;
+{
+    let x = 20;
+    println(x);                  // 20（块内遮蔽）
+};
+println(x);                      // 10（块后恢复）
+let i = 100;
+for i in 0..<3 {
+    println(i);                  // 0 1 2（for 变量遮蔽外层）
+}
+println(i);                      // 100（循环后恢复）
+```
+
 ### 3.2 函数
 
 ```rlyeh
@@ -487,6 +503,81 @@ impl Area for Shape {
 
 泛型按单态化编译（每个具体类型实例化一份代码）。
 
+**关联类型**（U2 ✅）：`trait T { type Item; ... }` 声明 + `impl T for X { type Item = Concrete; }` 定义；impl 方法签名中的 `Self::Item` 在收集期替换为具体类型（返回 / 参数位置均可用，多个关联类型允许）：
+
+```rlyeh
+trait Container {
+    type Item;
+    type Label;
+    fn get(&self) -> Self::Item;
+    fn set(&mut self, v: Self::Item);
+}
+
+struct Box { value: i64 }
+impl Container for Box {
+    type Item = i64;
+    type Label = String;
+    fn get(&self) -> Self::Item { self.value }
+    fn set(&mut self, v: Self::Item) { self.value = v; }
+}
+
+let mut b = Box { value: 42 };
+println(b.get());              // 42
+b.set(99);
+println(b.get());              // 99
+```
+
+MVP 限制：关联类型仅支持非泛型 trait（`impl<T> ... { type Item = T; }` 泛型化规划中）；含关联类型签名的方法经 `dyn` vtable 分派报 Unsupported（H4 dyn 局部变量去虚拟化场景可用，静态分派到具体 impl）；std `Iterator::Item` / `Future::Output` 泛型化留待 V 阶段。
+
+**泛型 trait 约束（bound / where，U3 ✅）**：泛型参数可声明 trait bound——调用点宽松校验实参已实现 bound trait（不推导）：
+
+```rlyeh
+trait HasArea { fn area(&self) -> f64; }
+
+struct Point { x: i64, y: i64 }
+impl HasArea for Point {
+    fn area(&self) -> f64 { 0.0 }
+}
+
+// 单 bound / 多 bound / 混合（T 有 bound、U 无）
+fn scale<T: HasArea>(t: T, k: f64) -> f64 { t.area() * k }
+fn describe<T: Named + HasArea>(t: T) -> String { t.name() }
+fn first<T: HasArea, U>(t: T, u: U) -> f64 { t.area() }
+
+// impl where 子句（解析 + 记录）
+impl<T> Show for Wrapper<T> where T: HasArea { /* ... */ }
+```
+
+约束语义：`T: Bound` 声明后在**调用点**校验——`scale(p, 2.0)` 要求 `Point: HasArea` 成立（查 `impl HasArea for Point`），不满足报 `type `i64` does not implement trait `HasArea``；泛型函数体内 `t.area()` 经单态化实例化（T 替换为具体类型）自然解析。MVP 限制：bound 支持简单 trait 路径 ident（`+` 连接多 bound）；impl where 仅记录不校验、约束推导（`T: Trait` 与 `impl Trait for T` 的联动推导）规划中；`T: Serialize` / `F: Future` / `B: FromIterator<T>` 签名落地待对应 std trait 声明（语言能力已就绪）。
+
+**`-> Self` 返回（U4 ✅）**：trait / inherent / static 方法签名与函数体中的 `Self` 解析为当前 impl 的目标类型：
+
+```rlyeh
+trait Clone { fn clone(&self) -> Self; }
+trait Zero { fn zero() -> Self; }
+
+struct Point { x: i64, y: i64 }
+impl Clone for Point {
+    fn clone(&self) -> Self {
+        let t: Self = Point { x: self.x, y: self.y };  // body 内 Self 注解亦生效
+        t
+    }
+}
+impl Zero for Point {
+    fn zero() -> Self { Point { x: 0, y: 0 } }         // static 方法
+}
+impl Point {
+    fn doubled(&self) -> Self { Point { x: self.x * 2, y: self.y * 2 } }
+}
+
+let p = Point { x: 3, y: 4 };
+let c = p.clone();          // 返回 Point
+let z = Point::zero();
+println(p.doubled().sum()); // 返回 Self 后链式调用
+```
+
+泛型 impl 单态化后 `Self` 替换为具体类型（`Wrapper<i64>::new(v) -> Self` → `Wrapper<i64>`）。MVP 限制：`Self` 仅支持**返回位置**——参数位置（关联返回）保持禁止；dyn 场景含 `Self` 签名方法不可经 vtable 调用（H4 既有限制）；`From::from(v) -> Self` / `Into::into() -> Self` / `Deserialize::from_json(s) -> Self` 落地待 std trait 声明。
+
 ---
 
 ## 6. 数组与索引
@@ -534,6 +625,7 @@ import math::square as sq;
 > 借用规则：`&mut T` 可传给 `&T` 参数；严格可变性互斥 / 悬垂 / 别名检查（borrowck）已实现（见下）。
 > `ref` / `ref mut` 模式已实现（见下）：`match` 臂与 `let ref x = e;` 绑定变量为对匹配值的引用而非值拷贝。
 > 用户顶层函数与 std 预置根函数重名时（如自定义 `fn read` 与 std extern `read`），用户侧声明自动以 `read@shadow<N>` 内部名注册，std 模块内部裸名调用仍绑定 std 版本，用户代码绑定自身版本，互不干扰。
+> `&`/`&mut` 目标（U5 ✅）：支持变量、解引用 `&*p`/`&mut *p`（MIR 折叠直接透传指针——`&mut *b` 写回原 Box 堆地址生效）与不可变 `&expr`（任意表达式求值到临时槽取址，读语义）；`&obj.field`/`&arr[i]`（字段/索引取地址）、`&mut` 非左值目标、`&&T` 引用再取引用保持 Unsupported（字段/索引经拷贝取址语义错误，待 MIR place 概念）。
 
 ```rlyeh
 let s = String::from("hello");

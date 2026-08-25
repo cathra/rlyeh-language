@@ -4,7 +4,7 @@ use crate::error::ParseError;
 use crate::parser::Parser;
 use rlyeh_ast::{
     AstConstDecl, AstEnumDecl, AstEnumVariant, AstFnDecl, AstImplBlock, AstModDecl, AstParam,
-    AstStructDecl, AstStructField, AstTraitDecl, AstType, AstUseDecl,
+    AstStructDecl, AstStructField, AstTraitDecl, AstType, AstTypeParam, AstUseDecl,
 };
 use rlyeh_lexer::Token;
 
@@ -66,12 +66,12 @@ impl<'src> Parser<'src> {
     }
 
     /// 泛型参数列表 `<T, U>`（跳过 bound 细节）
-    fn parse_generics(&mut self) -> Result<Vec<String>, ParseError> {
+    fn parse_generics(&mut self) -> Result<Vec<AstTypeParam>, ParseError> {
         if !self.check(&Token::Lt) {
             return Ok(Vec::new());
         }
         self.bump();
-        let mut names = Vec::new();
+        let mut params = Vec::new();
         loop {
             if self.at_eof() {
                 return Err(self.unexpected("'>'"));
@@ -97,16 +97,18 @@ impl<'src> Parser<'src> {
                 continue;
             }
             let n = self.expect_ident()?;
-            names.push(n);
-            // 跳过 `: Bound [+ Bound]`
+            // 约束 `T: Bound1 [+ Bound2]`（U3；MVP 支持简单 trait 路径 ident）
+            let mut bounds = Vec::new();
             if self.eat(&Token::Colon) {
-                while !self.check(&Token::Comma) && !self.check(&Token::Gt) {
-                    if self.at_eof() {
-                        return Err(self.unexpected("'>'"));
+                loop {
+                    let b = self.expect_ident()?;
+                    bounds.push(b);
+                    if !self.eat(&Token::Plus) {
+                        break;
                     }
-                    self.bump();
                 }
             }
+            params.push(AstTypeParam { name: n, bounds });
             if self.eat(&Token::Gt) {
                 break;
             }
@@ -114,7 +116,38 @@ impl<'src> Parser<'src> {
                 return Err(self.unexpected("',' or '>'"));
             }
         }
-        Ok(names)
+        Ok(params)
+    }
+
+    /// 可选 where 子句（U3）：`where K: Bound1 [+ Bound2], V: Bound3`，
+    /// 约束按参数名合并到给定泛型参数列表（不存在的参数名忽略）。
+    fn parse_where_clause(
+        &mut self,
+        generics: &mut Vec<AstTypeParam>,
+    ) -> Result<(), ParseError> {
+        if !self.eat(&Token::Where) {
+            return Ok(());
+        }
+        loop {
+            let name = self.expect_ident()?;
+            self.expect(&Token::Colon, "':'")?;
+            let mut bounds = Vec::new();
+            loop {
+                let b = self.expect_ident()?;
+                bounds.push(b);
+                if !self.eat(&Token::Plus) {
+                    break;
+                }
+            }
+            if let Some(p) = generics.iter_mut().find(|p| p.name == name) {
+                p.bounds.extend(bounds);
+            }
+            if self.eat(&Token::Comma) {
+                continue;
+            }
+            break;
+        }
+        Ok(())
     }
 
     /// 参数列表 `(name: Type, other: Type = default)`
@@ -300,10 +333,19 @@ impl<'src> Parser<'src> {
         let name = self.expect_ident()?;
         let generics = self.parse_generics()?;
         self.expect(&Token::LBrace, "'{'")?;
+        let mut types = Vec::new();
         let mut methods = Vec::new();
         while !self.check(&Token::RBrace) {
             if self.at_eof() {
                 return Err(self.unexpected("'}'"));
+            }
+            if self.check(&Token::Type) {
+                // 关联类型声明 `type Item;`（U2）
+                self.bump();
+                let tname = self.expect_ident()?;
+                self.expect(&Token::Semicolon, "';'")?;
+                types.push(tname);
+                continue;
             }
             methods.push(self.parse_fn()?);
         }
@@ -311,6 +353,7 @@ impl<'src> Parser<'src> {
         Ok(AstTraitDecl {
             name,
             generics,
+            types,
             methods,
             span: self.merge_span(start, end),
         })
@@ -319,7 +362,7 @@ impl<'src> Parser<'src> {
     /// impl 块：`impl [Trait for] Type { ... }`
     pub(crate) fn parse_impl(&mut self) -> Result<AstImplBlock, ParseError> {
         let start = self.expect(&Token::Impl, "'impl'")?.span;
-        let generics = self.parse_generics()?;
+        let mut generics = self.parse_generics()?;
         let first = self.expect_ident()?;
         let (trait_name, type_name) = if self.eat(&Token::For) {
             (Some(first), self.expect_ident()?)
@@ -342,11 +385,24 @@ impl<'src> Parser<'src> {
             }
             self.expect(&Token::Gt, "'>'")?;
         }
+        // where 子句（U3）：`impl<K, V> Trait for Type where K: Hash + Eq { ... }`
+        self.parse_where_clause(&mut generics)?;
         self.expect(&Token::LBrace, "'{'")?;
+        let mut types = Vec::new();
         let mut methods = Vec::new();
         while !self.check(&Token::RBrace) {
             if self.at_eof() {
                 return Err(self.unexpected("'}'"));
+            }
+            if self.check(&Token::Type) {
+                // 关联类型定义 `type Item = Concrete;`（U2）
+                self.bump();
+                let tname = self.expect_ident()?;
+                self.expect(&Token::Assign, "'='")?;
+                let ty = self.parse_type()?;
+                self.expect(&Token::Semicolon, "';'")?;
+                types.push((tname, ty));
+                continue;
             }
             methods.push(self.parse_fn()?);
         }
@@ -355,6 +411,7 @@ impl<'src> Parser<'src> {
             trait_name,
             type_name,
             generics,
+            types,
             methods,
             span: self.merge_span(start, end),
         })

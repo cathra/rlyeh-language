@@ -476,7 +476,14 @@ impl MirLowerer {
                 is_mut: _,
                 pointee,
             } => {
-                // `&x` / `&mut x`：取引用（MVP 目标为变量）
+                // `&*p`（U5：解引用再取引用）：引用按指针传递，`&*p` 的值即
+                // `p` 的指针值，直接透传内部指针——避免 DerefRead 拷贝临时再
+                // 取址的语义错误（拷贝后地址 ≠ 原地址，`&mut` 写回不生效）。
+                if let HirExpr::Deref { expr: inner, .. } = expr.as_ref() {
+                    return self.lower_expr(inner).map(MirValue::Place);
+                }
+                // `&x` / `&mut x`：取引用（lower_expr 递归降任意目标表达式
+                // 到临时槽再取址——非变量目标亦支持，U5）
                 let o = self.lower_expr(expr)?;
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::AddrOf {

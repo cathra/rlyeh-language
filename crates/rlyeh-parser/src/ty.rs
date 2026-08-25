@@ -43,7 +43,16 @@ impl<'src> Parser<'src> {
             }
             Some(Token::SelfKw) => {
                 self.bump();
-                Ok(AstType::Path("Self".to_string(), Vec::new()))
+                // `Self` 或 `Self::Item`（关联类型引用，U2）
+                if self.eat_colon_colon() {
+                    let member = self.expect_ident()?;
+                    Ok(AstType::Path(
+                        format!("Self::{member}"),
+                        Vec::new(),
+                    ))
+                } else {
+                    Ok(AstType::Path("Self".to_string(), Vec::new()))
+                }
             }
             Some(Token::Ident(name)) => {
                 self.bump();

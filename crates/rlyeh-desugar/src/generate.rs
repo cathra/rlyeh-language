@@ -164,6 +164,7 @@ pub fn gen_impl(a: &AnalyzedAsync) -> AstItem {
         trait_name: Some("Future".to_string()),
         type_name: fut_ty_name(&a.decl.name),
         generics: Vec::new(),
+        types: Vec::new(),
         methods: vec![poll_fn],
         span,
     }))

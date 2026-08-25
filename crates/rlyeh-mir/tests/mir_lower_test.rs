@@ -292,6 +292,59 @@ fn main() -> u32 {
 }
 
 #[test]
+fn test_lower_addr_of_deref_fold() {
+    // U5：`&*b`（解引用再取引用）折叠为直接透传指针——
+    // 不生成 DerefRead 拷贝 + AddrOf 取临时地址（拷贝后地址 ≠ 原地址，
+    // `&mut` 写回不生效的语义错误）
+    let m = lower(
+        r#"
+fn main() -> u32 {
+    let b = Box::new(7);
+    let p = &*b;
+    *p
+}
+"#,
+    );
+    let f = first_fn(&m);
+    let stmts = &f.blocks[0].stmts;
+    assert!(
+        !stmts.iter().any(|s| matches!(s, MirStmt::AddrOf { .. })),
+        "`&*b` 应折叠透传指针，不生成 AddrOf"
+    );
+    // 结果经 DerefRead(p) 读取（p 即 Box 指针值）
+    assert!(stmts.iter().any(|s| matches!(
+        s,
+        MirStmt::DerefRead { base, .. } if base == "p"
+    )));
+}
+
+#[test]
+fn test_lower_addr_of_deref_mut_fold() {
+    // U5：`&mut *b` 折叠后 DerefWrite 直接写原 Box 堆地址（写回生效）
+    let m = lower(
+        r#"
+fn main() -> u32 {
+    let mut b = Box::new(7);
+    let p = &mut *b;
+    *p = 9;
+    *b
+}
+"#,
+    );
+    let f = first_fn(&m);
+    let stmts = &f.blocks[0].stmts;
+    assert!(
+        !stmts.iter().any(|s| matches!(s, MirStmt::AddrOf { .. })),
+        "`&mut *b` 应折叠透传指针，不生成 AddrOf"
+    );
+    // 写经 DerefWrite(base=p) 直达 Box 堆地址（无中间拷贝临时）
+    assert!(stmts.iter().any(|s| matches!(
+        s,
+        MirStmt::DerefWrite { base, .. } if base == "p"
+    )));
+}
+
+#[test]
 fn test_lower_call_and_args() {
     let m = lower(
         r#"

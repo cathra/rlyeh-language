@@ -101,14 +101,16 @@ pub(crate) fn check_stmt(
                     }
                     // H4 去虚拟化：dyn 绑定记录具体类型名
                     if let Some(concrete) = pending_dyn_concrete.take() {
-                        ctx.dyn_concrete.insert(name.clone(), concrete);
+                        ctx.insert_dyn_concrete(name.clone(), concrete);
                     }
-                    ctx.insert_variable(name.clone(), bind_ty);
+                    // U1：insert 返回存储槽名（块级遮蔽时 mangle），
+                    // Let 绑定名与后续引用解析的槽名保持一致。
+                    let stored = ctx.insert_variable(name.clone(), bind_ty);
                     // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
-                    ctx.insert_local_init(name.clone(), h_init.clone());
+                    ctx.insert_local_init(stored.clone(), h_init.clone());
                     Ok((
                         HirStmt::Let {
-                            name: name.clone(),
+                            name: stored.clone(),
                             init: h_init,
                             mutable: *mutable,
                         },
@@ -137,12 +139,12 @@ pub(crate) fn check_stmt(
                             Mutability::Immutable
                         };
                         let bind_ty = Type::Ref(Box::new(ty.clone()), mutability);
-                        ctx.insert_variable(name.clone(), bind_ty);
+                        let stored = ctx.insert_variable(name.clone(), bind_ty);
                         // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
-                        ctx.insert_local_init(name.clone(), h_init.clone());
+                        ctx.insert_local_init(stored.clone(), h_init.clone());
                         Ok((
                             HirStmt::Let {
-                                name: name.clone(),
+                                name: stored.clone(),
                                 init: HirExpr::Ref {
                                     expr: Box::new(h_init),
                                     is_mut: *is_mut,

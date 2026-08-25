@@ -190,6 +190,17 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 泛型实参不满足 trait bound（U3）
+    GenericBoundMismatch {
+        /// 泛型参数名
+        param: String,
+        /// 未满足的 bound trait 名
+        bound: String,
+        /// 实参具体类型
+        ty: String,
+        /// 源码位置
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -228,7 +239,8 @@ impl TypeError {
             | TypeError::ChainTypeMismatch { span }
             | TypeError::InSetTypeMismatch { span, .. }
             | TypeError::NonConstantBound { span }
-            | TypeError::Unsupported { span, .. } => *span,
+            | TypeError::Unsupported { span, .. }
+            | TypeError::GenericBoundMismatch { span, .. } => *span,
         }
     }
 }
@@ -338,6 +350,15 @@ impl fmt::Display for TypeError {
             TypeError::Unsupported { what, .. } => {
                 write!(f, "{loc}: error: unsupported syntax: {what}")
             }
+            TypeError::GenericBoundMismatch {
+                param,
+                bound,
+                ty,
+                ..
+            } => write!(
+                f,
+                "{loc}: error: type `{ty}` does not implement trait `{bound}` (bound on generic parameter `{param}`)"
+            ),
         }
     }
 }

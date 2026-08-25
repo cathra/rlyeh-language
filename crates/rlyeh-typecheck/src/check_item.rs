@@ -12,8 +12,8 @@ use rlyeh_hir::{
 use rlyeh_lexer::Span;
 
 use crate::check_expr::{
-    check_block, check_block_with_expected_final, fix_deferred_closure_with_sig, infer_expr,
-    resolve_ast_type, try_closure_value_as_fn,
+    check_block, check_block_inner, fix_deferred_closure_with_sig, infer_expr, resolve_ast_type,
+    try_closure_value_as_fn,
 };
 use crate::context::{FnTemplate, TypeContext};
 use crate::error::TypeError;
@@ -87,7 +87,13 @@ fn collect_item_decls(
                     full_name(prefix, &f.name),
                     FnTemplate {
                         name: f.name.clone(),
-                        type_params: f.generics.clone(),
+                        type_params: f.generics.iter().map(|p| p.name.clone()).collect(),
+                        bounds: f
+                            .generics
+                            .iter()
+                            .filter(|p| !p.bounds.is_empty())
+                            .map(|p| (p.name.clone(), p.bounds.clone()))
+                            .collect(),
                         sig,
                         ast: (**f).clone(),
                     },
@@ -287,7 +293,7 @@ pub(crate) fn check_item(
 fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Result<(), TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
-    ctx.type_params = s.generics.clone();
+    ctx.type_params = s.generics.iter().map(|p| p.name.clone()).collect();
 
     let mut fields = Vec::with_capacity(s.fields.len());
     for field in &s.fields {
@@ -435,7 +441,8 @@ fn expand_actor(
 
     // 3. 状态初始化函数 `<actor>::__state_new() -> i64`
     //    `let __s = alloc(N); set(__s, 0, v0); ...; __s`
-    let saved = std::mem::take(&mut ctx.variables);
+    //    U1：函数边界作用域（隔离，与调用方变量环境互不可见）。
+    ctx.push_scope(true);
     let mut stmts = vec![HirStmt::Let {
         name: "__s".to_string(),
         init: HirExpr::Alloc {
@@ -460,7 +467,7 @@ fn expand_actor(
             ty: slots[idx].1,
         }));
     }
-    ctx.variables = saved;
+    ctx.pop_scope();
     out.push(HirItem {
         name: state_new.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
@@ -576,7 +583,8 @@ fn check_actor_method_body(
     m: &AstFnDecl,
     actor_full: &str,
 ) -> Result<rlyeh_hir::HirBlock, TypeError> {
-    let saved = std::mem::take(&mut ctx.variables);
+    // U1：函数边界作用域（隔离：方法体内看不到调用方变量）。
+    ctx.push_scope(true);
     ctx.insert_variable(
         "self".to_string(),
         Type::Named(actor_full.to_string(), vec![]),
@@ -596,7 +604,7 @@ fn check_actor_method_body(
     // 返回类型一致性（collect 阶段已限定 i64）
     let return_type = fn_signature_with_self(ctx, m, None, m.span)?.return_type;
     if body_ty != Type::Never && !body_ty.compatible_with(&return_type) {
-        ctx.variables = saved;
+        ctx.pop_scope();
         return Err(TypeError::WrongType {
             expected: return_type.to_string(),
             found: body_ty.to_string(),
@@ -604,7 +612,7 @@ fn check_actor_method_body(
         });
     }
 
-    ctx.variables = saved;
+    ctx.pop_scope();
     Ok(hir_body)
 }
 
@@ -692,7 +700,7 @@ fn emit_gc_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
 fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str) -> Result<(), TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
-    ctx.type_params = e.generics.clone();
+    ctx.type_params = e.generics.iter().map(|p| p.name.clone()).collect();
 
     let mut variants = Vec::with_capacity(e.variants.len());
     let mut max_fields = 0usize;
@@ -722,7 +730,7 @@ fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str) -> Result<
         full_name(prefix, &e.name),
         EnumDef {
             name: e.name.clone(),
-            type_params: e.generics.clone(),
+            type_params: e.generics.iter().map(|p| p.name.clone()).collect(),
             variants,
             slot_count: 1 + max_fields,
         },
@@ -734,7 +742,7 @@ fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str) -> Result<
 fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &str) -> Result<(), TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
-    ctx.type_params = t.generics.clone();
+    ctx.type_params = t.generics.iter().map(|p| p.name.clone()).collect();
 
     let mut methods = Vec::new();
     for m in &t.methods {
@@ -764,7 +772,8 @@ fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &str) -> Resul
         full_name(prefix, &t.name),
         TraitDef {
             name: t.name.clone(),
-            type_params: t.generics.clone(),
+            type_params: t.generics.iter().map(|p| p.name.clone()).collect(),
+            assoc_types: t.types.clone(),
             methods,
         },
     );
@@ -775,12 +784,15 @@ fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &str) -> Resul
 fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Result<(), TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
-    ctx.type_params = imp.generics.clone();
+    ctx.type_params = imp.generics.iter().map(|p| p.name.clone()).collect();
 
     // self 类型：`impl<T> Vec<T>` → `Named("Vec", [Generic("T")])`
     let self_type = Type::Named(
         full_name(prefix, &imp.type_name),
-        imp.generics.iter().map(|g| Type::Generic(g.clone())).collect(),
+        imp.generics
+            .iter()
+            .map(|p| Type::Generic(p.name.clone()))
+            .collect(),
     );
     // trait 名解析为完整符号名（与 `dyn Trait` 解析一致）：
     // 1) 显式 `mod::Trait` 路径原样使用；2) 当前模块前缀下存在（`impl Trait` 定义于 trait 同模块内）；
@@ -803,6 +815,21 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
         ),
         None => None,
     };
+
+    // 关联类型定义：`type Item = Concrete;`（U2）。先解析（此时 assoc_types
+    // 为空，`Self::Item` 自引用退化为占位 `Generic("Self::Item")`），再填充
+    // 映射供方法签名中的 `Self::Item` 替换。
+    let assoc_types = imp
+        .types
+        .iter()
+        .map(|(n, ty)| Ok((n.clone(), resolve_ast_type(ctx, ty, imp.span)?)))
+        .collect::<Result<Vec<(String, Type)>, TypeError>>()?;
+    let saved_assoc = std::mem::take(&mut ctx.assoc_types);
+    ctx.assoc_types = assoc_types.iter().cloned().collect();
+
+    // U4：方法签名内 `Self` 解析为 impl 目标类型（static 方法同样适用）
+    let saved_self = ctx.self_type.clone();
+    ctx.self_type = Some(self_type.clone());
 
     let mut methods = Vec::new();
     for m in &imp.methods {
@@ -843,10 +870,19 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
 
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
+    ctx.assoc_types = saved_assoc;
+    ctx.self_type = saved_self;
     ctx.insert_impl(ImplDef {
         trait_name,
         self_type,
-        type_params: imp.generics.clone(),
+        type_params: imp.generics.iter().map(|p| p.name.clone()).collect(),
+        bounds: imp
+            .generics
+            .iter()
+            .filter(|p| !p.bounds.is_empty())
+            .map(|p| (p.name.clone(), p.bounds.clone()))
+            .collect(),
+        assoc_types,
         methods,
     });
     Ok(())
@@ -969,7 +1005,7 @@ pub(crate) fn fn_signature_with_self(
     span: Span,
 ) -> Result<FnSignature, TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
-    ctx.type_params = f.generics.clone();
+    ctx.type_params = f.generics.iter().map(|p| p.name.clone()).collect();
 
     let mut params = Vec::with_capacity(f.params.len());
     for p in &f.params {
@@ -1042,13 +1078,10 @@ pub(crate) fn check_fn_body_with_self(
         }
     };
 
-    // 参数进入局部作用域（变量表与初始化表一并隔离，防止本函数体
-    // 局部变量名污染调用方——尤其 std 方法体同名变量会覆盖调用方
-    // `local_inits` 的字面量绑定追踪，导致 `String::from(s)` / Str 值
-    // 升级查不到绑定内容）
-    let saved = std::mem::take(&mut ctx.variables);
-    let saved_inits = std::mem::take(&mut ctx.local_inits);
-    let saved_dyn_concrete = std::mem::take(&mut ctx.dyn_concrete);
+    // 参数进入局部作用域：函数边界（隔离，防止本函数体局部变量名污染
+    // 调用方——尤其 std 方法体同名变量会覆盖调用方 `local_inits` 的字面量
+    // 绑定追踪，导致 `String::from(s)` / Str 值升级查不到绑定内容）
+    ctx.push_scope(true);
     for p in &f.params {
         let ty = if p.name == "self" && self_ty.is_some() {
             self_ty.cloned().unwrap()
@@ -1063,15 +1096,19 @@ pub(crate) fn check_fn_body_with_self(
 
     // `fn make() -> fn(i64) -> i64 { |x| x + 1 }`：返回类型为 fn 且函数体
     // 尾表达式为闭包时，按 H2 无捕获闭包签名检查（H5 补全，返回闭包的函数）。
+    // U1：函数体不额外开块作用域（`check_block_inner`），体内部 let 直接留在
+    // 函数 fn 层——尾表达式处理（延迟闭包固化、返回闭包签名检查等）仍需
+    // 访问体内变量（如 `let base = 10; let f = |x| x + base; f` 的 base）。
+    // 函数结束时 fn 层随 `pop_scope` 整体弹出（隔离调用方环境）。
     let (mut hir_body, body_ty) = if matches!(&return_type, Type::Fn(_))
         && body
             .final_expr
             .as_ref()
             .is_some_and(|e| matches!(&*e.kind, rlyeh_ast::ExprKind::Closure { .. }))
     {
-        check_block_with_expected_final(ctx, body, Some(&return_type))?
+        check_block_inner(ctx, body, Some(&return_type))?
     } else {
-        check_block(ctx, body)?
+        check_block_inner(ctx, body, None)?
     };
 
     // 返回类型一致性：函数体类型应兼容声明的返回类型
@@ -1097,7 +1134,7 @@ pub(crate) fn check_fn_body_with_self(
                 && matches!(&body_ty, Type::Closure { fn_name, .. } if fn_name.is_empty())
             {
                 let var_name = hir_body.final_expr.as_ref().and_then(|fe| match fe {
-                    HirExpr::Variable(n) => Some(n.clone()),
+                    HirExpr::Variable(n) => Some(n.to_string()),
                     _ => None,
                 });
                 if let Some(n) = var_name {
@@ -1110,9 +1147,7 @@ pub(crate) fn check_fn_body_with_self(
             }
         }
         if !downgraded {
-            ctx.variables = saved;
-            ctx.local_inits = saved_inits;
-            ctx.dyn_concrete = saved_dyn_concrete;
+            ctx.pop_scope();
             return Err(TypeError::WrongType {
                 expected: return_type.to_string(),
                 found: body_ty.to_string(),
@@ -1121,8 +1156,6 @@ pub(crate) fn check_fn_body_with_self(
         }
     }
 
-    ctx.variables = saved;
-    ctx.local_inits = saved_inits;
-    ctx.dyn_concrete = saved_dyn_concrete;
+    ctx.pop_scope();
     Ok(Some(hir_body))
 }

@@ -177,7 +177,9 @@ pub(crate) fn coerce_to_dyn(
 /// trait 对象调用无法确定具体类型，MVP 报 Unsupported。
 fn type_mentions_self(ty: &Type) -> bool {
     match ty {
-        Type::Generic(n) => n == "Self",
+        // `Self::Item` 关联类型占位（trait 声明收集时无 impl 上下文，
+        // 退化为 `Generic("Self::Item")`）同样视为 `Self` 提及。
+        Type::Generic(n) => n == "Self" || n.starts_with("Self::"),
         Type::Ref(t, _) | Type::RawPtr(t, _) | Type::Array(t, _) => type_mentions_self(t),
         Type::Named(_, ps) | Type::Tuple(ps) => ps.iter().any(type_mentions_self),
         _ => false,
@@ -203,9 +205,10 @@ pub(crate) fn infer_expr(
         }
 
         ExprKind::Ident(name) => {
-            // 1. 局部变量
-            if let Some(ty) = ctx.lookup_variable(name).cloned() {
-                return Ok((HirExpr::Variable(name.clone()), ty));
+            // 1. 局部变量（U1：HIR 引用用存储槽名——遮蔽变量经 resolve 返回
+            //    mangle 槽名，下游按槽名区分变量存储）
+            if let Some((slot, ty)) = ctx.resolve_variable(name) {
+                return Ok((HirExpr::Variable(slot.to_string()), ty.clone()));
             }
             // 2. 常量引用：顶层常量名 → 当前模块内常量（`prefix::name`）
             if let Some((value, ty)) = ctx.lookup_constant(name) {
@@ -416,11 +419,29 @@ pub(crate) fn infer_expr(
                     ))
                 }
                 UnaryOp::AddrOf | UnaryOp::AddrOfMut => {
-                    // MVP：`&` / `&mut` 仅支持变量目标
-                    // （`&obj.field` / `&arr[i]` 等取地址待 G 阶段扩展）
-                    if !matches!(*operand.kind, ExprKind::Ident(_)) {
+                    let is_mut = matches!(op, UnaryOp::AddrOfMut);
+                    // U5：`&` / `&mut` 目标放宽为三类——
+                    // ① 变量：取变量槽地址；
+                    // ② 解引用 `&*p` / `&mut *p`：MIR 折叠直接透传指针（写回原地址）；
+                    // ③ 不可变 `&expr`（任意表达式）：求值到临时槽再取址（读语义正确）。
+                    // 保持禁止：字段/索引目标（`&obj.field` / `&arr[i]`——FieldGet/
+                    // IndexGet 经拷贝临时再取址语义错误，写回不生效，待 MIR place
+                    // 概念扩展）；`&mut` 对非左值目标（临时值不可变借用，Rust 同样
+                    // 禁止）；`&&T` 引用再取引用。
+                    let is_deref_target = matches!(
+                        *operand.kind,
+                        ExprKind::Unary { op: UnaryOp::Deref, .. }
+                    );
+                    let ok_target = matches!(*operand.kind, ExprKind::Ident(_))
+                        || is_deref_target
+                        || (!is_mut
+                            && !matches!(
+                                *operand.kind,
+                                ExprKind::FieldAccess { .. } | ExprKind::Index { .. }
+                            ));
+                    if !ok_target {
                         return Err(TypeError::Unsupported {
-                            what: "MVP 阶段 `&` / `&mut` 仅支持变量目标（`&obj.field` 等取地址待扩展）"
+                            what: "`&`/`&mut` 目标支持变量、解引用 `&*p` 与不可变表达式取址；`&obj.field`/`&arr[i]` 与 `&mut` 非左值目标待扩展"
                                 .to_string(),
                             span,
                         });
@@ -432,7 +453,6 @@ pub(crate) fn infer_expr(
                             span,
                         });
                     }
-                    let is_mut = matches!(op, UnaryOp::AddrOfMut);
                     let m = if is_mut {
                         Mutability::Mutable
                     } else {
@@ -487,7 +507,7 @@ pub(crate) fn infer_expr(
             // 后续调用回退 vtable 间接分派
             if matches!(op, AssignOp::Assign) {
                 if let ExprKind::Ident(var) = &*target.kind {
-                    ctx.dyn_concrete.remove(var);
+                    ctx.remove_dyn_concrete(var);
                 }
             }
             let (v_hir, v_ty) = infer_expr(ctx, value)?;
@@ -881,6 +901,19 @@ pub(crate) fn check_block_with_expected_final(
     block: &AstBlock,
     expected_final: Option<&Type>,
 ) -> Result<(HirBlock, Type), TypeError> {
+    // U1：块级作用域（查找穿透外层——块内可见外层变量；块内 let 随弹出消失，
+    // 与块外同名变量遮蔽时 mangle 槽名，互不干扰）。
+    ctx.push_scope(false);
+    let result = check_block_inner(ctx, block, expected_final);
+    ctx.pop_scope();
+    result
+}
+
+pub(crate) fn check_block_inner(
+    ctx: &mut TypeContext,
+    block: &AstBlock,
+    expected_final: Option<&Type>,
+) -> Result<(HirBlock, Type), TypeError> {
     let mut stmts = Vec::with_capacity(block.stmts.len());
     for stmt in &block.stmts {
         let (hir_stmt, _) = crate::check_stmt::check_stmt(ctx, stmt)?;
@@ -1117,15 +1150,22 @@ fn check_for_range(
     let hi_name = format!("__for_hi_{}", ctx.temp_counter);
     ctx.temp_counter += 1;
 
-    // 5. 起始值：下界开区间时从 lo + 1 开始；
+    // 5. 进入循环作用域（迭代变量 / 临时变量在作用域内；结束弹出）。
+    //    存储槽名：循环变量被外层同名遮蔽时 mangle，Let/引用/Assign 全部用槽名。
+    ctx.push_scope(false);
+    let stored_lo = ctx.insert_variable(lo_name.clone(), lo_ty.clone());
+    let stored_hi = ctx.insert_variable(hi_name.clone(), hi_ty.clone());
+    let stored_name = ctx.insert_variable(name.clone(), lo_ty.clone());
+
+    // 6. 起始值：下界开区间时从 lo + 1 开始；
     //    循环变量初始化为 `start - 1`，配合循环体开头的 `pat += 1`，
     //    使第一次迭代 pat == start。
     let start = if lower_inclusive {
-        HirExpr::Variable(lo_name.clone())
+        HirExpr::Variable(stored_lo.clone())
     } else {
         HirExpr::Binary(
             HirBinaryOp::Add,
-            Box::new(HirExpr::Variable(lo_name.clone())),
+            Box::new(HirExpr::Variable(stored_lo.clone())),
             Box::new(HirExpr::IntLiteral(1)),
         )
     };
@@ -1137,32 +1177,27 @@ fn check_for_range(
 
     let mut stmts = vec![
         HirStmt::Let {
-            name: lo_name.clone(),
+            name: stored_lo.clone(),
             init: lo_hir,
             mutable: false,
         },
         HirStmt::Let {
-            name: hi_name.clone(),
+            name: stored_hi.clone(),
             init: hi_hir,
             mutable: false,
         },
         HirStmt::Let {
-            name: name.clone(),
+            name: stored_name.clone(),
             init,
             mutable: true,
         },
     ];
 
-    // 6. 循环体检查（迭代变量在作用域内）
-    ctx.insert_variable(lo_name.clone(), lo_ty.clone());
-    ctx.insert_variable(hi_name.clone(), hi_ty.clone());
-    ctx.insert_variable(name.clone(), lo_ty.clone());
+    // 7. 循环体检查
     let (b_hir, _) = check_block(ctx, body)?;
-    ctx.variables.remove(&name);
-    ctx.variables.remove(&lo_name);
-    ctx.variables.remove(&hi_name);
+    ctx.pop_scope();
 
-    // 7. 退出条件：`pat >= hi`（上界闭区间为 `pat > hi`）。
+    // 8. 退出条件：`pat >= hi`（上界闭区间为 `pat > hi`）。
     //    注意用 `loop` 而非 `while`：循环体开头的 `pat += 1` 在每次
     //    迭代（含 continue 回跳）时都会执行，保证 continue 不会跳过递增。
     let exit_op = if upper_inclusive {
@@ -1172,14 +1207,14 @@ fn check_for_range(
     };
     let exit_cond = HirExpr::Binary(
         exit_op,
-        Box::new(HirExpr::Variable(name.clone())),
-        Box::new(HirExpr::Variable(hi_name)),
+        Box::new(HirExpr::Variable(stored_name.clone())),
+        Box::new(HirExpr::Variable(stored_hi)),
     );
 
-    // 8. loop 体：`pat += 1` → 退出判断 → 原 body 语句
+    // 9. loop 体：`pat += 1` → 退出判断 → 原 body 语句
     let mut loop_body_stmts = vec![
         HirStmt::Expr(HirExpr::Assign {
-            target: name.clone(),
+            target: stored_name.clone(),
             op: HirAssignOp::AddAssign,
             value: Box::new(HirExpr::IntLiteral(1)),
         }),
@@ -1266,48 +1301,50 @@ fn check_for_vec(
     let i_name = format!("__for_i_{}", ctx.temp_counter);
     ctx.temp_counter += 1;
 
-    // 4. 前缀语句：绑定容器、缓存长度、初始化计数器
+    // 4. 进入循环作用域 + 绑定临时变量（结束弹出）。
+    //    存储槽名：循环变量被外层同名遮蔽时 mangle，Let/引用/Assign 全部用槽名。
+    ctx.push_scope(false);
+    let vec_ty = Type::Named("Vec".to_string(), vec![elem_ty.clone()]);
+    let stored_v = ctx.insert_variable(v_name.clone(), vec_ty);
+    let stored_len = ctx.insert_variable(len_name.clone(), Type::I64);
+    let stored_i = ctx.insert_variable(i_name.clone(), Type::I64);
+    let stored_name = ctx.insert_variable(name.clone(), elem_ty.clone());
+
+    // 5. 前缀语句：绑定容器、缓存长度、初始化计数器
     let mut stmts = vec![
         HirStmt::Let {
-            name: v_name.clone(),
+            name: stored_v.clone(),
             init: iter_hir,
             mutable: false,
         },
         HirStmt::Let {
-            name: len_name.clone(),
+            name: stored_len.clone(),
             init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(v_name.clone())),
+                base: Box::new(HirExpr::Variable(stored_v.clone())),
                 index: 1, // Vec 槽 1 = len
                 ty: FieldScalar::Int,
             },
             mutable: false,
         },
         HirStmt::Let {
-            name: i_name.clone(),
+            name: stored_i.clone(),
             init: HirExpr::IntLiteral(0),
             mutable: true,
         },
     ];
 
-    // 5. 循环体检查（容器 / 长度 / 计数器 / 迭代变量在作用域内）
-    let vec_ty = Type::Named("Vec".to_string(), vec![elem_ty.clone()]);
-    ctx.insert_variable(v_name.clone(), vec_ty);
-    ctx.insert_variable(len_name.clone(), Type::I64);
-    ctx.insert_variable(i_name.clone(), Type::I64);
-    ctx.insert_variable(name.clone(), elem_ty.clone());
+    // 7. 循环体检查
     let (b_hir, _) = check_block(ctx, body)?;
-    for var in [&name, &i_name, &len_name, &v_name] {
-        ctx.variables.remove(var);
-    }
+    ctx.pop_scope();
 
-    // 6. loop 体：边界检查 → 取元素绑定 → 递增 → 原 body 语句
+    // 8. loop 体：边界检查 → 取元素绑定 → 递增 → 原 body 语句
     let elem_scalar = field_scalar_of(&elem_ty);
     let mut loop_body_stmts = vec![
         HirStmt::Expr(HirExpr::If {
             cond: Box::new(HirExpr::Binary(
                 HirBinaryOp::Ge,
-                Box::new(HirExpr::Variable(i_name.clone())),
-                Box::new(HirExpr::Variable(len_name.clone())),
+                Box::new(HirExpr::Variable(stored_i.clone())),
+                Box::new(HirExpr::Variable(stored_len.clone())),
             )),
             then_block: Box::new(HirBlock {
                 stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
@@ -1316,21 +1353,21 @@ fn check_for_vec(
             else_block: None,
         }),
         HirStmt::Let {
-            name: name.clone(),
+            name: stored_name.clone(),
             init: HirExpr::Index {
                 base: Box::new(HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(v_name.clone())),
+                    base: Box::new(HirExpr::Variable(stored_v.clone())),
                     index: 0, // Vec 槽 0 = data 指针
                     ty: FieldScalar::Ptr,
                 }),
-                index: Box::new(HirExpr::Variable(i_name.clone())),
+                index: Box::new(HirExpr::Variable(stored_i.clone())),
                 elem: elem_scalar,
                 is_str: false,
             },
             mutable: false,
         },
         HirStmt::Expr(HirExpr::Assign {
-            target: i_name.clone(),
+            target: stored_i.clone(),
             op: HirAssignOp::AddAssign,
             value: Box::new(HirExpr::IntLiteral(1)),
         }),
@@ -1407,38 +1444,40 @@ fn check_for_array(
     let i_name = format!("__for_i_{}", ctx.temp_counter);
     ctx.temp_counter += 1;
 
-    // 4. 前缀语句：绑定数组、初始化计数器
+    // 4. 进入循环作用域 + 绑定临时变量（结束弹出）。
+    //    存储槽名：循环变量被外层同名遮蔽时 mangle，Let/引用/Assign 全部用槽名。
+    ctx.push_scope(false);
+    let arr_ty = Type::Array(Box::new(elem_ty.clone()), n);
+    let stored_arr = ctx.insert_variable(arr_name.clone(), arr_ty);
+    let stored_i = ctx.insert_variable(i_name.clone(), Type::I64);
+    let stored_name = ctx.insert_variable(name.clone(), elem_ty.clone());
+
+    // 5. 前缀语句：绑定数组、初始化计数器
     let mut stmts = vec![
         HirStmt::Let {
-            name: arr_name.clone(),
+            name: stored_arr.clone(),
             init: iter_hir,
             mutable: false,
         },
         HirStmt::Let {
-            name: i_name.clone(),
+            name: stored_i.clone(),
             init: HirExpr::IntLiteral(0),
             mutable: true,
         },
     ];
 
-    // 5. 循环体检查（数组 / 计数器 / 迭代变量在作用域内）
-    let arr_ty = Type::Array(Box::new(elem_ty.clone()), n);
-    ctx.insert_variable(arr_name.clone(), arr_ty);
-    ctx.insert_variable(i_name.clone(), Type::I64);
-    ctx.insert_variable(name.clone(), elem_ty.clone());
+    // 6. 循环体检查
     let (b_hir, _) = check_block(ctx, body)?;
-    for var in [&name, &i_name, &arr_name] {
-        ctx.variables.remove(var);
-    }
+    ctx.pop_scope();
 
-    // 6. loop 体：边界检查 → 取元素绑定 → 递增 → 原 body 语句
+    // 7. loop 体：边界检查 → 取元素绑定 → 递增 → 原 body 语句
     let elem_scalar = field_scalar_of(&elem_ty);
     let is_byte = matches!(elem_ty, Type::U8);
     let mut loop_body_stmts = vec![
         HirStmt::Expr(HirExpr::If {
             cond: Box::new(HirExpr::Binary(
                 HirBinaryOp::Ge,
-                Box::new(HirExpr::Variable(i_name.clone())),
+                Box::new(HirExpr::Variable(stored_i.clone())),
                 Box::new(HirExpr::IntLiteral(n as i128)),
             )),
             then_block: Box::new(HirBlock {
@@ -1448,17 +1487,17 @@ fn check_for_array(
             else_block: None,
         }),
         HirStmt::Let {
-            name: name.clone(),
+            name: stored_name.clone(),
             init: HirExpr::Index {
-                base: Box::new(HirExpr::Variable(arr_name.clone())),
-                index: Box::new(HirExpr::Variable(i_name.clone())),
+                base: Box::new(HirExpr::Variable(stored_arr.clone())),
+                index: Box::new(HirExpr::Variable(stored_i.clone())),
                 elem: elem_scalar,
                 is_str: is_byte,
             },
             mutable: false,
         },
         HirStmt::Expr(HirExpr::Assign {
-            target: i_name.clone(),
+            target: stored_i.clone(),
             op: HirAssignOp::AddAssign,
             value: Box::new(HirExpr::IntLiteral(1)),
         }),
@@ -1629,14 +1668,12 @@ fn closure_return_ty(
             }
         }
     }
-    let saved_vars = std::mem::take(&mut ctx.variables);
-    let saved_inits = std::mem::take(&mut ctx.local_inits);
+    ctx.push_scope(true);
     for (nm, ty) in names.iter().zip(param_tys.iter().cloned()) {
         ctx.insert_variable(nm.clone(), ty);
     }
     let body_result = infer_expr(ctx, body);
-    ctx.variables = saved_vars;
-    ctx.local_inits = saved_inits;
+    ctx.pop_scope();
     let (_, body_ty) = match body_result {
         Ok(v) => v,
         Err(TypeError::UndefinedVariable { name, span }) => {
@@ -2223,42 +2260,44 @@ fn check_for_hashmap(
     let i_name = format!("__for_i_{}", ctx.temp_counter);
     ctx.temp_counter += 1;
 
-    // 4. 前缀语句：绑定容器、缓存容量、初始化计数器
+    // 4. 进入循环作用域 + 绑定临时变量（结束弹出）。
+    //    存储槽名：k/v 被外层同名遮蔽时 mangle，Let/引用/Assign 全部用槽名。
+    ctx.push_scope(false);
+    let map_ty = Type::Named("HashMap".to_string(), vec![k_ty.clone(), v_ty.clone()]);
+    let stored_m = ctx.insert_variable(m_name.clone(), map_ty);
+    let stored_cap = ctx.insert_variable(cap_name.clone(), Type::I64);
+    let stored_i = ctx.insert_variable(i_name.clone(), Type::I64);
+    let stored_k = ctx.insert_variable(k_name.clone(), k_ty.clone());
+    let stored_v = ctx.insert_variable(v_name.clone(), v_ty.clone());
+
+    // 5. 前缀语句：绑定容器、缓存容量、初始化计数器
     let mut stmts = vec![
         HirStmt::Let {
-            name: m_name.clone(),
+            name: stored_m.clone(),
             init: iter_hir,
             mutable: false,
         },
         HirStmt::Let {
-            name: cap_name.clone(),
+            name: stored_cap.clone(),
             init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(m_name.clone())),
+                base: Box::new(HirExpr::Variable(stored_m.clone())),
                 index: 5, // HashMap 槽 5 = cap
                 ty: FieldScalar::Int,
             },
             mutable: false,
         },
         HirStmt::Let {
-            name: i_name.clone(),
+            name: stored_i.clone(),
             init: HirExpr::IntLiteral(0),
             mutable: true,
         },
     ];
 
-    // 5. 循环体检查（容器 / 容量 / 计数器 / k / v 在作用域内）
-    let map_ty = Type::Named("HashMap".to_string(), vec![k_ty.clone(), v_ty.clone()]);
-    ctx.insert_variable(m_name.clone(), map_ty);
-    ctx.insert_variable(cap_name.clone(), Type::I64);
-    ctx.insert_variable(i_name.clone(), Type::I64);
-    ctx.insert_variable(k_name.clone(), k_ty.clone());
-    ctx.insert_variable(v_name.clone(), v_ty.clone());
+    // 6. 循环体检查
     let (b_hir, _) = check_block(ctx, body)?;
-    for var in [&k_name, &v_name, &i_name, &cap_name, &m_name] {
-        ctx.variables.remove(var);
-    }
+    ctx.pop_scope();
 
-    // 6. loop 体：边界检查 → 跳槽 → 绑定 k/v → 递增 → 原 body 语句
+    // 7. loop 体：边界检查 → 跳槽 → 绑定 k/v → 递增 → 原 body 语句
     let k_scalar = field_scalar_of(&k_ty);
     let v_scalar = field_scalar_of(&v_ty);
     let mut loop_body_stmts = vec![
@@ -2266,8 +2305,8 @@ fn check_for_hashmap(
         HirStmt::Expr(HirExpr::If {
             cond: Box::new(HirExpr::Binary(
                 HirBinaryOp::Ge,
-                Box::new(HirExpr::Variable(i_name.clone())),
-                Box::new(HirExpr::Variable(cap_name.clone())),
+                Box::new(HirExpr::Variable(stored_i.clone())),
+                Box::new(HirExpr::Variable(stored_cap.clone())),
             )),
             then_block: Box::new(HirBlock {
                 stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
@@ -2281,11 +2320,11 @@ fn check_for_hashmap(
                 HirBinaryOp::Ne,
                 Box::new(HirExpr::Index {
                     base: Box::new(HirExpr::FieldGet {
-                        base: Box::new(HirExpr::Variable(m_name.clone())),
+                        base: Box::new(HirExpr::Variable(stored_m.clone())),
                         index: 2, // HashMap 槽 2 = states 指针
                         ty: FieldScalar::Ptr,
                     }),
-                    index: Box::new(HirExpr::Variable(i_name.clone())),
+                    index: Box::new(HirExpr::Variable(stored_i.clone())),
                     elem: FieldScalar::Int,
                     is_str: false,
                 }),
@@ -2294,7 +2333,7 @@ fn check_for_hashmap(
             then_block: Box::new(HirBlock {
                 stmts: vec![
                     HirStmt::Expr(HirExpr::Assign {
-                        target: i_name.clone(),
+                        target: stored_i.clone(),
                         op: HirAssignOp::AddAssign,
                         value: Box::new(HirExpr::IntLiteral(1)),
                     }),
@@ -2306,14 +2345,14 @@ fn check_for_hashmap(
         }),
         // let k = __for_m.keys[__for_i]
         HirStmt::Let {
-            name: k_name.clone(),
+            name: stored_k.clone(),
             init: HirExpr::Index {
                 base: Box::new(HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(m_name.clone())),
+                    base: Box::new(HirExpr::Variable(stored_m.clone())),
                     index: 0, // HashMap 槽 0 = keys 指针
                     ty: FieldScalar::Ptr,
                 }),
-                index: Box::new(HirExpr::Variable(i_name.clone())),
+                index: Box::new(HirExpr::Variable(stored_i.clone())),
                 elem: k_scalar,
                 is_str: false,
             },
@@ -2321,14 +2360,14 @@ fn check_for_hashmap(
         },
         // let v = __for_m.vals[__for_i]
         HirStmt::Let {
-            name: v_name.clone(),
+            name: stored_v.clone(),
             init: HirExpr::Index {
                 base: Box::new(HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(m_name.clone())),
+                    base: Box::new(HirExpr::Variable(stored_m.clone())),
                     index: 1, // HashMap 槽 1 = vals 指针
                     ty: FieldScalar::Ptr,
                 }),
-                index: Box::new(HirExpr::Variable(i_name.clone())),
+                index: Box::new(HirExpr::Variable(stored_i.clone())),
                 elem: v_scalar,
                 is_str: false,
             },
@@ -2336,7 +2375,7 @@ fn check_for_hashmap(
         },
         // __for_i += 1
         HirStmt::Expr(HirExpr::Assign {
-            target: i_name.clone(),
+            target: stored_i.clone(),
             op: HirAssignOp::AddAssign,
             value: Box::new(HirExpr::IntLiteral(1)),
         }),
@@ -2746,9 +2785,9 @@ fn check_call(
         }
         // `Box::leak` 特判（T3a）：泄漏堆对象，返回指向堆 `T` 的裸指针
         // `*mut T`（G3 语义，`*p` 读写可用），不再释放。
-        // 目标签名 `fn leak(self) -> &'static mut T`——MVP 退化：
-        // `&*b` 的堆地址取引用需 MIR `AddrOf` 支持任意目标表达式（当前仅变量取址，
-        // 见 lower.rs），退化为读取 Box 槽 0 指针值的裸指针（值语义等价，
+        // 目标签名 `fn leak(self) -> &'static mut T`——MVP 退化：返回裸指针
+        // 而非引用（值语义等价——`&*b` 经 MIR 折叠（U5）取 Box 槽 0 指针值，
+        // 与 `FieldGet(b, 0, Ptr)` 同一地址；裸指针规避 borrowck 引用逃逸检查；
         // `'static` 生命周期标注宽松丢弃（G4））。
         if ty_full == "Box" && method == "leak" {
             if args.len() != 1 {
@@ -2818,7 +2857,7 @@ fn check_call(
         Some(s) => s,
         None => {
             // 闭包值对象调用兜底：callee 为闭包值变量（`let f = |x: i64| ..; f(1)`）。
-            if let Some(ty) = ctx.variables.get(&name).cloned() {
+            if let Some(ty) = ctx.lookup_variable(&name).cloned() {
                 if let Type::Closure { .. } = &ty {
                     return check_closure_value_call(ctx, &name, &ty, args, span);
                 }
@@ -2903,38 +2942,60 @@ fn check_call(
 
 /// 迭代检查闭包体并收集捕获变量（H3 IIFE / 闭包值对象共用）。
 ///
-/// 逐轮检查闭包体：未定义变量若在外层变量环境（保存的 `saved_vars`）中
-/// 有类型，即为捕获变量（按值捕获类型快照）；否则报真未定义。每轮至少
-/// 新增一个捕获变量，循环收敛。参数（含类型）先插入环境。
+/// 逐轮检查闭包体：未定义变量若在外层变量环境中有类型，即为捕获变量
+/// （按值捕获类型快照）；否则报真未定义。每轮至少新增一个捕获变量，
+/// 循环收敛。参数（含类型）先插入环境。
 ///
-/// 返回 `(body_hir, body_ty, captures, capture_tys)`。
+/// 返回 `(body_hir, body_ty, outer_capture_slots, capture_tys, closure_capture_slots, param_slots)`：
+/// - `outer_capture_slots`：捕获源变量在**闭包定义处外层**的存储槽名——调用实参 /
+///   闭包对象捕获字段按此引用；
+/// - `closure_capture_slots` / `param_slots`：捕获/参数在**闭包 fn 层**实际 insert 的
+///   存储槽名（遮蔽时 mangle 为 `name$N`，捕获源必在外层同名，故总是二次 mangle）——
+///   闭包函数签名参数名与 body 内 HIR 引用（resolve 槽名）必须一致，emit 使用这些槽名。
 fn check_closure_body_with_captures(
     ctx: &mut TypeContext,
     param_pairs: &[(String, Type)],
     body: &AstExpr,
     span: Span,
-) -> Result<(HirExpr, Type, Vec<String>, Vec<Type>), TypeError> {
+) -> Result<
+    (
+        HirExpr,
+        Type,
+        Vec<String>,
+        Vec<Type>,
+        Vec<String>,
+        Vec<String>,
+    ),
+    TypeError,
+> {
     let mut captures: Vec<String> = Vec::new();
+    let mut outer_capture_slots: Vec<String> = Vec::new();
     let mut capture_tys: Vec<Type> = Vec::new();
-    let body_result = loop {
-        let saved_vars = std::mem::take(&mut ctx.variables);
-        let saved_inits = std::mem::take(&mut ctx.local_inits);
+    let body_result: Result<(HirExpr, Type, Vec<String>, Vec<String>), TypeError> = loop {
+        ctx.push_scope(true);
+        // 闭包 fn 层实际存储槽名（捕获/参数可能被二次 mangle）
+        let mut closure_capture_slots = Vec::with_capacity(captures.len());
         for (nm, ty) in captures.iter().zip(capture_tys.clone()) {
-            ctx.insert_variable(nm.clone(), ty);
+            let s = ctx.insert_variable(nm.clone(), ty);
+            closure_capture_slots.push(s);
         }
+        let mut param_slots = Vec::with_capacity(param_pairs.len());
         for (nm, ty) in param_pairs.iter() {
-            ctx.insert_variable(nm.clone(), ty.clone());
+            let s = ctx.insert_variable(nm.clone(), ty.clone());
+            param_slots.push(s);
         }
         let r = infer_expr(ctx, body);
-        ctx.variables = saved_vars;
-        ctx.local_inits = saved_inits;
+        ctx.pop_scope();
         match r {
-            Ok(v) => break Ok(v),
+            Ok((h, t)) => break Ok((h, t, closure_capture_slots, param_slots)),
             Err(TypeError::UndefinedVariable { name, .. }) if !captures.contains(&name) => {
-                // 环境已恢复为外层——在外层变量环境中能找到类型者即为捕获变量
-                if let Some(ty) = ctx.variables.get(&name).cloned() {
+                // 环境已恢复为外层（闭包 fn 层已弹出）——在外层变量环境中
+                // 能找到类型者即为捕获变量（原名用于检测去重；外层槽名供调用
+                // 实参 / 闭包对象捕获字段引用；类型快照供捕获参数绑定）
+                if let Some((slot, ty)) = ctx.resolve_variable(&name) {
                     captures.push(name);
-                    capture_tys.push(ty);
+                    outer_capture_slots.push(slot.to_string());
+                    capture_tys.push(ty.clone());
                     continue;
                 }
                 break Err(TypeError::UndefinedVariable { name, span });
@@ -2942,8 +3003,15 @@ fn check_closure_body_with_captures(
             Err(e) => break Err(e),
         }
     };
-    let (body_hir, body_ty) = body_result?;
-    Ok((body_hir, body_ty, captures, capture_tys))
+    let (body_hir, body_ty, closure_capture_slots, param_slots) = body_result?;
+    Ok((
+        body_hir,
+        body_ty,
+        outer_capture_slots,
+        capture_tys,
+        closure_capture_slots,
+        param_slots,
+    ))
 }
 
 /// 生成闭包匿名函数：参数 = [捕获变量（外层原名）..., 闭包参数...]。
@@ -3054,22 +3122,22 @@ fn check_capture_closure_iife(
             arg_tys.push(t);
         }
     }
-    // 迭代检查闭包体 + 收集捕获
+    // 迭代检查闭包体 + 收集捕获（外层槽名供调用实参、闭包层槽名供 emit 签名）
     let pairs: Vec<(String, Type)> = names.iter().cloned().zip(arg_tys.clone()).collect();
-    let (body_hir, body_ty, captures, capture_tys) =
+    let (body_hir, body_ty, outer_capture_slots, capture_tys, closure_capture_slots, param_slots) =
         check_closure_body_with_captures(ctx, &pairs, body, span)?;
     // 匿名函数生成（参数 = [捕获变量, 闭包参数]）
     let name = emit_closure_fn(
         ctx,
-        &captures,
+        &closure_capture_slots,
         &capture_tys,
-        &names,
+        &param_slots,
         &arg_tys,
         body_hir,
         body_ty.clone(),
     );
-    // 调用：捕获变量（外层环境变量引用，按名字 resolve）+ 实参
-    let mut call_args: Vec<HirExpr> = captures
+    // 调用：捕获变量（闭包定义处外层槽名，按名引用）+ 实参
+    let mut call_args: Vec<HirExpr> = outer_capture_slots
         .iter()
         .map(|c| HirExpr::Variable(c.clone()))
         .collect();
@@ -3186,16 +3254,17 @@ pub(crate) fn check_closure_value_binding(
         names.push(nm);
         param_tys.push(ty);
     }
-    // 迭代检查闭包体 + 收集捕获（按值捕获类型快照）
+    // 迭代检查闭包体 + 收集捕获（按值捕获类型快照；
+    // 外层槽名供对象字段引用、闭包层槽名供 emit 签名）
     let pairs: Vec<(String, Type)> = names.iter().cloned().zip(param_tys.clone()).collect();
-    let (body_hir, body_ty, captures, capture_tys) =
+    let (body_hir, body_ty, captures, capture_tys, closure_capture_slots, param_slots) =
         check_closure_body_with_captures(ctx, &pairs, body, span)?;
-    // 匿名函数生成
+    // 匿名函数生成（参数名用闭包 fn 层 insert 的槽名）
     let fn_name = emit_closure_fn(
         ctx,
-        &captures,
+        &closure_capture_slots,
         &capture_tys,
-        &names,
+        &param_slots,
         &param_tys,
         body_hir,
         body_ty.clone(),
@@ -3409,16 +3478,17 @@ fn check_deferred_closure_call(
             arg_tys.push(t);
         }
     }
-    // 迭代检查闭包体 + 收集捕获（按值捕获类型快照；错误定位到绑定处闭包体）
+    // 迭代检查闭包体 + 收集捕获（按值捕获类型快照；错误定位到绑定处闭包体；
+    // 外层槽名供对象字段引用、闭包层槽名供 emit 签名）
     let pairs: Vec<(String, Type)> = names.iter().cloned().zip(arg_tys.clone()).collect();
-    let (body_hir, body_ty, captures, capture_tys) =
+    let (body_hir, body_ty, captures, capture_tys, closure_capture_slots, param_slots) =
         check_closure_body_with_captures(ctx, &pairs, body, binding.span)?;
-    // 匿名函数生成
+    // 匿名函数生成（参数名用闭包 fn 层 insert 的槽名）
     let fn_name = emit_closure_fn(
         ctx,
-        &captures,
+        &closure_capture_slots,
         &capture_tys,
-        &names,
+        &param_slots,
         &arg_tys,
         body_hir,
         body_ty.clone(),
@@ -3441,18 +3511,23 @@ fn check_deferred_closure_call(
             ty: field_scalar_of(&capture_tys[i]),
         }));
     }
-    // 覆盖绑定处占位（`Alloc{slots:0}`）：后续 `f(args)` 常规路径读 f 捕获槽
+    // 覆盖绑定处占位（`Alloc{slots:0}`）：后续 `f(args)` 常规路径读 f 捕获槽。
+    // U1：Let 绑定名用绑定处 insert 的存储槽名（遮蔽时 mangle），与引用一致。
+    let slot_name = ctx
+        .resolve_variable(&name)
+        .map(|(s, _)| s.to_string())
+        .unwrap_or_else(|| name.to_string());
     stmts.push(HirStmt::Let {
-        name: name.to_string(),
+        name: slot_name.clone(),
         init: HirExpr::Variable(cv),
         mutable: false,
     });
-    // 调用：捕获字段读取（base 为变量名 f）+ 实参
+    // 调用：捕获字段读取（base 为槽名 f）+ 实参
     let mut call_args: Vec<HirExpr> = captures
         .iter()
         .enumerate()
         .map(|(i, _)| HirExpr::FieldGet {
-            base: Box::new(HirExpr::Variable(name.to_string())),
+            base: Box::new(HirExpr::Variable(slot_name.clone())),
             index: i,
             ty: field_scalar_of(&capture_tys[i]),
         })
@@ -3549,9 +3624,10 @@ pub(crate) fn fix_deferred_closure_with_sig(
             param_tys.push(s.clone());
         }
     }
-    // 迭代检查闭包体 + 收集捕获（参数类型来自 fn 签名 / 注解）
+    // 迭代检查闭包体 + 收集捕获（参数类型来自 fn 签名 / 注解；
+    // 无捕获时闭包层槽名与外层槽名相同，emit 用闭包层槽名）
     let pairs: Vec<(String, Type)> = names.iter().cloned().zip(param_tys.clone()).collect();
-    let (body_hir, body_ty, captures, capture_tys) =
+    let (body_hir, body_ty, captures, capture_tys, closure_capture_slots, param_slots) =
         check_closure_body_with_captures(ctx, &pairs, body, binding.span)?;
     if !captures.is_empty() {
         return Err(TypeError::Unsupported {
@@ -3564,9 +3640,9 @@ pub(crate) fn fix_deferred_closure_with_sig(
     }
     let fn_name = emit_closure_fn(
         ctx,
-        &captures,
+        &closure_capture_slots,
         &capture_tys,
-        &names,
+        &param_slots,
         &param_tys,
         body_hir,
         body_ty.clone(),
@@ -3709,17 +3785,15 @@ pub(crate) fn check_closure_expected(
     let name = format!("__closure_{}", ctx.closure_seq);
     ctx.closure_seq += 1;
 
-    // 闭包体检查：作用域仅含参数（无捕获）。保存并清空外层变量环境，
-    // body 引用外部变量将报 UndefinedVariable → 转为捕获闭包 Unsupported（H3 规划）。
-    let saved_vars = std::mem::take(&mut ctx.variables);
-    let saved_inits = std::mem::take(&mut ctx.local_inits);
+    // 闭包体检查：函数边界作用域（隔离，body 引用外部变量将报 UndefinedVariable
+    // → 转为捕获闭包 Unsupported，H3 规划）。
+    ctx.push_scope(true);
     for (nm, ty) in names.iter().zip(sig_params.clone()) {
         ctx.insert_variable(nm.clone(), ty);
     }
     let body_result = infer_expr(ctx, body);
-    // 无论成败都恢复外层环境（调用方变量环境不得泄漏）
-    ctx.variables = saved_vars;
-    ctx.local_inits = saved_inits;
+    // 无论成败都弹出作用域（调用方变量环境不得泄漏）
+    ctx.pop_scope();
 
     let (body_hir, body_ty) = match body_result {
         Ok(v) => v,
@@ -3849,6 +3923,15 @@ pub(crate) fn resolve_ast_type(
 ) -> Result<Type, TypeError> {
     match ty {
         AstType::Path(name, args) => {
+            // `Self::Item`：关联类型引用（U2）——impl 收集时查当前 assoc_types
+            // 映射替换为具体类型；trait 声明收集时（无 impl 上下文）退化为
+            // 占位 `Type::Generic("Self::Item")`（仅作记录，不参与实例化替换）。
+            if let Some(member) = name.strip_prefix("Self::") {
+                if let Some(t) = ctx.assoc_types.get(member) {
+                    return Ok(t.clone());
+                }
+                return Ok(Type::Generic(name.clone()));
+            }
             // `str`：字符串类型关键字（`&str` 引用切片类型的一部分；G2）
             if name == "str" && args.is_empty() {
                 return Ok(Type::Str);
@@ -6193,14 +6276,13 @@ fn check_match_with_scrutinee(
     let mut else_hir: Option<HirExpr> = None;
     let mut result_ty = Type::Unit;
     for arm in arms.iter().rev() {
-        let (cond, binds, is_binding, bound_tys) =
+        // 臂作用域：模式绑定变量在 check_pattern 中注册（遮蔽槽名已计算），
+        // arm body / guard 内引用经 resolve 解析为槽名；求值后弹出作用域——
+        // 臂绑定不再污染外层（U1：与后续同名 let 互不覆盖）。
+        // 块作用域穿透：arm body 仍可见外层变量（函数参数、外层 let）。
+        ctx.push_scope(false);
+        let (cond, binds, is_binding, _bound_tys) =
             check_pattern(ctx, &arm.pattern, &pat_ty, tmp_var.clone(), span)?;
-        // 注册模式绑定变量（arm body / guard 内引用），求值后恢复作用域。
-        // 注意：克隆保存而非清空，arm body 仍可见外层变量（函数参数、外层 let）。
-        let saved_vars = ctx.variables.clone();
-        for (n, t) in &bound_tys {
-            ctx.variables.insert(n.clone(), t.clone());
-        }
         let arm_result: Result<(Option<HirExpr>, HirExpr, Type), TypeError> = (|| {
             // 守卫条件（`pattern if guard => body`）：与模式条件 And 合并
             let cond = match (&arm.guard, cond) {
@@ -6223,7 +6305,7 @@ fn check_match_with_scrutinee(
             let (body_hir, body_ty) = infer_expr(ctx, &arm.body)?;
             Ok((cond, body_hir, body_ty))
         })();
-        ctx.variables = saved_vars;
+        ctx.pop_scope();
         let (cond, body_hir, body_ty) = arm_result?;
         // match 各 arm 返回类型必须一致（Never 表示不返回，跳过）
         if else_hir.is_some()
@@ -6289,16 +6371,21 @@ fn check_pattern(
 ) -> Result<PatternResult, TypeError> {
     use rlyeh_ast::AstPattern;
     match pat {
-        AstPattern::Ident(name) => Ok((
-            None,
-            vec![HirStmt::Let {
-                name: name.clone(),
-                init: scrutinee,
-                mutable: false,
-            }],
-            true,
-            vec![(name.clone(), pat_ty.clone())],
-        )),
+        AstPattern::Ident(name) => {
+            // U1：绑定变量在臂作用域内注册（遮蔽时 mangle 存储槽名）。
+            // Let 绑定、引用解析、类型表全部使用槽名。
+            let slot = ctx.insert_variable(name.clone(), pat_ty.clone());
+            Ok((
+                None,
+                vec![HirStmt::Let {
+                    name: slot.clone(),
+                    init: scrutinee,
+                    mutable: false,
+                }],
+                true,
+                vec![(slot, pat_ty.clone())],
+            ))
+        }
         AstPattern::Wildcard => Ok((None, Vec::new(), true, Vec::new())),
         AstPattern::Literal(lit) => {
             let lit_hir = literal_to_hir(lit, span)?;
@@ -6424,13 +6511,34 @@ fn check_pattern(
             // 而非值拷贝。递归检查内层模式后，将绑定语句的初始化改为取匹配
             // 值的引用（聚合 = 对象指针拷贝，标量 = 存储槽地址），并将绑定
             // 变量类型引用化；可变性原样传递给引用与绑定变量。
-            let (cond, binds, is_binding, bound_tys) =
-                check_pattern(ctx, inner, pat_ty, scrutinee, span)?;
             let mutability = if *is_mut {
                 Mutability::Mutable
             } else {
                 Mutability::Immutable
             };
+            // U1 修复：内层为简单标识符时直接以引用类型 `&T` 注册变量——
+            // 若经递归（Ident 分支内部 insert 值类型）后仅靠 bound_tys 引用化，
+            // 类型表仍为 `i64`，臂内 `*r` 解引用报「发现 i64」。
+            if let AstPattern::Ident(name) = &**inner {
+                let bind_ty = Type::Ref(Box::new(pat_ty.clone()), mutability);
+                let slot = ctx.insert_variable(name.clone(), bind_ty.clone());
+                return Ok((
+                    None,
+                    vec![HirStmt::Let {
+                        name: slot.clone(),
+                        init: HirExpr::Ref {
+                            expr: Box::new(scrutinee),
+                            is_mut: *is_mut,
+                            pointee: field_scalar_of(pat_ty),
+                        },
+                        mutable: *is_mut,
+                    }],
+                    true,
+                    vec![(slot, bind_ty)],
+                ));
+            }
+            let (cond, binds, is_binding, bound_tys) =
+                check_pattern(ctx, inner, pat_ty, scrutinee, span)?;
             let bound_tys = bound_tys
                 .into_iter()
                 .map(|(n, t)| (n, Type::Ref(Box::new(t), mutability)))
@@ -7011,7 +7119,7 @@ fn devirtualize_dyn_call(
     args: &[AstExpr],
     span: Span,
 ) -> Result<Option<(HirExpr, Type)>, TypeError> {
-    let Some(concrete_ty) = ctx.dyn_concrete.get(var).cloned() else {
+    let Some(concrete_ty) = ctx.get_dyn_concrete(var).cloned() else {
         return Ok(None);
     };
     // 找 `impl Trait for 具体类型`（与 coerce_to_dyn 相同的匹配规则）
@@ -7113,6 +7221,9 @@ fn check_generic_call(
         hir_args.push(hir);
     }
 
+    // U3：泛型约束调用点校验（宽松：不推导，仅检查已由实参确定的类型参数）
+    check_generic_bounds(ctx, &template.bounds, &subst, span)?;
+
     // 实例化（或命中缓存）得到具体函数名与替换后的签名
     let (fn_name, signature) = instantiate_generic_fn(ctx, resolved, &template, &subst, span)?;
     if signature.params.len() != hir_args.len() {
@@ -7149,6 +7260,56 @@ fn check_generic_call(
         },
         signature.return_type,
     ))
+}
+
+/// U3：校验泛型实参满足声明约束（宽松校验：不推导，仅检查已由实参确定的类型参数；
+/// 未确定的泛型参数跳过；bound 必须是已声明 trait）。
+fn check_generic_bounds(
+    ctx: &TypeContext,
+    bounds: &HashMap<String, Vec<String>>,
+    subst: &HashMap<String, Type>,
+    span: Span,
+) -> Result<(), TypeError> {
+    for (param, bound_list) in bounds {
+        let concrete = match subst.get(param) {
+            Some(t) => t,
+            None => continue, // 未从实参确定（不推导，跳过）
+        };
+        for bound in bound_list {
+            if !ctx.trait_defs.contains_key(bound) {
+                return Err(TypeError::UndefinedType {
+                    name: bound.clone(),
+                    span,
+                });
+            }
+            if !type_implements_trait(ctx, bound, concrete) {
+                return Err(TypeError::GenericBoundMismatch {
+                    param: param.clone(),
+                    bound: bound.clone(),
+                    ty: concrete.to_string(),
+                    span,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 具体类型是否实现指定 trait（U3：impl 的 `trait_name` 匹配 + 目标类型匹配；
+/// 基本类型按 Display 名与 impl 的 `Named` 目标比较，如 `impl PartialEq for i64`）。
+fn type_implements_trait(ctx: &TypeContext, bound: &str, concrete: &Type) -> bool {
+    ctx.impl_defs.iter().any(|imp| {
+        if imp.trait_name.as_deref() != Some(bound) {
+            return false;
+        }
+        let Type::Named(iname, _) = &imp.self_type else {
+            return false;
+        };
+        match concrete {
+            Type::Named(cname, _) => iname == cname,
+            t => iname == &t.to_string(),
+        }
+    })
 }
 
 /// 实例化泛型函数：克隆模板、替换类型参数、检查 body，输出为具体函数项。
@@ -7274,17 +7435,30 @@ fn instantiate_impl_method(
 
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
+    let saved_assoc = std::mem::take(&mut ctx.assoc_types);
     ctx.type_params = impl_def.type_params.clone();
     ctx.generic_subst = subst.clone();
+    // 关联类型映射（U2）：`Self::Item` 签名重解析 / 方法体检查时替换为
+    // impl 定义的具体类型（经泛型替换）。
+    ctx.assoc_types = impl_def
+        .assoc_types
+        .iter()
+        .map(|(n, t)| (n.clone(), substitute(t, subst)))
+        .collect();
 
     // self 参数类型：impl 方法签名的首个参数（`&self` 层级已含）经替换。
     // 静态方法（无 self 参数）传 None。
     let self_param = method_def.sig.params.first().map(|p| substitute(p, subst));
+    // U4：方法体检查时 `Self` 类型解析为 impl 目标类型（经泛型替换）
+    let saved_self = ctx.self_type.clone();
+    ctx.self_type = Some(substitute(&impl_def.self_type, subst));
     let sig = crate::check_item::fn_signature_with_self(ctx, &cloned, self_param.as_ref(), span)?;
     let body = crate::check_item::check_fn_body_with_self(ctx, &cloned, self_param.as_ref())?;
+    ctx.self_type = saved_self;
 
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
+    ctx.assoc_types = saved_assoc;
 
     let params = cloned
         .params
@@ -10097,7 +10271,7 @@ fn value_to_string_for_ty(
     let placeholder = if debug { "{:?}" } else { "{}" };
     Err(TypeError::Unsupported {
         what: format!(
-            "`{placeholder}` 占位符不支持类型 `{ty}`（MVP 支持 i64 / bool / String / &str / 字符串字面量；自定义类型须 `impl {}`）",
+            "`{placeholder}` 占位符不支持类型 `{ty}`（MVP 支持 i64 / bool / String / &str / 字符串字面量；自定义类型须 `impl {placeholder}`）",
             placeholder = placeholder,
             ty = ty,
         ),

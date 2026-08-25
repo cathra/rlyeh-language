@@ -33,6 +33,8 @@ pub struct FnTemplate {
     pub name: String,
     /// 泛型参数名
     pub type_params: Vec<String>,
+    /// 泛型参数 → 约束 trait 名列表（U3：`fn f<T: Bound1 + Bound2>`）
+    pub bounds: HashMap<String, Vec<String>>,
     /// 签名（参数 / 返回类型中可含 [`Type::Generic`]）
     pub sig: FnSignature,
     /// 原始函数 AST（实例化时克隆并替换类型参数）
@@ -43,6 +45,22 @@ pub struct FnTemplate {
 ///
 /// 维护函数签名、局部变量、结构体定义与类型别名。
 /// 函数签名在检查函数体之前先收集完毕，因此支持函数间互相调用。
+
+/// 局部变量作用域（U1：`TypeContext::scopes` 栈的一层）。
+#[derive(Debug, Clone, Default)]
+pub struct Scope {
+    /// 变量表（原名 → (存储槽名, 类型)）。同名遮蔽时槽名 mangle 为 `name$N`，
+    /// 保证下游 HIR/MIR/LIR/codegen 按槽名区分变量（下游按字符串名分配存储槽，
+    /// 遮蔽必须靠槽名隔离，否则同名槽互相覆盖）。
+    pub vars: HashMap<String, (String, Type)>,
+    /// 初始化表达式表（原名 → 初始化 HIR，供 `String::from(s)` 追踪字面量值）。
+    pub inits: HashMap<String, HirExpr>,
+    /// 是否函数边界（隔离：变量查找不穿透该层，函数/闭包体看不到外层局部变量）。
+    pub is_fn: bool,
+    /// H4 去虚拟化表（dyn 绑定变量原名 → 具体类型，变量被重新赋值或离开作用域时失效）。
+    pub dyn_concrete: HashMap<String, Type>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TypeContext {
     /// 函数签名表（函数名 → 签名）
@@ -53,14 +71,12 @@ pub struct TypeContext {
     pub mono_instances: HashMap<String, String>,
     /// 泛型实例化生成的函数项（检查过程中追加）
     pub mono_items: Vec<rlyeh_hir::HirItem>,
-    /// 局部变量表（变量名 → 类型）
-    pub variables: HashMap<String, Type>,
-    /// 局部变量初始化表达式表（变量名 → 初始化 HIR）。
+    /// 局部变量作用域栈（U1：函数/块/循环体/match 臂/闭包体各一层）。
     ///
-    /// 供 `String::from(s)` 在 `s` 为字面量绑定的变量时追踪字面量值
-    /// （`String::from` 的展开需要编译期字符串内容；非字面量 Str 的长度
-    /// 表达尚未实现）。与 `variables` 表同节奏维护。
-    pub local_inits: HashMap<String, HirExpr>,
+    /// - 查找从栈顶向下，遇 `is_fn` 边界层即停（函数/闭包体隔离）；
+    /// - 块级遮蔽：内层同名绑定 mangle 存储槽名（`name$N`），下游按槽名区分；
+    /// - 同层重复 `let x` 为覆盖语义（保持原槽名，现状行为）。
+    pub scopes: Vec<Scope>,
     /// 结构体定义表
     pub structs: HashMap<String, StructDef>,
     /// 枚举定义表
@@ -89,10 +105,17 @@ pub struct TypeContext {
     pub type_params: Vec<String>,
     /// 当前泛型替换表（泛型参数名 → 具体类型，实例化 body 检查时有效）
     pub generic_subst: HashMap<String, Type>,
-    /// H4 去虚拟化：dyn 绑定变量 → 具体类型
-    /// （`let d: dyn Trait = &obj;` 时记录，`d.method()` 静态分派；
-    /// 变量被重新赋值或离开函数体时失效）。
-    pub dyn_concrete: HashMap<String, Type>,
+    /// 当前 impl 的关联类型映射（关联类型名 → 具体类型，U2）。
+    ///
+    /// `collect_impl` 解析 `type Item = Concrete;` 后填充，方法签名中
+    /// `Self::Item` 经 `resolve_ast_type` 查本表替换；trait 声明收集时为空，
+    /// `Self::Item` 退化为占位 `Type::Generic("Self::Item")`。
+    pub assoc_types: HashMap<String, Type>,
+    /// 当前 impl 的目标类型（U4：方法签名/body 中 `Self` 解析为它；
+    /// trait 上下文未设置时 `Self` 退化为占位 `Generic("Self")`）
+    pub self_type: Option<Type>,
+    /// 遮蔽槽名计数器（生成 `name$N` 唯一槽名）
+    pub shadow_seq: usize,
     /// 临时变量名计数器
     pub temp_counter: usize,
     /// H2 无捕获闭包匿名函数名计数器（`__closure_{n}` 全局唯一）
@@ -123,29 +146,148 @@ pub struct TypeContext {
 }
 
 impl TypeContext {
-    /// 创建空上下文
+    /// 创建空上下文（含根作用域，保证 `insert_variable` 等 API 始终有可写层）。
     pub fn new() -> Self {
-        Self::default()
+        let mut ctx = Self::default();
+        ctx.push_scope(true);
+        ctx
     }
 
-    /// 记录一个变量绑定。
-    pub fn insert_variable(&mut self, name: String, type_: Type) {
-        self.variables.insert(name, type_);
+    /// 进入新作用域。`is_fn=true` 表示函数/闭包边界（变量查找不穿透，实现隔离，
+    /// 函数体内看不到调用方局部变量）；块/循环体/match 臂为 `false`（查找穿透，
+    /// 块内可访问外层变量）。
+    pub fn push_scope(&mut self, is_fn: bool) {
+        self.scopes.push(Scope { is_fn, ..Default::default() });
     }
 
-    /// 查找变量的类型。
+    /// 离开作用域（同时丢弃其中的变量/初始化表达式/dyn 具体类型）。
+    pub fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    /// 计算变量在当前作用域应使用的存储槽名：
+    /// - 当前层已有同名绑定 → 复用其槽名（同层 `let x` 覆盖语义，现状保持）；
+    /// - 外层（块层可穿透所属函数层；起始层为 fn 边界时本层查完即止）已有
+    ///   同名绑定 → mangle 为 `name$N`（块级遮蔽，下游按槽名区分，避免同名
+    ///   存储槽互相覆盖）；
+    /// - 否则 → 原名。
+    fn stored_name(&mut self, name: &str) -> String {
+        let cur = self.scopes.last_mut().expect("作用域栈为空");
+        if let Some((slot, _)) = cur.vars.get(name) {
+            return slot.clone();
+        }
+        // U1 修复：起始层若为 fn 边界，本层查完即止（函数体隔离，不穿透外层
+        // fn 层——否则嵌套编译（如 impl 方法体实例化）时外层同名参数触发误
+        // mangle，导致参数槽名 `self$0` 与 codegen 入口槽 `self` 错位）；
+        // 块层可穿透，但越过外层 fn 边界后停止（块内可见所属函数全部局部变量）。
+        let mut crossed_fn = cur.is_fn;
+        for s in self.scopes.iter().rev().skip(1) {
+            if crossed_fn {
+                break;
+            }
+            if s.vars.contains_key(name) {
+                let uname = format!("{name}${}", self.shadow_seq);
+                self.shadow_seq += 1;
+                return uname;
+            }
+            crossed_fn = s.is_fn;
+        }
+        name.to_string()
+    }
+
+    /// 记录一个变量绑定，返回存储槽名（块级遮蔽时 mangle 为 `name$N`）。
+    pub fn insert_variable(&mut self, name: String, type_: Type) -> String {
+        let stored = self.stored_name(&name);
+        self.scopes
+            .last_mut()
+            .expect("作用域栈为空")
+            .vars
+            .insert(name, (stored.clone(), type_));
+        stored
+    }
+
+    /// 查找变量的（存储槽名, 类型）。fn 边界不穿透（函数/闭包体隔离）。
+    pub fn resolve_variable(&self, name: &str) -> Option<(&str, &Type)> {
+        let mut crossed_fn = false;
+        for s in self.scopes.iter().rev() {
+            if crossed_fn {
+                break;
+            }
+            if let Some((slot, ty)) = s.vars.get(name) {
+                return Some((slot.as_str(), ty));
+            }
+            crossed_fn = s.is_fn;
+        }
+        None
+    }
+
+    /// 查找变量的类型（兼容便捷接口）。
     pub fn lookup_variable(&self, name: &str) -> Option<&Type> {
-        self.variables.get(name)
+        self.resolve_variable(name).map(|(_, ty)| ty)
     }
 
-    /// 记录一个变量绑定的初始化表达式。
-    pub fn insert_local_init(&mut self, name: String, init: HirExpr) {
-        self.local_inits.insert(name, init);
+    /// 记录变量绑定的初始化表达式，返回存储槽名（与 `insert_variable` 同步遮蔽）。
+    pub fn insert_local_init(&mut self, name: String, init: HirExpr) -> String {
+        let stored = self.stored_name(&name);
+        self.scopes
+            .last_mut()
+            .expect("作用域栈为空")
+            .inits
+            .insert(name, init);
+        stored
     }
 
-    /// 查找变量绑定的初始化表达式。
+    /// 查找变量绑定的初始化表达式。fn 边界不穿透。
     pub fn lookup_local_init(&self, name: &str) -> Option<&HirExpr> {
-        self.local_inits.get(name)
+        let mut crossed_fn = false;
+        for s in self.scopes.iter().rev() {
+            if crossed_fn {
+                break;
+            }
+            if let Some(h) = s.inits.get(name) {
+                return Some(h);
+            }
+            crossed_fn = s.is_fn;
+        }
+        None
+    }
+
+    /// 记录 dyn 绑定变量的具体类型（H4 去虚拟化：`let d: dyn Trait = &obj;`）。
+    pub fn insert_dyn_concrete(&mut self, name: String, type_: Type) {
+        self.scopes
+            .last_mut()
+            .expect("作用域栈为空")
+            .dyn_concrete
+            .insert(name, type_);
+    }
+
+    /// 查找 dyn 绑定变量的具体类型。fn 边界不穿透。
+    pub fn get_dyn_concrete(&self, name: &str) -> Option<&Type> {
+        let mut crossed_fn = false;
+        for s in self.scopes.iter().rev() {
+            if crossed_fn {
+                break;
+            }
+            if let Some(t) = s.dyn_concrete.get(name) {
+                return Some(t);
+            }
+            crossed_fn = s.is_fn;
+        }
+        None
+    }
+
+    /// 移除 dyn 绑定变量的具体类型（变量被重新赋值时失效）。
+    pub fn remove_dyn_concrete(&mut self, name: &str) {
+        let mut crossed_fn = false;
+        for s in self.scopes.iter_mut().rev() {
+            if crossed_fn {
+                break;
+            }
+            if s.dyn_concrete.remove(name).is_some() {
+                return;
+            }
+            crossed_fn = s.is_fn;
+        }
     }
 
     /// 记录一个函数签名。
@@ -246,6 +388,14 @@ impl TypeContext {
         // 泛型替换优先（实例化 body 检查时 `T` → 具体类型）
         if let Some(t) = self.generic_subst.get(name) {
             return Ok(t.clone());
+        }
+        // U4：`Self` 解析为当前 impl 目标类型（方法签名/body 收集时设置）；
+        // trait 上下文（未设置）退化为占位 `Generic("Self")`
+        if name == "Self" {
+            if let Some(t) = &self.self_type {
+                return Ok(t.clone());
+            }
+            return Ok(Type::Generic(name.to_string()));
         }
         if self.type_params.iter().any(|p| p == name) {
             return Ok(Type::Generic(name.to_string()));

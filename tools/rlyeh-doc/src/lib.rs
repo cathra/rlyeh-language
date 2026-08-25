@@ -251,28 +251,28 @@ fn item_title(item: &AstItem) -> String {
             s.push_str("fn ");
             s.push_str(&f.name);
             if !f.generics.is_empty() {
-                s.push_str(&format!("<{}>", f.generics.join(", ")));
+                s.push_str(&format!("<{}>", fmt_generics(&f.generics)));
             }
             s
         }
         AstItem::StructDecl(s) => {
             let mut t = format!("struct {}", s.name);
             if !s.generics.is_empty() {
-                t.push_str(&format!("<{}>", s.generics.join(", ")));
+                t.push_str(&format!("<{}>", fmt_generics(&s.generics)));
             }
             t
         }
         AstItem::EnumDecl(e) => {
             let mut t = format!("enum {}", e.name);
             if !e.generics.is_empty() {
-                t.push_str(&format!("<{}>", e.generics.join(", ")));
+                t.push_str(&format!("<{}>", fmt_generics(&e.generics)));
             }
             t
         }
         AstItem::TraitDecl(t) => {
             let mut s = format!("trait {}", t.name);
             if !t.generics.is_empty() {
-                s.push_str(&format!("<{}>", t.generics.join(", ")));
+                s.push_str(&format!("<{}>", fmt_generics(&t.generics)));
             }
             s
         }
@@ -283,7 +283,7 @@ fn item_title(item: &AstItem) -> String {
             }
             s.push_str(&i.type_name);
             if !i.generics.is_empty() {
-                s.push_str(&format!("<{}>", i.generics.join(", ")));
+                s.push_str(&format!("<{}>", fmt_generics(&i.generics)));
             }
             s
         }
@@ -321,7 +321,7 @@ pub fn item_signature(item: &AstItem) -> String {
         AstItem::TraitDecl(t) => {
             let mut s = format!("trait {}", t.name);
             if !t.generics.is_empty() {
-                s.push_str(&format!("<{}>", t.generics.join(", ")));
+                s.push_str(&format!("<{}>", fmt_generics(&t.generics)));
             }
             if !t.methods.is_empty() {
                 s.push_str(" {\n");
@@ -343,7 +343,7 @@ pub fn item_signature(item: &AstItem) -> String {
             }
             s.push_str(&i.type_name);
             if !i.generics.is_empty() {
-                s.push_str(&format!("<{}>", i.generics.join(", ")));
+                s.push_str(&format!("<{}>", fmt_generics(&i.generics)));
             }
             if !i.methods.is_empty() {
                 s.push_str(" {\n");
@@ -431,7 +431,7 @@ pub fn item_signature(item: &AstItem) -> String {
 fn struct_signature(s: &AstStructDecl) -> String {
     let mut out = format!("struct {}", s.name);
     if !s.generics.is_empty() {
-        out.push_str(&format!("<{}>", s.generics.join(", ")));
+        out.push_str(&format!("<{}>", fmt_generics(&s.generics)));
     }
     if !s.fields.is_empty() {
         out.push_str(" { ");
@@ -458,7 +458,7 @@ fn struct_signature(s: &AstStructDecl) -> String {
 fn enum_signature(e: &AstEnumDecl) -> String {
     let mut out = format!("enum {}", e.name);
     if !e.generics.is_empty() {
-        out.push_str(&format!("<{}>", e.generics.join(", ")));
+        out.push_str(&format!("<{}>", fmt_generics(&e.generics)));
     }
     if !e.variants.is_empty() {
         out.push_str(" { ");
@@ -507,7 +507,7 @@ pub fn fn_signature(f: &AstFnDecl) -> String {
     out.push_str("fn ");
     out.push_str(&f.name);
     if !f.generics.is_empty() {
-        out.push_str(&format!("<{}>", f.generics.join(", ")));
+        out.push_str(&format!("<{}>", fmt_generics(&f.generics)));
     }
     out.push('(');
     out.push_str(
@@ -525,6 +525,21 @@ pub fn fn_signature(f: &AstFnDecl) -> String {
 }
 
 /// 参数格式化（`self` / `&self` / `&mut self` 特判）。
+/// 格式化泛型参数列表：`T: Bound1 + Bound2`（U3）。
+fn fmt_generics(generics: &[AstTypeParam]) -> String {
+    generics
+        .iter()
+        .map(|p| {
+            if p.bounds.is_empty() {
+                p.name.clone()
+            } else {
+                format!("{}: {}", p.name, p.bounds.join(" + "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn fmt_param(p: &AstParam) -> String {
     if p.name == "self" && p.default.is_none() {
         return match &p.type_ {

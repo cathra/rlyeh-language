@@ -1,5 +1,6 @@
 //! Rlyeh 类型系统定义。
 
+use std::collections::HashMap;
 use std::fmt;
 
 /// 类型可变性。
@@ -344,6 +345,8 @@ pub struct TraitDef {
     pub name: String,
     /// 泛型参数名
     pub type_params: Vec<String>,
+    /// 关联类型声明名（`type Item;`，U2）
+    pub assoc_types: Vec<String>,
     /// 抽象方法签名
     pub methods: Vec<MethodSig>,
 }
@@ -366,6 +369,12 @@ pub struct ImplDef {
     pub self_type: Type,
     /// 泛型参数名
     pub type_params: Vec<String>,
+    /// 泛型参数 → 约束 trait 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并；
+    /// MVP 记录不校验——impl 泛型实例化时的方法调用 bound 校验规划中）
+    #[allow(dead_code)]
+    pub bounds: HashMap<String, Vec<String>>,
+    /// 关联类型定义（`type Item = Concrete;`，U2）
+    pub assoc_types: Vec<(String, Type)>,
     /// 方法（`self` 位于参数首位）
     pub methods: Vec<ImplMethod>,
 }
