@@ -172,6 +172,7 @@ zeta-language/
 ├── zep/                   # 包管理器
 ├── docs/                  # 权威规范 + 开发进度（入口：docs/README.md）
 ├── examples/              # 可运行示例
+├── skills/                # zeta-language 技能（SKILL.md + references/，随工具链分发）
 └── tests/                 # 集成测试（.zeta 用例）
 ```
 

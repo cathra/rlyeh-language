@@ -66,12 +66,16 @@ cp -R "$STD_SRC"/. "$PREFIX/std/"
 echo "    标准库 -> $PREFIX/std"
 
 # 5. 复制 zeta-language 技能（SKILL.md + references/，随工具链发布）
-SKILL_SRC="$REPO/.codebuddy/skills/zeta-language"
+#    优先项目根 skills/（仓库一级内容），回退 .codebuddy/skills/（IDE 加载副本）
+SKILL_SRC="$REPO/skills/zeta-language"
+if [[ ! -d "$SKILL_SRC" ]]; then
+    SKILL_SRC="$REPO/.codebuddy/skills/zeta-language"
+fi
 if [[ -d "$SKILL_SRC" ]]; then
     rm -rf "$PREFIX/skills/zeta-language"
     mkdir -p "$PREFIX/skills"
     cp -R "$SKILL_SRC" "$PREFIX/skills/"
-    echo "    技能 -> $PREFIX/skills/zeta-language"
+    echo "    技能 -> $PREFIX/skills/zeta-language（来源: $SKILL_SRC）"
 else
     echo "!! 未找到技能目录（$SKILL_SRC），跳过"
 fi
