@@ -1,5 +1,5 @@
-// net/byteorder.zeta：sockaddr_in 字节打包工具（主机字节序 ↔ 网络字节序）。
-// 目录化（2026-08）：由原 net.zeta 拆分。符号完整路径 net::byteorder::sockaddr_in4 等。
+// net/byteorder.rl：sockaddr_in 字节打包工具（主机字节序 ↔ 网络字节序）。
+// 目录化（2026-08）：由原 net.rl 拆分。符号完整路径 net::byteorder::sockaddr_in4 等。
 
 // 主机字节序 → 网络字节序（大端）。纯位运算实现（不依赖 htons extern）。
 fn htons(v: i64) -> i64 {
@@ -7,7 +7,7 @@ fn htons(v: i64) -> i64 {
 }
 
 // 构造 IPv4 sockaddr_in（16 字节）。a.b.c.d 点分四字节，port 为主机字节序。
-// has_sin_len 选择平台布局（由 __zeta_target_os 决定）：
+// has_sin_len 选择平台布局（由 __rlyeh_target_os 决定）：
 //   macOS（true）： 0 = sin_len(16)，1 = AF_INET(2)
 //   Linux（false）：0-1 = sin_family（uint16 小端 0x0002 → 2, 0），无 sin_len
 // 之后 2-3 = 端口（大端/网络序），4-7 = IP（大端/网络序），8-15 = sin_zero。
@@ -33,7 +33,7 @@ fn sockaddr_in4_with_layout(has_sin_len: bool, port: i64, a: i64, b: i64, c: i64
 
 // 平台自适应 sockaddr_in4（按目标 OS 选布局）。
 fn sockaddr_in4(port: i64, a: i64, b: i64, c: i64, d: i64) -> String {
-    net::byteorder::sockaddr_in4_with_layout(__zeta_target_os() == 2, port, a, b, c, d)
+    net::byteorder::sockaddr_in4_with_layout(__rlyeh_target_os() == 2, port, a, b, c, d)
 }
 
 // 4 字节 → 点分字符串（getsockname / accept 回填解析的反向）。

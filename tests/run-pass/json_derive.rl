@@ -1,7 +1,7 @@
 // 阶段 Q1 验收：Serialize/Deserialize trait + #[derive(Serialize, Deserialize)] 标记
 // + struct JSON 反序列化（json_parse_ast 字段名匹配 desugar）。
-// - Q1a：`trait Serialize { fn to_json(&self) -> String; }`（serde/module.zeta）+ 手写 impl
-//   （自定义类型方法调用可解析；`-> Self` 的 Deserialize trait 未支持，见 io/error.zeta M2b）
+// - Q1a：`trait Serialize { fn to_json(&self) -> String; }`（serde/module.rl）+ 手写 impl
+//   （自定义类型方法调用可解析；`-> Self` 的 Deserialize trait 未支持，见 io/error.rl M2b）
 // - Q1b：`#[derive(...)]` attribute 解析（lexer Pound + parser，AST 存储 derive 列表）
 // - Q1c：`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略；
 //   嵌套 struct 值含逗号 MVP 限制）
@@ -54,10 +54,10 @@ fn main() {
     println(q3.x + q3.y);          // 0
 
     // Q1c：String / bool 字段
-    let pers = json::parse::<Person>("{\"name\":\"zeta\",\"age\":7,\"alive\":true}");
+    let pers = json::parse::<Person>("{\"name\":\"rlyeh\",\"age\":7,\"alive\":true}");
     println(pers.age);             // 7
     if pers.alive { println(1) } else { println(0) }   // 1
-    println(pers.name);            // zeta
+    println(pers.name);            // rlyeh
 
     // Q1c：嵌套 struct（值不含逗号）+ round-trip
     let o = json::parse::<Outer>("{\"tag\":5,\"inner\":{\"a\":9}}");

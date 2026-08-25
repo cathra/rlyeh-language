@@ -1,4 +1,4 @@
-// benchmark: fib(30) —— 与 fib.zeta 同逻辑
+// benchmark: fib(30) —— 与 fib.rl 同逻辑
 fn fib(n: i64) -> i64 {
     if n < 2 {
         return n;

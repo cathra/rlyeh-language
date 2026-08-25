@@ -13,16 +13,16 @@
 
 | 文件 | 说明 |
 |------|------|
-| `box_new.zeta` | K2 Box：堆分配、解引用、自动剥层访问 |
-| `box_leak.zeta` | Box::leak 泄漏为静态引用 |
-| `rc_new.zeta` | K3 Rc/Arc：clone、强/弱引用计数、try_unwrap |
-| `gc_region.zeta` | K4 Gc：gc_region 块 + 逃逸 root + 标记-清除回收 |
+| `box_new.rl` | K2 Box：堆分配、解引用、自动剥层访问 |
+| `box_leak.rl` | Box::leak 泄漏为静态引用 |
+| `rc_new.rl` | K3 Rc/Arc：clone、强/弱引用计数、try_unwrap |
+| `gc_region.rl` | K4 Gc：gc_region 块 + 逃逸 root + 标记-清除回收 |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/11-smart-pointers/box_new.zeta
-zeta run examples/std-demos/11-smart-pointers/box_leak.zeta
-zeta run examples/std-demos/11-smart-pointers/rc_new.zeta
-zeta run examples/std-demos/11-smart-pointers/gc_region.zeta
+rlyeh run examples/std-demos/11-smart-pointers/box_new.rl
+rlyeh run examples/std-demos/11-smart-pointers/box_leak.rl
+rlyeh run examples/std-demos/11-smart-pointers/rc_new.rl
+rlyeh run examples/std-demos/11-smart-pointers/gc_region.rl
 ```

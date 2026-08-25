@@ -13,14 +13,14 @@
 
 | 文件 | 说明 |
 |------|------|
-| `collection_macros.zeta` | I3 集合宏：arr! / vec! / map! + 空集合 + 嵌套表达式 |
-| `macro.zeta` | macro_rules! 声明式宏基础 |
-| `macro_expr_multi.zeta` | 多元素 / 重复模式 / 嵌套宏调用 |
+| `collection_macros.rl` | I3 集合宏：arr! / vec! / map! + 空集合 + 嵌套表达式 |
+| `macro.rl` | macro_rules! 声明式宏基础 |
+| `macro_expr_multi.rl` | 多元素 / 重复模式 / 嵌套宏调用 |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/12-macros/collection_macros.zeta
-zeta run examples/std-demos/12-macros/macro.zeta
-zeta run examples/std-demos/12-macros/macro_expr_multi.zeta
+rlyeh run examples/std-demos/12-macros/collection_macros.rl
+rlyeh run examples/std-demos/12-macros/macro.rl
+rlyeh run examples/std-demos/12-macros/macro_expr_multi.rl
 ```

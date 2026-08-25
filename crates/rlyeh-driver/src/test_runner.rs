@@ -1,12 +1,12 @@
-//! # 测试运行器（`zeta test`）
+//! # 测试运行器（`rlyeh test`）
 //!
 //! 扫描 `tests/` 目录下的三类用例并驱动编译/运行：
 //!
 //! | 目录 | 语义 |
 //! |------|------|
-//! | `tests/compile-pass/` | 每个 `.zeta` 必须编译成功（编译到 LLVM IR，不链接） |
-//! | `tests/compile-fail/` | 每个 `.zeta` 必须编译失败；源内 `// expect: <片段>` 注释断言错误消息包含片段 |
-//! | `tests/run-pass/` | 每个 `.zeta` 必须编译运行成功；同名 `.out` 文件（若有）作为期望 stdout 精确对比 |
+//! | `tests/compile-pass/` | 每个 `.rl` 必须编译成功（编译到 LLVM IR，不链接） |
+//! | `tests/compile-fail/` | 每个 `.rl` 必须编译失败；源内 `// expect: <片段>` 注释断言错误消息包含片段 |
+//! | `tests/run-pass/` | 每个 `.rl` 必须编译运行成功；同名 `.out` 文件（若有）作为期望 stdout 精确对比 |
 //!
 //! 用例文件均可选：目录不存在或为空时该类别自动跳过。
 
@@ -50,7 +50,7 @@ impl TestKind {
 pub struct TestCaseResult {
     /// 用例类别。
     pub kind: TestKind,
-    /// 用例相对路径（如 `compile-pass/hello.zeta`）。
+    /// 用例相对路径（如 `compile-pass/hello.rl`）。
     pub name: String,
     /// 是否通过。
     pub passed: bool,
@@ -89,7 +89,7 @@ pub fn run_test_suite(root: &Path) -> TestSummary {
         let mut files: Vec<PathBuf> = entries
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "zeta"))
+            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "rl"))
             .collect();
         files.sort();
 

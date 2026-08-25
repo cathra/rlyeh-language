@@ -1,4 +1,4 @@
-//! Zeta 追踪 GC 运行时（K4 `Gc<T>` 保守标记-清除）。
+//! Rlyeh 追踪 GC 运行时（K4 `Gc<T>` 保守标记-清除）。
 //!
 //! 对象布局约定（与编译器内建 `Gc<T>` 一致）：
 //! - 对象 = `slots` 个 8 字节槽的连续堆块（malloc），`T` 值区自堆首槽起
@@ -7,10 +7,10 @@
 //! - 值区内任意槽位值若等于某已注册对象基址，视为引用（保守扫描，安全）
 //!
 //! 生命周期协议（`gc_region` 块 desugar 调用序列）：
-//! 1. `zeta_gc_region_begin()`：`epoch += 1`
-//! 2. `zeta_gc_alloc(n)`：分配 `n` 槽对象（malloc + 注册块表 + 记录当前 epoch）
-//! 3. `zeta_gc_escape(ptr)`：登记块返回值对象为逃逸 root（`ptr` 为空则空操作）
-//! 4. `zeta_gc_collect()`：从逃逸 root 标记 → 清除本块（`epoch` 匹配）未标记对象
+//! 1. `rlyeh_gc_region_begin()`：`epoch += 1`
+//! 2. `rlyeh_gc_alloc(n)`：分配 `n` 槽对象（malloc + 注册块表 + 记录当前 epoch）
+//! 3. `rlyeh_gc_escape(ptr)`：登记块返回值对象为逃逸 root（`ptr` 为空则空操作）
+//! 4. `rlyeh_gc_collect()`：从逃逸 root 标记 → 清除本块（`epoch` 匹配）未标记对象
 //!    → 本块存活对象提升为逃逸 root → `epoch -= 1`
 //!
 //! 关键语义（epoch 分层）：
@@ -83,7 +83,7 @@ impl Default for GcState {
 /// （单线程串行调用，见模块头注释）。
 struct GlobalState(UnsafeCell<Option<GcState>>);
 
-// SAFETY: 所有 `zeta_gc_*` C ABI 入口在 MVP 中由编译器生成的单线程代码串行调用，
+// SAFETY: 所有 `rlyeh_gc_*` C ABI 入口在 MVP 中由编译器生成的单线程代码串行调用，
 // 且每个入口内对 `STATE` 的借用互不重叠（`&mut` 同一时刻唯一）。
 unsafe impl Sync for GlobalState {}
 
@@ -100,17 +100,17 @@ fn with_state<T>(f: impl FnOnce(&mut GcState) -> T) -> T {
 /// 分配序列：对象数据块（malloc）→ 元数据节点（malloc）→ 挂链表。全部为
 /// 首次 `malloc`，不涉及扩容 / `realloc`（见模块头"分配器说明"）。
 #[no_mangle]
-pub extern "C" fn zeta_gc_alloc(slots: i64) -> *mut i64 {
+pub extern "C" fn rlyeh_gc_alloc(slots: i64) -> *mut i64 {
     let slots = slots.max(1) as usize;
     let bytes = slots * 8;
     let base = unsafe { libc::malloc(bytes) as *mut i64 };
-    assert!(!base.is_null(), "zeta-gc: malloc 失败 ({} bytes)", bytes);
+    assert!(!base.is_null(), "rlyeh-gc: malloc 失败 ({} bytes)", bytes);
     // 清零（避免未初始化槽被误判为引用）。注意 `base` 为 `*mut i64`，
     // 须先转 `*mut u8` 按字节清零（`i64` 的 `write_bytes` 按元素计数会
     // 溢出写入 `bytes * 8` 字节，破坏 malloc 元数据导致后续分配崩溃）。
     unsafe { (base as *mut u8).write_bytes(0u8, bytes) };
     let hdr = unsafe { libc::malloc(std::mem::size_of::<GcHeader>()) as *mut GcHeader };
-    assert!(!hdr.is_null(), "zeta-gc: 元数据节点 malloc 失败");
+    assert!(!hdr.is_null(), "rlyeh-gc: 元数据节点 malloc 失败");
     unsafe {
         (*hdr).base = base;
         (*hdr).slots = slots;
@@ -128,18 +128,18 @@ pub extern "C" fn zeta_gc_alloc(slots: i64) -> *mut i64 {
 
 /// `gc_region` 块入口：块层级 +1（块内新分配带本块 epoch 标签）。
 #[no_mangle]
-pub extern "C" fn zeta_gc_region_begin() {
+pub extern "C" fn rlyeh_gc_region_begin() {
     with_state(|s| s.epoch += 1);
 }
 
 /// 登记块返回值对象为逃逸 root（`ptr` 为空指针时为空操作）。
 #[no_mangle]
-pub extern "C" fn zeta_gc_escape(ptr: *mut i64) {
+pub extern "C" fn rlyeh_gc_escape(ptr: *mut i64) {
     if ptr.is_null() {
         return;
     }
     let node = unsafe { libc::malloc(std::mem::size_of::<RootNode>()) as *mut RootNode };
-    assert!(!node.is_null(), "zeta-gc: root 节点 malloc 失败");
+    assert!(!node.is_null(), "rlyeh-gc: root 节点 malloc 失败");
     with_state(|s| {
         unsafe {
             (*node).base = ptr;
@@ -155,7 +155,7 @@ pub extern "C" fn zeta_gc_escape(ptr: *mut i64) {
 /// （`epoch` 更小）永不回收；本块存活对象提升为逃逸 root（链式保护），
 /// 随后块层级 -1。
 #[no_mangle]
-pub extern "C" fn zeta_gc_collect() {
+pub extern "C" fn rlyeh_gc_collect() {
     with_state(|s| unsafe {
         // 1. 标记（逃逸 root 出发，递归扫描值区指针槽）
         let mut r = s.roots;
@@ -181,7 +181,7 @@ pub extern "C" fn zeta_gc_collect() {
                 // root 只增保护不增回收（MVP 泄漏语义，见 memory-model.md §5）。
                 if (*h).marked || (*h).epoch < s.epoch {
                     let node = libc::malloc(std::mem::size_of::<RootNode>()) as *mut RootNode;
-                    assert!(!node.is_null(), "zeta-gc: root 节点 malloc 失败");
+                    assert!(!node.is_null(), "rlyeh-gc: root 节点 malloc 失败");
                     (*node).base = (*h).base;
                     (*node).next = new_roots;
                     new_roots = node;

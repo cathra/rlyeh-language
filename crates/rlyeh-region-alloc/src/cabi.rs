@@ -1,17 +1,17 @@
 //! C ABI 导出层（L3 region 选项接线）。
 //!
-//! LLVM 后端生成的代码经 `zeta_region_*` 函数操作运行时区域：
+//! LLVM 后端生成的代码经 `rlyeh_region_*` 函数操作运行时区域：
 //!
-//! - [`zeta_region_enter`]：按编译器传入的选项（初始大小 / 扩容策略 / 自适应 / 精确）
+//! - [`rlyeh_region_enter`]：按编译器传入的选项（初始大小 / 扩容策略 / 自适应 / 精确）
 //!   创建区域，返回不透明句柄；
-//! - [`zeta_region_alloc`]：**慢路径**分配——LLVM 后端对 `in 'r` 分配内联生成
+//! - [`rlyeh_region_alloc`]：**慢路径**分配——LLVM 后端对 `in 'r` 分配内联生成
 //!   bump 快路径（直接读写 `Region` 首部固定偏移字段），仅在当前块空间不足
 //!   （越界）时才调用本函数扩容并分配；
-//! - [`zeta_region_transfer`]：登记对象已 `transfer` 出区域（销毁时跳过其析构）；
-//! - [`zeta_region_exit`]：批量释放区域全部内存块并销毁句柄。
+//! - [`rlyeh_region_transfer`]：登记对象已 `transfer` 出区域（销毁时跳过其析构）；
+//! - [`rlyeh_region_exit`]：批量释放区域全部内存块并销毁句柄。
 //!
 //! 内存策略：区域内部使用 `std::alloc`（`MemoryBlock` 为 `std::alloc::alloc` +
-//! `dealloc`，与 zeta-gc-runtime 验证过的组合一致），本层仅做 FFI 边界转换，
+//! `dealloc`，与 rlyeh-gc-runtime 验证过的组合一致），本层仅做 FFI 边界转换，
 //! 不在 C 堆上自行分配。
 
 use std::ffi::c_void;
@@ -34,7 +34,7 @@ pub const REGION_STRATEGY_BUMP: u8 = 1;
 /// - `adaptive`：自适应模式（1 = EWMA 预测扩容）；
 /// - `strategy`：策略编码（MVP 仅 `REGION_STRATEGY_BUMP`，bump 即默认倍率策略）。
 #[no_mangle]
-pub extern "C" fn zeta_region_enter(
+pub extern "C" fn rlyeh_region_enter(
     name_ptr: *const u8,
     name_len: usize,
     initial_size: usize,
@@ -81,11 +81,11 @@ pub extern "C" fn zeta_region_enter(
 /// **慢路径**：被 LLVM 内联快路径的越界分支调用。调用时 `cursor` 尚未被
 /// 内联代码修改，`allocate_bytes` 会重新尝试（必然越界）并扩容后分配。
 #[no_mangle]
-pub extern "C" fn zeta_region_alloc(handle: *mut c_void, size: usize, align: usize) -> *mut u8 {
+pub extern "C" fn rlyeh_region_alloc(handle: *mut c_void, size: usize, align: usize) -> *mut u8 {
     if handle.is_null() || size == 0 {
         return ptr::null_mut();
     }
-    // SAFETY: handle 由 zeta_region_enter 返回，有效期至 zeta_region_exit。
+    // SAFETY: handle 由 rlyeh_region_enter 返回，有效期至 rlyeh_region_exit。
     let region = unsafe { &mut *(handle as *mut Region) };
     match region.allocate_bytes(size, align.max(1)) {
         Some(p) => p.as_ptr(),
@@ -96,11 +96,11 @@ pub extern "C" fn zeta_region_alloc(handle: *mut c_void, size: usize, align: usi
 /// 登记 `ptr` 指向的对象已 `transfer` 出区域：
 /// 从析构列表中移除，区域销毁时不再处理（MVP 下镜像不注册析构，仅作登记）。
 #[no_mangle]
-pub extern "C" fn zeta_region_transfer(handle: *mut c_void, ptr: *mut u8) {
+pub extern "C" fn rlyeh_region_transfer(handle: *mut c_void, ptr: *mut u8) {
     if handle.is_null() || ptr.is_null() {
         return;
     }
-    // SAFETY: handle 由 zeta_region_enter 返回；ptr 指向区域内对象（或编译器镜像）。
+    // SAFETY: handle 由 rlyeh_region_enter 返回；ptr 指向区域内对象（或编译器镜像）。
     let region = unsafe { &mut *(handle as *mut Region) };
     // SAFETY: ptr 非空。
     region.mark_transferred(unsafe { NonNull::new_unchecked(ptr) });
@@ -108,11 +108,11 @@ pub extern "C" fn zeta_region_transfer(handle: *mut c_void, ptr: *mut u8) {
 
 /// 销毁区域：逆序执行析构（跳过已 transfer 的对象）并释放全部内存块。
 #[no_mangle]
-pub extern "C" fn zeta_region_exit(handle: *mut c_void) {
+pub extern "C" fn rlyeh_region_exit(handle: *mut c_void) {
     if handle.is_null() {
         return;
     }
-    // SAFETY: handle 由 zeta_region_enter 返回，仅销毁一次。
+    // SAFETY: handle 由 rlyeh_region_enter 返回，仅销毁一次。
     unsafe {
         drop(Box::from_raw(handle as *mut Region));
     }
@@ -121,11 +121,11 @@ pub extern "C" fn zeta_region_exit(handle: *mut c_void) {
 /// 返回区域统计快照的部分计数（调试 / 测试用）：
 /// 低 32 位 = 分配次数，高 32 位 = 内存块数。
 #[no_mangle]
-pub extern "C" fn zeta_region_stats(handle: *mut c_void) -> u64 {
+pub extern "C" fn rlyeh_region_stats(handle: *mut c_void) -> u64 {
     if handle.is_null() {
         return 0;
     }
-    // SAFETY: handle 由 zeta_region_enter 返回，区域存活期间有效。
+    // SAFETY: handle 由 rlyeh_region_enter 返回，区域存活期间有效。
     let region = unsafe { &*(handle as *mut Region) };
     // 合并 Rust API（stats）与 C ABI / 内联快路径（alloc_count）两条分配路径。
     let allocs = region.total_allocs() as u64 & 0xFFFF_FFFF;

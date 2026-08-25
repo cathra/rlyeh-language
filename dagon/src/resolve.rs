@@ -3,7 +3,7 @@
 //! 流程：
 //! 1. 从注册表拉取根包及其传递依赖的版本索引，构建 [`DependencyGraph`]；
 //! 2. 用 PubGrub 求解满足所有约束的版本组合；
-//! 3. 结果写入 `Zeta.lock`。
+//! 3. 结果写入 `Rlyeh.lock`。
 
 use std::cmp::Reverse;
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use pubgrub::{
     SemanticVersion, resolve,
 };
 
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 use crate::registry::RegistryClient;
 use crate::version::{self, Version, VersionReq};
 
@@ -62,18 +62,18 @@ impl DependencyGraph {
                 continue;
             }
             let idx = registry.get_index(&name)?.ok_or_else(|| {
-                ZepError::Resolve(format!(
+                DagonError::Resolve(format!(
                     "依赖 {name} 不存在于注册表（{root} 需要它）"
                 ))
             })?;
             let mut versions = Vec::with_capacity(idx.versions.len());
             for pv in &idx.versions {
                 let v = Version::parse(&pv.version)
-                    .map_err(|e| ZepError::Resolve(format!("包 {name} 版本不合法: {e}")))?;
+                    .map_err(|e| DagonError::Resolve(format!("包 {name} 版本不合法: {e}")))?;
                 let mut deps = HashMap::new();
                 for (dep, req) in &pv.dependencies {
                     let parsed = VersionReq::parse(req).map_err(|e| {
-                        ZepError::Resolve(format!("包 {name} 的依赖 {dep} 需求非法: {e}"))
+                        DagonError::Resolve(format!("包 {name} 的依赖 {dep} 需求非法: {e}"))
                     })?;
                     deps.insert(dep.clone(), parsed);
                     if !graph.packages.contains_key(dep) && !fetched.contains_key(dep) {
@@ -87,7 +87,7 @@ impl DependencyGraph {
                 });
             }
             if versions.is_empty() {
-                return Err(ZepError::Resolve(format!("包 {name} 在注册表中没有任何版本")));
+                return Err(DagonError::Resolve(format!("包 {name} 在注册表中没有任何版本")));
             }
             graph.packages.insert(name, versions);
         }
@@ -101,7 +101,7 @@ impl DependencyGraph {
         root_version: &Version,
         root_deps: &HashMap<String, VersionReq>,
     ) -> Result<HashMap<String, Version>> {
-        let provider = ZepProvider {
+        let provider = DagonProvider {
             graph: self,
             root: root.to_string(),
             root_version: root_version.to_semantic(),
@@ -115,7 +115,7 @@ impl DependencyGraph {
                 }
                 Ok(map)
             }
-            Err(e) => Err(ZepError::Resolve(format!("无可用版本组合: {e}"))),
+            Err(e) => Err(DagonError::Resolve(format!("无可用版本组合: {e}"))),
         }
     }
 
@@ -126,7 +126,7 @@ impl DependencyGraph {
 }
 
 /// PubGrub 依赖提供者：从内存 [`DependencyGraph`] 读取。
-struct ZepProvider<'a> {
+struct DagonProvider<'a> {
     graph: &'a DependencyGraph,
     root: String,
     /// 根包自身的版本：pubgrub 会把它当作待决策包询问版本。
@@ -134,7 +134,7 @@ struct ZepProvider<'a> {
     root_deps: HashMap<String, VersionReq>,
 }
 
-impl ZepProvider<'_> {
+impl DagonProvider<'_> {
     /// 返回包在需求范围内的全部候选版本。
     fn candidates(&self, package: &str, range: &Ranges<SemanticVersion>) -> Vec<SemanticVersion> {
         self.graph
@@ -151,13 +151,13 @@ impl ZepProvider<'_> {
     }
 }
 
-impl DependencyProvider for ZepProvider<'_> {
+impl DependencyProvider for DagonProvider<'_> {
     type P = String;
     type V = SemanticVersion;
     type VS = Ranges<SemanticVersion>;
     type Priority = Reverse<usize>;
     type M = String;
-    type Err = ZepError;
+    type Err = DagonError;
 
     fn prioritize(
         &self,
@@ -210,7 +210,7 @@ impl DependencyProvider for ZepProvider<'_> {
     }
 }
 
-/// 锁定文件 `Zeta.lock` 中的单个包条目。
+/// 锁定文件 `Rlyeh.lock` 中的单个包条目。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LockedPackage {
     /// 包名。
@@ -222,7 +222,7 @@ pub struct LockedPackage {
     pub dependencies: Vec<String>,
 }
 
-/// 锁定文件 `Zeta.lock`。
+/// 锁定文件 `Rlyeh.lock`。
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct LockFile {
     /// 锁文件格式版本。
@@ -292,13 +292,13 @@ impl LockFile {
     /// 序列化为 TOML。
     pub fn to_toml(&self) -> Result<String> {
         toml::to_string_pretty(self)
-            .map_err(|e| ZepError::Resolve(format!("锁文件序列化失败: {e}")))
+            .map_err(|e| DagonError::Resolve(format!("锁文件序列化失败: {e}")))
     }
 
     /// 解析 TOML。
     pub fn from_toml(s: &str) -> Result<Self> {
         let lf: LockFile = toml::from_str(s)
-            .map_err(|e| ZepError::Resolve(format!("锁文件解析失败: {e}")))?;
+            .map_err(|e| DagonError::Resolve(format!("锁文件解析失败: {e}")))?;
         Ok(lf)
     }
 }
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn resolve_selects_highest_compatible() {
-        let root = std::env::temp_dir().join(format!("zep-resolve-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("dagon-resolve-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         seed_registry(&root);
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn resolve_no_solution_on_conflict() {
-        let root = std::env::temp_dir().join(format!("zep-conflict-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("dagon-conflict-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let reg = LocalRegistry::new(&root);

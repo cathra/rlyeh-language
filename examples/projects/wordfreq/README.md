@@ -1,6 +1,6 @@
-# wordfreq — 文本词频统计（Zeta）
+# wordfreq — 文本词频统计（Rlyeh）
 
-纯 Zeta 实现的词频统计器：读取文本文件 → 切分单词 → 统计频次 →
+纯 Rlyeh 实现的词频统计器：读取文本文件 → 切分单词 → 统计频次 →
 按频次排序 → 终端排行表 + 写回 `freq.txt`。
 
 ## 构建
@@ -29,7 +29,7 @@ unique words: 39
    2  of                       4
    3  hello                    3
    4  words                    3
-   5  zeta                     3
+   5  rlyeh                     3
    6  and                      2
    7  brown                    2
    8  fox                      2
@@ -41,12 +41,12 @@ unique words: 39
 ## 架构
 
 ```
-tokenizer.zeta  tokenize：按非字母字符切分，ASCII 大小写归一（转小写）
-stats.zeta      count_freq：词 → 频次表；ranked：频次降序排行条目
-main.zeta       入口：读 sample.txt → 统计 → 表格输出 → 写 freq.txt
+tokenizer.rl  tokenize：按非字母字符切分，ASCII 大小写归一（转小写）
+stats.rl      count_freq：词 → 频次表；ranked：频次降序排行条目
+main.rl       入口：读 sample.txt → 统计 → 表格输出 → 写 freq.txt
 ```
 
-## Zeta 语言亮点（本项目用到）
+## Rlyeh 语言亮点（本项目用到）
 
 - **文件 IO**：`read_file` / `write_file`（io::file 内建，fopen/fread 封装）
 - **泛型集合**：`HashMap<String, i64>` 统计频次，`keys()` + `get`（值拷贝）遍历

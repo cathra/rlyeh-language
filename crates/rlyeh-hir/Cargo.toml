@@ -1,5 +1,5 @@
 [package]
-name = "zeta-hir"
+name = "rlyeh-hir"
 version.workspace = true
 edition.workspace = true
 

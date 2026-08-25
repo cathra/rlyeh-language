@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use zeta_region_alloc::Region;
+use rlyeh_region_alloc::Region;
 
 /// 记录析构次数的类型。
 struct Tracked(Rc<Cell<usize>>);

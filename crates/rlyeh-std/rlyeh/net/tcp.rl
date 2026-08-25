@@ -1,6 +1,6 @@
-// net/tcp.zeta：TCP 流与监听者（std-lib.md §5.1）。
-// 目录化（2026-08）：由原 net.zeta 拆分。符号完整路径 net::tcp::TcpStream 等；
-// SocketAddr 经 net::addr:: 前缀引用；send_all/recv_some 为 net/module.zeta 顶层函数。
+// net/tcp.rl：TCP 流与监听者（std-lib.md §5.1）。
+// 目录化（2026-08）：由原 net.rl 拆分。符号完整路径 net::tcp::TcpStream 等；
+// SocketAddr 经 net::addr:: 前缀引用；send_all/recv_some 为 net/module.rl 顶层函数。
 
 // O1c：TCP 流。read/write/read_line 复用 recv_some/send_all（O2）。
 struct TcpStream {
@@ -10,7 +10,7 @@ struct TcpStream {
 
 impl TcpStream {
     fn connect(addr: net::addr::SocketAddr) -> Result<net::tcp::TcpStream, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("socket API disabled on WASI"),
@@ -100,7 +100,7 @@ struct TcpListener {
 
 impl TcpListener {
     fn bind(addr: net::addr::SocketAddr) -> Result<net::tcp::TcpListener, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("socket API disabled on WASI"),
@@ -137,7 +137,7 @@ impl TcpListener {
     }
     // 接受一个连接：返回 net::tcp::TcpStream（peer 地址经 accept 回填 sockaddr 解析）。
     fn accept(&self) -> Result<net::tcp::TcpStream, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("socket API disabled on WASI"),
@@ -157,7 +157,7 @@ impl TcpListener {
     }
     // 实际绑定地址（getsockname 回填；端口 0 时返回真实端口）。
     fn local_addr(&self) -> Result<net::addr::SocketAddr, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("socket API disabled on WASI"),

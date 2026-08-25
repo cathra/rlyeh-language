@@ -1,9 +1,9 @@
-//! # zeta-hir
+//! # rlyeh-hir
 //!
-//! Zeta 语言高级中间表示（HIR）定义。
+//! Rlyeh 语言高级中间表示（HIR）定义。
 //!
-//! 语法分析器（zeta-parser）产生 AST 后，由语义分析阶段
-//! （zeta-typecheck）类型检查并展开为类型标注前的 HIR。
+//! 语法分析器（rlyeh-parser）产生 AST 后，由语义分析阶段
+//! （rlyeh-typecheck）类型检查并展开为类型标注前的 HIR。
 //!
 //! ## 设计约定
 //!

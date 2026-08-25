@@ -14,16 +14,16 @@
 
 | 文件 | 说明 |
 |------|------|
-| `vec_api.zeta` | T1a Vec 目标 API：iter（拷贝缓冲）、get_mut、sort_by 升降序 |
-| `string_api.zeta` | String 常用 API 综合演示 |
-| `hashmap_api.zeta` | HashMap 插入 / 查询 / 遍历 / 匹配解构 |
-| `str_value.zeta` | str 值一等类型：方法调用 / `+` 拼接自动升级 String |
+| `vec_api.rl` | T1a Vec 目标 API：iter（拷贝缓冲）、get_mut、sort_by 升降序 |
+| `string_api.rl` | String 常用 API 综合演示 |
+| `hashmap_api.rl` | HashMap 插入 / 查询 / 遍历 / 匹配解构 |
+| `str_value.rl` | str 值一等类型：方法调用 / `+` 拼接自动升级 String |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/02-collections/vec_api.zeta
-zeta run examples/std-demos/02-collections/string_api.zeta
-zeta run examples/std-demos/02-collections/hashmap_api.zeta
-zeta run examples/std-demos/02-collections/str_value.zeta
+rlyeh run examples/std-demos/02-collections/vec_api.rl
+rlyeh run examples/std-demos/02-collections/string_api.rl
+rlyeh run examples/std-demos/02-collections/hashmap_api.rl
+rlyeh run examples/std-demos/02-collections/str_value.rl
 ```

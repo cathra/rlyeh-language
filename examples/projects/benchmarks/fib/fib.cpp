@@ -1,4 +1,4 @@
-// benchmark: fib(30) —— 与 fib.zeta 同逻辑
+// benchmark: fib(30) —— 与 fib.rl 同逻辑
 #include <cstdio>
 
 long long fib(long long n) {

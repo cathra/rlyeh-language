@@ -1,12 +1,12 @@
 [package]
-name = "zeta-parser"
+name = "rlyeh-parser"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-zeta-lexer = { workspace = true }
-zeta-macro = { workspace = true }
-zeta-ast = { workspace = true }
+rlyeh-lexer = { workspace = true }
+rlyeh-macro = { workspace = true }
+rlyeh-ast = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

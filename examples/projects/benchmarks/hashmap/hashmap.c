@@ -1,4 +1,4 @@
-// benchmark: 20 万 insert + 20 万 get（LCG 键）—— 与 hashmap.zeta 同逻辑
+// benchmark: 20 万 insert + 20 万 get（LCG 键）—— 与 hashmap.rl 同逻辑
 // C 无标准哈希表，手写线性探测表（2^20 槽，负载 ~19%）
 #include <stdio.h>
 #include <stdlib.h>

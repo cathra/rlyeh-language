@@ -1,5 +1,5 @@
 [package]
-name = "zeta-borrowck"
+name = "rlyeh-borrowck"
 version.workspace = true
 edition.workspace = true
 
@@ -7,7 +7,7 @@ edition.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zeta-hir = { path = "../zeta-hir" }
+rlyeh-hir = { path = "../rlyeh-hir" }
 
 [dev-dependencies]
-zeta-typecheck = { path = "../zeta-typecheck" }
+rlyeh-typecheck = { path = "../rlyeh-typecheck" }

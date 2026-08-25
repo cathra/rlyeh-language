@@ -1,4 +1,4 @@
-//! 编译器集成接口：向编译器（`zeta-regionck`）暴露区域决策结果与 PGO 数据。
+//! 编译器集成接口：向编译器（`rlyeh-regionck`）暴露区域决策结果与 PGO 数据。
 
 use crate::profile::PgoData;
 
@@ -22,7 +22,7 @@ pub struct RegionCompileInfo {
 pub struct CompilerInterface {
     /// 已注册的区域。
     regions: Vec<RegionCompileInfo>,
-    /// 可选 PGO 数据（编译时从 `.zeta_profile` 加载）。
+    /// 可选 PGO 数据（编译时从 `.rl_profile` 加载）。
     pgo_data: Option<PgoData>,
 }
 

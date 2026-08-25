@@ -14,20 +14,20 @@
 
 | 文件 | 说明 |
 |------|------|
-| `file_io.zeta` | File 创建 / 写入 / 读取 round-trip |
-| `open_mode.zeta` | OpenMode 打开模式（读 / 写 / 追加） |
-| `fs_ops.zeta` | 文件系统操作（元信息、存在性等） |
-| `path_ops.zeta` | 路径操作（拼接 / 组件提取） |
-| `fs_dir.zeta` | 目录遍历 |
-| `stdout_stderr.zeta` | stdout / stderr 输出（含 `eprintln!`） |
-| `stdin_enhance.zeta` | stdin 读入（需要管道/交互输入，见下） |
-| `io_error_type.zeta` | IoError / IoErrorKind 构造与匹配 |
+| `file_io.rl` | File 创建 / 写入 / 读取 round-trip |
+| `open_mode.rl` | OpenMode 打开模式（读 / 写 / 追加） |
+| `fs_ops.rl` | 文件系统操作（元信息、存在性等） |
+| `path_ops.rl` | 路径操作（拼接 / 组件提取） |
+| `fs_dir.rl` | 目录遍历 |
+| `stdout_stderr.rl` | stdout / stderr 输出（含 `eprintln!`） |
+| `stdin_enhance.rl` | stdin 读入（需要管道/交互输入，见下） |
+| `io_error_type.rl` | IoError / IoErrorKind 构造与匹配 |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/04-file-io/file_io.zeta
-zeta run examples/std-demos/04-file-io/fs_ops.zeta
+rlyeh run examples/std-demos/04-file-io/file_io.rl
+rlyeh run examples/std-demos/04-file-io/fs_ops.rl
 # stdin 用例需提供输入：
-echo -e "hello\n42" | zeta run examples/std-demos/04-file-io/stdin_enhance.zeta
+echo -e "hello\n42" | rlyeh run examples/std-demos/04-file-io/stdin_enhance.rl
 ```

@@ -13,7 +13,7 @@ fn kind_code(k: IoErrorKind) -> i64 {
 
 fn main() {
     // create + write + flush + size（"w" 截断创建）
-    let f = File::create(String::from("/tmp/zeta_n1.txt"));
+    let f = File::create(String::from("/tmp/rlyeh_n1.txt"));
     match f {
         Ok(file) => {
             let mut file = file;
@@ -38,7 +38,7 @@ fn main() {
         Err(e) => println(-1),
     }
     // open(Read) + read_to_string + metadata
-    let r = File::open(String::from("/tmp/zeta_n1.txt"), OpenMode::Read);
+    let r = File::open(String::from("/tmp/rlyeh_n1.txt"), OpenMode::Read);
     match r {
         Ok(file) => {
             let mut file = file;
@@ -55,7 +55,7 @@ fn main() {
         Err(e) => println(-1),
     }
     // open(ReadWrite, "r+") + read(cap) + write_all（覆盖中间字节）
-    let w = File::open(String::from("/tmp/zeta_n1.txt"), OpenMode::ReadWrite);
+    let w = File::open(String::from("/tmp/rlyeh_n1.txt"), OpenMode::ReadWrite);
     match w {
         Ok(file) => {
             let mut file = file;
@@ -72,12 +72,12 @@ fn main() {
         Err(e) => println(-1),
     }
     // 读回确认覆盖结果
-    match read_file(String::from("/tmp/zeta_n1.txt")) {
+    match read_file(String::from("/tmp/rlyeh_n1.txt")) {
         Ok(v) => println(v),                  // hello!file
         Err(e) => println(-1),
     }
     // 失败路径：open 不存在的文件 → Err(NotFound)
-    let m = File::open(String::from("/tmp/zeta_no_such_n1.txt"), OpenMode::Read);
+    let m = File::open(String::from("/tmp/rlyeh_no_such_n1.txt"), OpenMode::Read);
     match m {
         Ok(file) => {
             file.close();

@@ -1,14 +1,14 @@
 [package]
-name = "zeta-lir"
+name = "rlyeh-lir"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Zeta 低级中间表示（LIR）：MIR → 三地址码 lowering 与类型推断"
+description = "Rlyeh 低级中间表示（LIR）：MIR → 三地址码 lowering 与类型推断"
 
 [dependencies]
-zeta-mir = { workspace = true }
-zeta-hir = { workspace = true }
+rlyeh-mir = { workspace = true }
+rlyeh-hir = { workspace = true }
 
 [dev-dependencies]
-zeta-typecheck = { workspace = true }
+rlyeh-typecheck = { workspace = true }

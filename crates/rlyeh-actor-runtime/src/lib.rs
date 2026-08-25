@@ -1,6 +1,6 @@
-//! # zeta-actor-runtime
+//! # rlyeh-actor-runtime
 //!
-//! Zeta 语言 Actor 并发模型运行时（M2.1）。
+//! Rlyeh 语言 Actor 并发模型运行时（M2.1）。
 //!
 //! 提供基于消息传递的 Actor 运行时，核心能力：
 //!
@@ -17,7 +17,7 @@
 //! ## 快速开始
 //!
 //! ```rust
-//! use zeta_actor_runtime::{ActorRef, ActorState, ActorContext, ActorError, RuntimeBuilder};
+//! use rlyeh_actor_runtime::{ActorRef, ActorState, ActorContext, ActorError, RuntimeBuilder};
 //!
 //! struct Counter { value: i64 }
 //!

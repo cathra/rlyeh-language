@@ -2,9 +2,9 @@
 //!
 //! 等价于 cargo-fuzz 的验收目标"任意输入不 panic"：用种子 PRNG 生成
 //! 大量随机的 UTF-8 文本并喂给解析器，断言解析过程（含词法失败路径）
-//! 从不 panic。`libfuzzer` 目标见 `crates/zeta-parser/fuzz/`。
+//! 从不 panic。`libfuzzer` 目标见 `crates/rlyeh-parser/fuzz/`。
 
-use zeta_parser::Parser;
+use rlyeh_parser::Parser;
 
 /// xorshift64 种子随机数生成器（确定性，无需外部依赖）
 struct XorShift(u64);
@@ -24,7 +24,7 @@ impl XorShift {
     }
 }
 
-/// Zeta 语法中常见的字节片段（覆盖关键字、运算符、字面量、标点）
+/// Rlyeh 语法中常见的字节片段（覆盖关键字、运算符、字面量、标点）
 const FRAGMENTS: &[&str] = &[
     "fn", "let", "mut", "if", "else", "while", "loop", "for", "in", "match", "region", "'r",
     "transfer", "out of", "actor", "struct", "enum", "trait", "impl", "pub", "async", "unsafe",

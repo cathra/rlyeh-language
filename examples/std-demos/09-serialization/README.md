@@ -16,16 +16,16 @@
 
 | 文件 | 说明 |
 |------|------|
-| `json_api.zeta` | Q2 JSON API：to_string/from_str + stringify/parse + to_writer/from_reader |
-| `json_serde.zeta` | Serialize / Deserialize trait 序列化综合 |
-| `json_derive.zeta` | `#[derive(Serialize, Deserialize)]` 派生宏 |
-| `toml_io.zeta` | Q4 TOML：stringify / parse + 嵌套表 + Vec/HashMap round-trip |
+| `json_api.rl` | Q2 JSON API：to_string/from_str + stringify/parse + to_writer/from_reader |
+| `json_serde.rl` | Serialize / Deserialize trait 序列化综合 |
+| `json_derive.rl` | `#[derive(Serialize, Deserialize)]` 派生宏 |
+| `toml_io.rl` | Q4 TOML：stringify / parse + 嵌套表 + Vec/HashMap round-trip |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/09-serialization/json_api.zeta
-zeta run examples/std-demos/09-serialization/json_serde.zeta
-zeta run examples/std-demos/09-serialization/json_derive.zeta
-zeta run examples/std-demos/09-serialization/toml_io.zeta
+rlyeh run examples/std-demos/09-serialization/json_api.rl
+rlyeh run examples/std-demos/09-serialization/json_serde.rl
+rlyeh run examples/std-demos/09-serialization/json_derive.rl
+rlyeh run examples/std-demos/09-serialization/toml_io.rl
 ```

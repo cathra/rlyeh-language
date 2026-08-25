@@ -1,4 +1,4 @@
-//! 动态切片集成测试（文件入口 API，自动注入 `zeta-std/zeta/core.zeta`）。
+//! 动态切片集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
 //!
 //! 覆盖：
 //! - `Vec<T>` 动态切片 `v[lo..<hi]` / `v[lo...hi]` / `v[lo<..hi]`
@@ -10,22 +10,22 @@
 
 use std::path::PathBuf;
 
-use zeta_driver::run_source_file;
+use rlyeh_driver::run_source_file;
 
 /// 独立临时项目目录，避免并行测试互相覆盖。
 fn temp_project() -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("zeta-dynslice-{}-{seq}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-dynslice-{}-{seq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("创建临时目录失败");
     dir
 }
 
-/// 运行内联源码（自动注入 core.zeta），返回程序输出。
+/// 运行内联源码（自动注入 core.rl），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("动态切片测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     out
@@ -195,19 +195,19 @@ fn string_from_variable() {
     let out = run(
         r#"
 fn main() {
-    let s = "hello zeta";
+    let s = "hello rlyeh";
     let t = String::from(s);
-    println(t);                    // hello zeta
+    println(t);                    // hello rlyeh
     println(t.len());              // 10
-    println(t == String::from("hello zeta"));
+    println(t == String::from("hello rlyeh"));
     // 字面量直用仍可用
     let u = String::from("direct");
     println(u == String::from("direct"));
     // 变量内容与字面量一致，可参与拼接
     let w = t + String::from("!");
-    println(w);                    // hello zeta!
+    println(w);                    // hello rlyeh!
 }
 "#,
     );
-    assert_eq!(out, "hello zeta\n10\ntrue\ntrue\nhello zeta!\n");
+    assert_eq!(out, "hello rlyeh\n10\ntrue\ntrue\nhello rlyeh!\n");
 }

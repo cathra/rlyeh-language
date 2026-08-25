@@ -10,7 +10,7 @@
 //   不走 trait impl 查找（`x.to_json()` 报 `i64::to_json not found`），序列化统一
 //   走 `json::stringify` 编译器特判；
 // - `Deserialize` 的 `-> Self` 返回自身类型未支持（typecheck undefined type
-//   `Self`，见 io/error.zeta M2b 注释），按 Q1a 预案退化为编译器内建
+//   `Self`，见 io/error.rl M2b 注释），按 Q1a 预案退化为编译器内建
 //   `json::parse::<T>`（turbofish 定型）；`from_json` 方法调用待 `Self` 返回支持。
 // ---------------------------------------------------------------------------
 

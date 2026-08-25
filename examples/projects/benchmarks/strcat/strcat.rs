@@ -1,4 +1,4 @@
-// benchmark: String push_str 10 万次 —— 与 strcat.zeta 同逻辑
+// benchmark: String push_str 10 万次 —— 与 strcat.rl 同逻辑
 fn main() {
     let mut s = String::new();
     let mut i = 0;

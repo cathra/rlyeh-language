@@ -2,7 +2,7 @@
 //!
 //! 覆盖：半开/闭/开区间、break/continue、嵌套 for、变量边界、compile-fail 场景。
 
-use zeta_driver::run_source;
+use rlyeh_driver::run_source;
 
 const SUM_HALF_OPEN: &str = r#"
 fn main() {

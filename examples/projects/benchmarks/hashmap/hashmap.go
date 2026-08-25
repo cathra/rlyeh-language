@@ -1,5 +1,5 @@
-// benchmark: 20 万 insert + 20 万 get（LCG 键）—— 与 hashmap.zeta 同逻辑
-// Go 用内置 map（桶哈希 + 溢出链），与 Zeta/Rust 的标准 HashMap 对称。输出 = 19999900000
+// benchmark: 20 万 insert + 20 万 get（LCG 键）—— 与 hashmap.rl 同逻辑
+// Go 用内置 map（桶哈希 + 溢出链），与 Rlyeh/Rust 的标准 HashMap 对称。输出 = 19999900000
 package main
 
 import "fmt"

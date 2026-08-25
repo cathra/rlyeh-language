@@ -2,8 +2,8 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use zeta_ast::{AstExpr, ExprKind, RegionOptions, RegionStrategy};
-use zeta_lexer::Token;
+use rlyeh_ast::{AstExpr, ExprKind, RegionOptions, RegionStrategy};
+use rlyeh_lexer::Token;
 
 impl<'src> Parser<'src> {
     /// 解析 gc_region 表达式：`gc_region { body }`（K4 追踪 GC 生命周期作用域，

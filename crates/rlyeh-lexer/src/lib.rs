@@ -1,10 +1,10 @@
-//! Zeta 语言词法分析器
+//! Rlyeh 语言词法分析器
 //!
 //! 将源代码字符串转换为 Token 流，供语法分析器使用。
 //!
 //! # 示例
 //! ```
-//! use zeta_lexer::{Lexer, Token};
+//! use rlyeh_lexer::{Lexer, Token};
 //!
 //! let source = "let x = 42;";
 //! let mut lexer = Lexer::new(source);

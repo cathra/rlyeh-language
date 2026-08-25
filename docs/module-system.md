@@ -1,17 +1,17 @@
-# Zeta 模块系统规范
+# Rlyeh 模块系统规范
 
 > **状态**：设计稿 v1.1（P1–P4 渐进落地）
 > **标注**：✅ 已实现 ｜ 🔧 部分实现 ｜ 📋 规划
 > **权威文档**：语法 EBNF 见 `docs/grammar.md` §2.2；本文件为模块系统的语义与编译模型权威规范。
-> **v1.1 变更（2026-08-25）**：关键字 `mod` → `module`、`use` → `import`；目录模块文件名约定 `mod.zeta` → `module.zeta`（与关键字一致）；可见性仅 `pub` / 私有（不支持 `pub(crate)` / `pub(super)`）；无 `crate` 关键字，路径系统为「模块名::」；模块为扁平名字空间。
+> **v1.1 变更（2026-08-25）**：关键字 `mod` → `module`、`use` → `import`；目录模块文件名约定 `mod.rl` → `module.rl`（与关键字一致）；可见性仅 `pub` / 私有（不支持 `pub(crate)` / `pub(super)`）；无 `crate` 关键字，路径系统为「模块名::」；模块为扁平名字空间。
 
 ---
 
 ## 1. 概述与设计目标
 
-模块系统是 Zeta 代码组织与复用的第一等公民。MVP 已具备最小可用的 `module` / `import` / 多文件模块能力，本设计在**不破坏现有语法与存量代码**（存量代码随关键字更名同步迁移）的前提下，补齐导入形态、可见性、编译模型与包集成四块能力，使模块系统达到生产级。
+模块系统是 Rlyeh 代码组织与复用的第一等公民。MVP 已具备最小可用的 `module` / `import` / 多文件模块能力，本设计在**不破坏现有语法与存量代码**（存量代码随关键字更名同步迁移）的前提下，补齐导入形态、可见性、编译模型与包集成四块能力，使模块系统达到生产级。
 
-**设计目标**（对齐 Zeta 哲学——简单、直觉、数学式）：
+**设计目标**（对齐 Rlyeh 哲学——简单、直觉、数学式）：
 
 | 目标 | 说明 |
 |------|------|
@@ -19,7 +19,7 @@
 | 扁平 | 模块是**扁平名字空间**：无 `crate` / `super` / `self` 层级寻址，路径一律从模块名开始 |
 | 渐进 | 每个阶段独立可落地、可验证，存量代码随更名一次迁移 |
 | 增量 | 编译模型从文本级展开演进为模块图 + 接口缓存，支持增量编译 |
-| 包复用 | 与 zep 包管理器打通：`Zeta.toml` 声明依赖 → 依赖模块图 → 编译 |
+| 包复用 | 与 dagon 包管理器打通：`Rlyeh.toml` 声明依赖 → 依赖模块图 → 编译 |
 
 **非目标**（规划外）：宏卫生 / 过程宏、`#[derive]` 自定义、动态加载（`dlopen` 式插件）、循环依赖（坚决拒绝）。
 
@@ -29,24 +29,24 @@
 
 | 能力 | 状态 | 说明 |
 |------|------|------|
-| `module name;` 外部文件 | ✅ | `module foo;` → 加载 `foo.zeta` 或 `foo/module.zeta` |
+| `module name;` 外部文件 | ✅ | `module foo;` → 加载 `foo.rl` 或 `foo/module.rl` |
 | `module name { ... }` 内联 | ✅ | 块内可嵌套任意 ModuleItem |
-| 多级外部模块 | ✅ | `foo/module.zeta` 内可再 `module bar;` → `foo/bar.zeta` |
+| 多级外部模块 | ✅ | `foo/module.rl` 内可再 `module bar;` → `foo/bar.rl` |
 | `import path;` 单路径导入 | ✅ | 含 `as` 别名（`import math::square as sq;`） |
 | 跨模块路径访问 | ✅ | `module_name::CONST` / `module_name::Enum::Variant` / `module_name::Type` |
-| 文本级模块展开 | ✅ | `zeta-driver/src/module.rs` 递归替换 `module name;` → 内联子模块源码 |
+| 文本级模块展开 | ✅ | `rlyeh-driver/src/module.rs` 递归替换 `module name;` → 内联子模块源码 |
 | 循环引用检测 | ✅ | 文本加载期 visited 集合 |
 | 可见性控制 | 🔧 | `pub` 有语法，**无模块级可见性检查**（扁平名字空间，全部可达） |
 | `import a::{b, c}` 组导入 | 📋 | EBNF 已有（§2.2 `ImportTree ::= Path ':' ':' '{' ImportList '}'`），parser 未实现 |
 | `import a::*` glob 导入 | 📋 | parse 接受末段 `*`，typecheck 报 Unsupported |
 | `pub import` 再导出 | 📋 | 未实现 |
-| 外部包依赖编译 | 📋 | zep 已能 resolve/lock，但 `zeta build` 未注入依赖模块路径 |
+| 外部包依赖编译 | 📋 | dagon 已能 resolve/lock，但 `rlyeh build` 未注入依赖模块路径 |
 
 **现有实现要点**（供设计对齐）：
-- 名称解析：`zeta-typecheck` 以 `module_prefix` 字符串拼接扁平符号空间（`full_name(prefix, name)` → `module_name::item`）。
-- 文件加载：`zeta-driver/src/module.rs` 对每个文件做文本变换（含 `span` 合并，错误定位尚可）。
+- 名称解析：`rlyeh-typecheck` 以 `module_prefix` 字符串拼接扁平符号空间（`full_name(prefix, name)` → `module_name::item`）。
+- 文件加载：`rlyeh-driver/src/module.rs` 对每个文件做文本变换（含 `span` 合并，错误定位尚可）。
 - 增量基础：`incremental/hash.rs` 已有 `ModuleInterface`（函数签名哈希），供后续模块接口缓存复用。
-- **目录模块文件名约定**：`foo/module.zeta`（与关键字 `module` 一致，对齐 Rust `mod.rs` 惯例，保持不变）。
+- **目录模块文件名约定**：`foo/module.rl`（与关键字 `module` 一致，对齐 Rust `mod.rs` 惯例，保持不变）。
 
 ---
 
@@ -60,7 +60,7 @@ ModuleDecl  ::= 'module' Ident ';'                    // 外部文件模块（�
               | 'pub' ModuleDecl                      // 📋 公开模块（对外部依赖可见）
 ```
 
-- `module name;` 的文件解析规则（现有）：`name.zeta` 优先，其次 `name/module.zeta`（含多级展开）。
+- `module name;` 的文件解析规则（现有）：`name.rl` 优先，其次 `name/module.rl`（含多级展开）。
 - 📋 规划：支持 `#[path = "..."]` 显式指定文件（对齐现有目录化 std 布局，非必需 MVP）。
 
 ### 3.2 import 导入
@@ -77,7 +77,7 @@ ImportList  ::= ImportTree (',' ImportTree)* ','?
 
 **示例**：
 
-```zeta
+```rlyeh
 // 单路径 + 别名（现有 ✅）
 import math::PI;
 import math::square as sq;
@@ -103,7 +103,7 @@ Path        ::= Ident ('::' Ident)*
 - 嵌套模块的完整路径自然为 `外层::内层::item`（首段仍是模块名，扁平无歧义）。
 - 现有裸名相对语义（模块内符号直接引用）保留。
 
-> **决策（v1.1）**：Zeta 模块是**扁平名字空间**——不存在 `crate::` / `super::` / `self::` 相对寻址。所有跨模块引用一律以模块名开头（`模块名::...`），模块名在程序内唯一；解析不依赖"当前模块所在层级"，杜绝歧义与重名链。
+> **决策（v1.1）**：Rlyeh 模块是**扁平名字空间**——不存在 `crate::` / `super::` / `self::` 相对寻址。所有跨模块引用一律以模块名开头（`模块名::...`），模块名在程序内唯一；解析不依赖"当前模块所在层级"，杜绝歧义与重名链。
 
 ### 3.4 可见性
 
@@ -121,7 +121,7 @@ Visibility  ::= 'pub'
 
 ### 4.1 模块名空间与符号表
 
-每个 crate（`zeta build` 的入口）由一组模块组成，**模块名全局唯一（扁平）**：
+每个 crate（`rlyeh build` 的入口）由一组模块组成，**模块名全局唯一（扁平）**：
 
 ```
 模块名空间：math | fs | fs::path（嵌套） | cache
@@ -173,7 +173,7 @@ Visibility  ::= 'pub'
 
 ### 5.1 现状：文本级递归展开（✅）
 
-`zeta-driver/src/module.rs`：把 `module name;` 替换为 `module name { <文件源码> }` 后递归展开，最终交给单文件流水线。优点：改动小、错误定位经 span 合并基本可用。缺点：每文件重复 parse、无模块级缓存、无增量、无可见性。
+`rlyeh-driver/src/module.rs`：把 `module name;` 替换为 `module name { <文件源码> }` 后递归展开，最终交给单文件流水线。优点：改动小、错误定位经 span 合并基本可用。缺点：每文件重复 parse、无模块级缓存、无增量、无可见性。
 
 ### 5.2 目标：模块图编译（📋 P3）
 
@@ -198,27 +198,27 @@ Visibility  ::= 'pub'
 
 ## 6. 包与依赖集成（📋 P4）
 
-现状：`zep` 支持 `Zeta.toml`（package / dependencies / dev_dependencies）+ `Zeta.lock`（PubGrub 求解）+ 本地/HTTP registry，但 `zeta build` 仅编译入口文件，**依赖源码未注入编译**。
+现状：`dagon` 支持 `Rlyeh.toml`（package / dependencies / dev_dependencies）+ `Rlyeh.lock`（PubGrub 求解）+ 本地/HTTP registry，但 `rlyeh build` 仅编译入口文件，**依赖源码未注入编译**。
 
 设计：
 
 ```
-Zeta.toml
+Rlyeh.toml
   [dependencies]
   foo = "0.1"          # registry 名/版本
 
-zep resolve → Zeta.lock → 下载源码到 registry 缓存（现有 ✅）
+dagon resolve → Rlyeh.lock → 下载源码到 registry 缓存（现有 ✅）
                               ↓
-zeta build 时：
-  1. zep 传入依赖根列表（--dep-root <pkg>=<dir> 多段）
-  2. driver 将每个依赖的 src/lib.zeta 作为"虚拟模块集合"载入模块名空间
+rlyeh build 时：
+  1. dagon 传入依赖根列表（--dep-root <pkg>=<dir> 多段）
+  2. driver 将每个依赖的 src/lib.rl 作为"虚拟模块集合"载入模块名空间
   3. 依赖模块经可见性（pub）暴露，主程序以模块名访问（import foo::bar;）
   4. 依赖接口缓存 → 未变更的依赖零重编译
 ```
 
 - **依赖命名空间**：`import foo::bar;` 中首段 `foo` 由依赖注入（`--dep-root foo=...` 建立 `foo` → 依赖模块根映射），与扁平模块名空间合并。
 - **版本冲突**：PubGrub 已解决（lock），编译期无重复定义。
-- **std 不变量**：标准库走 `ZETA_STD_PATH`（现有机制），不进入依赖图。
+- **std 不变量**：标准库走 `RLYEH_STD_PATH`（现有机制），不进入依赖图。
 
 ---
 
@@ -229,8 +229,8 @@ zeta build 时：
 | **P0 关键字更名** | `mod` → `module`、`use` → `import` 全链路迁移（✅ 2026-08-25 已随本设计落地） | lexer 关键字表 / driver 展开 / std / examples / tests / docs | 全量测试回归通过 |
 | **P1 语法补齐** | 组导入 / glob / `pub import` / `pub module` | parser（parse_module / parse_import）+ AST + typecheck 路径解析 | 全部形态可解析、可 typecheck、可生成可运行代码 |
 | **P2 可见性** | 默认私有 + `pub` 检查（仅两档） | typecheck 可见性表 + 检查器 | 私有访问报错；`tests/compile-fail` 用例通过 |
-| **P3 编译模型** | 模块图编译 + 模块接口缓存 + 增量 | `zeta-driver` module.rs 重构 + incremental 扩展 | 模块级增量生效；环形模块报错 |
-| **P4 包集成** | zep 依赖注入编译 + 依赖命名空间 | zep build + driver `--dep-root` | `zeta build` 直接编译含第三方依赖的项目 |
+| **P3 编译模型** | 模块图编译 + 模块接口缓存 + 增量 | `rlyeh-driver` module.rs 重构 + incremental 扩展 | 模块级增量生效；环形模块报错 |
+| **P4 包集成** | dagon 依赖注入编译 + 依赖命名空间 | dagon build + driver `--dep-root` | `rlyeh build` 直接编译含第三方依赖的项目 |
 
 **依赖顺序**：P1 ⊃ P2 ⊃ P3 ⊃ P4（P4 依赖 P3 的模块图，P3 依赖 P1 的路径解析）。
 
@@ -240,9 +240,9 @@ zeta build 时：
 
 ## 8. 兼容性
 
-- **存量代码迁移**（P0 已随 v1.1 完成）：`mod` → `module`、`use` → `import` 全局替换；目录模块文件名约定同步为 `module.zeta`（std 8 个目录模块文件已重命名），`module name;` 文件解析规则（`name.zeta` → `name/module.zeta`）沿用。
+- **存量代码迁移**（P0 已随 v1.1 完成）：`mod` → `module`、`use` → `import` 全局替换；目录模块文件名约定同步为 `module.rl`（std 8 个目录模块文件已重命名），`module name;` 文件解析规则（`name.rl` → `name/module.rl`）沿用。
 - 裸名相对路径语义（当前模块符号直接引用）不变。
-- 标准库目录化模块（`core.zeta` + `<name>/module.zeta`）与 P3 模块图兼容。
+- 标准库目录化模块（`core.rl` + `<name>/module.rl`）与 P3 模块图兼容。
 - 类型检查符号命名（`module_name::item` 扁平编码）为代码生成契约，P1–P4 均不改动该契约。
 
 ---
@@ -251,4 +251,4 @@ zeta build 时：
 
 | 文件 | 职责 |
 |------|------|
-| `crates/zeta-parser/src/item.rs` | `parse_mod` / `parse_use`（P1 主要改动点；内部函数名保留） |
+| `crates/rlyeh-parser/src/item.rs` | `parse_mod` / `parse_use`（P1 主要改动点；内部函数名保留） |

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use zeta_lexer::Span;
+use rlyeh_lexer::Span;
 
 /// 类型检查错误。
 ///

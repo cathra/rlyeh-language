@@ -1,6 +1,6 @@
-//! # zeta-check
+//! # rlyeh-check
 //!
-//! Zeta 语言静态分析器（lint）。
+//! Rlyeh 语言静态分析器（lint）。
 //!
 //! ## 检查规则
 //!
@@ -15,13 +15,13 @@
 //! ## 示例
 //!
 //! ```text
-//! file.zeta:3:5: warning[unused-variable]: variable 'x' is never used
+//! file.rl:3:5: warning[unused-variable]: variable 'x' is never used
 //! ```
 
 #![warn(missing_docs)]
 #![warn(unsafe_code)]
 
-use zeta_ast::*;
+use rlyeh_ast::*;
 
 /// 诊断级别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +75,7 @@ impl Diagnostic {
 ///
 /// 解析失败返回 `parse-error` 诊断；否则返回 lint 规则诊断。
 pub fn check_source(source: &str) -> Vec<Diagnostic> {
-    match zeta_parser::parse(source) {
+    match rlyeh_parser::parse(source) {
         Ok(prog) => check_program(&prog),
         Err(e) => {
             let span = e.span();
@@ -106,7 +106,7 @@ pub fn check_program(prog: &AstProgram) -> Vec<Diagnostic> {
 
 struct Binding {
     name: String,
-    span: zeta_lexer::Span,
+    span: rlyeh_lexer::Span,
     used: bool,
 }
 
@@ -150,7 +150,7 @@ impl Checker {
     }
 
     /// 在当前（最内层）作用域绑定一个名字。
-    fn bind(&mut self, name: &str, span: zeta_lexer::Span) {
+    fn bind(&mut self, name: &str, span: rlyeh_lexer::Span) {
         self.scopes
             .last_mut()
             .expect("scope exists")
@@ -173,7 +173,7 @@ impl Checker {
     }
 
     /// 模式中绑定所有标识符（`_` 通配跳过）。
-    fn bind_pattern(&mut self, p: &AstPattern, span: zeta_lexer::Span) {
+    fn bind_pattern(&mut self, p: &AstPattern, span: rlyeh_lexer::Span) {
         match p {
             AstPattern::Ident(name) => self.bind(name, span),
             AstPattern::Tuple(ps) => {
@@ -557,12 +557,12 @@ impl Checker {
 
 // ==================== 辅助 ====================
 
-fn stmt_span(s: &AstStmt) -> zeta_lexer::Span {
+fn stmt_span(s: &AstStmt) -> rlyeh_lexer::Span {
     match s {
         // AstStmt::Let 不携带 span，用初始化表达式的位置近似
         AstStmt::Let { init, .. } => init.span,
         AstStmt::Expr(e) | AstStmt::Semi(e) => e.span,
-        AstStmt::Item(_) => zeta_lexer::Span {
+        AstStmt::Item(_) => rlyeh_lexer::Span {
             start: 0,
             end: 0,
             line: 0,

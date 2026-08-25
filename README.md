@@ -1,11 +1,11 @@
-# Zeta — 系统级编程语言
+# Rlyeh — 系统级编程语言
 
 > 版本：**0.1.0**（MVP） · 状态：活跃开发中
-> 仓库：<https://gitee.com/cathra/zeta-language.git>
+> 仓库：<https://gitee.com/cathra/rlyeh-language.git>
 > 目标平台：Linux / macOS / Windows / WASM
 > 实现语言：Rust（自举编译器，bootstrap 阶段用 Rust 实现）
 
-Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
+Rlyeh 是一门面向未来十年基础设施的**系统级编程语言**：
 
 | 目标 | 对标 |
 |------|------|
@@ -15,7 +15,7 @@ Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
 | 数学式语法直觉 | Python / MATLAB |
 | 开发体验友好 | Go / Python |
 
-**一句话定位**：Zeta = Rust 的安全性 + Go 的编译速度 + Erlang 的并发模型 + 数学的自然表达。
+**一句话定位**：Rlyeh = Rust 的安全性 + Go 的编译速度 + Erlang 的并发模型 + 数学的自然表达。
 
 ---
 
@@ -32,7 +32,7 @@ Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
 
 ### 数学式条件判断
 
-```zeta
+```rlyeh
 if 0 < x < 10 {}          // 区间内（正向比较链）
 if 0 > x > 10 {}          // 区间外：x < 0 || x > 10
 if ch in ('a'..<'z', 'A'..<'Z') {}   // 集合判断
@@ -42,7 +42,7 @@ if hour in (9am...6pm) {} // 时间字面量（分钟单位）
 
 ### Actor 并发模型（一等公民）
 
-```zeta
+```rlyeh
 actor Counter {
     value: i64 = 0,
 
@@ -61,7 +61,7 @@ let supervised = Counter::new_supervised(0); // 受监督：崩溃后自动重�
 
 ### 区域系统
 
-```zeta
+```rlyeh
 region 'r {
     let data = BigStruct::new() in 'r;   // 区域内分配
     process(&data);
@@ -77,7 +77,7 @@ fn create_data() -> BigStruct {
 
 ### 聚合对象与泛型
 
-```zeta
+```rlyeh
 enum Shape { Circle(f64), Rect { w: f64, h: f64 } }
 
 fn area(s: Shape) -> f64 {
@@ -93,7 +93,7 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 
 ### 宏与闭包
 
-```zeta
+```rlyeh
 let v = vec![10, 20, 30];          // 集合宏 → Vec<T>
 let m = map![1 => 10, 2 => 20];    // → HashMap<K, V>
 let r = apply(|a, b| a + b, 10, 20);  // 无捕获闭包 → 函数指针（零开销）
@@ -122,27 +122,27 @@ let d: dyn Shape = &c;             // trait 对象：vtable 多态分派
 需要 Rust 工具链（stable），以及 `clang`（LLVM 汇编管线依赖）。
 
 ```bash
-cargo build --release -p zeta-driver   # 构建 zeta CLI
+cargo build --release -p rlyeh-driver   # 构建 rlyeh CLI
 ```
 
 ### 运行第一个程序
 
-```zeta
-// hello-world.zeta
+```rlyeh
+// hello-world.rl
 fn main() {
-    println("Hello, Zeta!");
+    println("Hello, Rlyeh!");
 }
 ```
 
 ```bash
-zeta run examples/hello-world.zeta     # 或 zeta build + 执行产物
+rlyeh run examples/hello-world.rl     # 或 rlyeh build + 执行产物
 ```
 
 ### 运行测试
 
 ```bash
 cargo test --workspace -- --test-threads=1
-zeta test tests                       # 集成测试（.zeta 用例，扫描 compile-pass / compile-fail / run-pass）
+rlyeh test tests                       # 集成测试（.rl 用例，扫描 compile-pass / compile-fail / run-pass）
 ```
 
 ---
@@ -150,30 +150,30 @@ zeta test tests                       # 集成测试（.zeta 用例，扫描 com
 ## 项目结构
 
 ```
-zeta-language/
+rlyeh-language/
 ├── crates/                # 编译器各组件（Rust crate）
-│   ├── zeta-lexer/        # 词法分析器
-│   ├── zeta-parser/       # 语法分析器
-│   ├── zeta-ast/          # 抽象语法树
-│   ├── zeta-hir/          # 高级中间表示
-│   ├── zeta-mir/          # 中级中间表示
-│   ├── zeta-lir/          # 低级中间表示
-│   ├── zeta-typecheck/    # 类型检查器
-│   ├── zeta-borrowck/     # 借用检查器
-│   ├── zeta-regionck/     # 区域检查器
-│   ├── zeta-codegen/      # 代码生成（LLVM / Cranelift）
-│   ├── zeta-driver/       # 编译器驱动（CLI 入口）
-│   ├── zeta-std/          # 标准库（Zeta 源码）
-│   ├── zeta-actor-runtime/# Actor 运行时
-│   ├── zeta-region-alloc/ # 区域分配器（bump + 智能）
-│   ├── zeta-gc-runtime/   # 可选 GC 运行时
-│   └── zeta-lsp/          # 语言服务器（LSP）
-├── tools/                 # zeta-fmt / zeta-check / zeta-doc / zeta-bench
-├── zep/                   # 包管理器
+│   ├── rlyeh-lexer/        # 词法分析器
+│   ├── rlyeh-parser/       # 语法分析器
+│   ├── rlyeh-ast/          # 抽象语法树
+│   ├── rlyeh-hir/          # 高级中间表示
+│   ├── rlyeh-mir/          # 中级中间表示
+│   ├── rlyeh-lir/          # 低级中间表示
+│   ├── rlyeh-typecheck/    # 类型检查器
+│   ├── rlyeh-borrowck/     # 借用检查器
+│   ├── rlyeh-regionck/     # 区域检查器
+│   ├── rlyeh-codegen/      # 代码生成（LLVM / Cranelift）
+│   ├── rlyeh-driver/       # 编译器驱动（CLI 入口）
+│   ├── rlyeh-std/          # 标准库（Rlyeh 源码）
+│   ├── rlyeh-actor-runtime/# Actor 运行时
+│   ├── rlyeh-region-alloc/ # 区域分配器（bump + 智能）
+│   ├── rlyeh-gc-runtime/   # 可选 GC 运行时
+│   └── rlyeh-lsp/          # 语言服务器（LSP）
+├── tools/                 # rlyeh-fmt / rlyeh-check / rlyeh-doc / rlyeh-bench
+├── dagon/                   # 包管理器
 ├── docs/                  # 权威规范 + 开发进度（入口：docs/README.md）
 ├── examples/              # 可运行示例
-├── skills/                # zeta-language 技能（SKILL.md + references/，随工具链分发）
-└── tests/                 # 集成测试（.zeta 用例）
+├── skills/                # rlyeh-language 技能（SKILL.md + references/，随工具链分发）
+└── tests/                 # 集成测试（.rl 用例）
 ```
 
 ---
@@ -196,4 +196,4 @@ zeta-language/
 
 ## 许可证
 
-Zeta 采用双许可证：[MIT](https://opensource.org/licenses/MIT) 或 [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)，任选其一。
+Rlyeh 采用双许可证：[MIT](https://opensource.org/licenses/MIT) 或 [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)，任选其一。

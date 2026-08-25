@@ -1,5 +1,5 @@
 // 基准: nqueens —— 12 皇后回溯搜索（纯整数 + 递归 + 分支）
-// 与 nqueens.zeta 逻辑严格一致。输出 = 14200
+// 与 nqueens.rl 逻辑严格一致。输出 = 14200
 package main
 
 import "fmt"

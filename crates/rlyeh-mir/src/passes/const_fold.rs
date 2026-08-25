@@ -8,7 +8,7 @@
 
 use crate::{MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
 use std::collections::HashMap;
-use zeta_hir::{HirBinaryOp, HirUnaryOp};
+use rlyeh_hir::{HirBinaryOp, HirUnaryOp};
 
 /// 对程序执行常量折叠。
 pub fn constant_fold(program: &mut MirProgram) {

@@ -13,11 +13,11 @@
 
 ## 目标
 
-在 Zeta 语言层面内置 Actor 模型，让并发编程像写单线程代码一样简单。
+在 Rlyeh 语言层面内置 Actor 模型，让并发编程像写单线程代码一样简单。
 
 ## Actor 语法
 
-```zeta
+```rlyeh
 actor Counter {
     // 状态（私有字段）
     value: u32 = 0,
@@ -177,7 +177,7 @@ impl Counter {
 
 ### Actor 结构体生成
 
-```zeta
+```rlyeh
 // 源码
 actor Counter {
     value: u32 = 0,
@@ -244,7 +244,7 @@ async fn counter_main(mut state: CounterState, mailbox: MpscQueue<Envelope>) {
 
 ## Supervisor 机制
 
-```zeta
+```rlyeh
 // Supervisor 定义
 supervisor DatabaseSupervisor {
     // 监控的子 Actor
@@ -335,7 +335,7 @@ impl WorkerThread {
 
 ### Actor 间消息的所有权转移
 
-```zeta
+```rlyeh
 actor Producer {
     pub fn produce() -> Data {
         let data = Data::new();  // 在 Producer 的区域内分配

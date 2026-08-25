@@ -2,8 +2,8 @@
 //! 嵌套方向检查（OuterRegionTransfer）、无法判定归属的 transfer（PartialTransfer）、
 //! 防御性错误变体（CannotTransferReference / UnsizedTransfer）。
 
-use zeta_regionck::{RegionChecker, RegionError};
-use zeta_typecheck::typecheck_source;
+use rlyeh_regionck::{RegionChecker, RegionError};
+use rlyeh_typecheck::typecheck_source;
 
 fn check(src: &str) -> Result<(), Vec<RegionError>> {
     let hir = typecheck_source(src).expect("typecheck should succeed");

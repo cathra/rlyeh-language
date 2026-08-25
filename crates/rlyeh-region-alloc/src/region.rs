@@ -4,7 +4,7 @@
 //!
 //! [`Region`] 以 `#[repr(C)]` 声明，首部为 **6 个固定偏移的快路径字段**
 //! （`base`/`cursor`/`limit` + 3 个快路径统计）。LLVM 后端
-//! （`zeta-codegen`）对 `in 'r` 聚合分配**内联生成 bump 快路径**：
+//! （`rlyeh-codegen`）对 `in 'r` 聚合分配**内联生成 bump 快路径**：
 //!
 //! ```text
 //! aligned = (cursor + align - 1) & !(align - 1)
@@ -15,7 +15,7 @@
 //! 与 [`Region::try_bump`] 的公式逐位一致；块基址由 `std::alloc` 保证
 //! 8 字节对齐，且 `align` 恒为 2 的幂，因此相对偏移位运算与
 //! `checked_next_multiple_of` 等价。**修改快路径字段顺序或语义时，
-//! 必须同步更新 `zeta-codegen/src/llvm.rs` 的 `AllocInRegion` 内联序列。**
+//! 必须同步更新 `rlyeh-codegen/src/llvm.rs` 的 `AllocInRegion` 内联序列。**
 
 use std::mem::{align_of, size_of};
 use std::ptr::{self, NonNull};
@@ -61,7 +61,7 @@ const FAST_WASTE_BYTES_OFF: usize = 40;
 ///
 /// `#[repr(C)]` 保证首部 6 个快路径字段顺序与偏移固定（见 [`FAST_BASE_OFF`]
 /// 系列常量）。LLVM 后端内联 bump 依赖该布局；新增/调整首部字段前须评估
-/// `zeta-codegen/src/llvm.rs` 的对应 GEP 偏移。
+/// `rlyeh-codegen/src/llvm.rs` 的对应 GEP 偏移。
 #[repr(C)]
 pub struct Region {
     // ── 内联快路径字段（codegen 按固定偏移访问；勿改顺序）──

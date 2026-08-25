@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::build::{BuildConfig, build_project, run_project, test_project};
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 use crate::manifest::{DepKind, Manifest, validate_package_name};
 use crate::registry::{
     PackageIndex, PackageVersion, client_from_url, default_registry, pack_directory, sha256_hex,
@@ -40,12 +40,12 @@ impl Ctx {
     }
 }
 
-/// `zep new <name>`：创建新项目。
+/// `dagon new <name>`：创建新项目。
 pub fn cmd_new(ctx: &Ctx, name: &str, lib: bool) -> Result<()> {
-    validate_package_name(name).map_err(ZepError::Dependency)?;
+    validate_package_name(name).map_err(DagonError::Dependency)?;
     let dir = ctx.cwd.join(name);
     if dir.exists() {
-        return Err(ZepError::Other(format!(
+        return Err(DagonError::Other(format!(
             "目录 {} 已存在",
             dir.display()
         )));
@@ -56,11 +56,11 @@ pub fn cmd_new(ctx: &Ctx, name: &str, lib: bool) -> Result<()> {
     Ok(())
 }
 
-/// `zep init`：初始化当前目录。
+/// `dagon init`：初始化当前目录。
 pub fn cmd_init(ctx: &Ctx, lib: bool) -> Result<()> {
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     if manifest_path.exists() {
-        return Err(ZepError::Other("当前目录已有 Zeta.toml".into()));
+        return Err(DagonError::Other("当前目录已有 Rlyeh.toml".into()));
     }
     let name = ctx
         .cwd
@@ -69,7 +69,7 @@ pub fn cmd_init(ctx: &Ctx, lib: bool) -> Result<()> {
         .unwrap_or("app")
         .to_string();
     let name = if name.is_empty() { "app".to_string() } else { name };
-    validate_package_name(&name).map_err(ZepError::Dependency)?;
+    validate_package_name(&name).map_err(DagonError::Dependency)?;
     fs::create_dir_all(ctx.cwd.join("src"))?;
     write_project_files(&ctx.cwd, &name, lib)?;
     println!("已在 {} 初始化项目 {name}", ctx.cwd.display());
@@ -87,9 +87,9 @@ fn write_project_files(dir: &Path, name: &str, lib: bool) -> Result<()> {
         authors: vec![],
     };
     manifest
-        .save(&dir.join("Zeta.toml"))
-        .map_err(|e| ZepError::Manifest(format!("写入 Zeta.toml 失败: {e}")))?;
-    let entry = if lib { "lib.zeta" } else { "main.zeta" };
+        .save(&dir.join("Rlyeh.toml"))
+        .map_err(|e| DagonError::Manifest(format!("写入 Rlyeh.toml 失败: {e}")))?;
+    let entry = if lib { "lib.rl" } else { "main.rl" };
     let body = if lib {
         "// {name} 库入口\n"
     } else {
@@ -101,7 +101,7 @@ fn write_project_files(dir: &Path, name: &str, lib: bool) -> Result<()> {
     )?;
     fs::write(
         dir.join(".gitignore"),
-        "target/\nzeta-out/\n",
+        "target/\nrlyeh-out/\n",
     )?;
     // git init（失败可忽略，例如无 git 环境）
     let _ = run_sandboxed("git", &["init".to_string(), "-q".to_string()], &[], std::time::Duration::from_secs(10), false)
@@ -118,10 +118,10 @@ pub fn parse_package_spec(spec: &str) -> (String, String) {
     }
 }
 
-/// `zep add <name[@req]>`：添加依赖并重解析锁定。
+/// `dagon add <name[@req]>`：添加依赖并重解析锁定。
 pub fn cmd_add(ctx: &Ctx, spec: &str, dev: bool) -> Result<()> {
     let (name, req) = parse_package_spec(spec);
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     let mut manifest = Manifest::load(&manifest_path)?;
     let original = manifest.to_string()?;
     let kind = if dev { DepKind::Dev } else { DepKind::Normal };
@@ -131,7 +131,7 @@ pub fn cmd_add(ctx: &Ctx, spec: &str, dev: bool) -> Result<()> {
         Ok(lock_path) => {
             manifest
                 .save(&manifest_path)
-                .map_err(|e| ZepError::Manifest(format!("保存清单失败: {e}")))?;
+                .map_err(|e| DagonError::Manifest(format!("保存清单失败: {e}")))?;
             println!(
                 "已添加 {} {}（写入 {}）",
                 name,
@@ -147,13 +147,13 @@ pub fn cmd_add(ctx: &Ctx, spec: &str, dev: bool) -> Result<()> {
     }
 }
 
-/// `zep remove <name>`：移除依赖并重解析锁定。
+/// `dagon remove <name>`：移除依赖并重解析锁定。
 pub fn cmd_remove(ctx: &Ctx, name: &str, dev: bool) -> Result<()> {
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     let mut manifest = Manifest::load(&manifest_path)?;
     let kind = if dev { DepKind::Dev } else { DepKind::Normal };
     if !manifest.remove_dependency(name, kind) {
-        return Err(ZepError::Dependency(format!(
+        return Err(DagonError::Dependency(format!(
             "{}.{} 不存在",
             kind.label(),
             name
@@ -163,7 +163,7 @@ pub fn cmd_remove(ctx: &Ctx, name: &str, dev: bool) -> Result<()> {
     match resolve_and_lock(ctx, &manifest, false) {
         Ok(_) => {
             manifest.save(&manifest_path).map_err(|e| {
-                ZepError::Manifest(format!("保存清单失败: {e}"))
+                DagonError::Manifest(format!("保存清单失败: {e}"))
             })?;
             println!("已移除 {name}");
             Ok(())
@@ -175,9 +175,9 @@ pub fn cmd_remove(ctx: &Ctx, name: &str, dev: bool) -> Result<()> {
     }
 }
 
-/// `zep build`：编译项目。
+/// `dagon build`：编译项目。
 pub fn cmd_build(ctx: &Ctx, release: bool) -> Result<()> {
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     let manifest = Manifest::load(&manifest_path)?;
     let config = BuildConfig {
         release,
@@ -189,7 +189,7 @@ pub fn cmd_build(ctx: &Ctx, release: bool) -> Result<()> {
     Ok(())
 }
 
-/// `zep run [args...]`：编译并运行。
+/// `dagon run [args...]`：编译并运行。
 pub fn cmd_run(ctx: &Ctx, args: &[String]) -> Result<()> {
     let config = BuildConfig {
         verbose: ctx.verbose,
@@ -203,7 +203,7 @@ pub fn cmd_run(ctx: &Ctx, args: &[String]) -> Result<()> {
         eprint!("{}", output.stderr);
     }
     if !output.success() {
-        return Err(ZepError::Build(format!(
+        return Err(DagonError::Build(format!(
             "程序退出码 {}",
             output.status
         )));
@@ -211,9 +211,9 @@ pub fn cmd_run(ctx: &Ctx, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `zep test`：构建并运行测试。
+/// `dagon test`：构建并运行测试。
 pub fn cmd_test(ctx: &Ctx) -> Result<()> {
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     let manifest = Manifest::load(&manifest_path)?;
     let config = BuildConfig {
         verbose: ctx.verbose,
@@ -224,18 +224,18 @@ pub fn cmd_test(ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
-/// `zep update [name]`：重解析依赖并更新锁文件。
+/// `dagon update [name]`：重解析依赖并更新锁文件。
 pub fn cmd_update(ctx: &Ctx, _name: Option<String>) -> Result<()> {
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     let manifest = Manifest::load(&manifest_path)?;
     let lock_path = resolve_and_lock(ctx, &manifest, true)?;
     println!("依赖已更新（写入 {}）", lock_path.display());
     Ok(())
 }
 
-/// `zep publish`：打包并发布到注册表。
+/// `dagon publish`：打包并发布到注册表。
 pub fn cmd_publish(ctx: &Ctx, registry_url: Option<String>) -> Result<()> {
-    let manifest_path = ctx.cwd.join("Zeta.toml");
+    let manifest_path = ctx.cwd.join("Rlyeh.toml");
     let manifest = Manifest::load(&manifest_path)?;
     let version = Version::parse(&manifest.package.version)?;
     let name = manifest.package.name.clone();
@@ -244,10 +244,10 @@ pub fn cmd_publish(ctx: &Ctx, registry_url: Option<String>) -> Result<()> {
     reg_ctx.registry = registry_url.or(ctx.registry.clone());
     let registry = reg_ctx.registry_client()?;
 
-    // 打包（排除 target/、.git、zeta-out）
+    // 打包（排除 target/、.git、rlyeh-out）
     let tarball = pack_directory(
         &ctx.cwd,
-        &["target".to_string(), ".git".to_string(), "zeta-out".to_string()],
+        &["target".to_string(), ".git".to_string(), "rlyeh-out".to_string()],
     )?;
 
     // 构造/更新索引
@@ -257,7 +257,7 @@ pub fn cmd_publish(ctx: &Ctx, registry_url: Option<String>) -> Result<()> {
     // 阻止重复版本：已发布的版本不可覆盖（cargo publish 语义），
     // 需提升版本号后再发布。
     if let Some(existing) = index.find(&version.to_string()) {
-        return Err(ZepError::Registry(format!(
+        return Err(DagonError::Registry(format!(
             "{name} {} 已存在于注册表（{} 字节），请提升版本号后再发布",
             version,
             existing.size.unwrap_or(0)
@@ -282,7 +282,7 @@ pub fn cmd_publish(ctx: &Ctx, registry_url: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// `zep search <query>`：搜索注册表。
+/// `dagon search <query>`：搜索注册表。
 pub fn cmd_search(ctx: &Ctx, query: &str, registry_url: Option<String>) -> Result<()> {
     let mut reg_ctx = ctx.clone();
     reg_ctx.registry = registry_url.or(ctx.registry.clone());
@@ -298,7 +298,7 @@ pub fn cmd_search(ctx: &Ctx, query: &str, registry_url: Option<String>) -> Resul
     Ok(())
 }
 
-/// `zep clean`：删除 target 目录。
+/// `dagon clean`：删除 target 目录。
 pub fn cmd_clean(ctx: &Ctx) -> Result<()> {
     let target = ctx.cwd.join("target");
     if target.exists() {
@@ -326,7 +326,7 @@ fn root_deps(manifest: &Manifest) -> std::collections::HashMap<String, VersionRe
     deps
 }
 
-/// 解析依赖并写 `Zeta.lock`。`required` 为 false 时若锁文件已存在且无根依赖
+/// 解析依赖并写 `Rlyeh.lock`。`required` 为 false 时若锁文件已存在且无根依赖
 /// 变更则跳过（MVP 始终重新解析，保持简单）。
 fn resolve_and_lock(ctx: &Ctx, manifest: &Manifest, _required: bool) -> Result<PathBuf> {
     let registry = ctx.registry_client()?;
@@ -341,8 +341,8 @@ fn resolve_and_lock(ctx: &Ctx, manifest: &Manifest, _required: bool) -> Result<P
         &selected,
         &deps,
     );
-    let lock_path = ctx.cwd.join("Zeta.lock");
+    let lock_path = ctx.cwd.join("Rlyeh.lock");
     fs::write(&lock_path, lock.to_toml()?)
-        .map_err(|e| ZepError::Resolve(format!("写锁文件失败: {e}")))?;
+        .map_err(|e| DagonError::Resolve(format!("写锁文件失败: {e}")))?;
     Ok(lock_path)
 }

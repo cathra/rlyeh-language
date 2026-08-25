@@ -1,4 +1,4 @@
-// timeout.zeta：S2c 带超时轮询（Future 超时包装）
+// timeout.rl：S2c 带超时轮询（Future 超时包装）
 // - 成功路径：MyFut 三轮 Pending 后 Ready(3)，100ms 时限内完成 → Ok(3)
 // - 超时路径：NeverFut 恒 Pending，50ms 时限到期 → Err(-1)
 // 超时判定经墙钟（S2b ✅ clock_gettime MONOTONIC）。

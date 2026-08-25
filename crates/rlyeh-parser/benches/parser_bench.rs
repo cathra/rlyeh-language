@@ -1,8 +1,8 @@
-//! zeta-parser 基准测试：不同规模的源码解析耗时。
+//! rlyeh-parser 基准测试：不同规模的源码解析耗时。
 
 use criterion::Criterion;
 use std::hint::black_box;
-use zeta_parser::parse;
+use rlyeh_parser::parse;
 
 /// 小型程序（单函数 + 若干语句）
 const SMALL_SRC: &str = r#"

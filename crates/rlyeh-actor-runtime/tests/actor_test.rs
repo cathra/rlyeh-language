@@ -1,4 +1,4 @@
-//! zeta-actor-runtime 集成测试。
+//! rlyeh-actor-runtime 集成测试。
 //!
 //! 覆盖 P006 定义的验收用例：基本消息、ask 模式、Supervisor 重启、
 //! 消息顺序、崩溃隔离、优雅关闭、spawn 链、高吞吐，以及内置
@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use zeta_actor_runtime::{
+use rlyeh_actor_runtime::{
     ActorContext, ActorError, ActorId, ActorRef, ActorState, ActorStatus, RestartStrategy,
     Router, RouterMsg, RuntimeBuilder, Supervisor, SupervisorDecision, SupervisorStrategy,
 };

@@ -1,8 +1,8 @@
-//! # zeta-typecheck
+//! # rlyeh-typecheck
 //!
-//! Zeta 语言类型检查器（MVP）。
+//! Rlyeh 语言类型检查器（MVP）。
 //!
-//! 将 zeta-ast 抽象语法树检查并展开为 zeta-hir 高级中间表示，
+//! 将 rlyeh-ast 抽象语法树检查并展开为 rlyeh-hir 高级中间表示，
 //! 核心语义：
 //!
 //! - **比较链**（`0 < x < 10`）：方向检查（正向 / 反向 / 混合报错），
@@ -30,7 +30,7 @@ mod types;
 pub use error::TypeError;
 pub use types::{FnSignature, Mutability, StructDef, Type};
 
-use zeta_hir::HirProgram;
+use rlyeh_hir::HirProgram;
 
 pub use crate::check_item::{collect_fn_signatures, typecheck, typecheck_with_region_hints};
 
@@ -44,12 +44,12 @@ pub fn typecheck_source_with_region_hints(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
 ) -> Result<HirProgram, TypeError> {
-    let mut program = zeta_parser::parse(source).map_err(|e| TypeError::Unsupported {
+    let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
         span: e.span(),
     })?;
     // S1c：async/await 状态机 desugar（parse 后、typecheck 前，AST → AST）
-    zeta_desugar::desugar_program(&mut program).map_err(|e| TypeError::Unsupported {
+    rlyeh_desugar::desugar_program(&mut program).map_err(|e| TypeError::Unsupported {
         what: e.to_string(),
         span: e.span(),
     })?;

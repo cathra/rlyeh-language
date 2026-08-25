@@ -4,7 +4,7 @@
 //! 嵌套数组链式索引、结构体字段数组、数组别名共享语义、
 //! 以及 compile-fail 场景（非数组索引 / 非整数索引 / 元素类型不一致 / 空数组）。
 
-use zeta_driver::run_source;
+use rlyeh_driver::run_source;
 
 const ARRAY_READ_SUM: &str = r#"
 fn main() {

@@ -1,4 +1,4 @@
-# Zeta 语言语义规则
+# Rlyeh 语言语义规则
 
 > 版本：0.1.0  
 > 最后更新：2026-08-22
@@ -32,7 +32,7 @@
 3. 赋值或传参时，所有权默认转移（move）。
 4. 实现了 `Copy` trait 的类型除外（按位拷贝）。
 
-```zeta
+```rlyeh
 let s1 = String::from("hello");
 let s2 = s1;       // 目标：s1 所有权转移给 s2，s1 不再有效（MVP：值拷贝，s1 仍可读）
 let x = 42;        // 目标：i32 实现了 Copy
@@ -47,7 +47,7 @@ println(x);        // MVP 内建打印（无宏 / 无格式化占位符）
 1. 同一时刻，要么有**多个不可变引用**，要么有**一个可变引用**。
 2. 引用必须始终有效（生命周期 ≤ 被引用对象的生命周期）。
 
-```zeta
+```rlyeh
 // 目标语法（已实现，G1 ✅）：
 let mut data = vec![1, 2, 3];
 
@@ -65,7 +65,7 @@ r3.push(4);
 
 当函数签名中只涉及一个输入生命周期时，编译器自动推断：
 
-```zeta
+```rlyeh
 // 完整写法
 fn first_word<'a>(s: &'a str) -> &'a str { ... }
 
@@ -97,7 +97,7 @@ fn first_word(s: &str) -> &str { ... }
 
 ### 2.2 分配语义
 
-```zeta
+```rlyeh
 region 'r {
     let x = 42 in 'r;           // i32 在区域内分配
     let s = String::new() in 'r; // String 在区域内分配
@@ -108,7 +108,7 @@ region 'r {
 
 ### 2.3 Transfer 语义
 
-```zeta
+```rlyeh
 fn create() -> BigStruct {
     region 'r {
         let data = BigStruct::new() in 'r;
@@ -126,7 +126,7 @@ fn create() -> BigStruct {
 
 ### 2.4 区域嵌套
 
-```zeta
+```rlyeh
 region 'outer {
     let a = Data::new() in 'outer;
     
@@ -259,7 +259,7 @@ x not in 0..<10       →  x < 0 || x >= 10                     // 区间补（�
 
 每个 Actor 实例拥有独立的状态。Actor 内部状态只能通过消息传递访问。
 
-```zeta
+```rlyeh
 actor BankAccount {
     balance: f64 = 0.0,
     
@@ -295,7 +295,7 @@ let balance = account.get_balance().await;
 
 ### 5.3 Supervisor 策略
 
-```zeta
+```rlyeh
 supervisor {
     strategy: OneForOne,  // 或 AllForOne
     max_restarts: 3,
@@ -319,7 +319,7 @@ supervisor {
 
 `?` 运算符自动传播错误（desugar 为 `match expr { Ok(v) => v, Err(e) => return Err(e) }`）：
 
-```zeta
+```rlyeh
 fn read_config() -> Result<Config, IoError> {
     let content = std::fs::read_to_string("config.toml")?;
     let config = parse_config(&content)?;
@@ -343,7 +343,7 @@ fn read_config() -> Result<Config, IoError> {
 
 `?` 会自动调用 `Into::into()` 进行错误类型转换：
 
-```zeta
+```rlyeh
 enum MyError {
     Io(IoError),
     Parse(ParseError),
@@ -361,7 +361,7 @@ fn process() -> Result<(), MyError> {
 
 ### 6.3 永不返回类型 `!`
 
-```zeta
+```rlyeh
 fn abort() -> ! {
     loop {}  // 永不返回
 }
@@ -382,7 +382,7 @@ fn main() {
 
 泛型函数在编译期为每个具体类型生成一个副本：
 
-```zeta
+```rlyeh
 fn identity<T>(x: T) -> T { x }
 
 // 单态化后生成：
@@ -392,7 +392,7 @@ fn identity<T>(x: T) -> T { x }
 
 ### 7.2 特化
 
-```zeta
+```rlyeh
 // 通用实现
 fn sort<T: Ord>(data: &mut [T]) { /* 通用排序 */ }
 
@@ -405,7 +405,7 @@ fn sort(data: &mut [u32]) {
 
 ### 7.3 编译期反射
 
-```zeta
+```rlyeh
 impl Serialize for Point {
     fn serialize(&self) -> JsonValue {
         let mut json = Map::new();
@@ -425,7 +425,7 @@ impl Serialize for Point {
 
 ### 8.1 数组字面量
 
-```zeta
+```rlyeh
 let arr = [10, 20, 30];            // 元素类型统一（i64）
 let arr2: [i64; 4] = [1, 2, 3, 4]; // 类型注解保留长度 [T; N]
 ```
@@ -436,7 +436,7 @@ let arr2: [i64; 4] = [1, 2, 3, 4]; // 类型注解保留长度 [T; N]
 
 ### 8.2 索引读取与写入
 
-```zeta
+```rlyeh
 let x = arr[0];   // 索引读取
 arr[1] = 99;      // 索引写入（仅纯赋值；复合赋值暂不支持）
 ```
@@ -481,7 +481,7 @@ arr[1] = 99;      // 索引写入（仅纯赋值；复合赋值暂不支持）
 - 如果一个类型实现了 `Sync`，它可以安全地被多个线程共享（通过 `&T`）。
 - 编译器在编译期验证所有并发访问的安全性。
 
-```zeta
+```rlyeh
 // 自动推导
 struct SafeData { value: i32 }  // 自动实现 Send + Sync（i32 是 Send + Sync）
 
@@ -497,7 +497,7 @@ struct RawPointer(*mut u8);  // 不实现 Send 和 Sync
 
 - 默认：系统 V ABI（Linux/macOS）或 Microsoft x64 ABI（Windows）
 - `extern "C"`：C ABI 兼容
-- `extern "Zeta"`：Zeta 内部 ABI（支持尾调用优化）
+- `extern "Rlyeh"`：Rlyeh 内部 ABI（支持尾调用优化）
 
 ### 10.2 栈布局
 
@@ -522,7 +522,7 @@ struct RawPointer(*mut u8);  // 不实现 Send 和 Sync
 
 `async fn` 返回 `Future`，由执行器（executor）调度：
 
-```zeta
+```rlyeh
 async fn fetch_all(urls: &[&str]) -> Vec<Result<Data, Error>> {
     let mut tasks = vec![];
     for url in urls {
@@ -541,7 +541,7 @@ async fn fetch_all(urls: &[&str]) -> Vec<Result<Data, Error>> {
 
 ### 11.1 模块名空间与符号表
 
-模块为**扁平名字空间**：模块名全局唯一，无层级寻址。内联模块（`module m { }`）与外部文件模块（`module m;` → `m.zeta` / `m/module.zeta`，现有 ✅）同处一个模块名空间。跨模块可达性 = 模块名路径（`m::item`、`外层::内层::item`）＋ `import` 别名注入。
+模块为**扁平名字空间**：模块名全局唯一，无层级寻址。内联模块（`module m { }`）与外部文件模块（`module m;` → `m.rl` / `m/module.rl`，现有 ✅）同处一个模块名空间。跨模块可达性 = 模块名路径（`m::item`、`外层::内层::item`）＋ `import` 别名注入。
 
 - 类型与函数/常量同一命名空间；`import` 别名冲突报 `NameConflict`（规划）。
 - 符号名编码（`module_name::item` 扁平串）为代码生成契约，不随模块演进改变（现有 ✅）。
@@ -599,11 +599,11 @@ async fn fetch_all(urls: &[&str]) -> Vec<Result<Data, Error>> {
 - **落地偏差 / 已知限制**：
   - 重复使用同一已 move 变量时逐次报错（**不合并去重**）；
   - 一般化 move 追踪未覆盖所有场景（如字段级 move、闭包捕获）——超出 MVP 范围；
-  - 借用检查器**未接线进 driver**（`zeta check` 的 L0 检查与类型检查为独立通路），
+  - 借用检查器**未接线进 driver**（`rlyeh check` 的 L0 检查与类型检查为独立通路），
     MVP 编译流水线默认不执行借用检查；
   - 与 L1 区域系统（`transfer`）的交互语义由 regionck 承担，见 memory-model.md 附录 A.2。
 
 ---
 
-> **维护者**：Zeta Language Team  
+> **维护者**：Rlyeh Language Team  
 > **License**：MIT / Apache-2.0

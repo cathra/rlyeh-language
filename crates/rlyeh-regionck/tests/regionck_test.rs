@@ -1,7 +1,7 @@
-//! zeta-regionck 集成测试：区域嵌套、归属与 transfer 合法性。
+//! rlyeh-regionck 集成测试：区域嵌套、归属与 transfer 合法性。
 
-use zeta_regionck::{RegionChecker, RegionError};
-use zeta_typecheck::typecheck_source;
+use rlyeh_regionck::{RegionChecker, RegionError};
+use rlyeh_typecheck::typecheck_source;
 
 fn check(src: &str) -> Result<(), Vec<RegionError>> {
     let hir = typecheck_source(src).expect("typecheck should succeed");

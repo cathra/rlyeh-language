@@ -1,6 +1,6 @@
 // 基准: actor_pingpong —— 5 万次线程间同步往返（mutex + 双槽 condvar）
-// 与 actor_pingpong.zeta 逻辑严格一致。输出 = 1250025000
-// 对应: Zeta actor ask 同步往返（接收方 count+1 回传），C 侧用
+// 与 actor_pingpong.rl 逻辑严格一致。输出 = 1250025000
+// 对应: Rlyeh actor ask 同步往返（接收方 count+1 回传），C 侧用
 //       主线程 <-> worker 线程双槽握手实现同构语义。
 #include <pthread.h>
 #include <stdio.h>

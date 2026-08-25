@@ -1,6 +1,6 @@
-# P008: 包管理器 Zep
+# P008: 包管理器 Dagon
 
-> **模块路径**：`zep/`  
+> **模块路径**：`dagon/`  
 > **预估工期**：5-7 天  
 > **前置依赖**：P007（编译器驱动）  
 > **输出**：可用的包管理器，支持依赖解析、构建、发布
@@ -9,7 +9,7 @@
 
 ## 任务描述
 
-实现 Zeta 的包管理器 **Zep**（Zeta Package Manager）：
+实现 Rlyeh 的包管理器 **Dagon**（Rlyeh Package Manager）：
 1. **项目初始化与配置**
 2. **依赖解析**（PubGrub 算法）
 3. **沙箱构建**（安全下载和编译依赖）
@@ -19,7 +19,7 @@
 
 ## 配置文件格式
 
-### Zeta.toml
+### Rlyeh.toml
 
 ```toml
 [package]
@@ -27,7 +27,7 @@ name = "my-project"
 version = "0.1.0"
 edition = "2021"
 authors = ["Alice <alice@example.com>"]
-description = "A Zeta project"
+description = "A Rlyeh project"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/example/my-project"
 
@@ -63,9 +63,9 @@ members = ["crates/*"]
 ## 代码框架
 
 ```rust
-// zep/Cargo.toml
+// dagon/Cargo.toml
 [package]
-name = "zep"
+name = "dagon"
 version = "0.1.0"
 edition = "2021"
 
@@ -85,7 +85,7 @@ colored = "2"
 ```
 
 ```rust
-// zep/src/main.rs
+// dagon/src/main.rs
 
 #![warn(missing_docs)]
 
@@ -93,8 +93,8 @@ use clap::{Parser, Subcommand};
 use thiserror::Error;
 
 #[derive(Parser)]
-#[command(name = "zep")]
-#[command(about = "Zeta Package Manager", long_about = None)]
+#[command(name = "dagon")]
+#[command(about = "Rlyeh Package Manager", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -160,11 +160,11 @@ enum Commands {
 }
 
 #[derive(Debug, Error)]
-enum ZepError {
+enum DagonError {
     #[error("failed to read {path}: {source}")]
     Io { path: String, source: std::io::Error },
     
-    #[error("invalid Zeta.toml: {reason}")]
+    #[error("invalid Rlyeh.toml: {reason}")]
     InvalidManifest { reason: String },
     
     #[error("dependency resolution failed: {reason}")]
@@ -214,14 +214,14 @@ fn main() {
 ### 1. 项目初始化
 
 ```rust
-// zep/src/commands/new.rs
+// dagon/src/commands/new.rs
 
 /// 创建新项目
-pub fn cmd_new(name: String, is_lib: bool) -> Result<(), ZepError> {
+pub fn cmd_new(name: String, is_lib: bool) -> Result<(), DagonError> {
     todo!("创建项目目录结构");
-    todo!("生成 Zeta.toml");
+    todo!("生成 Rlyeh.toml");
     todo!("生成 .gitignore");
-    todo!("生成 src/main.zeta 或 src/lib.zeta");
+    todo!("生成 src/main.rl 或 src/lib.rl");
     todo!("初始化 git 仓库（如果可用）");
 }
 
@@ -230,7 +230,7 @@ fn generate_main_template(name: &str) -> String {
     format!(r#"
 // {name}
 fn main() {{
-    println!("Hello, Zeta!");
+    println!("Hello, Rlyeh!");
 }}
 "#, name = name)
 }
@@ -248,7 +248,7 @@ pub fn hello() {{
 ### 2. 依赖解析（PubGrub）
 
 ```rust
-// zep/src/resolve/mod.rs
+// dagon/src/resolve/mod.rs
 
 use pubgrub::{
     solver::{resolve, Dependencies, Offset, PubGrubError},
@@ -308,7 +308,7 @@ pub fn resolve_dependencies(
 ### 3. 沙箱构建
 
 ```rust
-// zep/src/sandbox/mod.rs
+// dagon/src/sandbox/mod.rs
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -381,7 +381,7 @@ fn build_with_bwrap(
     cmd.arg("--size").arg(&format!("{}M", config.memory_limit));
     
     // 执行构建
-    cmd.arg("zeta").arg("build").arg("--release");
+    cmd.arg("rlyeh").arg("build").arg("--release");
     cmd.arg("--").arg(package_dir);
     
     let output = cmd.stdout(Stdio::piped())
@@ -404,7 +404,7 @@ fn build_with_bwrap(
 ### 4. 注册表与发布
 
 ```rust
-// zep/src/registry/mod.rs
+// dagon/src/registry/mod.rs
 
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
@@ -548,7 +548,7 @@ impl RegistryClient {
 ### 5. 构建集成
 
 ```rust
-// zep/src/build/mod.rs
+// dagon/src/build/mod.rs
 
 use std::path::Path;
 use std::process::Command;
@@ -573,7 +573,7 @@ pub fn build(
     project_dir: &Path,
     config: &BuildConfig,
 ) -> Result<BuildArtifact, BuildError> {
-    let mut cmd = Command::new("zeta");
+    let mut cmd = Command::new("rlyeh");
     cmd.arg("build");
     
     if config.release {
@@ -628,7 +628,7 @@ fn find_libraries(dir: &Path) -> Vec<std::path::PathBuf> {
 ## 测试用例
 
 ```rust
-// zep/tests/zep_test.rs
+// dagon/tests/dagon_test.rs
 
 use std::fs;
 use tempfile::TempDir;
@@ -642,7 +642,7 @@ fn setup_test_dir() -> TempDir {
 #[test]
 fn test_init_project() {
     let dir = setup_test_dir();
-    let output = std::process::Command::new("zep")
+    let output = std::process::Command::new("dagon")
         .arg("init")
         .arg("--name=test-proj")
         .current_dir(dir.path())
@@ -650,7 +650,7 @@ fn test_init_project() {
         .unwrap();
     
     assert!(output.status.success());
-    assert!(dir.path().join("Zeta.toml").exists());
+    assert!(dir.path().join("Rlyeh.toml").exists());
 }
 
 #[test]
@@ -658,7 +658,7 @@ fn test_add_dependency() {
     let dir = setup_test_dir();
     init_project(dir.path());
     
-    let output = std::process::Command::new("zep")
+    let output = std::process::Command::new("dagon")
         .arg("add").arg("serde@1.0")
         .current_dir(dir.path())
         .output()
@@ -666,7 +666,7 @@ fn test_add_dependency() {
     
     assert!(output.status.success());
     
-    let manifest = fs::read_to_string(dir.path().join("Zeta.toml")).unwrap();
+    let manifest = fs::read_to_string(dir.path().join("Rlyeh.toml")).unwrap();
     assert!(manifest.contains("serde"));
     assert!(manifest.contains("1.0"));
 }
@@ -677,7 +677,7 @@ fn test_remove_dependency() {
     init_project(dir.path());
     add_dep(dir.path(), "serde@1.0");
     
-    let output = std::process::Command::new("zep")
+    let output = std::process::Command::new("dagon")
         .arg("remove").arg("serde")
         .current_dir(dir.path())
         .output()
@@ -685,7 +685,7 @@ fn test_remove_dependency() {
     
     assert!(output.status.success());
     
-    let manifest = fs::read_to_string(dir.path().join("Zeta.toml")).unwrap();
+    let manifest = fs::read_to_string(dir.path().join("Rlyeh.toml")).unwrap();
     assert!(!manifest.contains("serde"));
 }
 
@@ -765,7 +765,7 @@ fn test_workspace_build() {
     let dir = setup_test_dir();
     create_workspace(dir.path());
     
-    let output = std::process::Command::new("zep")
+    let output = std::process::Command::new("dagon")
         .arg("build")
         .current_dir(dir.path())
         .output()
@@ -786,7 +786,7 @@ fn test_publish_flow() {
     init_project(dir.path());
     
     // 模拟发布（使用本地注册表）
-    let output = std::process::Command::new("zep")
+    let output = std::process::Command::new("dagon")
         .arg("publish")
         .arg("--registry=http://localhost:8080")
         .current_dir(dir.path())
@@ -803,7 +803,7 @@ fn test_publish_flow() {
 ## 性能基准
 
 ```rust
-// zep/benches/resolve_bench.rs
+// dagon/benches/resolve_bench.rs
 use criterion::{black_box, Criterion};
 
 fn bench_resolve_small(c: &mut Criterion) {
@@ -846,8 +846,8 @@ fn bench_resolve_large(c: &mut Criterion) {
 | 标准 | 要求 |
 |------|------|
 | 所有测试通过 | 100% |
-| `zep new` | 创建完整项目结构 |
-| `zep add/remove` | 正确修改 Zeta.toml |
+| `dagon new` | 创建完整项目结构 |
+| `dagon add/remove` | 正确修改 Rlyeh.toml |
 | 依赖解析 | PubGrub 正确处理冲突 |
 | 沙箱构建 | 阻止网络/文件系统越权 |
 | 校验和 | SHA-256 验证通过 |
@@ -859,12 +859,12 @@ fn bench_resolve_large(c: &mut Criterion) {
 ## 交付文件
 
 ```
-zep/
+dagon/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs           ← CLI 入口
-│   ├── error.rs          ← ZepError
-│   ├── manifest.rs       ← Zeta.toml 解析
+│   ├── error.rs          ← DagonError
+│   ├── manifest.rs       ← Rlyeh.toml 解析
 │   ├── commands/
 │   │   ├── new.rs
 │   │   ├── init.rs
@@ -886,7 +886,7 @@ zep/
 │   └── build/
 │       └── mod.rs         ← 构建集成
 └── tests/
-    └── zep_test.rs
+    └── dagon_test.rs
 ```
 
 ---

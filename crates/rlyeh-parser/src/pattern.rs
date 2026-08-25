@@ -2,8 +2,8 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use zeta_ast::{AstExpr, AstPattern, ExprKind, LiteralValue};
-use zeta_lexer::{Span, Token};
+use rlyeh_ast::{AstExpr, AstPattern, ExprKind, LiteralValue};
+use rlyeh_lexer::{Span, Token};
 
 impl<'src> Parser<'src> {
     /// 解析模式（字面量 / 通配符 / 标识符 / 元组 / 结构体 / 枚举 / 范围 / ref）

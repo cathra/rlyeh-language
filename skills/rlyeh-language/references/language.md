@@ -1,4 +1,4 @@
-# Zeta 语言语法速查（v0.1.0 MVP）
+# Rlyeh 语言语法速查（v0.1.0 MVP）
 
 > 权威规范：`docs/grammar.md`（EBNF）、`docs/guide.md`（教程）。本节是编写代码时的速查。
 
@@ -15,14 +15,14 @@
 聚合：`[T; N]` 定长数组、`Vec<T>`（标准库）、`String`（标准库）、`Str`（**未实现**，勿用）、`&T`（**未实现**，仅方法接收者 `&self`/`&mut self`）。
 
 类型注解：
-```zeta
+```rlyeh
 let x: i64 = 10;
 let arr: [i64; 4] = [1, 2, 3, 4];
 ```
 
 ## 3. 变量与常量
 
-```zeta
+```rlyeh
 let mut count = 0;        // mut 可变
 const PI: f64 = 3.14159;  // 模块/函数级常量
 ```
@@ -30,7 +30,7 @@ const PI: f64 = 3.14159;  // 模块/函数级常量
 
 ## 4. 函数
 
-```zeta
+```rlyeh
 fn add(a: i64, b: i64) -> i64 { a + b }
 fn main() { println(add(1, 2)); }   // 程序必须显式 main
 extern fn my_lib_fn(x: i64) -> i64; // FFI 声明（无 body，链接器解析）
@@ -39,7 +39,7 @@ extern fn my_lib_fn(x: i64) -> i64; // FFI 声明（无 body，链接器解析�
 
 ## 5. 控制流
 
-```zeta
+```rlyeh
 if 0 < x < 10 { println("range"); } else { println("out"); }   // 无需括号，语句用 ; 分隔
 while x > 0 { x -= 1; }
 loop { if done { break; } }
@@ -52,7 +52,7 @@ match s {
 
 ## 6. 比较链与 in 表达式（语言特色）
 
-```zeta
+```rlyeh
 if 0 < x < 10 {}        // 正向区间链 = 0 < x && x < 10
 if 0 <= x <= 10 {}      // 双闭
 if 0 > x > 10 {}        // 反向链 = x < 0 || x > 10（区间外）
@@ -73,7 +73,7 @@ if x not in (6am..<10pm) {}     // 跨午夜时间区间（分钟单位）
 
 ## 8. 聚合类型（struct / enum / trait / 泛型）
 
-```zeta
+```rlyeh
 struct Point { x: i64, y: i64 }
 enum Shape { Circle(f64), Rect { w: f64, h: f64 } }
 
@@ -93,7 +93,7 @@ let p = Point { x: 1, y: 2 };   // 结构体字面量
 
 ## 9. 数组、切片与索引
 
-```zeta
+```rlyeh
 let arr = [10, 20, 30];
 arr[0] = 99;                 // 索引读写（别名共享，互相可见）
 let ch = s[0];               // String 按字符索引（步长 1 字节，ASCII 假设）
@@ -103,20 +103,20 @@ let b = v[lo...hi];          // Vec 动态切片（越界 clamp 到 [0, len]，s
 
 ## 10. 模块系统
 
-```zeta
+```rlyeh
 module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
 }
 import math::PI;
 import math::square as sq;
-// 多文件：module foo; → foo.zeta / foo/module.zeta；跨模块 模块名::Enum::Variant
+// 多文件：module foo; → foo.rl / foo/module.rl；跨模块 模块名::Enum::Variant
 // （扁平名字空间：无 crate/super/self，路径即「模块名::」；可见性仅 pub / 私有）
 ```
 
 ## 11. 区域（Region）
 
-```zeta
+```rlyeh
 region 'r {
     let data = BigStruct::new() in 'r;
     process(&data);          // 块结束批量释放
@@ -134,7 +134,7 @@ fn make() -> BigStruct {
 
 ## 12. Actor 并发
 
-```zeta
+```rlyeh
 actor Counter {
     value: i64 = 0,
     pub fn increment(amount: i64) -> i64 {
@@ -152,7 +152,7 @@ let s = Counter::new_supervised(0);        // 受监督：0=OneForOne 1=AllForOn
 
 ## 13. FFI（extern fn）
 
-```zeta
+```rlyeh
 extern fn abs(x: i64) -> i64;      // 声明，无 body
 extern fn srand(seed: u32);        // void 返回类型
 ```
@@ -166,7 +166,7 @@ extern fn srand(seed: u32);        // void 返回类型
 
 ## 15. 最小完整示例
 
-```zeta
+```rlyeh
 fn main() {
     let mut total = 0;
     for i in 0..<5 { total += i; }

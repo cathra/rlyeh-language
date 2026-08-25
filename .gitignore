@@ -1,9 +1,9 @@
 target/
 release/
-.zeta_cache/
+.rlyeh_cache/
 target/debug/.fingerprint/criterion-plot-7bae2173b5a3b021/lib-criterion_plot
-zeta-out
-**/.zeta_cache/
+rlyeh-out
+**/.rlyeh_cache/
 dist/
 .DS_Store
 *.d
@@ -11,3 +11,4 @@ dist/
 *.o
 tests/run-pass/_tmp_*
 *.dylib
+.codebuddy/

@@ -1,5 +1,5 @@
 // 基准: actor_pingpong —— 5 万次线程间同步往返（NSCondition 双槽握手）
-// 与 actor_pingpong.zeta 逻辑严格一致。输出 = 1250025000
+// 与 actor_pingpong.rl 逻辑严格一致。输出 = 1250025000
 import Foundation
 
 let N = 50000

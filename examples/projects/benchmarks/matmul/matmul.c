@@ -1,4 +1,4 @@
-// benchmark: 256x256 f64 矩阵乘法 —— 与 matmul.zeta 同逻辑
+// benchmark: 256x256 f64 矩阵乘法 —— 与 matmul.rl 同逻辑
 #include <stdio.h>
 #include <stdlib.h>
 

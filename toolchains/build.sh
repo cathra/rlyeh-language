@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Zeta toolchain 一键构建脚本
+# Rlyeh toolchain 一键构建脚本
 #
 # 流程: 环境检查 → release 构建 → 测试 → 本地发布 → 冒烟验证 → 归档打包
 #
@@ -9,7 +9,7 @@
 #   ./build.sh --no-test           # 跳过测试
 #   ./build.sh --no-install        # 跳过本地发布（仅构建 + 归档）
 #   ./build.sh --no-tar            # 跳过归档打包
-#   ./build.sh --prefix /opt/zeta  # 自定义安装前缀（默认 $HOME/.zeta）
+#   ./build.sh --prefix /opt/rlyeh  # 自定义安装前缀（默认 $HOME/.rl）
 #
 set -euo pipefail
 
@@ -19,7 +19,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUN_TEST=1
 RUN_INSTALL=1
 RUN_TAR=1
-PREFIX="${ZETA_PREFIX:-$HOME/.zeta}"
+PREFIX="${RLYEH_PREFIX:-$HOME/.rl}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -39,7 +39,7 @@ VERSION="$(grep -m1 '^version = "' "$REPO/Cargo.toml" | sed -E 's/.*"([^"]+)".*/
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 
-echo "==> Zeta toolchain 构建 ($VERSION, $OS-$ARCH)"
+echo "==> Rlyeh toolchain 构建 ($VERSION, $OS-$ARCH)"
 echo "    仓库: $REPO"
 
 # 0. 环境检查
@@ -63,17 +63,17 @@ fi
 if [[ "$RUN_INSTALL" == 1 ]]; then
     echo
     echo "==> [3/5] 本地发布（install.sh）"
-    ZETA_PREFIX="$PREFIX" bash "$SCRIPT_DIR/install.sh"
+    RLYEH_PREFIX="$PREFIX" bash "$SCRIPT_DIR/install.sh"
 fi
 
 # 4. 冒烟验证（依赖第 3 步的产物）
 if [[ "$RUN_INSTALL" == 1 ]]; then
     echo
     echo "==> [4/5] 冒烟验证"
-    "$PREFIX/bin/zeta" --version
+    "$PREFIX/bin/rlyeh" --version
     TMP="$(mktemp -d)"
-    printf 'fn main() {\n    println("rebuild ok");\n}\n' > "$TMP/smoke.zeta"
-    "$PREFIX/bin/zeta" run "$TMP/smoke.zeta"
+    printf 'fn main() {\n    println("rebuild ok");\n}\n' > "$TMP/smoke.rl"
+    "$PREFIX/bin/rlyeh" run "$TMP/smoke.rl"
     rm -rf "$TMP"
 else
     echo
@@ -84,7 +84,7 @@ fi
 if [[ "$RUN_TAR" == 1 ]]; then
     DIST="$REPO/toolchains/dist"
     mkdir -p "$DIST"
-    TARBALL="$DIST/zeta-toolchain-$VERSION-$OS-$ARCH.tar.gz"
+    TARBALL="$DIST/rlyeh-toolchain-$VERSION-$OS-$ARCH.tar.gz"
     echo
     echo "==> [5/5] 归档打包"
     tar -C "$PREFIX" -czf "$TARBALL" bin std skills examples

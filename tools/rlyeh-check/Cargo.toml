@@ -1,16 +1,16 @@
 [package]
-name = "zeta-check"
+name = "rlyeh-check"
 version.workspace = true
 edition.workspace = true
-description = "Zeta 语言静态分析器（lint：未使用变量、恒常条件、冗余比较、不可达代码）"
+description = "Rlyeh 语言静态分析器（lint：未使用变量、恒常条件、冗余比较、不可达代码）"
 
 [dependencies]
-zeta-ast = { workspace = true }
-zeta-lexer = { workspace = true }
-zeta-parser = { workspace = true }
+rlyeh-ast = { workspace = true }
+rlyeh-lexer = { workspace = true }
+rlyeh-parser = { workspace = true }
 
 [[bin]]
-name = "zeta-check"
+name = "rlyeh-check"
 path = "src/main.rs"
 
 [lib]

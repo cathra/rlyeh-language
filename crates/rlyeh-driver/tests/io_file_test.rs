@@ -13,22 +13,22 @@
 
 use std::path::PathBuf;
 
-use zeta_driver::run_source_file;
+use rlyeh_driver::run_source_file;
 
 /// 独立临时目录，避免并行测试互相覆盖。
 fn temp_dir() -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("zeta-io-{}-{seq}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-io-{}-{seq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("创建临时目录失败");
     dir
 }
 
-/// 运行内联源码（自动注入 core.zeta），返回程序输出。
+/// 运行内联源码（自动注入 core.rl），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_dir();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("io 模块测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     out
@@ -44,7 +44,7 @@ fn file_write_read_roundtrip() {
         r#"
 fn main() {{
     let path = String::from("{p}");
-    match write_file(path, String::from("Hello Zeta!")) {{
+    match write_file(path, String::from("Hello Rlyeh!")) {{
         Ok(w) => println(w),             // 11 字节
         Err(e) => println(-1),
     }}
@@ -55,7 +55,7 @@ fn main() {{
 }}
 "#,
     ));
-    assert_eq!(out, "11\nHello Zeta!\n");
+    assert_eq!(out, "11\nHello Rlyeh!\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -114,12 +114,12 @@ fn file_utf8_content() {
     let dir = temp_dir();
     let path = dir.join("utf8.txt");
     let p = path.to_str().unwrap();
-    // "你好，Zeta！" UTF-8 编码 = 3*3 + 1*4 + 3 = 16 字节
+    // "你好，Rlyeh！" UTF-8 编码 = 3*3 + 1*4 + 3 = 16 字节
     let out = run(&format!(
         r#"
 fn main() {{
     let path = String::from("{p}");
-    let text = String::from("你好，Zeta！");
+    let text = String::from("你好，Rlyeh！");
     match write_file(path, text) {{
         Ok(w) => println(w),             // 16 字节
         Err(e) => println(-1),
@@ -131,7 +131,7 @@ fn main() {{
 }}
 "#,
     ));
-    assert_eq!(out, "16\n你好，Zeta！\n");
+    assert_eq!(out, "16\n你好，Rlyeh！\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -242,14 +242,14 @@ fn file_compose_chain() {
         r#"
 fn main() {{
     let path = String::from("{p}");
-    let _ = write_file(path, String::from("zeta"));
+    let _ = write_file(path, String::from("rlyeh"));
     match read_file(path) {{
         Ok(v) => {{
             let greeting = v + String::from("-lang");
             let _ = write_file(path, greeting);
             match read_file(path) {{
                 Ok(again) => {{
-                    println(again);            // zeta-lang
+                    println(again);            // rlyeh-lang
                     println(again.len);        // 9
                 }}
                 Err(e) => println(-1),
@@ -260,6 +260,6 @@ fn main() {{
 }}
 "#,
     ));
-    assert_eq!(out, "zeta-lang\n9\n");
+    assert_eq!(out, "rlyeh-lang\n9\n");
     let _ = std::fs::remove_dir_all(&dir);
 }

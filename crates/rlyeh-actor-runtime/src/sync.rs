@@ -3,7 +3,7 @@
 //! `wasm32-wasip1` 目标无 `dlsym`（编译期即缺符号）且无线程运行时支持，
 //! 故 Actor 消息路径改用：
 //!
-//! - **符号解析**：driver 为 wasm 目标注入静态符号表 `zeta_actor_resolve`
+//! - **符号解析**：driver 为 wasm 目标注入静态符号表 `rlyeh_actor_resolve`
 //!   （编译期已知全部 handle / factory 函数名，字符串比较 → 函数地址），
 //!   替代原生目标的 `dlsym(RTLD_DEFAULT, name)`；
 //! - **同步执行**：spawn 仅登记（句柄 = 表索引 + 1），send / ask 直接同步
@@ -21,19 +21,19 @@ use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-/// 消息处理回调签名（与 [`super::ffi::ZetaHandler`] 一致，避免跨模块类型耦合）。
-pub type ZetaHandler = unsafe extern "C" fn(u64, u64, u64, u64, u64) -> u64;
+/// 消息处理回调签名（与 [`super::ffi::RlyehHandler`] 一致，避免跨模块类型耦合）。
+pub type RlyehHandler = unsafe extern "C" fn(u64, u64, u64, u64, u64) -> u64;
 
-/// 状态工厂回调签名（与 [`super::ffi::ZetaFactory`] 一致；Zeta 侧 `__state_new`
+/// 状态工厂回调签名（与 [`super::ffi::RlyehFactory`] 一致；Rlyeh 侧 `__state_new`
 /// 返回 `i8*` 状态对象指针）。
-pub type ZetaFactory = unsafe extern "C" fn() -> *mut std::os::raw::c_void;
+pub type RlyehFactory = unsafe extern "C" fn() -> *mut std::os::raw::c_void;
 
 /// 表条目：回调 + 状态槽 + 监督配置 + 运行标志。
 #[derive(Clone, Copy)]
 struct Entry {
-    handler: ZetaHandler,
+    handler: RlyehHandler,
     state: u64,
-    factory: Option<ZetaFactory>,
+    factory: Option<RlyehFactory>,
     running: bool,
 }
 
@@ -45,12 +45,12 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 
 /// driver 注入的静态符号表：`name`（NUL 结尾 C 字符串）→ 函数地址（0 = 未找到）。
 unsafe extern "C" {
-    fn zeta_actor_resolve(name: *const c_char) -> u64;
+    fn rlyeh_actor_resolve(name: *const c_char) -> u64;
 }
 
 /// 按符号名解析 handle / factory 函数（替代 dlsym）。
 pub unsafe fn resolve_symbol(name: *const c_char) -> *mut c_void {
-    zeta_actor_resolve(name) as *mut c_void
+    rlyeh_actor_resolve(name) as *mut c_void
 }
 
 fn alloc_entry(entry: Entry) -> u64 {
@@ -65,7 +65,7 @@ fn alloc_entry(entry: Entry) -> u64 {
 }
 
 /// 创建无监督 Actor：返回句柄（0 = 失败）。
-pub unsafe fn spawn(handler: ZetaHandler, state: u64) -> u64 {
+pub unsafe fn spawn(handler: RlyehHandler, state: u64) -> u64 {
     alloc_entry(Entry {
         handler,
         state,
@@ -76,7 +76,7 @@ pub unsafe fn spawn(handler: ZetaHandler, state: u64) -> u64 {
 
 /// 创建受监督 Actor：崩溃时经 factory 重建状态（`strategy` 在单线程模式下
 /// 无重启调度差异，忽略）。
-pub unsafe fn spawn_supervised(handler: ZetaHandler, factory: ZetaFactory, _strategy: i64) -> u64 {
+pub unsafe fn spawn_supervised(handler: RlyehHandler, factory: RlyehFactory, _strategy: i64) -> u64 {
     let state = factory() as u64;
     alloc_entry(Entry {
         handler,

@@ -6,7 +6,7 @@ use std::fmt;
 
 use pubgrub::{Ranges, SemanticVersion};
 
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 
 /// 语义化版本 `major.minor.patch`。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,16 +33,16 @@ impl Version {
     pub fn parse(s: &str) -> Result<Self> {
         let parts: Vec<&str> = s.trim().split('.').collect();
         if parts.is_empty() || parts.len() > 3 {
-            return Err(ZepError::Version(format!("非法版本号: {s:?}")));
+            return Err(DagonError::Version(format!("非法版本号: {s:?}")));
         }
         let mut nums = [0u64; 3];
         for (i, p) in parts.iter().enumerate() {
             if p.is_empty() || !p.chars().all(|c| c.is_ascii_digit()) {
-                return Err(ZepError::Version(format!("非法版本号: {s:?}")));
+                return Err(DagonError::Version(format!("非法版本号: {s:?}")));
             }
             nums[i] = p
                 .parse()
-                .map_err(|_| ZepError::Version(format!("版本号溢出: {s:?}")))?;
+                .map_err(|_| DagonError::Version(format!("版本号溢出: {s:?}")))?;
         }
         Ok(Self::new(nums[0], nums[1], nums[2]))
     }
@@ -98,13 +98,13 @@ impl VersionReq {
         ] {
             if let Some(rest) = s.strip_prefix(prefix) {
                 let v = Version::parse(rest)
-                    .map_err(|_| ZepError::VersionReq(format!("非法版本需求: {s:?}")))?;
+                    .map_err(|_| DagonError::VersionReq(format!("非法版本需求: {s:?}")))?;
                 return Ok(ctor(v));
             }
         }
         // 裸版本号 → caret 兼容
         let v = Version::parse(s)
-            .map_err(|_| ZepError::VersionReq(format!("非法版本需求: {s:?}")))?;
+            .map_err(|_| DagonError::VersionReq(format!("非法版本需求: {s:?}")))?;
         Ok(Self::Compatible(v))
     }
 

@@ -1,32 +1,32 @@
-//! Zeta 编译器 CLI（MVP）。
+//! Rlyeh 编译器 CLI（MVP）。
 //!
 //! ```text
-//! zeta run <file.zeta>                          # 编译并运行（增量缓存）
-//! zeta build <file.zeta> [-o <out>]             # 编译为可执行文件（增量缓存）
-//! zeta test [<tests-dir>]                       # 运行 tests/ 目录用例（默认 ./tests）
-//! zeta run|build <file> --force                 # 忽略缓存，强制全量编译
-//! zeta run|build <file> --cache-dir <dir>       # 指定缓存根目录（默认源文件所在目录）
-//! zeta run|build <file> --no-std                # 不注入标准库预置（core.zeta）
-//! zeta run|build <file> --verbose               # 打印缓存命中/未命中与统计
-//! zeta build <file> --target <triple>           # 交叉编译（如 arm64-apple-macosx / x86_64-apple-macosx）
+//! rlyeh run <file.rl>                          # 编译并运行（增量缓存）
+//! rlyeh build <file.rl> [-o <out>]             # 编译为可执行文件（增量缓存）
+//! rlyeh test [<tests-dir>]                       # 运行 tests/ 目录用例（默认 ./tests）
+//! rlyeh run|build <file> --force                 # 忽略缓存，强制全量编译
+//! rlyeh run|build <file> --cache-dir <dir>       # 指定缓存根目录（默认源文件所在目录）
+//! rlyeh run|build <file> --no-std                # 不注入标准库预置（core.rl）
+//! rlyeh run|build <file> --verbose               # 打印缓存命中/未命中与统计
+//! rlyeh build <file> --target <triple>           # 交叉编译（如 arm64-apple-macosx / x86_64-apple-macosx）
 //! ```
 //!
-//! `zeta test` 扫描 `<tests-dir>/compile-pass|compile-fail|run-pass` 三个子目录：
+//! `rlyeh test` 扫描 `<tests-dir>/compile-pass|compile-fail|run-pass` 三个子目录：
 //! compile-pass 要求编译成功；compile-fail 要求编译失败（源内 `// expect:` 注释断言
 //! 错误消息片段）；run-pass 要求编译运行成功（同名 `.out` 文件作为期望输出对比）。
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use zeta_driver::error::DriverError;
-use zeta_driver::IncrementalDriver;
+use rlyeh_driver::error::DriverError;
+use rlyeh_driver::IncrementalDriver;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some("run") => {
             let Some(file) = args.get(2) else {
-                eprintln!("用法: zeta run <file.zeta> [--cache-dir <dir>] [--force] [--verbose]");
+                eprintln!("用法: rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--verbose]");
                 return ExitCode::from(2);
             };
             let opts = match CliOpts::parse(&args[3..], file) {
@@ -49,7 +49,7 @@ fn main() -> ExitCode {
         }
         Some("build") => {
             let Some(file) = args.get(2) else {
-                eprintln!("用法: zeta build <file.zeta> [-o <out>] [--cache-dir <dir>] [--force] [--verbose]");
+                eprintln!("用法: rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--verbose]");
                 return ExitCode::from(2);
             };
             let mut opts = match CliOpts::parse(&args[3..], file) {
@@ -59,7 +59,7 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
-            let out = opts.take_out().unwrap_or_else(|| PathBuf::from("zeta-out"));
+            let out = opts.take_out().unwrap_or_else(|| PathBuf::from("rlyeh-out"));
             let profile = opts.profile.take();
             match build_file(file, &out, &opts) {
                 Ok(()) => {
@@ -67,15 +67,15 @@ fn main() -> ExitCode {
                         Some(t) => println!("编译完成: {}（目标 {t}）", out.display()),
                         None => println!("编译完成: {}", out.display()),
                     }
-                    // F2：PGO 数据回灌——构建期注入 `.zeta_profile` 预测区域大小
+                    // F2：PGO 数据回灌——构建期注入 `.rl_profile` 预测区域大小
                     if let Some(p) = profile {
-                        match zeta_driver::region_profile_report(&p) {
+                        match rlyeh_driver::region_profile_report(&p) {
                             Ok(report) => {
                                 println!("\n区域大小预测（{}）:", p.display());
                                 print!("{report}");
                             }
                             Err(e) => eprintln!(
-                                "zeta: 警告: 忽略 --profile（{}）: {e}",
+                                "rlyeh: 警告: 忽略 --profile（{}）: {e}",
                                 p.display()
                             ),
                         }
@@ -93,7 +93,7 @@ fn main() -> ExitCode {
                 .get(2)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("tests"));
-            let summary = zeta_driver::test_runner::run_test_suite(&dir);
+            let summary = rlyeh_driver::test_runner::run_test_suite(&dir);
             for r in &summary.results {
                 let mark = if r.passed { "通过" } else { "失败" };
                 println!("[{mark}] {:<26} {}", r.name, r.detail.lines().next().unwrap_or(""));
@@ -119,19 +119,19 @@ fn main() -> ExitCode {
         Some("profile") => run_profile(&args[2..]),
         Some("new") => run_new(&args[2..]),
         Some("publish") => run_publish(&args[2..]),
-        Some("lsp") => match zeta_lsp::run_stdio() {
+        Some("lsp") => match rlyeh_lsp::run_stdio() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("zeta lsp: {e}");
+                eprintln!("rlyeh lsp: {e}");
                 ExitCode::FAILURE
             }
         },
         Some("check") => {
             let Some(file) = args.get(2) else {
-                eprintln!("用法: zeta check <file.zeta>");
+                eprintln!("用法: rlyeh check <file.rl>");
                 return ExitCode::from(2);
             };
-            match zeta_driver::check_source_file(std::path::Path::new(file)) {
+            match rlyeh_driver::check_source_file(std::path::Path::new(file)) {
                 Ok(diags) if diags.is_empty() => {
                     println!("{file}: ok");
                     ExitCode::SUCCESS
@@ -144,31 +144,31 @@ fn main() -> ExitCode {
                     ExitCode::FAILURE
                 }
                 Err(e) => {
-                    eprintln!("zeta check: {e}");
+                    eprintln!("rlyeh check: {e}");
                     ExitCode::FAILURE
                 }
             }
         }
         Some("--version") | Some("-V") => {
-            println!("zeta {}", env!("CARGO_PKG_VERSION"));
+            println!("rlyeh {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
             eprintln!(
-                "Zeta 编译器（MVP）\n\
+                "Rlyeh 编译器（MVP）\n\
                  用法:\n  \
-                 zeta run <file.zeta> [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译并运行\n  \
-                 zeta build <file.zeta> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
-                 zeta test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
-                 zeta fmt <file.zeta> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
-                 zeta check <file.zeta> 静态分析（未使用变量/恒常条件/冗余比较/不可达代码）\n  \
-                 zeta doc <file.zeta> [--out <file.md>] [--title <标题>] 提取 /// 注释生成 Markdown 文档\n  \
-                 zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N] 编译并基准计时\n  \
-                 zeta new <name> [--lib] 创建新项目脚手架（Zeta.toml + src/main.zeta 或 lib.zeta）\n  \
-                 zeta publish [--registry <URL>] [--verbose] 打包发布到 zep 注册表\n  \
-                 zeta lsp 启动语言服务器（LSP over stdio，诊断推送）\n  \
-                 zeta profile <file.zeta_profile> [--out <report.md>] PGO 画像 → 区域大小预测报告\n  \
-                 zeta --version 版本信息"
+                 rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译并运行\n  \
+                 rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
+                 rlyeh test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
+                 rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
+                 rlyeh check <file.rl> 静态分析（未使用变量/恒常条件/冗余比较/不可达代码）\n  \
+                 rlyeh doc <file.rl> [--out <file.md>] [--title <标题>] 提取 /// 注释生成 Markdown 文档\n  \
+                 rlyeh bench <file.rl> [-o <out>] [--runs N] [--warmup N] 编译并基准计时\n  \
+                 rlyeh new <name> [--lib] 创建新项目脚手架（Rlyeh.toml + src/main.rl 或 lib.rl）\n  \
+                 rlyeh publish [--registry <URL>] [--verbose] 打包发布到 dagon 注册表\n  \
+                 rlyeh lsp 启动语言服务器（LSP over stdio，诊断推送）\n  \
+                 rlyeh profile <file.rl_profile> [--out <report.md>] PGO 画像 → 区域大小预测报告\n  \
+                 rlyeh --version 版本信息"
             );
             ExitCode::from(2)
         }
@@ -206,7 +206,7 @@ impl CliOpts {
             match args[i].as_str() {
                 "--profile" => {
                     i += 1;
-                    let p = args.get(i).ok_or("--profile 需要 .zeta_profile 路径")?;
+                    let p = args.get(i).ok_or("--profile 需要 .rl_profile 路径")?;
                     profile = Some(PathBuf::from(p));
                 }
                 "--cache-dir" => {
@@ -252,7 +252,7 @@ impl CliOpts {
 fn run_file(path: &str, opts: &CliOpts) -> Result<String, DriverError> {
     if opts.target.is_some() {
         return Err(DriverError::Usage(
-            "`zeta run` 不支持 --target（交叉编译产物无法在本机运行，请用 `zeta build --target ...`）"
+            "`rlyeh run` 不支持 --target（交叉编译产物无法在本机运行，请用 `rlyeh build --target ...`）"
                 .to_string(),
         ));
     }
@@ -280,7 +280,7 @@ fn new_driver(opts: &CliOpts) -> IncrementalDriver {
     let hints = opts
         .profile
         .as_ref()
-        .and_then(|p| zeta_driver::region_hints_from_profile(p).ok())
+        .and_then(|p| rlyeh_driver::region_hints_from_profile(p).ok())
         .unwrap_or_default();
     IncrementalDriver::new(opts.cache_dir.clone())
         .with_force(opts.force)
@@ -290,7 +290,7 @@ fn new_driver(opts: &CliOpts) -> IncrementalDriver {
 }
 
 /// 打印缓存命中/未命中与统计（`--verbose`）。
-fn report(outcome: &zeta_driver::BuildOutcome) {
+fn report(outcome: &rlyeh_driver::BuildOutcome) {
     let stats = &outcome.stats;
     if outcome.cache_hit {
         println!("[缓存] 命中（跳过完整流水线）");
@@ -310,7 +310,7 @@ fn report(outcome: &zeta_driver::BuildOutcome) {
     );
 }
 
-/// `zeta fmt`：格式化源码（默认 stdout；`--check` 检查是否已格式化；`-w` 写回）。
+/// `rlyeh fmt`：格式化源码（默认 stdout；`--check` 检查是否已格式化；`-w` 写回）。
 fn run_fmt(args: &[String]) -> ExitCode {
     let mut file: Option<String> = None;
     let mut check = false;
@@ -325,24 +325,24 @@ fn run_fmt(args: &[String]) -> ExitCode {
             "--indent" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
-                    eprintln!("zeta fmt: --indent 需要数值参数");
+                    eprintln!("rlyeh fmt: --indent 需要数值参数");
                     return ExitCode::from(2);
                 };
                 match v.parse::<usize>() {
                     Ok(n) if n > 0 && n <= 16 => indent = n,
                     _ => {
-                        eprintln!("zeta fmt: 非法缩进宽度 '{v}'");
+                        eprintln!("rlyeh fmt: 非法缩进宽度 '{v}'");
                         return ExitCode::from(2);
                     }
                 }
             }
             s if s.starts_with('-') => {
-                eprintln!("zeta fmt: 未知选项 '{s}'");
+                eprintln!("rlyeh fmt: 未知选项 '{s}'");
                 return ExitCode::from(2);
             }
             s => {
                 if file.is_some() {
-                    eprintln!("zeta fmt: 仅支持单个输入文件");
+                    eprintln!("rlyeh fmt: 仅支持单个输入文件");
                     return ExitCode::from(2);
                 }
                 file = Some(s.to_string());
@@ -351,22 +351,22 @@ fn run_fmt(args: &[String]) -> ExitCode {
         i += 1;
     }
     let Some(file) = file else {
-        eprintln!("用法: zeta fmt <file.zeta> [--check] [-w|--write] [--indent N]");
+        eprintln!("用法: rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N]");
         return ExitCode::from(2);
     };
 
     let src = match std::fs::read_to_string(&file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("zeta fmt: 无法读取 {file}: {e}");
+            eprintln!("rlyeh fmt: 无法读取 {file}: {e}");
             return ExitCode::from(1);
         }
     };
-    let opts = zeta_fmt::FmtOptions { indent_width: indent };
-    let formatted = match zeta_fmt::format_source_with_options(&src, &opts) {
+    let opts = rlyeh_fmt::FmtOptions { indent_width: indent };
+    let formatted = match rlyeh_fmt::format_source_with_options(&src, &opts) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("zeta fmt: {file}: {e}");
+            eprintln!("rlyeh fmt: {file}: {e}");
             return ExitCode::from(1);
         }
     };
@@ -386,7 +386,7 @@ fn run_fmt(args: &[String]) -> ExitCode {
                 ExitCode::SUCCESS
             }
             Err(e) => {
-                eprintln!("zeta fmt: 无法写入 {file}: {e}");
+                eprintln!("rlyeh fmt: 无法写入 {file}: {e}");
                 ExitCode::from(1)
             }
         }
@@ -396,7 +396,7 @@ fn run_fmt(args: &[String]) -> ExitCode {
     }
 }
 
-/// `zeta doc`：提取 `///` 文档注释生成 Markdown（默认 stdout，`--out` 写文件）。
+/// `rlyeh doc`：提取 `///` 文档注释生成 Markdown（默认 stdout，`--out` 写文件）。
 fn run_doc(args: &[String]) -> ExitCode {
     let mut file: Option<String> = None;
     let mut out: Option<PathBuf> = None;
@@ -410,7 +410,7 @@ fn run_doc(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => out = Some(PathBuf::from(v)),
                     None => {
-                        eprintln!("zeta doc: --out 缺少参数");
+                        eprintln!("rlyeh doc: --out 缺少参数");
                         return ExitCode::from(2);
                     }
                 }
@@ -420,18 +420,18 @@ fn run_doc(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => title = Some(v.clone()),
                     None => {
-                        eprintln!("zeta doc: --title 缺少参数");
+                        eprintln!("rlyeh doc: --title 缺少参数");
                         return ExitCode::from(2);
                     }
                 }
             }
             s if s.starts_with('-') => {
-                eprintln!("zeta doc: 未知选项 '{s}'");
+                eprintln!("rlyeh doc: 未知选项 '{s}'");
                 return ExitCode::from(2);
             }
             s => {
                 if file.is_some() {
-                    eprintln!("zeta doc: 仅支持单个输入文件");
+                    eprintln!("rlyeh doc: 仅支持单个输入文件");
                     return ExitCode::from(2);
                 }
                 file = Some(s.to_string());
@@ -440,22 +440,22 @@ fn run_doc(args: &[String]) -> ExitCode {
         i += 1;
     }
     let Some(file) = file else {
-        eprintln!("用法: zeta doc <file.zeta> [--out <file.md>] [--title <标题>]");
+        eprintln!("用法: rlyeh doc <file.rl> [--out <file.md>] [--title <标题>]");
         return ExitCode::from(2);
     };
 
-    let options = zeta_doc::DocOptions {
+    let options = rlyeh_doc::DocOptions {
         title: title.or_else(|| {
             Path::new(&file)
                 .file_stem()
                 .and_then(|s| s.to_str())
-                .map(|s| format!("{s} — Zeta 文档"))
+                .map(|s| format!("{s} — Rlyeh 文档"))
         }),
     };
-    let doc = match zeta_driver::doc_source_file(Path::new(&file), &options) {
+    let doc = match rlyeh_driver::doc_source_file(Path::new(&file), &options) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("zeta doc: {e}");
+            eprintln!("rlyeh doc: {e}");
             return ExitCode::from(1);
         }
     };
@@ -463,7 +463,7 @@ fn run_doc(args: &[String]) -> ExitCode {
     match &out {
         Some(p) => {
             if let Err(e) = std::fs::write(p, &doc) {
-                eprintln!("zeta doc: 无法写入 {}: {e}", p.display());
+                eprintln!("rlyeh doc: 无法写入 {}: {e}", p.display());
                 return ExitCode::from(1);
             }
             println!("已生成: {}", p.display());
@@ -476,9 +476,9 @@ fn run_doc(args: &[String]) -> ExitCode {
     }
 }
 
-/// `zeta profile`：读取 PGO 画像（`.zeta_profile`）生成区域大小预测报告（阶段 F2 数据回灌）。
+/// `rlyeh profile`：读取 PGO 画像（`.rl_profile`）生成区域大小预测报告（阶段 F2 数据回灌）。
 ///
-/// 用法: `zeta profile <file.zeta_profile> [--out <report.md>]`
+/// 用法: `rlyeh profile <file.rl_profile> [--out <report.md>]`
 /// 默认输出到 stdout；`--out` 写文件。
 fn run_profile(args: &[String]) -> ExitCode {
     let mut file: Option<String> = None;
@@ -492,18 +492,18 @@ fn run_profile(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => out = Some(PathBuf::from(v)),
                     None => {
-                        eprintln!("zeta profile: --out 缺少参数");
+                        eprintln!("rlyeh profile: --out 缺少参数");
                         return ExitCode::from(2);
                     }
                 }
             }
             s if s.starts_with('-') => {
-                eprintln!("zeta profile: 未知选项 '{s}'");
+                eprintln!("rlyeh profile: 未知选项 '{s}'");
                 return ExitCode::from(2);
             }
             s => {
                 if file.is_some() {
-                    eprintln!("zeta profile: 仅支持单个画像文件");
+                    eprintln!("rlyeh profile: 仅支持单个画像文件");
                     return ExitCode::from(2);
                 }
                 file = Some(s.to_string());
@@ -512,14 +512,14 @@ fn run_profile(args: &[String]) -> ExitCode {
         i += 1;
     }
     let Some(file) = file else {
-        eprintln!("用法: zeta profile <file.zeta_profile> [--out <report.md>]");
+        eprintln!("用法: rlyeh profile <file.rl_profile> [--out <report.md>]");
         return ExitCode::from(2);
     };
 
-    let report = match zeta_driver::region_profile_report(Path::new(&file)) {
+    let report = match rlyeh_driver::region_profile_report(Path::new(&file)) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("zeta profile: {e}");
+            eprintln!("rlyeh profile: {e}");
             return ExitCode::from(1);
         }
     };
@@ -527,7 +527,7 @@ fn run_profile(args: &[String]) -> ExitCode {
     match &out {
         Some(p) => {
             if let Err(e) = std::fs::write(p, &report) {
-                eprintln!("zeta profile: 无法写入 {}: {e}", p.display());
+                eprintln!("rlyeh profile: 无法写入 {}: {e}", p.display());
                 return ExitCode::from(1);
             }
             println!("已生成: {}", p.display());
@@ -540,7 +540,7 @@ fn run_profile(args: &[String]) -> ExitCode {
     }
 }
 
-/// `zeta bench`：编译源码并基准计时（`--runs`/`--warmup` 控制轮数）。
+/// `rlyeh bench`：编译源码并基准计时（`--runs`/`--warmup` 控制轮数）。
 fn run_bench(args: &[String]) -> ExitCode {
     let mut file: Option<String> = None;
     let mut out: Option<PathBuf> = None;
@@ -557,7 +557,7 @@ fn run_bench(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => out = Some(PathBuf::from(v)),
                     None => {
-                        eprintln!("zeta bench: -o 缺少参数");
+                        eprintln!("rlyeh bench: -o 缺少参数");
                         return ExitCode::from(2);
                     }
                 }
@@ -567,7 +567,7 @@ fn run_bench(args: &[String]) -> ExitCode {
                 match args.get(i).and_then(|v| v.parse::<usize>().ok()) {
                     Some(v) if v > 0 => runs = v,
                     _ => {
-                        eprintln!("zeta bench: --runs 需要正整数");
+                        eprintln!("rlyeh bench: --runs 需要正整数");
                         return ExitCode::from(2);
                     }
                 }
@@ -577,7 +577,7 @@ fn run_bench(args: &[String]) -> ExitCode {
                 match args.get(i).and_then(|v| v.parse::<usize>().ok()) {
                     Some(v) => warmup = v,
                     _ => {
-                        eprintln!("zeta bench: --warmup 需要非负整数");
+                        eprintln!("rlyeh bench: --warmup 需要非负整数");
                         return ExitCode::from(2);
                     }
                 }
@@ -587,19 +587,19 @@ fn run_bench(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => cache_dir = Some(PathBuf::from(v)),
                     None => {
-                        eprintln!("zeta bench: --cache-dir 缺少参数");
+                        eprintln!("rlyeh bench: --cache-dir 缺少参数");
                         return ExitCode::from(2);
                     }
                 }
             }
             "--force" => force = true,
             s if s.starts_with('-') => {
-                eprintln!("zeta bench: 未知选项 '{s}'");
+                eprintln!("rlyeh bench: 未知选项 '{s}'");
                 return ExitCode::from(2);
             }
             s => {
                 if file.is_some() {
-                    eprintln!("zeta bench: 仅支持单个输入文件");
+                    eprintln!("rlyeh bench: 仅支持单个输入文件");
                     return ExitCode::from(2);
                 }
                 file = Some(s.to_string());
@@ -608,11 +608,11 @@ fn run_bench(args: &[String]) -> ExitCode {
         i += 1;
     }
     let Some(file) = file else {
-        eprintln!("用法: zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N]");
+        eprintln!("用法: rlyeh bench <file.rl> [-o <out>] [--runs N] [--warmup N]");
         return ExitCode::from(2);
     };
 
-    let out = out.unwrap_or_else(|| PathBuf::from("zeta-out"));
+    let out = out.unwrap_or_else(|| PathBuf::from("rlyeh-out"));
     let cache_dir = cache_dir.unwrap_or_else(|| {
         Path::new(&file)
             .parent()
@@ -631,16 +631,16 @@ fn run_bench(args: &[String]) -> ExitCode {
     };
 
     if let Err(e) = build_file(&file, &out, &opts) {
-        eprintln!("zeta bench: 编译失败: {e}");
+        eprintln!("rlyeh bench: 编译失败: {e}");
         return ExitCode::from(1);
     }
 
-    let bench_opts = zeta_bench::BenchOptions {
+    let bench_opts = rlyeh_bench::BenchOptions {
         warmup,
         runs,
         quiet: false,
     };
-    match zeta_bench::bench_executable(&out, &bench_opts) {
+    match rlyeh_bench::bench_executable(&out, &bench_opts) {
         Ok(report) => {
             println!("基准: {file}");
             println!("产物: {}", out.display());
@@ -648,16 +648,16 @@ fn run_bench(args: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("zeta bench: {e}");
+            eprintln!("rlyeh bench: {e}");
             ExitCode::from(1)
         }
     }
 }
 
-/// `zeta new`：创建新项目脚手架（委托 zep 的 `cmd_new`）。
+/// `rlyeh new`：创建新项目脚手架（委托 dagon 的 `cmd_new`）。
 ///
-/// 用法: `zeta new <name> [--lib]`
-/// 生成 `Zeta.toml` 清单 + `src/main.zeta`（可执行项目）或 `src/lib.zeta`（库项目，
+/// 用法: `rlyeh new <name> [--lib]`
+/// 生成 `Rlyeh.toml` 清单 + `src/main.rl`（可执行项目）或 `src/lib.rl`（库项目，
 /// `--lib`）。目录已存在或包名非法时报错。
 fn run_new(args: &[String]) -> ExitCode {
     let mut name: Option<String> = None;
@@ -667,12 +667,12 @@ fn run_new(args: &[String]) -> ExitCode {
         match args[i].as_str() {
             "--lib" => lib = true,
             s if s.starts_with('-') => {
-                eprintln!("zeta new: 未知选项 '{s}'");
+                eprintln!("rlyeh new: 未知选项 '{s}'");
                 return ExitCode::from(2);
             }
             s => {
                 if name.is_some() {
-                    eprintln!("zeta new: 仅支持单个项目名");
+                    eprintln!("rlyeh new: 仅支持单个项目名");
                     return ExitCode::from(2);
                 }
                 name = Some(s.to_string());
@@ -681,11 +681,11 @@ fn run_new(args: &[String]) -> ExitCode {
         i += 1;
     }
     let Some(name) = name else {
-        eprintln!("用法: zeta new <name> [--lib]");
+        eprintln!("用法: rlyeh new <name> [--lib]");
         return ExitCode::from(2);
     };
-    let ctx = zep::commands::Ctx::new(false);
-    match zep::commands::cmd_new(&ctx, &name, lib) {
+    let ctx = dagon::commands::Ctx::new(false);
+    match dagon::commands::cmd_new(&ctx, &name, lib) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("错误: {e}");
@@ -694,10 +694,10 @@ fn run_new(args: &[String]) -> ExitCode {
     }
 }
 
-/// `zeta publish`：将当前目录项目打包发布到 zep 注册表。
+/// `rlyeh publish`：将当前目录项目打包发布到 dagon 注册表。
 ///
-/// 用法: `zeta publish [--registry <URL>] [--verbose]`
-/// 发布前置检查（Zeta.toml 版本号、重复版本拦截）由 zep 完成。
+/// 用法: `rlyeh publish [--registry <URL>] [--verbose]`
+/// 发布前置检查（Rlyeh.toml 版本号、重复版本拦截）由 dagon 完成。
 fn run_publish(args: &[String]) -> ExitCode {
     let mut verbose = false;
     let mut registry: Option<String> = None;
@@ -709,23 +709,23 @@ fn run_publish(args: &[String]) -> ExitCode {
                 match args.get(i) {
                     Some(v) => registry = Some(v.clone()),
                     None => {
-                        eprintln!("zeta publish: --registry 缺少参数");
+                        eprintln!("rlyeh publish: --registry 缺少参数");
                         return ExitCode::from(2);
                     }
                 }
             }
             "--verbose" => verbose = true,
             other => {
-                eprintln!("zeta publish: 未知参数: {other}");
-                eprintln!("用法: zeta publish [--registry <URL>] [--verbose]");
+                eprintln!("rlyeh publish: 未知参数: {other}");
+                eprintln!("用法: rlyeh publish [--registry <URL>] [--verbose]");
                 return ExitCode::from(2);
             }
         }
         i += 1;
     }
-    let mut ctx = zep::commands::Ctx::new(verbose);
+    let mut ctx = dagon::commands::Ctx::new(verbose);
     ctx.registry = registry;
-    match zep::commands::cmd_publish(&ctx, None) {
+    match dagon::commands::cmd_publish(&ctx, None) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("错误: {e}");

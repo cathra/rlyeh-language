@@ -1,10 +1,10 @@
-//! zeta-borrowck 集成测试：L0 静态所有权验证。
+//! rlyeh-borrowck 集成测试：L0 静态所有权验证。
 //!
 //! 覆盖：use-after-move（transfer 后使用）、不可变绑定赋值、
 //! 区域块值传递例外、作用域与 shadowing、防御性错误变体 Display。
 
-use zeta_borrowck::{BorrowChecker, BorrowError};
-use zeta_typecheck::typecheck_source;
+use rlyeh_borrowck::{BorrowChecker, BorrowError};
+use rlyeh_typecheck::typecheck_source;
 
 fn check(src: &str) -> Result<(), Vec<BorrowError>> {
     let hir = typecheck_source(src).expect("typecheck should succeed");

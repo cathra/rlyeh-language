@@ -9,14 +9,14 @@ fn main() {
     m.push_str("!");
     println(m);                       // hello world!
     println(m.contains("world"));     // true
-    println(m.contains("zeta"));      // false
+    println(m.contains("rlyeh"));      // false
     println(m.starts_with("hello"));  // true
     println(m.ends_with("!"));        // true
     println(m.find("world"));         // 6
 
     // 2. replace / split / strip_prefix / strip_suffix
-    let r = m.replace("world", "zeta");
-    println(r);                       // hello zeta!
+    let r = m.replace("world", "rlyeh");
+    println(r);                       // hello rlyeh!
     let parts = "a,b,c".split(",");
     println(parts.len());             // 3
     match m.strip_prefix("hello") {

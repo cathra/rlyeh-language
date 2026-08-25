@@ -1,10 +1,10 @@
 [package]
-name = "zeta-codegen"
+name = "rlyeh-codegen"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Zeta 代码生成：LIR → LLVM IR 文本（LLVM 后端 MVP，经 clang 汇编链接）"
+description = "Rlyeh 代码生成：LIR → LLVM IR 文本（LLVM 后端 MVP，经 clang 汇编链接）"
 
 [dependencies]
-zeta-lir = { workspace = true }
+rlyeh-lir = { workspace = true }

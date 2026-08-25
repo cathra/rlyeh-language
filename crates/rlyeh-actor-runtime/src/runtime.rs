@@ -11,7 +11,7 @@ use dashmap::DashMap;
 use crate::actor::{ActorContext, ActorState, ActorStatus};
 use crate::envelope::Envelope;
 use crate::error::ActorError;
-use crate::ffi::{CallbackActor, ZetaMsg};
+use crate::ffi::{CallbackActor, RlyehMsg};
 use crate::scheduler::Scheduler;
 use crate::supervisor::{RestartStrategy, Supervisor, SupervisorDecision, SupervisorStrategy};
 use crate::{ActorId, ASK_TIMEOUT};
@@ -400,7 +400,7 @@ impl ActorRef {
     /// 当目标 Actor 空闲（无 Worker 正在处理）且邮箱为空时，消息由**调用线程**
     /// 直接同步处理（无跨线程调度、无 channel 分配、无锁），大幅降低 ask 往返
     /// 开销；否则回退完整 Worker 队列路径。快速路径条件不满足（邮箱非空 /
-    /// 非 Zeta 回调 Actor / 有 Worker 处理中）时语义与慢路径完全一致。
+    /// 非 Rlyeh 回调 Actor / 有 Worker 处理中）时语义与慢路径完全一致。
     pub fn ask_blocking<R: Any + Send>(&self, msg: Box<dyn Any + Send>) -> Result<R, ActorError> {
         if self.runtime.stopping.load(Ordering::Acquire) {
             return Err(ActorError::ShuttingDown);
@@ -460,7 +460,7 @@ impl ActorRef {
     ///   崩溃分支一致。
     ///
     /// 注意：本方法在 `running` CAS 成功后**不得提前消费 `msg`**（所有
-    /// 回退路径需把原消息归还给慢路径），故 `ZetaMsg` 的 downcast 延迟到
+    /// 回退路径需把原消息归还给慢路径），故 `RlyehMsg` 的 downcast 延迟到
     /// 所有前置条件确认之后。
     fn try_fast_ask(&self, msg: Box<dyn Any + Send>) -> FastPathOutcome {
         let handle = &self.handle;
@@ -486,7 +486,7 @@ impl ActorRef {
                 return FastPathOutcome::Fallback(msg);
             }
         };
-        // 仅对 Zeta 生成的 CallbackActor 启用快速路径（自定义 ActorState 一律
+        // 仅对 Rlyeh 生成的 CallbackActor 启用快速路径（自定义 ActorState 一律
         // 回退慢路径）。利用 supertrait upcasting：`&mut dyn ActorState` →
         // `&mut dyn Any`（rustc >= 1.86）。
         let mut state_opt = state_guard.as_mut(); // &mut Option<Box<dyn ActorState>>
@@ -503,7 +503,7 @@ impl ActorRef {
             }
         };
         // 前置条件全部满足，此时才消费消息。
-        let zm = match msg.downcast::<ZetaMsg>() {
+        let zm = match msg.downcast::<RlyehMsg>() {
             Ok(m) => *m,
             Err(msg) => {
                 handle.running.store(false, Ordering::Release);
@@ -513,17 +513,21 @@ impl ActorRef {
         };
         let handler = cb.handler;
         let state_val = cb.state;
-        // 同线程直接调用 Zeta handle（状态槽内存按 u64 传递，与 Worker 一致）。
-        #[allow(unsafe_code)] // FFI 调用 Zeta extern "C" handler，必要且已校验符号存在
+        // 同线程直接调用 Rlyeh handle（状态槽内存按 u64 传递，与 Worker 一致）。
+        #[allow(unsafe_code)] // FFI 调用 Rlyeh extern "C" handler，必要且已校验符号存在
         let ret = unsafe { handler(state_val, zm.kind, zm.a, zm.b, zm.c) };
         if ret == u64::MAX {
             // 崩溃：回复 0、丢弃旧 state、保持 running=true（防止重启完成前
             // 其他 Worker 取旧句柄处理后续消息），交由 supervisor 决策。
             *state_guard = None;
+            // 先释放 state 锁再走崩溃处理：无 supervisor 的 Stop 分支会
+            // remove_actor（内部 `handle.state.lock().take()`），若仍持锁
+            // 会对同一 Mutex 二次加锁造成自死锁（测试 7 崩溃挂起根因）。
+            drop(state_guard);
             self.runtime.handle_crash(
                 self.id,
                 ActorError::Panic {
-                    reason: "zeta handle 返回 -1（处理出错）".into(),
+                    reason: "rlyeh handle 返回 -1（处理出错）".into(),
                 },
             );
             // 重启成功后（新句柄 running=false）遗留消息需要重新调度。
@@ -700,7 +704,7 @@ impl Runtime {
         let handle = self.handle.clone();
         let id = actor.id;
         let thread = std::thread::Builder::new()
-            .name("zeta-timer".to_string())
+            .name("rlyeh-timer".to_string())
             .spawn(move || {
                 while !handle.stopping.load(Ordering::Acquire) {
                     std::thread::sleep(interval);

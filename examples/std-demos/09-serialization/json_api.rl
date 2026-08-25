@@ -27,7 +27,7 @@ fn main() {
     println(q2.x + q2.y);                 // 3
 
     // Q2b：to_writer 写文件（返回 Result<i64, IoError> = write_all 的返回）
-    let f = File::create(String::from("/tmp/zeta_q2.json"));
+    let f = File::create(String::from("/tmp/rlyeh_q2.json"));
     match f {
         Ok(file) => {
             let mut file = file;
@@ -42,7 +42,7 @@ fn main() {
     }
 
     // Q2b：from_reader 读文件（round-trip）
-    let r = File::open(String::from("/tmp/zeta_q2.json"), OpenMode::Read);
+    let r = File::open(String::from("/tmp/rlyeh_q2.json"), OpenMode::Read);
     match r {
         Ok(file) => {
             let mut file = file;

@@ -3,15 +3,15 @@
 use crate::error::ParseError;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use zeta_ast::{AstItem, AstMacroDecl, AstProgram};
-use zeta_macro::{parse_matcher, parse_transcriber, MacroRule};
+use rlyeh_ast::{AstItem, AstMacroDecl, AstProgram};
+use rlyeh_macro::{parse_matcher, parse_transcriber, MacroRule};
 
-use zeta_lexer::{Lexer, LocatedToken, Span, Token};
+use rlyeh_lexer::{Lexer, LocatedToken, Span, Token};
 
 /// 宏展开递归深度上限（防无限递归展开）
 pub(crate) const MAX_MACRO_DEPTH: usize = 64;
 
-/// Zeta 语法分析器。
+/// Rlyeh 语法分析器。
 ///
 /// 内部持有 Token 流与读取位置，各语法模块（表达式、语句、项、
 /// 模式、类型、区域、Actor）通过 `impl Parser` 扩展其方法。
@@ -295,7 +295,7 @@ impl<'src> Parser<'src> {
     /// 解析 `macro_rules! name { (matcher) => { transcriber }; ... }`（MVP）。
     ///
     /// matcher / transcriber 为定界组（内容 token 剥离外层定界符后交给
-    /// `zeta-macro` 解析）；transcriber 也可为裸 token 序列（到顶层 `;`）。
+    /// `rlyeh-macro` 解析）；transcriber 也可为裸 token 序列（到顶层 `;`）。
     fn parse_macro_rules(&mut self) -> Result<AstMacroDecl, ParseError> {
         let start = self
             .peek()

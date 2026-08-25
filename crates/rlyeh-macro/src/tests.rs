@@ -1,4 +1,4 @@
-//! zeta-macro 单元测试。
+//! rlyeh-macro 单元测试。
 //!
 //! 约定：matcher 传入**剥掉外层 `(...)` 的内容**、transcriber 传入
 //! **剥掉外层定界组的内容**（与 parser 收集规则一致；嵌套定界组
@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use zeta_lexer::Token::{self, *};
+use rlyeh_lexer::Token::{self, *};
 
 use super::*;
 

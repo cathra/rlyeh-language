@@ -1,6 +1,6 @@
-//! # zeta-region-alloc
+//! # rlyeh-region-alloc
 //!
-//! Zeta 语言 L1 区域内存分配器（Rust 绑定层实现）。
+//! Rlyeh 语言 L1 区域内存分配器（Rust 绑定层实现）。
 //!
 //! 区域（Region）将一批对象分配在同一段（组）连续内存中，随区域整体销毁，
 //! 实现零开销的批量释放。设计遵循：
@@ -13,14 +13,14 @@
 //! ## 使用示例
 //!
 //! ```no_run
-//! use zeta_region_alloc::{GrowthStrategy, Region};
+//! use rlyeh_region_alloc::{GrowthStrategy, Region};
 //!
 //! let mut region = Region::with_initial_size(64).named("session");
 //! region.strategy = GrowthStrategy::Multiply { factor: 2.0 };
 //!
 //! let a = region.allocate(42u64)?;
 //! let b = region.allocate(String::from("hello"))?;
-//! # Ok::<(), zeta_region_alloc::AllocError>(())
+//! # Ok::<(), rlyeh_region_alloc::AllocError>(())
 //! ```
 //!
 //! 区域销毁时自动逆序调用各对象的析构（`String` 的堆缓冲区被释放）。
@@ -32,12 +32,12 @@
 //! 用户提示与 EWMA 预测扩容（[`size_advisor`] / [`allocator`]）。
 //!
 //! ```no_run
-//! use zeta_region_alloc::{SizeAdvisor, SmartRegion};
+//! use rlyeh_region_alloc::{SizeAdvisor, SmartRegion};
 //!
 //! let advisor = SizeAdvisor::new("http_pool".into()).with_user_hint(64 * 1024);
 //! let mut region = SmartRegion::new("http_pool".into(), advisor)?;
 //! let v = region.allocate(vec![1u8, 2, 3])?;
-//! # Ok::<(), zeta_region_alloc::AllocError>(())
+//! # Ok::<(), rlyeh_region_alloc::AllocError>(())
 //! ```
 
 #![warn(missing_docs)]

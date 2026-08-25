@@ -1,18 +1,18 @@
 // ===== io 模块（B2，2026-08）：libc stdio 文件 IO + 控制台 IO =====
-// 目录化（2026-08）：原 io.zeta 拆分 →
-//   io/module.zeta   （模块根：OpenMode / open_mode_str / c_str + module 声明）
-//   io/error.zeta （IoErrorKind / IoError / Error trait / kind_message）
-//   io/file.zeta  （File 对象 + read_file/write_file/append_file）
-//   io/console.zeta（Stdout/Stderr/stdout/stderr + stdin 读取/lines）
+// 目录化（2026-08）：原 io.rl 拆分 →
+//   io/module.rl   （模块根：OpenMode / open_mode_str / c_str + module 声明）
+//   io/error.rl （IoErrorKind / IoError / Error trait / kind_message）
+//   io/file.rl  （File 对象 + read_file/write_file/append_file）
+//   io/console.rl（Stdout/Stderr/stdout/stderr + stdin 读取/lines）
 // 实现说明：
 // - 基于通用 FFI（extern fn，阶段 A4）直接绑定 libc 符号，由链接器解析。
 //   底层 extern（fopen/fread/fwrite/fclose/fseek/ftell/read）声明于根模块
-//   core.zeta 的 extern 集中区；String 在 LIR 中即 data 指针（i8*），
+//   core.rl 的 extern 集中区；String 在 LIR 中即 data 指针（i8*），
 //   可直接作为 C 字符串 / 缓冲传入 extern。
 // - 路径参数需 NUL 结尾（c_str 构造）；读入缓冲后由调用方手动设置 len。
 
 // N1a（2026-08）：文件打开模式（std-lib.md §4.1 OpenMode）。
-// 与 File 对象（N1b）同域；core.zeta re-export 供用户裸名使用。
+// 与 File 对象（N1b）同域；core.rl re-export 供用户裸名使用。
 // 保持 io::OpenMode 完整路径（用户测试以 `io::OpenMode` 引用）。
 enum OpenMode {
     Read,
@@ -51,7 +51,7 @@ fn c_str(s: String) -> String {
 }
 
 // module 声明顺序即收集期注册顺序：error（IoError 基底）→ sendfile
-// （file.zeta 的 File::sendfile_to 引用 io::sendfile::sendfile）→
+// （file.rl 的 File::sendfile_to 引用 io::sendfile::sendfile）→
 // file → nio（依赖 error）→ console。
 module error;
 module sendfile;

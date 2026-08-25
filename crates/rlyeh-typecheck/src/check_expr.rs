@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
-use zeta_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, CompareOp, ExprKind, RegionStrategy, UnaryOp};
-use zeta_hir::{
+use rlyeh_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, CompareOp, ExprKind, RegionStrategy, UnaryOp};
+use rlyeh_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirFnDecl, HirItem, HirItemKind,
     HirParam, HirRegionOptions, HirRegionStrategy, HirStmt, HirUnaryOp,
 };
-use zeta_lexer::Span;
+use rlyeh_lexer::Span;
 
 use crate::check_item::type_to_extern_name;
 use crate::comparison;
@@ -22,7 +22,7 @@ use crate::types::{field_scalar_of, type_mono_key, FnSignature, ImplDef, Mutabil
 /// - `alloc_array(n)`：运行时槽数分配，返回 `[T; 0]`（长度 0 约定 = 动态数组指针）
 /// - `array_copy(dst, src, n)` / `array_free(p)`：动态数组缓冲操作
 ///
-/// 与 `zeta-lir::lower::BUILTIN_FUNCTIONS`、`zeta-codegen` 保持一致。
+/// 与 `rlyeh-lir::lower::BUILTIN_FUNCTIONS`、`rlyeh-codegen` 保持一致。
 pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
     let dyn_arr = || Type::Array(Box::new(Type::Infer), 0);
     match name {
@@ -468,7 +468,7 @@ pub(crate) fn infer_expr(
         ExprKind::InRegion { expr, region } => {
             let (hir, ty) = infer_expr(ctx, expr)?;
             // L3 接线：计算被归属对象在区域中的字节大小（slot_count × 8），
-            // 供 codegen 生成 `zeta_region_alloc` + 值镜像；标量也按 1 槽计，
+            // 供 codegen 生成 `rlyeh_region_alloc` + 值镜像；标量也按 1 槽计，
             // codegen 仅在目标为 Ptr 槽（聚合对象）时接线。
             let size = type_slot_count(ctx, &ty, span)?.saturating_mul(8);
             Ok((
@@ -716,7 +716,7 @@ pub(crate) fn infer_expr(
         } => {
             let (hir_block, ty) = check_block(ctx, body)?;
             // L3 PGO 回灌：`adaptive` 区域优先采用 profile 推荐初始容量
-            // （`zeta build --profile` 注入，见 driver::compile_with_region_hints）。
+            // （`rlyeh build --profile` 注入，见 driver::compile_with_region_hints）。
             let pgo_size = if options.adaptive {
                 name.as_ref()
                     .and_then(|n| ctx.region_hints.get(n))
@@ -805,7 +805,7 @@ pub(crate) fn infer_expr(
         ExprKind::Continue => Ok((HirExpr::Continue, Type::Never)),
 
         ExprKind::Send { actor, method, args } => {
-            // `send actor.method(a, b)` → `zeta_actor_send(recv, kind, a, b, 0)`
+            // `send actor.method(a, b)` → `rlyeh_actor_send(recv, kind, a, b, 0)`
             // （异步发送不等待结果；参数经消息槽传递）
             let (recv_hir, recv_ty) = infer_expr(ctx, actor)?;
             let self_ty = peel_ref(&recv_ty);
@@ -846,7 +846,7 @@ pub(crate) fn infer_expr(
                     }
                     return Ok((
                         HirExpr::Call {
-                            callee: "zeta_actor_send".to_string(),
+                            callee: "rlyeh_actor_send".to_string(),
                             args: call_args,
                         },
                         Type::I64,
@@ -909,17 +909,17 @@ pub(crate) fn check_block_with_expected_final(
 /// desugar 为普通 HIR 块（零新增 IR 节点）：
 /// ```text
 /// {
-///   zeta_gc_region_begin();              // 快照外层活跃对象（root 栈压栈）
+///   rlyeh_gc_region_begin();              // 快照外层活跃对象（root 栈压栈）
 ///   <body 语句>...;
 ///   [let __gc_escape = <final_expr>;     // 块返回值
-///    zeta_gc_escape(*__gc_escape);]      // 逃逸 Gc 对象登记为 root（解包装取对象 base）
-///   zeta_gc_collect();                   // 标记-清除（未标记对象回收）
+///    rlyeh_gc_escape(*__gc_escape);]      // 逃逸 Gc 对象登记为 root（解包装取对象 base）
+///   rlyeh_gc_collect();                   // 标记-清除（未标记对象回收）
 ///   [__gc_escape]
 /// }
 /// ```
 ///
 /// `Gc<T>` 变量 = 栈槽 → 堆 1-槽包装（`Alloc{slots:1}`，槽 0 存 `GcInner` base）。
-/// 运行时 `zeta_gc_alloc` 以对象 base 注册块表，`mark` 按 `header.base == root.base`
+/// 运行时 `rlyeh_gc_alloc` 以对象 base 注册块表，`mark` 按 `header.base == root.base`
 /// 线性查找，故 escape 必须传 **对象 base**（`Deref` 剥包装层），而非包装指针，
 /// 否则标记失配、对象被误回收（悬垂读取）。
 /// 逃逸：仅 final_expr 类型为 `Gc<T>`（剥引用层后）时登记逃逸对象（存活）；
@@ -937,7 +937,7 @@ fn check_gc_region(
     stmts.insert(
         0,
         HirStmt::Semi(HirExpr::Call {
-            callee: "zeta_gc_region_begin".to_string(),
+            callee: "rlyeh_gc_region_begin".to_string(),
             args: vec![],
         }),
     );
@@ -951,14 +951,14 @@ fn check_gc_region(
                 mutable: false,
             });
             stmts.push(HirStmt::Semi(HirExpr::Call {
-                callee: "zeta_gc_escape".to_string(),
+                callee: "rlyeh_gc_escape".to_string(),
                 // Gc<T> 变量 = 栈槽 → 堆 1-槽包装（槽 0 存 GcInner base）；
-                // heap_ptr_hir 解包装槽 0 得对象 base（与 zeta_gc_alloc 注册一致），
+                // heap_ptr_hir 解包装槽 0 得对象 base（与 rlyeh_gc_alloc 注册一致），
                 // 传包装指针会导致 mark 线性查找失配、对象被误回收（悬垂读取）。
                 args: vec![heap_ptr_hir(HirExpr::Variable(esc.clone()), &ty)],
             }));
             stmts.push(HirStmt::Semi(HirExpr::Call {
-                callee: "zeta_gc_collect".to_string(),
+                callee: "rlyeh_gc_collect".to_string(),
                 args: vec![],
             }));
             return Ok((
@@ -970,7 +970,7 @@ fn check_gc_region(
             ));
         }
         stmts.push(HirStmt::Semi(HirExpr::Call {
-            callee: "zeta_gc_collect".to_string(),
+            callee: "rlyeh_gc_collect".to_string(),
             args: vec![],
         }));
         Ok((
@@ -982,7 +982,7 @@ fn check_gc_region(
         ))
     } else {
         stmts.push(HirStmt::Semi(HirExpr::Call {
-            callee: "zeta_gc_collect".to_string(),
+            callee: "rlyeh_gc_collect".to_string(),
             args: vec![],
         }));
         Ok((
@@ -1054,7 +1054,7 @@ fn check_for(
 /// MVP 阶段支持 range 迭代器（`..<` / `...` / `<..` / `<..<`），
 /// 在类型检查层 desugar 为 `loop`：
 ///
-/// ```zeta
+/// ```rlyeh
 /// let __for_lo = lo;
 /// let __for_hi = hi;
 /// let mut pat = start - 1;    // start = lo（下界闭）或 lo + 1（下界开）
@@ -1218,7 +1218,7 @@ fn check_for_range(
 /// 在类型检查层 desugar 为索引遍历循环（复用 Vec 3 槽布局：
 /// 槽 0 = data 指针、槽 1 = len、槽 2 = cap）：
 ///
-/// ```zeta
+/// ```rlyeh
 /// let __for_v = v;             // 绑定容器（防迭代器重复求值）
 /// let __for_len = __for_v.len; // 缓存长度（槽 1）
 /// let mut __for_i = 0;
@@ -1361,7 +1361,7 @@ fn check_for_vec(
 /// 在类型检查层 desugar 为索引遍历循环（数组以指针存储、长度编译期已知，
 /// 复用数组索引 `arr[i]` 的 HirExpr::Index 语义，步长 8 / u8 按字节）：
 ///
-/// ```zeta
+/// ```rlyeh
 /// let __for_arr = <数组>;         // 绑定数组（防迭代器重复求值）
 /// let mut __for_i = 0;
 /// loop {
@@ -1489,7 +1489,7 @@ fn check_for_array(
 /// 当 `it` 类型存在 `next() -> Option<Item>` 方法（inherent 或 trait impl，
 /// 方法调用链复用 check_method_call）时，构造 AST 循环：
 ///
-/// ```zeta
+/// ```rlyeh
 /// let mut __for_it = it;                 // 迭代器按值绑定（next(&mut self)）
 /// loop {
 ///     match __for_it.next() {
@@ -1552,13 +1552,13 @@ fn check_for_iterator(
         ExprKind::Match {
             expr: next_call,
             arms: vec![
-                zeta_ast::MatchArm {
+                rlyeh_ast::MatchArm {
                     pattern: AstPattern::Enum("Some".to_string(), vec![AstPattern::Ident(elem_tmp)]),
                     guard: None,
                     body: some_body,
                     span,
                 },
-                zeta_ast::MatchArm {
+                rlyeh_ast::MatchArm {
                     pattern: AstPattern::Enum("None".to_string(), vec![]),
                     guard: None,
                     body: none_body,
@@ -1964,7 +1964,7 @@ fn check_iterator_adapter(
             let cond = AstExpr::new(
                 ExprKind::ComparisonChain {
                     elements: vec![mk_ident(&n_name), args[0].clone()],
-                    operators: vec![zeta_ast::CompareOp::Lt],
+                    operators: vec![rlyeh_ast::CompareOp::Lt],
                 },
                 span,
             );
@@ -1999,7 +1999,7 @@ fn check_iterator_adapter(
             let cond = AstExpr::new(
                 ExprKind::ComparisonChain {
                     elements: vec![mk_ident(&n_name), args[0].clone()],
-                    operators: vec![zeta_ast::CompareOp::Lt],
+                    operators: vec![rlyeh_ast::CompareOp::Lt],
                 },
                 span,
             );
@@ -2055,7 +2055,7 @@ fn check_iterator_adapter(
             ExprKind::Match {
                 expr: next_call,
                 arms: vec![
-                    zeta_ast::MatchArm {
+                    rlyeh_ast::MatchArm {
                         pattern: AstPattern::Enum(
                             "Some".to_string(),
                             vec![AstPattern::Ident(x_name.clone())],
@@ -2064,7 +2064,7 @@ fn check_iterator_adapter(
                         body: AstExpr::new(ExprKind::Block(mk_block(apply_stmts, None)), span),
                         span,
                     },
-                    zeta_ast::MatchArm {
+                    rlyeh_ast::MatchArm {
                         pattern: AstPattern::Enum("None".to_string(), vec![]),
                         guard: None,
                         body: AstExpr::new(ExprKind::Break(None), span),
@@ -2162,7 +2162,7 @@ fn check_iterator_adapter(
 /// 槽 3 = len、槽 4 = used、槽 5 = cap、槽 6 = dist 距离数组）。HashMap 是稀疏存储（删除产生墓碑），
 /// 遍历必须按容量扫描并跳过 `states[i] != 1` 的空槽 / 墓碑：
 ///
-/// ```zeta
+/// ```rlyeh
 /// let __for_m = m;               // 绑定容器（防迭代器重复求值）
 /// let __for_cap = __for_m.cap;   // 容量（槽 5，含墓碑槽）
 /// let mut __for_i = 0;
@@ -2616,8 +2616,8 @@ fn check_call(
         ));
     }
 
-    // actor 构造函数：`Counter::new()` → `zeta_actor_spawn("<handle>", <state_new>())`；
-    // `Counter::new_supervised(strategy)` → `zeta_actor_spawn_supervised("<handle>", "<state_new>", strategy)`
+    // actor 构造函数：`Counter::new()` → `rlyeh_actor_spawn("<handle>", <state_new>())`；
+    // `Counter::new_supervised(strategy)` → `rlyeh_actor_spawn_supervised("<handle>", "<state_new>", strategy)`
     if let Some((actor_part, seg)) = name.rsplit_once("::") {
         if seg == "new" || seg == "new_supervised" {
             if let Some(actor_full) = ctx.lookup_actor(actor_part).map(|_| {
@@ -2678,11 +2678,11 @@ fn check_call(
                         span,
                     )?;
                     (
-                        "zeta_actor_spawn_supervised".to_string(),
+                        "rlyeh_actor_spawn_supervised".to_string(),
                         vec![handle_hir, factory_hir, strategy_hir],
                     )
                 } else {
-                    ("zeta_actor_spawn".to_string(), vec![handle_hir, state_new_call])
+                    ("rlyeh_actor_spawn".to_string(), vec![handle_hir, state_new_call])
                 };
                 return Ok((
                     HirExpr::Call { callee, args },
@@ -2740,7 +2740,7 @@ fn check_call(
             return check_rc_new(ctx, &ty_full, args, span);
         }
         // `Gc` 构造器特判：`Gc::new(v)`（K4 追踪 GC 装箱）
-        // （Gc 为编译器内建智能指针，分配经 zeta-gc-runtime 注册块表）
+        // （Gc 为编译器内建智能指针，分配经 rlyeh-gc-runtime 注册块表）
         if ty_full == "Gc" && method == "new" {
             return check_gc_new(ctx, args, span);
         }
@@ -2874,7 +2874,7 @@ fn check_call(
             (hir, ty)
         };
         // 函数指针实参 → i64 形参（S0 线程入口地址整数化）：
-        // `__zeta_thread_spawn(f, 0)` 中 f 为 `fn() -> i64` 函数指针值，extern 形参
+        // `__rlyeh_thread_spawn(f, 0)` 中 f 为 `fn() -> i64` 函数指针值，extern 形参
         // 是 i64——函数指针按地址整数传递，codegen 在 extern 调用点做 ptrtoint。
         let (hir, ty) = if matches!(param_ty, Type::I64) && matches!(&ty, Type::Fn(_)) {
             (hir, Type::I64)
@@ -3793,7 +3793,7 @@ fn resolve_callable(ctx: &TypeContext, name: &str) -> String {
     }
     // 模块内函数引用：优先绑定当前模块内定义（`prefix::name`），
     // 避免子模块内部裸名调用被全局同名函数（含用户顶层覆盖）劫持。
-    // 例：std `io.zeta` 内部 `read(0, tmp, 256)` 必须绑定 `io::read`，
+    // 例：std `io.rl` 内部 `read(0, tmp, 256)` 必须绑定 `io::read`，
     // 用户顶层 `fn read(p: &i64)` 只影响用户自己的裸名调用。
     if !name.contains("::") && !ctx.module_prefix.is_empty() {
         let full = format!("{}::{}", ctx.module_prefix, name);
@@ -4654,7 +4654,7 @@ fn check_field_access(
 /// 范围切片：`s[lo..<hi]` / `s[lo...hi]` / `s[lo<..hi]`（MVP 仅 String）。
 ///
 /// desugar 为 `String::substring` 方法调用（typecheck 层特判展开，经
-/// `instantiate_impl_method` 注册函数体，复用纯 Zeta `substring`）：
+/// `instantiate_impl_method` 注册函数体，复用纯 Rlyeh `substring`）：
 /// - `s[lo..<hi]` → `s.substring(lo, hi)`（左闭右开）
 /// - `s[lo...hi]` → `s.substring(lo, hi + 1)`（闭区间 → 半开）
 /// - `s[lo<..hi]` → `s.substring(lo + 1, hi + 1)`（左开右闭 → 半开）
@@ -5175,10 +5175,10 @@ fn check_rc_new(
 ///
 /// 布局：堆 `GcInner` 的 `T` 值区自堆首槽起（槽 `0..n`，`n = slot_count(T)`，
 /// 与 `Box<T>` 完全同构，解引用 / 剥层零差异）；`Gc<T>` 对象栈上 1 槽（Ptr）
-/// 指向 GcInner。分配经运行时 `zeta_gc_alloc`（`n` 个 8 字节槽，清零 +
+/// 指向 GcInner。分配经运行时 `rlyeh_gc_alloc`（`n` 个 8 字节槽，清零 +
 /// 注册块表 + 记录当前 epoch），先写值区（标量 `DerefSet` / 聚合 `array_copy`），
 /// 返回 1 槽 `Alloc`。标记 / 存活状态存运行时块表（不占对象内存）。GC 周期由
-/// `gc_region` 块结束时的 `zeta_gc_collect` 触发（epoch 标记-清除，本块存活
+/// `gc_region` 块结束时的 `rlyeh_gc_collect` 触发（epoch 标记-清除，本块存活
 /// 对象提升为逃逸 root）。
 fn check_gc_new(
     ctx: &mut TypeContext,
@@ -5205,7 +5205,7 @@ fn check_gc_new(
     let mut stmts = vec![HirStmt::Let {
         name: inner.clone(),
         init: HirExpr::Call {
-            callee: "zeta_gc_alloc".to_string(),
+            callee: "rlyeh_gc_alloc".to_string(),
             args: vec![HirExpr::IntLiteral(n_slots as i128)],
         },
         mutable: false,
@@ -6118,7 +6118,7 @@ fn check_question(
     let err = ctx.fresh_temp();
     let mk_ident = |name: String| AstExpr::new(ExprKind::Ident(name), span);
     // arm1：成功臂 `Some(__v) => __v` / `Ok(__v) => __v`
-    let ok_arm = zeta_ast::MatchArm {
+    let ok_arm = rlyeh_ast::MatchArm {
         pattern: AstPattern::Enum(ok_variant.to_string(), vec![AstPattern::Ident(val.clone())]),
         guard: None,
         body: mk_ident(val),
@@ -6148,7 +6148,7 @@ fn check_question(
         callee
     };
     let ret_body = AstExpr::new(ExprKind::Return(Some(ret_inner)), span);
-    let err_arm = zeta_ast::MatchArm {
+    let err_arm = rlyeh_ast::MatchArm {
         pattern: none_pat,
         guard: None,
         body: ret_body,
@@ -6160,7 +6160,7 @@ fn check_question(
 fn check_match(
     ctx: &mut TypeContext,
     expr: &AstExpr,
-    arms: &[zeta_ast::MatchArm],
+    arms: &[rlyeh_ast::MatchArm],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     let (s_hir, s_ty) = infer_expr(ctx, expr)?;
@@ -6175,7 +6175,7 @@ fn check_match_with_scrutinee(
     ctx: &mut TypeContext,
     s_hir: HirExpr,
     s_ty: Type,
-    arms: &[zeta_ast::MatchArm],
+    arms: &[rlyeh_ast::MatchArm],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     // 引用类型的 scrutinee（`match self`，`self: &T`）：模式匹配针对被引用
@@ -6282,12 +6282,12 @@ type PatternResult = (Option<HirExpr>, Vec<HirStmt>, bool, Vec<(String, Type)>);
 #[allow(clippy::too_many_arguments)]
 fn check_pattern(
     ctx: &mut TypeContext,
-    pat: &zeta_ast::AstPattern,
+    pat: &rlyeh_ast::AstPattern,
     pat_ty: &Type,
     scrutinee: HirExpr,
     span: Span,
 ) -> Result<PatternResult, TypeError> {
-    use zeta_ast::AstPattern;
+    use rlyeh_ast::AstPattern;
     match pat {
         AstPattern::Ident(name) => Ok((
             None,
@@ -6456,8 +6456,8 @@ fn check_pattern(
 }
 
 /// 将字面量值转为 HIR 字面量。
-fn literal_to_hir(lit: &zeta_ast::LiteralValue, span: Span) -> Result<HirExpr, TypeError> {
-    use zeta_ast::LiteralValue;
+fn literal_to_hir(lit: &rlyeh_ast::LiteralValue, span: Span) -> Result<HirExpr, TypeError> {
+    use rlyeh_ast::LiteralValue;
     Ok(match lit {
         LiteralValue::Int(v) => HirExpr::IntLiteral(*v),
         LiteralValue::Float(v) => HirExpr::FloatLiteral(*v),
@@ -6819,7 +6819,7 @@ fn check_method_call(
         });
     }
 
-    // actor 方法调用：`counter.method(a, b)` → `zeta_actor_ask(recv, kind, a, b, 0)`
+    // actor 方法调用：`counter.method(a, b)` → `rlyeh_actor_ask(recv, kind, a, b, 0)`
     // （MVP 同步语义，`.await` 仅为可选语法标记；参数经消息槽传递）
     if let Type::Named(name, _) = &self_ty {
         if let Some(ad) = ctx.lookup_actor(name).cloned() {
@@ -6858,7 +6858,7 @@ fn check_method_call(
             }
             return Ok((
                 HirExpr::Call {
-                    callee: "zeta_actor_ask".to_string(),
+                    callee: "rlyeh_actor_ask".to_string(),
                     args: call_args,
                 },
                 Type::I64,
@@ -7610,7 +7610,7 @@ fn json_serialize_ast(
                 span,
             ))
         }
-        // String → `"` + json_escape(s) + `"`（json_escape 在 core.zeta）
+        // String → `"` + json_escape(s) + `"`（json_escape 在 core.rl）
         Type::Named(n, _) if n == "String" => {
             let quote = |s: &str| string_from_lit_ast(s.to_string(), span);
             let esc = mk_ident_call("json_escape".to_string(), vec![arg.clone()], span);
@@ -8075,7 +8075,7 @@ fn json_parse_ast(
                 span,
             ))
         }
-        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.zeta）
+        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.rl）
         Type::Named(n, _) if n == "String" => Ok(mk_ident_call(
             "json_unescape".to_string(),
             vec![s],
@@ -8627,7 +8627,7 @@ fn json_parse_ast(
 ///   - 嵌套结构体字段 → 内联表：`{x = 1, y = 2}`（MVP 用内联表；`[section]` 行式子表规划中）
 ///   - 数组 / Vec → `[e1, e2]`；HashMap → `{"k" = v, "k2" = v2}`（键带引号，TOML 合法）
 ///   - 标量：i64 → `int_to_string`；bool → `true` / `false`；String → `"` + json_escape + `"`
-///     （TOML 基本转义与 JSON 一致，复用 core.zeta `json_escape` / `json_unescape`）
+///     （TOML 基本转义与 JSON 一致，复用 core.rl `json_escape` / `json_unescape`）
 fn check_toml_stringify(
     ctx: &mut TypeContext,
     args: &[AstExpr],
@@ -9158,7 +9158,7 @@ fn toml_parse_ast(
                 span,
             ))
         }
-        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.zeta）
+        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.rl）
         Type::Named(n, _) if n == "String" => Ok(mk_ident_call(
             "json_unescape".to_string(),
             vec![s],

@@ -13,7 +13,7 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 
 /// 受限环境构建器。
 pub struct RestrictedEnv;
@@ -103,7 +103,7 @@ fn apply_rlimits() {
 
 /// 执行命令：可选受限环境、必带超时。
 ///
-/// 超时后强制终止子进程并返回 [`ZepError::Timeout`]（防挂起硬性规则）。
+/// 超时后强制终止子进程并返回 [`DagonError::Timeout`]（防挂起硬性规则）。
 pub fn run_sandboxed(
     program: &str,
     args: &[String],
@@ -137,9 +137,9 @@ pub fn run_sandboxed(
 
     let mut child: Child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            ZepError::CommandNotFound(program.to_string())
+            DagonError::CommandNotFound(program.to_string())
         } else {
-            ZepError::Build(format!("启动 {program} 失败: {e}"))
+            DagonError::Build(format!("启动 {program} 失败: {e}"))
         }
     })?;
 
@@ -173,7 +173,7 @@ pub fn run_sandboxed(
                 if started.elapsed() > timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(ZepError::Timeout(format!(
+                    return Err(DagonError::Timeout(format!(
                         "{program} 执行超过 {:?}（实际运行 {:?}）",
                         timeout,
                         started.elapsed()
@@ -181,7 +181,7 @@ pub fn run_sandboxed(
                 }
                 thread::sleep(Duration::from_millis(5));
             }
-            Err(e) => return Err(ZepError::Build(format!("等待 {program} 失败: {e}"))),
+            Err(e) => return Err(DagonError::Build(format!("等待 {program} 失败: {e}"))),
         }
     };
 
@@ -201,10 +201,10 @@ mod tests {
 
     #[test]
     fn env_map_filters_sensitive() {
-        std::env::set_var("ZEP_SECRET_TEST_KEY", "topsecret");
+        std::env::set_var("DAGON_SECRET_TEST_KEY", "topsecret");
         std::env::set_var("HTTP_PROXY", "http://proxy:8080");
         let map = RestrictedEnv::env_map();
-        assert!(!map.contains_key("ZEP_SECRET_TEST_KEY"));
+        assert!(!map.contains_key("DAGON_SECRET_TEST_KEY"));
         assert!(!map.contains_key("HTTP_PROXY"));
         assert!(!map.contains_key("AWS_ACCESS_KEY_ID"));
         // PATH 只含白名单
@@ -222,7 +222,7 @@ mod tests {
     fn timeout_kills_after_deadline() {
         let args = vec!["5".to_string()];
         let err = run_sandboxed("sleep", &args, &[], Duration::from_millis(300), false).unwrap_err();
-        assert!(matches!(err, ZepError::Timeout(_)), "期望超时，实际 {err:?}");
+        assert!(matches!(err, DagonError::Timeout(_)), "期望超时，实际 {err:?}");
     }
 
     #[test]
@@ -236,9 +236,9 @@ mod tests {
     #[test]
     fn not_found_reports_command() {
         let err =
-            run_sandboxed("zep-nonexistent-cmd-xyz", &[], &[], Duration::from_secs(2), false)
+            run_sandboxed("dagon-nonexistent-cmd-xyz", &[], &[], Duration::from_secs(2), false)
                 .unwrap_err();
-        assert!(matches!(err, ZepError::CommandNotFound(_)));
+        assert!(matches!(err, DagonError::CommandNotFound(_)));
     }
 
     #[test]

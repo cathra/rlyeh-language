@@ -1,11 +1,11 @@
-# Zeta MVP 编写陷阱清单（每次写代码前必读）
+# Rlyeh MVP 编写陷阱清单（每次写代码前必读）
 
 > MVP（v0.1.0）语法边界严格。以下条目来自 `docs/guide.md` §13 已知限制与编译器实际行为。
 > 违反任一「语法不支持」条目 → typecheck 报 `Unsupported` 或链接失败。
 
 ## A. 程序结构（最常见错误）
 
-1. **必须有 `fn main()`**。否则链接报 `Undefined symbols: _main`。Zeta 无隐式入口。
+1. **必须有 `fn main()`**。否则链接报 `Undefined symbols: _main`。Rlyeh 无隐式入口。
 2. 语句用 `;` 结束；`if`/`while`/`loop` 条件**无需括号**。
 3. `println(expr)` 是**内建函数不是宏**：单参数、自动按类型输出、**不支持 `{}` 占位符**。
 4. **无宏调用语法**：`println!` / `vec!` / `format!` 全部不可用（`!` 是 `not` 一元运算符）。
@@ -53,7 +53,7 @@
 
 ## G. 编写风格建议
 
-- 优先用 `zeta run <file.zeta>` 快速验证；复杂项目用 `zeta new` + `zeta build`。
+- 优先用 `rlyeh run <file.rl>` 快速验证；复杂项目用 `rlyeh new` + `rlyeh build`。
 - 逻辑运算：`not x`（不是 `!x`，虽然 `!` 也是 not 但结合易错）；`&&` / `||` 正常。
 - 常量用 `const`；需要可变量用 `let mut`。
 - 复合类型（struct/enum/impl）用 `match` 解构时写全变体模式。

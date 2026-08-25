@@ -1,4 +1,4 @@
-// benchmark: 字符串拼接 10 万次 —— 与 strcat.zeta 同逻辑（容量翻倍动态缓冲）
+// benchmark: 字符串拼接 10 万次 —— 与 strcat.rl 同逻辑（容量翻倍动态缓冲）
 #include <stdio.h>
 #include <stdlib.h>
 

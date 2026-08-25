@@ -1,4 +1,4 @@
-// benchmark: LCG 生成 5000 个 i64 排序 —— 与 sort.zeta 同逻辑
+// benchmark: LCG 生成 5000 个 i64 排序 —— 与 sort.rl 同逻辑
 package main
 
 import (

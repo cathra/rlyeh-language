@@ -1,8 +1,8 @@
 //! NIO 事件轮询器：`epoll`（Linux）/ `kqueue`（macOS/BSD）/ `poll`（其他 Unix）。
 //!
-//! 平台无关接口，对应 Zeta 标准库 `std::nio::Poller`：
+//! 平台无关接口，对应 Rlyeh 标准库 `std::nio::Poller`：
 //!
-//! ```zeta
+//! ```rlyeh
 //! let poller = Poller::new()?;
 //! poller.register(sock.fd, 1, Interest::Readable)?;
 //! let mut events = Vec::new();

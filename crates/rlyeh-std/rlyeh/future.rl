@@ -40,21 +40,21 @@ fn block_on<T>(f: &mut T) -> i64 {
 //   `Err(-1)`，成功返回 `Ok(值)`；
 // - 泛型 `f: &mut T` 与 `block_on` 一致（实例化时按具体类型解析 poll，
 //   无 `F: Future` 约束，宽松语义）；
-// - 超时判定经墙钟 `__zeta_clock_monotonic`（S2b ✅ clock_gettime
+// - 超时判定经墙钟 `__rlyeh_clock_monotonic`（S2b ✅ clock_gettime
 //   MONOTONIC，与 `time::Instant` 相同的退化逻辑：返回 -1 退回 `clock()`
 //   CPU 时钟——busy-wait 下仍有效）。注：MVP 静态方法调用不支持模块路径
 //   前缀（`time::Instant::now` 不可用），故直接复用 extern；
 // - 忙等轮询（与 block_on 一致，无让步；事件驱动等待规划随 R1 Poller）。
 fn timeout<T>(duration: time::Duration, f: &mut T) -> Result<i64, i64> {
     let limit = duration.micros();
-    let t0 = __zeta_clock_monotonic();
+    let t0 = __rlyeh_clock_monotonic();
     let start = if t0 >= 0 { t0 } else { clock() };
     loop {
         match f.poll() {
             Poll::Ready(v) => return Result::Ok(v),
             Poll::Pending => {}
         }
-        let t1 = __zeta_clock_monotonic();
+        let t1 = __rlyeh_clock_monotonic();
         let cur = if t1 >= 0 { t1 } else { clock() };
         if cur - start >= limit {
             return Result::Err(-1);

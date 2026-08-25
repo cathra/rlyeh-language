@@ -1,10 +1,10 @@
-// io/nio.zeta：非阻塞 IO（Interest / Event / Poller，std-lib.md §4.4）。
+// io/nio.rl：非阻塞 IO（Interest / Event / Poller，std-lib.md §4.4）。
 // R 阶段（2026-08，R1a/R1b/R2）：
 // - 事件轮询基于 poll(2)（POSIX 统一，macOS/Linux/FreeBSD 均可用）实现；
 //   规划中"Linux epoll / macOS kqueue"为高性能替代，MVP 以 poll 先行
 //   （语义一致：register/deregister/reregister/poll + POLLIN/POLLOUT 映射）。
 // - 非阻塞模式经 fcntl(F_GETFL/F_SETFL) 设置 O_NONBLOCK（macOS/Linux 均为 0x4）。
-// - 底层 extern（fcntl/poll）声明于根模块 core.zeta 的 extern 集中区。
+// - 底层 extern（fcntl/poll）声明于根模块 core.rl 的 extern 集中区。
 // 注意：WASI（码 5）无 poll/fcntl 语义，相关函数短路返回 Err（L4a 禁用文档化）。
 
 // R1a：事件关注标志（std-lib.md §4.4）。
@@ -115,7 +115,7 @@ impl Poller {
     // 阻塞等待就绪事件；timeout_ms < 0 表示无限等待。
     // 返回本次就绪的事件列表（每次调用重新扫描 revents，interest 为实际就绪方向）。
     fn poll(&self, timeout_ms: i64) -> Result<Vec<io::nio::Event>, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("poll disabled on WASI"),
@@ -194,7 +194,7 @@ fn revents_interest(rev: i64) -> io::nio::Interest {
 // R2：设置 fd 是否为非阻塞模式（fcntl F_GETFL=3 / F_SETFL=4；O_NONBLOCK=0x4）。
 // WASI 下无 fcntl：返回 Err（禁用文档化，L4a）。
 fn set_nonblocking(fd: i64, nonblocking: bool) -> Result<i64, io::error::IoError> {
-    if __zeta_target_os() == 5 {
+    if __rlyeh_target_os() == 5 {
         return Result::Err(IoError::new(
             io::error::IoErrorKind::Other,
             String::from("fcntl disabled on WASI"),
@@ -239,7 +239,7 @@ fn set_nonblocking(fd: i64, nonblocking: bool) -> Result<i64, io::error::IoError
 // R2：查询 fd 是否处于非阻塞模式。
 // WASI 下无 fcntl：返回 Err（禁用文档化，L4a）。
 fn is_nonblocking(fd: i64) -> Result<bool, io::error::IoError> {
-    if __zeta_target_os() == 5 {
+    if __rlyeh_target_os() == 5 {
         return Result::Err(IoError::new(
             io::error::IoErrorKind::Other,
             String::from("fcntl disabled on WASI"),

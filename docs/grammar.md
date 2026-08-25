@@ -1,4 +1,4 @@
-# Zeta 语言语法规范 (EBNF)
+# Rlyeh 语言语法规范 (EBNF)
 
 > 版本：0.1.0  
 > 最后更新：2026-08-23
@@ -17,8 +17,8 @@
 > `::<T>`（PostfixOp `'::' '<' TypeList '>' '(' ArgList? ')'`，parser 三 token 前瞻检测；嵌套泛型
 > `>>` 拆分层）；typecheck 期 desugar 为 String 构建/解析表达式，零新增 IR 节点；支持标量/数组/struct/Vec/
 > HashMap 序列化（L2f）与 i64/bool/String/HashMap 反序列化（L2g）；自定义 `Serialize`/`Deserialize` 仍规划）。
-> 平台加固已实现（L4 ✅：WASI（`__zeta_target_os` 码 5）下 net 模块网络函数明确禁用短路返回；actor 交叉编译 /
-> WASM 支持——`wasm32-wasip1` 目标下 driver 注入静态 `zeta_actor_resolve` 符号表替代 dlsym，actor 语法
+> 平台加固已实现（L4 ✅：WASI（`__rlyeh_target_os` 码 5）下 net 模块网络函数明确禁用短路返回；actor 交叉编译 /
+> WASM 支持——`wasm32-wasip1` 目标下 driver 注入静态 `rlyeh_actor_resolve` 符号表替代 dlsym，actor 语法
 > （§2.7）与受监督语义全程可用，详见 guide.md §11.3）。
 > **已实现子集的教程与可运行示例见 [`guide.md`](./guide.md)，已知限制见其 §13。**
 
@@ -459,10 +459,10 @@ if hour in 9am...6pm {}            //  9:00 ≤ hour ≤ 18:00
 
 ## 5. 完整示例
 
-```zeta
-// hello-world.zeta
+```rlyeh
+// hello-world.rl
 fn main() {
-    println("Hello, Zeta!");
+    println("Hello, Rlyeh!");
 }
 
 // 比较链
@@ -540,5 +540,5 @@ actor Counter {
 
 ---
 
-> **维护者**：Zeta Language Team  
+> **维护者**：Rlyeh Language Team  
 > **License**：MIT / Apache-2.0

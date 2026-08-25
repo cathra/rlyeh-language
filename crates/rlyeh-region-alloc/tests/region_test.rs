@@ -1,10 +1,10 @@
-//! zeta-region-alloc 集成测试：分配、扩容策略、析构管理、transfer。
+//! rlyeh-region-alloc 集成测试：分配、扩容策略、析构管理、transfer。
 
 use std::cell::{Cell, RefCell};
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use zeta_region_alloc::{AllocError, GrowthStrategy, Region};
+use rlyeh_region_alloc::{AllocError, GrowthStrategy, Region};
 
 /// 记录析构次数的类型。
 struct Tracked(Rc<Cell<usize>>);

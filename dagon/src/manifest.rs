@@ -1,4 +1,4 @@
-//! `Zeta.toml` 项目清单的解析、序列化与依赖增删。
+//! `Rlyeh.toml` 项目清单的解析、序列化与依赖增删。
 //!
 //! 参考格式：
 //! ```toml
@@ -20,7 +20,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 use crate::version::VersionReq;
 
 /// 包元信息。
@@ -128,7 +128,7 @@ impl Manifest {
     /// 从字符串解析。
     pub fn parse(s: &str) -> Result<Self> {
         let m: Manifest = toml::from_str(s)
-            .map_err(|e| ZepError::Manifest(format!("TOML 解析失败: {e}")))?;
+            .map_err(|e| DagonError::Manifest(format!("TOML 解析失败: {e}")))?;
         m.validate()?;
         Ok(m)
     }
@@ -136,7 +136,7 @@ impl Manifest {
     /// 从文件加载。
     pub fn load(path: &Path) -> Result<Self> {
         let s = fs::read_to_string(path).map_err(|e| {
-            ZepError::Manifest(format!("读取清单 {} 失败: {e}", path.display()))
+            DagonError::Manifest(format!("读取清单 {} 失败: {e}", path.display()))
         })?;
         Self::parse(&s)
     }
@@ -144,22 +144,22 @@ impl Manifest {
     /// 序列化为 TOML 字符串。
     pub fn to_string(&self) -> Result<String> {
         toml::to_string_pretty(self)
-            .map_err(|e| ZepError::Manifest(format!("清单序列化失败: {e}")))
+            .map_err(|e| DagonError::Manifest(format!("清单序列化失败: {e}")))
     }
 
     /// 写入文件。
     pub fn save(&self, path: &Path) -> Result<()> {
         let s = self.to_string()?;
         fs::write(path, s).map_err(|e| {
-            ZepError::Manifest(format!("写入清单 {} 失败: {e}", path.display()))
+            DagonError::Manifest(format!("写入清单 {} 失败: {e}", path.display()))
         })
     }
 
     /// 校验清单合法性与依赖需求可解析性。
     pub fn validate(&self) -> Result<()> {
-        validate_package_name(&self.package.name).map_err(|e| ZepError::Manifest(e.to_string()))?;
+        validate_package_name(&self.package.name).map_err(|e| DagonError::Manifest(e.to_string()))?;
         crate::version::Version::parse(&self.package.version)
-            .map_err(|e| ZepError::Manifest(format!("package.version 不合法: {e}")))?;
+            .map_err(|e| DagonError::Manifest(format!("package.version 不合法: {e}")))?;
         for (table, kind) in [
             (&self.dependencies, DepKind::Normal),
             (&self.dev_dependencies, DepKind::Dev),
@@ -167,9 +167,9 @@ impl Manifest {
         ] {
             for (name, req) in table {
                 validate_package_name(name)
-                    .map_err(|e| ZepError::Manifest(e.to_string()))?;
+                    .map_err(|e| DagonError::Manifest(e.to_string()))?;
                 if req.trim().is_empty() {
-                    return Err(ZepError::Manifest(format!(
+                    return Err(DagonError::Manifest(format!(
                         "{}.{} 的版本需求为空",
                         kind.label(),
                         name
@@ -177,14 +177,14 @@ impl Manifest {
                 }
                 // 校验需求可解析
                 VersionReq::parse(req).map_err(|e| {
-                    ZepError::Manifest(format!("{}.{}: {e}", kind.label(), name))
+                    DagonError::Manifest(format!("{}.{}: {e}", kind.label(), name))
                 })?;
             }
         }
         if let Some(ws) = &self.workspace {
             for m in &ws.members {
                 if m.trim().is_empty() {
-                    return Err(ZepError::Manifest("workspace.members 含空路径".into()));
+                    return Err(DagonError::Manifest("workspace.members 含空路径".into()));
                 }
             }
         }
@@ -194,9 +194,9 @@ impl Manifest {
     /// 添加依赖。已存在同类型同名依赖时更新其版本需求。
     pub fn add_dependency(&mut self, name: &str, req: &str, kind: DepKind) -> Result<()> {
         validate_package_name(name)
-            .map_err(|e| ZepError::Dependency(e.to_string()))?;
+            .map_err(|e| DagonError::Dependency(e.to_string()))?;
         VersionReq::parse(req)
-            .map_err(|e| ZepError::Dependency(format!("{name}: {e}")))?;
+            .map_err(|e| DagonError::Dependency(format!("{name}: {e}")))?;
         let table = self.table_mut(kind);
         if let Some(existing) = table.get(name) {
             if existing != req {

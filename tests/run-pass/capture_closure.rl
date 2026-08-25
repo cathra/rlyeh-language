@@ -11,9 +11,9 @@ fn main() {
     println(r2);                    // 18
 
     // 捕获字符串变量（String 拼接）
-    let name = String::from("zeta");
+    let name = String::from("rlyeh");
     let r3 = (|s| s + name)(String::from("hi "));
-    println(r3);                    // hi zeta
+    println(r3);                    // hi rlyeh
 
     // 无捕获闭包仍走 H2 函数指针路径（回归）
     let r4 = (|x| x * 2)(21);

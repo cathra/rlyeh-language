@@ -1,8 +1,8 @@
-# Zeta 标准库速查（v0.1.0）
+# Rlyeh 标准库速查（v0.1.0）
 
-> 实际布局（2026-08-22 模块化拆分）：`zeta-std/zeta/core.zeta` 根模块（String / Vec / HashMap / Option /
-> Result + 全部 extern 声明 + `module` 声明 + `import` 重新导出）+ 子模块文件 `time.zeta` / `io.zeta` /
-> `net.zeta` / `sync.zeta`（目录形式 `time/module.zeta` 等）。**裸名即用**（`import time::Duration;` 等已在根模块重导出）。
+> 实际布局（2026-08-22 模块化拆分）：`rlyeh-std/rlyeh/core.rl` 根模块（String / Vec / HashMap / Option /
+> Result + 全部 extern 声明 + `module` 声明 + `import` 重新导出）+ 子模块文件 `time.rl` / `io.rl` /
+> `net.rl` / `sync.rl`（目录形式 `time/module.rl` 等）。**裸名即用**（`import time::Duration;` 等已在根模块重导出）。
 > ⚠️ `docs/std-lib.md` 中的完整 API 为**目标架构（规划）**，MVP 只实现了下列 ✅ 子集。编写代码只可用 ✅ 项。
 
 ## 内建（无需导入）
@@ -12,7 +12,7 @@
 
 ## String（✅ 基本完整）
 
-```zeta
+```rlyeh
 let s = String::from("hello");   // 仅支持字面量 / 绑定字面量的变量
 let t = s + String::from(" world");   // 拼接：深拷贝（clone + push_str），结果与左操作数隔离
 s.push_str("!");                 // 追加
@@ -27,7 +27,7 @@ s == t; s < t;                   // 比较
 
 ## Vec<T>（✅ 基本完整）
 
-```zeta
+```rlyeh
 let v: Vec<i64> = Vec::new();    // new 预分配 cap 4
 v.push(10); v.push(20);
 let n = v.len();
@@ -44,7 +44,7 @@ let idx = v.binary_search(&30);  // 返回 index（要求已排序）
 
 ## HashMap<K, V>（✅ 基本）
 
-```zeta
+```rlyeh
 let m: HashMap<String, i64> = HashMap::new();
 m.insert(String::from("a"), 1);
 let v = m.get(String::from("a"));   // 返回 Option<V>（不存在 → None）
@@ -54,7 +54,7 @@ let v = m.get(String::from("a"));   // 返回 Option<V>（不存在 → None）
 
 ## Option<T> / Result<T, E>（✅）
 
-```zeta
+```rlyeh
 let o = Some(42);
 o.unwrap_or(0);                  // 42
 let r = Result::Err("boom");     // 裸 Err 可自动定型（Infer）
@@ -67,7 +67,7 @@ match r { Ok(v) => v, Err(e) => -1 }
 
 ## 时间（✅ `time` 子模块）
 
-```zeta
+```rlyeh
 let d = Duration { micros: 90000000 };   // 字面量构造
 d.secs();        // 90（micros→秒 整除）
 d.millis();      // 90000
@@ -81,7 +81,7 @@ let el = t.elapsed();            // Duration，CPU 时钟差，恒 >= 0
 
 ## IO（✅ `io` 子模块，自由函数）
 
-```zeta
+```rlyeh
 let s = io::read_file(String::from("a.txt"));   // 读取文件全部内容 → String
 io::write_file(String::from("a.txt"), s);       // 写入文件
 ```

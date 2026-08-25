@@ -1,4 +1,4 @@
-// Zeta 标准库格式化模块（阶段 Q3a，2026-08）
+// Rlyeh 标准库格式化模块（阶段 Q3a，2026-08）
 //
 // 格式化 trait（Display / Debug）+ Formatter 类型，供 `println!` / `print!` /
 // `format!` / `dbg!` 的 `{}` / `{:?}` 占位符引擎接入（Q3b，typecheck 特判）。

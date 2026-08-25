@@ -8,7 +8,7 @@
 //! - 区域操作（`RegionEnter` / `RegionExit` / `AllocInRegion` / `Transfer`）显式化。
 
 use crate::{BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
-use zeta_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp};
+use rlyeh_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp};
 
 /// 循环上下文：`break` / `continue` 的跳转目标。
 struct LoopCtx {
@@ -69,7 +69,7 @@ impl MirLowerer {
     fn lower_function(
         &mut self,
         name: &str,
-        params: &[zeta_hir::HirParam],
+        params: &[rlyeh_hir::HirParam],
         body: &HirBlock,
     ) -> MirFunction {
         self.blocks = vec![BasicBlock {
@@ -168,23 +168,23 @@ impl MirLowerer {
                 // 先求值右侧（副作用顺序），再读 target 构造复合赋值
                 let v = self.lower_expr(value)?;
                 let value = match op {
-                    zeta_hir::HirAssignOp::Assign => MirValue::Place(v),
-                    zeta_hir::HirAssignOp::AddAssign => MirValue::Binary {
+                    rlyeh_hir::HirAssignOp::Assign => MirValue::Place(v),
+                    rlyeh_hir::HirAssignOp::AddAssign => MirValue::Binary {
                         op: HirBinaryOp::Add,
                         lhs: Box::new(MirValue::Place(target.clone())),
                         rhs: Box::new(MirValue::Place(v)),
                     },
-                    zeta_hir::HirAssignOp::SubAssign => MirValue::Binary {
+                    rlyeh_hir::HirAssignOp::SubAssign => MirValue::Binary {
                         op: HirBinaryOp::Sub,
                         lhs: Box::new(MirValue::Place(target.clone())),
                         rhs: Box::new(MirValue::Place(v)),
                     },
-                    zeta_hir::HirAssignOp::MulAssign => MirValue::Binary {
+                    rlyeh_hir::HirAssignOp::MulAssign => MirValue::Binary {
                         op: HirBinaryOp::Mul,
                         lhs: Box::new(MirValue::Place(target.clone())),
                         rhs: Box::new(MirValue::Place(v)),
                     },
-                    zeta_hir::HirAssignOp::DivAssign => MirValue::Binary {
+                    rlyeh_hir::HirAssignOp::DivAssign => MirValue::Binary {
                         op: HirBinaryOp::Div,
                         lhs: Box::new(MirValue::Place(target.clone())),
                         rhs: Box::new(MirValue::Place(v)),

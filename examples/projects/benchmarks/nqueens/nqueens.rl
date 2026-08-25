@@ -1,5 +1,5 @@
 // 基准: nqueens —— 12 皇后回溯搜索（纯整数 + 递归 + 分支）
-// 测: 深度回溯搜索 + 递归调用 + 数组访问（替代 mandelbrot：Zeta MVP 的
+// 测: 深度回溯搜索 + 递归调用 + 数组访问（替代 mandelbrot：Rlyeh MVP 的
 //     `as f64` 数值转换尚未在 IR 层实现，见 benchmark_report.md 备注）
 // 逻辑: 标准 n-queens 回溯（queens 数组存每行列号，剪枝检查对角线）。
 //       输出 = 12 皇后解数 = 14200

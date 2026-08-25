@@ -1,5 +1,5 @@
 // 基准: hashmap_str —— 1 万条字符串键哈希表插入与查询
-// 与 hashmap_str.zeta 逻辑严格一致。输出 = 49995000
+// 与 hashmap_str.rl 逻辑严格一致。输出 = 49995000
 let n = 10000
 var m = [String: Int64]()
 m.reserveCapacity(n * 2)

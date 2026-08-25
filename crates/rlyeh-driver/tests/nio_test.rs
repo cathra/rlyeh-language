@@ -1,5 +1,5 @@
 //! R 阶段（2026-08）NIO（非阻塞模式 + Poller 事件轮询）+ sendfile 零拷贝
-//! 集成测试（自动注入 `zeta-std/zeta/core.zeta`）。
+//! 集成测试（自动注入 `rlyeh-std/rlyeh/core.rl`）。
 //!
 //! 免外网策略：本地 `socketpair_stream`（同一进程内全双工 fd）+ Rust
 //! `std::net::TcpListener` 起本地 mock 对端（随机端口 + 单连接线程）。
@@ -19,29 +19,29 @@ use std::io::Read;
 use std::net::TcpListener;
 use std::path::PathBuf;
 
-use zeta_driver::run_source_file;
+use rlyeh_driver::run_source_file;
 
 /// 独立临时项目目录，避免并行测试互相覆盖。
 fn temp_project() -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("zeta-nio-{}-{seq}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-nio-{}-{seq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("创建临时目录失败");
     dir
 }
 
-/// 运行内联源码（自动注入 core.zeta），返回程序输出。
+/// 运行内联源码（自动注入 core.rl），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("NIO 模块测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     out
 }
 
 /// 起本地 mock TCP 对端：accept 后精确读取 n 字节，返回内容。
-/// Zeta 侧经 `TcpStream::connect` 连接 `{port}`。
+/// Rlyeh 侧经 `TcpStream::connect` 连接 `{port}`。
 fn tcp_server_read(n: usize) -> (u16, std::thread::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("绑定 mock 端口失败");
     let port = listener.local_addr().expect("读取 mock 端口失败").port();
@@ -111,8 +111,8 @@ fn main() {
 }
 "#;
     let dir = temp_project();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("NIO 模块测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     println!("OUT: {out:?}");
@@ -233,10 +233,10 @@ fn sendfile_free_fn() {
     let src = format!(
         r#"
 fn main() {{
-    match File::create(String::from("/tmp/zeta-sendfile-src.txt")) {{
+    match File::create(String::from("/tmp/rlyeh-sendfile-src.txt")) {{
         Ok(f) => {{
             let mut ff = f;
-            match ff.write(String::from("zeta-sendfile")) {{
+            match ff.write(String::from("rlyeh-sendfile")) {{
                 Ok(n) => println(n),
                 Err(_) => println(-1),
             }}
@@ -248,7 +248,7 @@ fn main() {{
         }},
         Err(_) => println(-1),
     }}
-    match File::open(String::from("/tmp/zeta-sendfile-src.txt"), io::OpenMode::Read) {{
+    match File::open(String::from("/tmp/rlyeh-sendfile-src.txt"), io::OpenMode::Read) {{
         Ok(f) => {{
             let file_fd = fileno(f.handle);
             match TcpStream::connect(SocketAddr {{ ip: String::from("127.0.0.1"), port: {port} }}) {{
@@ -273,7 +273,7 @@ fn main() {{
     );
     let out = run(&src);
     assert_eq!(out, "13\n1\n13\n1\n");
-    assert_eq!(handle.join().expect("mock 线程失败"), "zeta-sendfile");
+    assert_eq!(handle.join().expect("mock 线程失败"), "rlyeh-sendfile");
 }
 
 /// R3：`File::sendfile_to(sock_fd, offset)`——offset 起至 EOF 零拷贝传输，
@@ -287,7 +287,7 @@ fn sendfile_to_method() {
     let src = format!(
         r#"
 fn main() {{
-    match File::create(String::from("/tmp/zeta-sendfile-method.txt")) {{
+    match File::create(String::from("/tmp/rlyeh-sendfile-method.txt")) {{
         Ok(f) => {{
             let mut ff = f;
             match ff.write(String::from("0123456789abcdef")) {{
@@ -302,7 +302,7 @@ fn main() {{
         }},
         Err(_) => println(-1),
     }}
-    match File::open(String::from("/tmp/zeta-sendfile-method.txt"), io::OpenMode::Read) {{
+    match File::open(String::from("/tmp/rlyeh-sendfile-method.txt"), io::OpenMode::Read) {{
         Ok(f) => {{
             match TcpStream::connect(SocketAddr {{ ip: String::from("127.0.0.1"), port: {port} }}) {{
                 Ok(s) => {{

@@ -18,5 +18,5 @@ fn main() {
 
     // 无注解 + String 实参（字面量自动升级）
     let s = |t| t + "!";
-    println(s("zeta"));             // zeta!
+    println(s("rlyeh"));             // rlyeh!
 }

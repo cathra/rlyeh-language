@@ -4,29 +4,29 @@
 //! （多空白组合/仅首/仅尾/无空白原样/全空白空串）、大小写 + 裁剪 + 子串
 //! 链式组合、`find`/`contains` 与大小写方法配合、拼接后处理。
 //!
-//! 实现：core.zeta 纯 Zeta 方法（`to_upper`/`to_lower` 逐字节 push_byte 拷贝
+//! 实现：core.rl 纯 Rlyeh 方法（`to_upper`/`to_lower` 逐字节 push_byte 拷贝
 //! + 比较链区间判断 ±32，`trim` 正反向双扫描后 `substring` 返回新缓冲）。
 //!
 //! 需要系统 clang（与 driver_test.rs / string_slice_test.rs 相同）。
 
 use std::path::PathBuf;
 
-use zeta_driver::run_source_file;
+use rlyeh_driver::run_source_file;
 
 /// 独立临时项目目录，避免并行测试互相覆盖。
 fn temp_project() -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("zeta-string-case-{}-{seq}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-string-case-{}-{seq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("创建临时目录失败");
     dir
 }
 
-/// 运行内联源码（自动注入 core.zeta），返回程序输出。
+/// 运行内联源码（自动注入 core.rl），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("String 大小写/裁剪测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     out
@@ -55,14 +55,14 @@ fn mixed_and_non_alpha() {
     let out = run(
         r#"
 fn main() {
-    let s = String::from("Hello, Zeta 123!");
-    println(s.to_upper());       // HELLO, ZETA 123!
-    println(s.to_lower());       // hello, zeta 123!
+    let s = String::from("Hello, Rlyeh 123!");
+    println(s.to_upper());       // HELLO, RLYEH 123!
+    println(s.to_lower());       // hello, rlyeh 123!
     println(s.to_upper() == s.to_upper());
 }
 "#,
     );
-    assert_eq!(out, "HELLO, ZETA 123!\nhello, zeta 123!\ntrue\n");
+    assert_eq!(out, "HELLO, RLYEH 123!\nhello, rlyeh 123!\ntrue\n");
 }
 
 /// 空串与单字符边界。
@@ -129,17 +129,17 @@ fn chain_combinations() {
     let out = run(
         r#"
 fn main() {
-    let s = String::from("  Zeta Lang  ");
-    let t = s.trim().to_upper();          // "ZETA LANG"
+    let s = String::from("  Rlyeh Lang  ");
+    let t = s.trim().to_upper();          // "RLYEH LANG"
     println(t);
-    println(t.substring(0, 4));           // ZETA
+    println(t.substring(0, 4));           // RLYEH
     println(t.find(String::from("LANG"))); // 5
     println(t.contains(String::from("ETA"))); // true
-    let q = String::from("  Hi, Zeta!  ");
+    let q = String::from("  Hi, Rlyeh!  ");
     println(q.trim().to_lower().substring(0, 5)); // "hi, z"（5 字节）
-    println(q.trim().to_lower() == String::from("hi, zeta!"));
+    println(q.trim().to_lower() == String::from("hi, rlyeh!"));
 }
 "#,
     );
-    assert_eq!(out, "ZETA LANG\nZETA\n5\ntrue\nhi, z\ntrue\n");
+    assert_eq!(out, "RLYEH LANG\nRLYEH\n5\ntrue\nhi, z\ntrue\n");
 }

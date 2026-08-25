@@ -27,9 +27,9 @@ pub enum DriverError {
     Usage(String),
     /// 模块加载失败（`mod foo;` 外部模块缺失 / 循环引用 / 解析失败）
     Module(String),
-    /// 文档生成失败（`zeta doc`）
+    /// 文档生成失败（`rlyeh doc`）
     Doc(String),
-    /// PGO 画像（`.zeta_profile`）读取 / 解析失败（`zeta profile`）
+    /// PGO 画像（`.rl_profile`）读取 / 解析失败（`rlyeh profile`）
     Profile(String),
 }
 

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use zeta_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+use rlyeh_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
 
 use crate::error::BorrowError;
 
@@ -63,9 +63,9 @@ struct Borrow {
 /// - 区域块值传递例外：`transfer x out of 'r; x` 中 `x` 作为区域块尾值
 ///   是所有权转出，不视为"使用"（regionck 既有合法用例保持通过）。
 ///
-/// 语义说明（与 Rust 的差异，Zeta 值语义下有意放宽）：
-/// - **读被借用变量不受限**：Zeta 的 `&x` 是值槽地址 / 聚合对象指针拷贝，
-///   裸指针（`*mut`）别名读写是合法模式（tests/run-pass/raw_ptr.zeta），
+/// 语义说明（与 Rust 的差异，Rlyeh 值语义下有意放宽）：
+/// - **读被借用变量不受限**：Rlyeh 的 `&x` 是值槽地址 / 聚合对象指针拷贝，
+///   裸指针（`*mut`）别名读写是合法模式（tests/run-pass/raw_ptr.rl），
 ///   故活跃借用期间读原变量、经引用写原槽均不报错；
 /// - **借用活跃期 = 引用变量最后一次使用**（语句粒度 NLL）：借用结束后
 ///   对原变量的写入/再借用均允许；

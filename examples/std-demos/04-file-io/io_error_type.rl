@@ -1,4 +1,4 @@
-// M1a：IoErrorKind C-like 枚举（io 子模块定义，core.zeta re-export）
+// M1a：IoErrorKind C-like 枚举（io 子模块定义，core.rl re-export）
 // M1b：IoError 结构构造 + kind()/message() 访问器
 fn kind_code(k: IoErrorKind) -> i64 {
     match k {

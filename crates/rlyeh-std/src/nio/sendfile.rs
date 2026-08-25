@@ -3,9 +3,9 @@
 //! 数据在**内核态**直接从文件拷贝到 socket，全程不经过用户态缓冲区，
 //! 适用于静态文件响应、大文件上传代理等场景。
 //!
-//! 对应 Zeta 标准库 `std::io::sendfile`：
+//! 对应 Rlyeh 标准库 `std::io::sendfile`：
 //!
-//! ```zeta
+//! ```rlyeh
 //! // 发送整个文件（offset 起至 EOF）
 //! let n = sendfile(sock_fd, file_fd, 0, 0);
 //! // 只发送 count 字节

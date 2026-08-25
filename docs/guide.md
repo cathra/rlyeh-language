@@ -1,4 +1,4 @@
-# Zeta 编程语言指南
+# Rlyeh 编程语言指南
 
 > 版本：0.1.0（MVP）
 > 本文为面向读者的**语言教程**（主文档）。所有示例均为 `examples/`、`tests/run-pass/` 中可编译运行的已验证代码（或其简化）。
@@ -9,7 +9,7 @@
 
 ## 目录
 
-1. [认识 Zeta](#1-认识-zeta)
+1. [认识 Rlyeh](#1-认识-rlyeh)
 2. [快速上手](#2-快速上手)
 3. [基础语法](#3-基础语法)
 4. [数学式条件判断](#4-数学式条件判断)
@@ -25,9 +25,9 @@
 
 ---
 
-## 1. 认识 Zeta
+## 1. 认识 Rlyeh
 
-Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
+Rlyeh 是一门面向未来十年基础设施的**系统级编程语言**：
 
 | 设计目标 | 对标 | 落地形态 |
 |----------|------|----------|
@@ -36,7 +36,7 @@ Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
 | 并发模型一等公民 | Erlang / Akka | `actor` 语言级构造 + 运行时监督 |
 | 数学式语法直觉 | Python / MATLAB | 比较链 `0 < x < 10`、集合判断 `x in (1, 3, 5)` |
 
-**一句话定位**：Zeta = Rust 的安全性 + Go 的编译速度 + Erlang 的并发模型 + 数学的自然表达。
+**一句话定位**：Rlyeh = Rust 的安全性 + Go 的编译速度 + Erlang 的并发模型 + 数学的自然表达。
 
 当前编译器为 Rust 实现的 bootstrap 阶段（自举目标），代码生成走 LLVM IR。
 
@@ -46,36 +46,36 @@ Zeta 是一门面向未来十年基础设施的**系统级编程语言**：
 
 ### 2.1 第一个程序
 
-```zeta
-// hello-world.zeta
+```rlyeh
+// hello-world.rl
 fn main() {
-    println("Hello, Zeta!");
+    println("Hello, Rlyeh!");
 }
 ```
 
 ### 2.2 编译与运行
 
 ```bash
-zeta build hello-world.zeta     # 生成可执行文件 hello-world
-zeta run hello-world.zeta       # 编译并运行
-zeta test                       # 运行 tests/ 目录 compile-pass/compile-fail/run-pass 用例
+rlyeh build hello-world.rl     # 生成可执行文件 hello-world
+rlyeh run hello-world.rl       # 编译并运行
+rlyeh test                       # 运行 tests/ 目录 compile-pass/compile-fail/run-pass 用例
 ```
 
 ### 2.3 工具链速览
 
 | 命令 | 功能 |
 |------|------|
-| `zeta new <name> [--lib]` | 创建新项目脚手架（Zeta.toml + src/main.zeta 或 lib.zeta） |
-| `zeta build <file> [-o <out>] [--target <triple>]` | 编译为可执行文件（`--target` 交叉编译 / WASM / `--profile` 注入 PGO） |
-| `zeta run <file>` | 编译并运行 |
-| `zeta test` | 运行测试目录用例 |
-| `zeta fmt <file>` | 代码格式化（`--check` / `-w` / `--indent`） |
-| `zeta check <file>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
-| `zeta bench <file>` | 基准测试（`--runs` / `--warmup`） |
-| `zeta doc <file>` | 从 `///` 注释生成 Markdown 文档 |
-| `zeta publish [--registry] [--verbose]` | 打包发布到 zep 注册表（重复版本拦截） |
-| `zeta lsp` | 语言服务器（LSP over stdio，诊断推送） |
-| `zeta profile <file.zeta_profile>` | PGO 画像 → 区域大小预测报告（`--out`） |
+| `rlyeh new <name> [--lib]` | 创建新项目脚手架（Rlyeh.toml + src/main.rl 或 lib.rl） |
+| `rlyeh build <file> [-o <out>] [--target <triple>]` | 编译为可执行文件（`--target` 交叉编译 / WASM / `--profile` 注入 PGO） |
+| `rlyeh run <file>` | 编译并运行 |
+| `rlyeh test` | 运行测试目录用例 |
+| `rlyeh fmt <file>` | 代码格式化（`--check` / `-w` / `--indent`） |
+| `rlyeh check <file>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
+| `rlyeh bench <file>` | 基准测试（`--runs` / `--warmup`） |
+| `rlyeh doc <file>` | 从 `///` 注释生成 Markdown 文档 |
+| `rlyeh publish [--registry] [--verbose]` | 打包发布到 dagon 注册表（重复版本拦截） |
+| `rlyeh lsp` | 语言服务器（LSP over stdio，诊断推送） |
+| `rlyeh profile <file.rl_profile>` | PGO 画像 → 区域大小预测报告（`--out`） |
 
 ---
 
@@ -85,7 +85,7 @@ zeta test                       # 运行 tests/ 目录 compile-pass/compile-fail
 
 `let` 声明不可变绑定；标量类型：`i8/i16/i32/i64/isize`、`u8/u16/u32/u64/usize`、`f32/f64`、`bool`、`char`、`()`。
 
-```zeta
+```rlyeh
 let x = 6;                       // 类型推断：i64
 let y: f64 = 3.14;               // 显式类型注解
 let mut v = Vec::new();          // 可变绑定（对象修改用）
@@ -93,7 +93,7 @@ let mut v = Vec::new();          // 可变绑定（对象修改用）
 
 ### 3.2 函数
 
-```zeta
+```rlyeh
 fn add(a: i64, b: i64) -> i64 {
     a + b                        // 末表达式为返回值（隐式 return）
 }
@@ -107,7 +107,7 @@ fn main() {
 
 函数可以像值一样绑定、传递与调用：
 
-```zeta
+```rlyeh
 fn apply(f: fn(i64, i64) -> i64, x: i64, y: i64) -> i64 {
     f(x, y)                      // 通过函数值间接调用
 }
@@ -129,7 +129,7 @@ fn main() {
 
 闭包 `|x, y| 表达式` desugar 为匿名函数 + 函数指针（零运行时开销），参数类型由 fn 上下文推断：
 
-```zeta
+```rlyeh
 fn apply(f: fn(i64, i64) -> i64, x: i64, y: i64) -> i64 {
     f(x, y)                      // 通过函数值间接调用
 }
@@ -148,15 +148,15 @@ MVP 约束（见 §13）：闭包体仅可引用参数与字面量；参数模�
 
 捕获闭包 `(|x, y| 表达式)(实参)` 以**立即调用**形式使用：闭包体引用的外层变量**按值捕获**，desugar 为匿名函数（捕获变量作前置参数、参数名保留原名）+ 普通函数调用，零新增 IR 节点：
 
-```zeta
+```rlyeh
 fn main() {
     // 单捕获：闭包体引用外层变量 factor
     let factor = 3;
     let r1 = (|x| x * factor)(14);              // 42
 
     // 多捕获 + 字符串拼接（String 语义）
-    let name = String::from("zeta");
-    let r2 = (|s| s + name)(String::from("hi "));  // hi zeta
+    let name = String::from("rlyeh");
+    let r2 = (|s| s + name)(String::from("hi "));  // hi rlyeh
 
     // 参数遮蔽捕获（同名参数优先）
     let v = 100;
@@ -174,7 +174,7 @@ MVP 约束（见 §13）：支持立即调用形式、闭包值对象（见 H5�
 
 `let f = |x: i64| 表达式;` 将闭包绑定为**值对象**，之后可反复调用 `f(实参)`：闭包体引用的外层变量**按值捕获**，desugar 为匿名函数 + 捕获聚合对象（每捕获一槽）+ 调用点展开（从聚合对象读取捕获字段传给匿名函数）。全部为既有 IR 原语（`Alloc` / `FieldSet` / `FieldGet` / `Call`），零新增 IR 节点。**参数类型确定规则**（H5 补全）：有类型注解的参数用注解类型（调用点实参须兼容），无注解的参数由**首次调用点实参推断**（延迟固化；`let f = |x| x + 1; f(41);` 直接可用，半注解 `|x: i64, y|` 亦可用），从未被调用则闭包体不检查（惰性）：
 
-```zeta
+```rlyeh
 fn main() {
     // 基本绑定 + 调用
     let inc = |x: i64| x + 1;
@@ -209,7 +209,7 @@ fn main() {
 
 H5 补全——非注解/半注解绑定（参数由首次调用点实参推断）、返回闭包的函数、闭包值作 fn 实参：
 
-```zeta
+```rlyeh
 fn apply(f: fn(i64) -> i64, x: i64) -> i64 { f(x) }
 
 // 返回闭包的函数：尾表达式为无捕获闭包 → 按 H2 签名检查生成函数指针
@@ -260,7 +260,7 @@ MVP 约束（见 §13）：参数有注解用注解、无注解由首次调用�
 
 `dyn Trait` 是 trait 对象类型：**2 槽胖指针**（数据指针 + vtable 指针），`&T`（具体类型引用）可强制转换为 `dyn Trait`——desugar 为运行时构造 vtable（drop/size/align 槽 MVP 置 0 + 方法表）+ 胖指针。方法调用经 vtable 间接分派，同一签名可分派到不同 impl：
 
-```zeta
+```rlyeh
 trait Shape {
     fn area(&self) -> f64;
     fn sides(&self) -> i64;
@@ -302,7 +302,7 @@ MVP 约束（见 §13）：trait 与 impl 均须非泛型；方法签名含 `Sel
 
 `expr?` 在 `Option<T>` / `Result<T, E>` 上下文解包成功值，失败时从当前函数早返回失败值：
 
-```zeta
+```rlyeh
 fn try_div(x: i64, y: i64) -> Option<i64> {
     if y == 0 {
         return None;
@@ -328,7 +328,7 @@ fn sum_all(a: i64, b: i64, c: i64) -> Option<i64> {
 
 ##### 迭代器与适配器（J1–J3）
 
-```zeta
+```rlyeh
 // J1 数组迭代：for x in arr（索引遍历，长度编译期已知）
 let arr: [i64; 4] = [1, 2, 3, 4];
 let mut sum = 0;
@@ -364,7 +364,7 @@ let chained = Counter::new(6).filter(|x| x > 1).map(|x| x * x); // Vec: [4, 9, 1
 
 ### 3.3 控制流
 
-```zeta
+```rlyeh
 if sum > 10 {
     println("sum is big");
 };
@@ -392,9 +392,9 @@ for j in 1...3 {         // 双闭区间 [1, 3]
 
 ### 3.4 注释
 
-```zeta
+```rlyeh
 // 行注释
-/// 文档注释（`zeta doc` 提取生成 Markdown）
+/// 文档注释（`rlyeh doc` 提取生成 Markdown）
 ```
 
 ---
@@ -403,7 +403,7 @@ for j in 1...3 {         // 双闭区间 [1, 3]
 
 ### 4.1 区间内（正向比较链）
 
-```zeta
+```rlyeh
 if 0 < x < 10 {}      // 0 < x && x < 10
 if 0 <= x <= 10 {}    // 0 <= x && x <= 10
 if 0 < x <= 10 {}     // 0 < x && x <= 10
@@ -411,14 +411,14 @@ if 0 < x <= 10 {}     // 0 < x && x <= 10
 
 ### 4.2 区间外（反向比较链）
 
-```zeta
+```rlyeh
 if 0 > x > 10 {}      // x < 0 || x > 10（反向外链 = 并集）
 if 0 >= x >= 10 {}    // x <= 0 || x >= 10
 ```
 
 ### 4.3 集合判断（括号内为离散集合）
 
-```zeta
+```rlyeh
 if x in (1, 3, 5) {}                          // x == 1 || x == 3 || x == 5
 if ch in ('a'..<'z', 'A'..<'Z') {}            // 范围元素展开为离散成员
 if x in (0...10) {}                           // 等价 x == 0 || ... || x == 10
@@ -427,7 +427,7 @@ if x not in (0..<10) {}                       // 不等价于全部（!x in）
 
 ### 4.4 裸范围 = 区间判断
 
-```zeta
+```rlyeh
 if x in 0..<10 {}    // 0 <= x < 10     [0, 10)
 if x in 0...10 {}    // 0 <= x <= 10    [0, 10]
 if x in 0<..10 {}    // 0 < x <= 10     (0, 10]
@@ -435,7 +435,7 @@ if x in 0<..10 {}    // 0 < x <= 10     (0, 10]
 
 ### 4.5 时间字面量
 
-```zeta
+```rlyeh
 if hour in (9am...6pm) {}             // 工作时间段
 if hour not in (6am..<10pm) {}        // 跨午夜自动处理
 ```
@@ -446,7 +446,7 @@ if hour not in (6am..<10pm) {}        // 跨午夜自动处理
 
 ### 5.1 结构体与字面量构造
 
-```zeta
+```rlyeh
 struct Point {
     x: i64,
     y: i64,
@@ -457,7 +457,7 @@ let p = Point { x: 1, y: 2 };
 
 ### 5.2 枚举与匹配
 
-```zeta
+```rlyeh
 enum Shape {
     Circle(f64),
     Rect { w: f64, h: f64 },
@@ -475,7 +475,7 @@ fn area(s: Shape) -> f64 {
 
 ### 5.3 trait 与泛型（单态化）
 
-```zeta
+```rlyeh
 trait Area {
     fn area(&self) -> f64;
 }
@@ -491,7 +491,7 @@ impl Area for Shape {
 
 ## 6. 数组与索引
 
-```zeta
+```rlyeh
 let arr = [10, 20, 30];                 // 数组字面量（元素类型统一）
 let arr2: [i64; 4] = [1, 2, 3, 4];      // 类型注解保留长度
 let x = arr[0];                         // 索引读取（越界编译期可查）
@@ -503,7 +503,7 @@ let ch = s[0];                          // 字符串按字符索引（步长 1 �
 
 ## 7. 模块系统
 
-```zeta
+```rlyeh
 module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
@@ -513,7 +513,7 @@ import math::PI;                   // 别名导入
 import math::square as sq;
 ```
 
-- 多文件模块：`module foo;` → `foo.zeta` / `foo/module.zeta`
+- 多文件模块：`module foo;` → `foo.rl` / `foo/module.rl`
 - 跨模块路径：`模块名::Enum::Variant` / `模块名::CONST`（扁平名字空间，无 `crate`/`super`/`self`）
 
 ---
@@ -535,7 +535,7 @@ import math::square as sq;
 > `ref` / `ref mut` 模式已实现（见下）：`match` 臂与 `let ref x = e;` 绑定变量为对匹配值的引用而非值拷贝。
 > 用户顶层函数与 std 预置根函数重名时（如自定义 `fn read` 与 std extern `read`），用户侧声明自动以 `read@shadow<N>` 内部名注册，std 模块内部裸名调用仍绑定 std 版本，用户代码绑定自身版本，互不干扰。
 
-```zeta
+```rlyeh
 let s = String::from("hello");
 let t = s;               // 值拷贝：3 槽结构体复制，共享底层数据缓冲，s 仍可用
 let r = &t;              // 取不可变引用（标量/聚合均可）
@@ -547,7 +547,7 @@ let n = *r;              // 显式解引用（标量）
 
 借用检查器（borrowck）对引用实施 NLL 近似的排他性规则：
 
-```zeta
+```rlyeh
 let mut x = 10;
 let r1 = &x;              // 共享借用：多个 & 可共存
 let r2 = &x;
@@ -567,13 +567,13 @@ z = 6;                    // 允许：借用已结束
 ```
 
 > **编译错误（borrowck 拒绝）**：① `&mut x` 与活跃借用互斥——`let r = &x; let m = &mut x;` 报 `BorrowConflict`（多个 `&mut` 同理）；② `&mut` 要求可变绑定——对非 `let mut` 变量取 `&mut` 报 `BorrowMutImmutable`；③ 活跃借用期间直接赋值——`let r = &x; x = 6;` 报 `BorrowConflict`（Rust E0502/E0499 对应）；④ 局部引用逃逸——`return &x` 或 `return r`（`r = &x` 局部）报 `DanglingReference`（E0597，参数来源引用允许返回）。
-> **语义有意比 Rust 宽松**：读取被借用变量与经 `*p` 写入均为合法模式（裸指针别名场景），仅"直接赋值被借用变量"触发 `BorrowConflict`。借用存活范围按语句粒度近似（`born..=last_use`），跨语句的精细生命周期验证（`'a` 绑定推断）仍规划中。完整正反例见 `tests/run-pass/borrow_pass.zeta` 与 `tests/compile-fail/borrow-*.zeta`。
+> **语义有意比 Rust 宽松**：读取被借用变量与经 `*p` 写入均为合法模式（裸指针别名场景），仅"直接赋值被借用变量"触发 `BorrowConflict`。借用存活范围按语句粒度近似（`born..=last_use`），跨语句的精细生命周期验证（`'a` 绑定推断）仍规划中。完整正反例见 `tests/run-pass/borrow_pass.rl` 与 `tests/compile-fail/borrow-*.rl`。
 
 #### `ref` / `ref mut` 模式（G1 收尾 ✅）
 
 `match` 臂与 `let` 绑定中，`ref x` 将 `x` 绑定为对匹配值的**引用**（`&T`）而非值拷贝，`ref mut x` 绑定 `&mut T`——只读场景免去再次拷贝，且可经解引用写：
 
-```zeta
+```rlyeh
 let x = 42;
 match x { ref r => println(*r) }        // 42：r: &i64
 
@@ -595,13 +595,13 @@ let mut y = 7;
 match y { ref mut r => *r = 100 }       // r: &mut i64，解引用写
 ```
 
-> **MVP 注意（与 Rust 的差异）**：Zeta 的 `match` desugar 先把匹配值**拷贝**到临时槽，`ref` 绑定指向该拷贝而非原变量——`ref mut r` 的写作用于拷贝，原变量不受影响（`match y { ref mut r => *r = 100 }` 后 `y` 仍为 7）。`ref` 的价值在省去绑定时的再次拷贝；聚合类型经 `ref` 绑定为对象指针拷贝，不复制底层数据。`&` 表达式目标仍限变量（复杂目标可经模式引用）。
+> **MVP 注意（与 Rust 的差异）**：Rlyeh 的 `match` desugar 先把匹配值**拷贝**到临时槽，`ref` 绑定指向该拷贝而非原变量——`ref mut r` 的写作用于拷贝，原变量不受影响（`match y { ref mut r => *r = 100 }` 后 `y` 仍为 7）。`ref` 的价值在省去绑定时的再次拷贝；聚合类型经 `ref` 绑定为对象指针拷贝，不复制底层数据。`&` 表达式目标仍限变量（复杂目标可经模式引用）。
 
 ### 8.2 L1：区域（Region）
 
 区域内的对象随区域退出**批量释放**（零开销），可用 `transfer` 将所有权移出：
 
-```zeta
+```rlyeh
 region 'r {
     let data = BigStruct::new() in 'r;
     process(&data);
@@ -631,13 +631,13 @@ region 't strategy (bump) {
 }
 ```
 
-**运行时接线（L3 ✅）**：`region` 块已从"编译期类型/借用分析"接入真实运行时——region 指令（`RegionEnter`/`AllocInRegion`/`RegionExit`/`Transfer`）调用 `zeta-region-alloc` 的 C ABI 层（`zeta_region_enter`/`zeta_region_alloc`/`zeta_region_transfer`/`zeta_region_exit`），对象 `in 'r` 时经 bump 分配器从区域批量分配（聚合对象为值镜像浅拷贝），区域退出时批量释放；`transfer x out of 'r` 调用 `zeta_region_transfer` 标记所有权移出（对象不再随区域释放）。`adaptive` 区域在 `zeta build --profile`（PGO 回灌，F2）时按画像建议注入初始容量；`with_size (N)` 精确预分配，容量不足时按 `allow_growth` 扩容（`strategy (bump)` 为默认无扩容 bump）。MVP 限制：聚合对象为值镜像（浅拷贝，不注册析构），标量/聚合引用语义与 `Box<T>` 同构。**性能（2026-08-24 ✅）**：codegen 对 `AllocInRegion` 生成内联 bump 快路径（对齐 + 越界检查 + 指针递增，零函数调用），并在规范 while 循环内做**循环级 region 状态提升**——preheader 快照 Region 头、header phi 维护 base/cursor/limit、热循环零访存（纯寄存器运算）、循环退出写回一次；单块不扩容场景实测约 2.1 倍提速，完整语义（含慢路径 cursor 回写修复）下五种 region 策略 5.33–5.56ms、单次分配约 2.8ns（详见 [memory-model.md §7.4](./memory-model.md) 与 [附录 A.4](./memory-model.md) / [A.5](./memory-model.md)）。
+**运行时接线（L3 ✅）**：`region` 块已从"编译期类型/借用分析"接入真实运行时——region 指令（`RegionEnter`/`AllocInRegion`/`RegionExit`/`Transfer`）调用 `rlyeh-region-alloc` 的 C ABI 层（`rlyeh_region_enter`/`rlyeh_region_alloc`/`rlyeh_region_transfer`/`rlyeh_region_exit`），对象 `in 'r` 时经 bump 分配器从区域批量分配（聚合对象为值镜像浅拷贝），区域退出时批量释放；`transfer x out of 'r` 调用 `rlyeh_region_transfer` 标记所有权移出（对象不再随区域释放）。`adaptive` 区域在 `rlyeh build --profile`（PGO 回灌，F2）时按画像建议注入初始容量；`with_size (N)` 精确预分配，容量不足时按 `allow_growth` 扩容（`strategy (bump)` 为默认无扩容 bump）。MVP 限制：聚合对象为值镜像（浅拷贝，不注册析构），标量/聚合引用语义与 `Box<T>` 同构。**性能（2026-08-24 ✅）**：codegen 对 `AllocInRegion` 生成内联 bump 快路径（对齐 + 越界检查 + 指针递增，零函数调用），并在规范 while 循环内做**循环级 region 状态提升**——preheader 快照 Region 头、header phi 维护 base/cursor/limit、热循环零访存（纯寄存器运算）、循环退出写回一次；单块不扩容场景实测约 2.1 倍提速，完整语义（含慢路径 cursor 回写修复）下五种 region 策略 5.33–5.56ms、单次分配约 2.8ns（详见 [memory-model.md §7.4](./memory-model.md) 与 [附录 A.4](./memory-model.md) / [A.5](./memory-model.md)）。
 
 ### 8.3 堆分配：`Box<T>` / `Rc<T>` / `Arc<T>`（K2–K3 ✅）
 
 `Box<T>` / `Rc<T>` / `Arc<T>` 为编译器内建智能指针：构造 + `*` 解引用 + 字段/方法/索引自动剥层。
 
-```zeta
+```rlyeh
 let b = Box::new(42);                 // 标量装箱
 println(*b);                          // 42（解引用 load）
 
@@ -671,9 +671,9 @@ match r.clone().try_unwrap() {
 
 ### 8.4 L3
 
-`Gc<T>`（可选 GC，K4）已实现（MVP，`zeta-gc-runtime` 保守标记-清除）：
+`Gc<T>`（可选 GC，K4）已实现（MVP，`rlyeh-gc-runtime` 保守标记-清除）：
 
-```zeta
+```rlyeh
 // gc_region 块内分配，块结束触发 GC 周期（未逃逸对象回收）
 gc_region {
     let a = Gc::new(42);
@@ -682,7 +682,7 @@ gc_region {
     println(*a + *b); // 49
 }
 
-// 逃逸对象：块返回值存活到块外（zeta_gc_escape 登记为 root）
+// 逃逸对象：块返回值存活到块外（rlyeh_gc_escape 登记为 root）
 let g = gc_region { let inner = Gc::new(100); inner };
 println(*g); // 100
 
@@ -702,7 +702,7 @@ println(*saved); // 2000
 println(*outer); // 1000
 ```
 
-布局与生命周期协议：`Gc<T>` 栈上 1 槽指向堆 1-槽包装（槽 0 存 `GcInner` 基址）；对象 = `slot_count(T)` 个 8 字节槽，与 `Box<T>` 完全同构（解引用/剥层零差异）。`gc_region` 块 desugar 为 `zeta_gc_region_begin()` → `zeta_gc_alloc(n)` → `zeta_gc_escape(ptr)`（块返回值登记逃逸 root）→ `zeta_gc_collect()`（标记-清除 + 存活提升）。MVP 限制：stop-the-world 保守标记-清除、单线程无锁（`SyncUnsafeCell`，全程无锁）、递归标记（深引用图可能爆栈）、块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束；多线程 GC（全局锁/线程局部堆）、增量回收、write barrier 规划中（memory-model.md §5）。
+布局与生命周期协议：`Gc<T>` 栈上 1 槽指向堆 1-槽包装（槽 0 存 `GcInner` 基址）；对象 = `slot_count(T)` 个 8 字节槽，与 `Box<T>` 完全同构（解引用/剥层零差异）。`gc_region` 块 desugar 为 `rlyeh_gc_region_begin()` → `rlyeh_gc_alloc(n)` → `rlyeh_gc_escape(ptr)`（块返回值登记逃逸 root）→ `rlyeh_gc_collect()`（标记-清除 + 存活提升）。MVP 限制：stop-the-world 保守标记-清除、单线程无锁（`SyncUnsafeCell`，全程无锁）、递归标记（深引用图可能爆栈）、块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束；多线程 GC（全局锁/线程局部堆）、增量回收、write barrier 规划中（memory-model.md §5）。
 
 ---
 
@@ -712,7 +712,7 @@ println(*outer); // 1000
 
 ### 9.1 定义与调用
 
-```zeta
+```rlyeh
 actor Counter {
     value: i64 = 0,
 
@@ -730,13 +730,13 @@ fn main() {
 }
 ```
 
-- `new()`：编译器生成 `__state_new` + `zeta_actor_spawn` 调用
+- `new()`：编译器生成 `__state_new` + `rlyeh_actor_spawn` 调用
 - 方法调用 `.await`：ask 同步往返；`send expr`：异步入队
 - 消息按 FIFO 处理，`send` 后立刻 `ask` 能看到累积状态
 
 ### 9.2 监督与崩溃恢复
 
-```zeta
+```rlyeh
 actor Machine {
     uptime: i64 = 0,
 
@@ -760,7 +760,7 @@ fn main() {
 
 ### 9.3 普通函数 `async fn` / `await`（S1c ✅ 状态机）
 
-```zeta
+```rlyeh
 // async fn 编译为 Future 结构体 + poll 状态机 + 构造器（desugar，真实挂起/恢复）
 async fn get_value(x: i64) -> i64 {
     x * 2
@@ -805,7 +805,7 @@ fn main() {
 
 `json::stringify(v)` 将值序列化为 JSON 文本；`json::parse::<T>(s)` 经 turbofish 泛型实参指定目标类型反序列化。
 
-```zeta
+```rlyeh
 struct Point { x: i64, y: i64 }
 
 fn main() {
@@ -851,8 +851,8 @@ fn main() {
 
 ### 10.1 内建打印
 
-```zeta
-println("Hello, Zeta!");   // 字符串字面量
+```rlyeh
+println("Hello, Rlyeh!");   // 字符串字面量
 println(42);               // 整型
 println(3.14);             // 浮点
 println(true);             // bool
@@ -873,8 +873,8 @@ print(x);                  // 同 println 但不换行
 >
 > 运行期 `str` 值（如 `fn f(s: str)` 的函数参数，内容与长度运行期未知）不支持上述升级，方法调用报 Unsupported。
 
-```zeta
-let s = String::from("Hello, Zeta");
+```rlyeh
+let s = String::from("Hello, Rlyeh");
 s.len                       // 字节长度（.len 字段 / .len() 方法均可）
 s[0]                        // 按字节索引
 s.substring(0, 5)           // "Hello"
@@ -882,9 +882,9 @@ let r = s.as_str();         // &str 只读借用视图
 r.len()                     // 15
 r[1]                        // 101（'e'，按字节索引）
 String::from(r)             // 深拷贝 &str → 独立 String
-s.contains("Zeta")                                // true（字面量实参自动升级）
+s.contains("Rlyeh")                                // true（字面量实参自动升级）
 s.starts_with("Hello")                            // true
-s.replace("Hello", "Hi")                          // "Hi, Zeta"
+s.replace("Hello", "Hi")                          // "Hi, Rlyeh"
 s.to_upper() / s.to_lower() / s.trim()
 s.split(",")                                      // Vec<String>
 s.repeat(3)
@@ -896,7 +896,7 @@ string_to_int("42")         // 42（字面量实参自动升级）
 
 ### 10.3 Vec
 
-```zeta
+```rlyeh
 let mut v: Vec<i64> = Vec::new();   // 建议显式类型注解（`sort` 等泛型方法需要定型）
 v.push(10); v.push(20); v.push(30);
 v.len / v.cap                // 字段；v.is_empty() 为方法（需括号）
@@ -915,7 +915,7 @@ for x in v { }               // 容器迭代（仅 Vec / HashMap）
 
 ### 10.4 HashMap
 
-```zeta
+```rlyeh
 let mut m: HashMap<String, i64> = HashMap::new();
 m.insert("k", 42);                  // 键字面量实参自动升级为 String
 m.contains_key("k")                 // bool
@@ -928,7 +928,7 @@ for (k, v) in m { }         // 容器迭代
 
 ### 10.5 Option / Result
 
-```zeta
+```rlyeh
 let x = Some(10);
 x.is_some() / x.is_none()
 x.unwrap()                  // 10
@@ -941,7 +941,7 @@ r.unwrap() / r.unwrap_or(0)
 
 ### 10.6 文件 IO
 
-```zeta
+```rlyeh
 let r = read_file("data.txt");                       // Result<String, IoError>：读整个文件
 match r {
     Ok(content) => { let _ = write_file("out.txt", content); }  // Result<i64, IoError>：截断写
@@ -953,7 +953,7 @@ let line = read_line();                              // Result<String, IoError>�
 
 ### 10.7 网络
 
-```zeta
+```rlyeh
 let host = hostname();                     // Result<String, IoError>：本机主机名（M3 起 Result 化）
 let pair = socketpair_stream();            // AF_UNIX SOCK_STREAM 全双工 fd 对
 let _ = send_all(fd, data);                // Result<i64, IoError>：发送字节数（data 为 String 变量）
@@ -963,7 +963,7 @@ let fd = tcp_connect(8080, 127, 0, 0, 1);  // Result<i64, IoError>：TCP 连接�
 
 ### 10.8 同步原语
 
-```zeta
+```rlyeh
 let mutex = Mutex::new();
 mutex.lock();
 // 临界区
@@ -978,7 +978,7 @@ rw.try_read_lock() / rw.try_write_lock()
 
 ### 10.9 时间
 
-```zeta
+```rlyeh
 let d = Duration { micros: 1500000 };
 d.secs()        // 1（向下取整）
 d.millis()      // 1500
@@ -994,7 +994,7 @@ let elapsed = t.elapsed();   // Duration，CPU 时钟差，恒 >= 0
 
 `&` `|` `^` `<<` `>>` 全链路支持（常量折叠 + 运行时两路径）：
 
-```zeta
+```rlyeh
 let port = (0xC0A8 << 8) | 0x010A;   // 字节打包
 let byte = (port >> 8) & 0xFF;       // 解包取高字节
 ```
@@ -1005,7 +1005,7 @@ let byte = (port >> 8) & 0xFF;       // 解包取高字节
 
 `v[lo..<hi]`（半开）、`v[lo...hi]`（双闭）、`v[lo<..hi]`（不含下界）返回**全新缓冲**（元素按值拷贝），越界自动 clamp，`start >= end` 返回空：
 
-```zeta
+```rlyeh
 let arr = [10, 20, 30, 40, 50];
 let a = arr[1..<3];              // [20, 30]
 let b = arr[lo..<hi];            // 动态边界（运行时变量）
@@ -1026,7 +1026,7 @@ let d = v[4..<1];                // start >= end → 空
 ### 11.1 本机编译
 
 ```bash
-zeta build hello.zeta -o hello
+rlyeh build hello.rl -o hello
 ./hello
 ```
 
@@ -1034,22 +1034,22 @@ zeta build hello.zeta -o hello
 
 ```bash
 # macOS 双架构（已验证）
-zeta build app.zeta --target x86_64-apple-macosx
-zeta build app.zeta --target arm64-apple-macosx
+rlyeh build app.rl --target x86_64-apple-macosx
+rlyeh build app.rl --target arm64-apple-macosx
 ```
 
-目标平台通过 `__zeta_target_os` 平台内建区分（linux=1 / macos=2 / windows=3 / freebsd=4 / 其他=0），标准库据此选择平台布局（如 `sockaddr_in4` 的 macOS `sin_len` 头 vs Linux 无该字段）。
+目标平台通过 `__rlyeh_target_os` 平台内建区分（linux=1 / macos=2 / windows=3 / freebsd=4 / 其他=0），标准库据此选择平台布局（如 `sockaddr_in4` 的 macOS `sin_len` 头 vs Linux 无该字段）。
 
 ### 11.3 WebAssembly（E2）
 
 ```bash
-zeta build app.zeta --target wasm32-wasip1 -o app.wasm
+rlyeh build app.rl --target wasm32-wasip1 -o app.wasm
 wasmtime app.wasm      # WASI preview1 运行时运行
 ```
 
-依赖：`wasi-libc` sysroot（`brew install wasi-libc` 或 `WASI_SYSROOT`）、`wasm-ld`（`brew install lld`）。入口链：WASI `_start`（crt1）→ Zeta `main()`。未使用的 extern 符号（socket 等 WASI 无对应）不会引入链接错误。
+依赖：`wasi-libc` sysroot（`brew install wasi-libc` 或 `WASI_SYSROOT`）、`wasm-ld`（`brew install lld`）。入口链：WASI `_start`（crt1）→ Rlyeh `main()`。未使用的 extern 符号（socket 等 WASI 无对应）不会引入链接错误。
 
-**Actor 交叉编译**（L4 ✅）：`--target wasm32-wasip1` 下 actor 程序同样受支持——driver 探测并链接 wasm 版 `zeta-actor-runtime`（`cargo build --target wasm32-wasip1 -p zeta-actor-runtime`；缺失且源码用了 actor 时显式报错）；dlsym 在 WASI 不可用，driver 从 HIR 收集 actor 符号注入静态 `zeta_actor_resolve` 符号表（strcmp → 函数地址），运行时走 WASI 单线程同步模式（同 native 邮箱 FIFO 互斥 + 受监督崩溃重启协议）。网络（`net` 模块）在 WASI 下**明确禁用**（`__zeta_target_os` 码 5 短路返回，见 §13 约束 2）。
+**Actor 交叉编译**（L4 ✅）：`--target wasm32-wasip1` 下 actor 程序同样受支持——driver 探测并链接 wasm 版 `rlyeh-actor-runtime`（`cargo build --target wasm32-wasip1 -p rlyeh-actor-runtime`；缺失且源码用了 actor 时显式报错）；dlsym 在 WASI 不可用，driver 从 HIR 收集 actor 符号注入静态 `rlyeh_actor_resolve` 符号表（strcmp → 函数地址），运行时走 WASI 单线程同步模式（同 native 邮箱 FIFO 互斥 + 受监督崩溃重启协议）。网络（`net` 模块）在 WASI 下**明确禁用**（`__rlyeh_target_os` 码 5 短路返回，见 §13 约束 2）。
 
 ---
 
@@ -1057,7 +1057,7 @@ wasmtime app.wasm      # WASI preview1 运行时运行
 
 `extern fn` 声明无 body 的 libc 符号，由链接器解析（通用 FFI，阶段 A4 打通）：
 
-```zeta
+```rlyeh
 extern fn clock() -> i64;
 extern fn fopen(path: String, mode: String) -> i64;
 extern fn gethostname(name: String, len: i64) -> i64;
@@ -1091,13 +1091,13 @@ extern fn gethostname(name: String, len: i64) -> i64;
 - **闭包**：✅ 无捕获闭包已实现（H2，见 §3.2）：`|x, y| expr` desugar 为匿名函数 + 函数指针（零运行时开销），需 fn 类型上下文（fn 形参实参 / `let f: fn(..) = |..| ..` 注解绑定）驱动参数类型推断；参数模式仅支持简单标识符与 `_`；**返回闭包的函数已实现**（`fn make() -> fn(..) { |x| .. }` 尾闭包按 H2 签名检查生成函数指针）。捕获闭包已实现（H3 IIFE MVP，见 §3.2）：`(|x| body)(args)` 立即调用按值捕获（desugar 为匿名函数 + 捕获变量前置调用）。闭包值对象已实现（H5 补全，见 §3.2）：`let f = |x: i64| ..; f(..)` 绑定后反复调用（按值捕获，desugar 为捕获聚合对象 + 调用点字段读取展开；仅局部变量环境）；**参数类型规则**——有注解用注解、无注解由首次调用点实参推断（`let f = |x| x + 1; f(41);`，半注解亦可用，惰性检查）；**无捕获闭包值可作 fn 实参/返回值**（降级为函数指针 / 按 fn 签名固化）；捕获闭包值不跨函数边界；按引用捕获、`move` 所有权语义规划中。
 - **函数指针**：✅ 已实现（H1，见 §3.2）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用；函数值可作实参、返回值、重新绑定、类型注解。
 - **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。`dyn Trait` ✅ 已实现（H4，见 §3.2）：trait 对象（`dyn Trait` 类型 + `&T` 强制转换 + vtable 间接分派）；MVP 限制：trait/impl 非泛型、含 `Self` 签名方法不可经 dyn 调用。
-- **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）✅ 已实现（MVP，见 §8.4）：`Gc::new` 编译器内建 + `gc_region` 块（desugar 为 `zeta_gc_region_begin`/`zeta_gc_alloc`/`zeta_gc_escape`/`zeta_gc_collect`）+ 逃逸对象 root 登记 + 嵌套块存活链式提升 + 字段/方法/索引自动剥层；保守标记-清除运行时（`zeta-gc-runtime`，纯 `libc::malloc`/`free` 链表元数据，单线程无锁）。MVP 限制：块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束、stop-the-world 非增量、递归标记；多线程/增量/write barrier 规划中。
+- **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）✅ 已实现（MVP，见 §8.4）：`Gc::new` 编译器内建 + `gc_region` 块（desugar 为 `rlyeh_gc_region_begin`/`rlyeh_gc_alloc`/`rlyeh_gc_escape`/`rlyeh_gc_collect`）+ 逃逸对象 root 登记 + 嵌套块存活链式提升 + 字段/方法/索引自动剥层；保守标记-清除运行时（`rlyeh-gc-runtime`，纯 `libc::malloc`/`free` 链表元数据，单线程无锁）。MVP 限制：块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束、stop-the-world 非增量、递归标记；多线程/增量/write barrier 规划中。
 - **并发**：`fmt` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）；普通函数 `async fn` / `.await` 已支持（S1c ✅，见 §9.3：`async fn` desugar 为 Future 结构体 + poll 状态机 + 构造器，`block_on` 轮询驱动，支持 `Poll::Pending` 挂起与恢复）；`json` 序列化已实现（L2 ✅，见 §9.4：`json::stringify` / `json::parse::<T>`，turbofish 泛型实参；标量 / 数组 / struct / Vec / `HashMap` 序列化 + `i64` / `bool` / `String` / `HashMap` 反序列化；`Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划）。
 - **迭代器协议**：✅ J1–J3 已实现（见 §3.2 迭代器与适配器小节）：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` / `for x in arr`（数组迭代）容器迭代可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 可用（返回 `Vec<T>` 可链式）。`Iterator` trait 定义（std-lib §2.3）仍为规划 API（适配器为编译器内建 desugar，非 trait 实现）。
 
 **实现约束**：
-- **std 模块化**：标准库位于 `zeta-std/zeta/`，`core.zeta` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `import` 重新导出，用户侧裸名即用。
-- **net**：`tcp_connect` 依赖平台特定 `sockaddr_in4` 布局（已由 `__zeta_target_os` 双布局化）；WASI 下网络不可用，**明确禁用**（L4 ✅：`net.zeta` 网络函数在 `__zeta_target_os() == 5`（WASI）时短路返回，不会链接 socket 符号；其余平台行为不变）。
-- **Actor 运行时**：✅ 交叉编译 / WASM 目标下 actor 程序已支持（L4，§11.3：driver 注入静态 `zeta_actor_resolve` 符号表替代 dlsym + WASI 单线程同步运行时；需先 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`）。
+- **std 模块化**：标准库位于 `rlyeh-std/rlyeh/`，`core.rl` 根模块（String / Vec / HashMap / Option / Result + extern 集中声明）拆分为 `time` / `io` / `net` / `sync` 四个子模块文件，driver 加载时模块展开 + `import` 重新导出，用户侧裸名即用。
+- **net**：`tcp_connect` 依赖平台特定 `sockaddr_in4` 布局（已由 `__rlyeh_target_os` 双布局化）；WASI 下网络不可用，**明确禁用**（L4 ✅：`net.rl` 网络函数在 `__rlyeh_target_os() == 5`（WASI）时短路返回，不会链接 socket 符号；其余平台行为不变）。
+- **Actor 运行时**：✅ 交叉编译 / WASM 目标下 actor 程序已支持（L4，§11.3：driver 注入静态 `rlyeh_actor_resolve` 符号表替代 dlsym + WASI 单线程同步运行时；需先 `cargo build --target wasm32-wasip1 -p rlyeh-actor-runtime`）。
 - **`String::from(s)`**：✅ 支持字符串字面量（及绑定字面量的变量）、运行期 `String` 变量（desugar 为 `s.clone()` 深拷贝）与 `&str` 视图（读 data/len 槽深拷贝）；G2 已消除"非字面量长度表达未实现"。
-- **region 选项**：✅ `adaptive` / `with_size (N)` / `strategy (bump)` 已实现（L3，§8.2：region 指令接线 `zeta-region-alloc` C ABI 运行时 + PGO 画像回灌 `adaptive` 初始容量）；`strategy (pool)` 等规划中。
+- **region 选项**：✅ `adaptive` / `with_size (N)` / `strategy (bump)` 已实现（L3，§8.2：region 指令接线 `rlyeh-region-alloc` C ABI 运行时 + PGO 画像回灌 `adaptive` 初始容量）；`strategy (pool)` 等规划中。

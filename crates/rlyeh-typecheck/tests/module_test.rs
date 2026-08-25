@@ -1,17 +1,17 @@
-//! zeta-typecheck 模块系统集成测试：嵌套 `mod`、`use` 导入、模块路径调用。
+//! rlyeh-typecheck 模块系统集成测试：嵌套 `mod`、`use` 导入、模块路径调用。
 
-use zeta_hir::HirItemKind;
-use zeta_parser::parse;
-use zeta_typecheck::{typecheck, TypeError};
+use rlyeh_hir::HirItemKind;
+use rlyeh_parser::parse;
+use rlyeh_typecheck::{typecheck, TypeError};
 
 /// 对源码执行类型检查。
-fn check(source: &str) -> Result<zeta_hir::HirProgram, TypeError> {
+fn check(source: &str) -> Result<rlyeh_hir::HirProgram, TypeError> {
     let program = parse(source).expect("parse should succeed");
     typecheck(&program)
 }
 
 /// 提取 HIR 项名集合（验证模块扁平化命名）。
-fn item_names(program: &zeta_hir::HirProgram) -> Vec<String> {
+fn item_names(program: &rlyeh_hir::HirProgram) -> Vec<String> {
     let mut names: Vec<String> = program.items.iter().map(|i| i.name.clone()).collect();
     names.sort();
     names
@@ -20,7 +20,7 @@ fn item_names(program: &zeta_hir::HirProgram) -> Vec<String> {
 #[test]
 fn test_nested_module_call() {
     let source = r#"
-mod math {
+module math {
     fn add(a: i64, b: i64) -> i64 {
         a + b
     }
@@ -43,13 +43,13 @@ fn main() {
 #[test]
 fn test_use_import() {
     let source = r#"
-mod math {
+module math {
     fn add(a: i64, b: i64) -> i64 {
         a + b
     }
 }
 
-use math::add;
+import math::add;
 
 fn main() {
     let x = add(1, 2);
@@ -62,13 +62,13 @@ fn main() {
 #[test]
 fn test_use_alias() {
     let source = r#"
-mod math {
+module math {
     fn add(a: i64, b: i64) -> i64 {
         a + b
     }
 }
 
-use math::add as madd;
+import math::add as madd;
 
 fn main() {
     let x = madd(1, 2);
@@ -81,9 +81,9 @@ fn main() {
 #[test]
 fn test_nested_mod_deep() {
     let source = r#"
-mod a {
-    mod b {
-        mod c {
+module a {
+    module b {
+        module c {
             fn deep() -> i64 {
                 42
             }
@@ -106,9 +106,9 @@ fn main() {
 
 #[test]
 fn test_module_struct_type() {
-    // zeta 的 `let` 必须有初始化，故用函数签名验证模块路径类型解析
+    // rlyeh 的 `let` 必须有初始化，故用函数签名验证模块路径类型解析
     let source = r#"
-mod geo {
+module geo {
     struct Point {
         x: i64,
         y: i64,
@@ -125,14 +125,14 @@ fn area(p: geo::Point) -> i64 {
 #[test]
 fn test_use_import_struct() {
     let source = r#"
-mod geo {
+module geo {
     struct Point {
         x: i64,
         y: i64,
     }
 }
 
-use geo::Point;
+import geo::Point;
 
 fn area(p: Point) -> i64 {
     0
@@ -144,7 +144,7 @@ fn area(p: Point) -> i64 {
 #[test]
 fn test_module_fn_type_mismatch() {
     let source = r#"
-mod math {
+module math {
     fn add(a: i64, b: i64) -> i64 {
         a + b
     }
@@ -162,13 +162,13 @@ fn main() {
 #[test]
 fn test_glob_import_unsupported() {
     let source = r#"
-mod math {
+module math {
     fn add(a: i64, b: i64) -> i64 {
         a + b
     }
 }
 
-use math::*;
+import math::*;
 
 fn main() {
     let x = add(1, 2);
@@ -182,7 +182,7 @@ fn main() {
 #[test]
 fn test_use_unknown_symbol() {
     let source = r#"
-use nonexistent::foo;
+import nonexistent::foo;
 
 fn main() {
     foo();
@@ -197,21 +197,21 @@ fn main() {
 fn test_module_in_interface_hash() {
     // 接口哈希应包含模块内函数（带前缀符号名）
     let source = r#"
-mod math {
+module math {
     fn add(a: i64, b: i64) -> i64 {
         a + b
     }
 }
 "#;
     let program = parse(source).expect("parse");
-    let sigs = zeta_typecheck::collect_fn_signatures(&program).expect("collect signatures");
+    let sigs = rlyeh_typecheck::collect_fn_signatures(&program).expect("collect signatures");
     assert!(sigs.iter().any(|(name, _)| name == "math::add"));
 }
 
 #[test]
 fn test_hir_item_kind() {
     let source = r#"
-mod m {
+module m {
     const K: i64 = 7;
     fn f() -> i64 {
         K

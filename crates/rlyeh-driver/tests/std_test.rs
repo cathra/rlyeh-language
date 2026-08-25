@@ -1,13 +1,13 @@
-//! zeta-driver 标准库核心类型集成测试：纯 Zeta 语言实现的
+//! rlyeh-driver 标准库核心类型集成测试：纯 Rlyeh 语言实现的
 //! `Option<T>` / `Result<T, E>`（泛型 enum + 泛型 impl + match）。
 //!
 //! 注意：字符串 API（`run_source`）不注入标准库预置，因此这里显式内联
-//! `core.zeta` 副本；文件入口 API 的自动注入见 `std_prelude_test.rs`。
+//! `core.rl` 副本；文件入口 API 的自动注入见 `std_prelude_test.rs`。
 //! 需要系统 clang（与 driver_test.rs / agg_test.rs 相同）。
 
-use zeta_driver::run_source;
+use rlyeh_driver::run_source;
 
-/// 标准库核心类型源码（`zeta-std/zeta/core.zeta` 的测试内联副本，需保持同步）。
+/// 标准库核心类型源码（`rlyeh-std/rlyeh/core.rl` 的测试内联副本，需保持同步）。
 const CORE_TYPES: &str = r#"
 enum Option<T> {
     None,

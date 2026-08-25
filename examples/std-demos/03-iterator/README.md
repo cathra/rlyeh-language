@@ -14,16 +14,16 @@
 
 | 文件 | 说明 |
 |------|------|
-| `iterator_trait.zeta` | 自定义迭代器：`next() -> Option<i64>` + for 接入 |
-| `adapters.zeta` | J1–J3 适配器：map / filter / fold / collect / take / skip 链式 |
-| `iterator_for.zeta` | 自定义迭代器接入 `for` 循环 |
-| `array_for.zeta` | 数组字面量 for 迭代 |
+| `iterator_trait.rl` | 自定义迭代器：`next() -> Option<i64>` + for 接入 |
+| `adapters.rl` | J1–J3 适配器：map / filter / fold / collect / take / skip 链式 |
+| `iterator_for.rl` | 自定义迭代器接入 `for` 循环 |
+| `array_for.rl` | 数组字面量 for 迭代 |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/03-iterator/iterator_trait.zeta
-zeta run examples/std-demos/03-iterator/adapters.zeta
-zeta run examples/std-demos/03-iterator/iterator_for.zeta
-zeta run examples/std-demos/03-iterator/array_for.zeta
+rlyeh run examples/std-demos/03-iterator/iterator_trait.rl
+rlyeh run examples/std-demos/03-iterator/adapters.rl
+rlyeh run examples/std-demos/03-iterator/iterator_for.rl
+rlyeh run examples/std-demos/03-iterator/array_for.rl
 ```

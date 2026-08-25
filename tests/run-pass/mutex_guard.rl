@@ -1,4 +1,4 @@
-// P2 验收：MutexGuard 作用域守卫自动解锁（zeta-desugar/src/guard.rs 块尾注入）
+// P2 验收：MutexGuard 作用域守卫自动解锁（rlyeh-desugar/src/guard.rs 块尾注入）
 // 验证策略：guard 块结束后 try_lock 应成功（输出 1）；guard 持锁期间 try_lock 返回 false（输出 0）。
 // try_lock 非阻塞，避免同一线程非递归锁重入死锁。
 // 输出与 mutex_guard.out 精确对比

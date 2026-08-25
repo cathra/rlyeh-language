@@ -3,7 +3,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use zeta_region_alloc::{SizeAdvisor, SmartRegion};
+use rlyeh_region_alloc::{SizeAdvisor, SmartRegion};
 
 /// 1000 次 u64 分配的吞吐（含一次扩容）。
 fn bench_smart_region(c: &mut Criterion) {

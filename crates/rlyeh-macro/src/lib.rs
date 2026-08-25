@@ -1,4 +1,4 @@
-//! Zeta 声明式宏展开器（`macro_rules!`，MVP）。
+//! Rlyeh 声明式宏展开器（`macro_rules!`，MVP）。
 //!
 //! 负责：matcher（`(...)`）token 解析 → 输入 token 流匹配 → 元变量绑定 →
 //! transcriber（`{...}`）token 展开。展开产物为纯 token 序列，
@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use zeta_lexer::Token;
+use rlyeh_lexer::Token;
 
 /// 元变量种类（`$x:kind`）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

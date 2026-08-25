@@ -1,8 +1,8 @@
-//! 增量编译缓存：`.zeta_cache/` 目录下的产物持久化。
+//! 增量编译缓存：`.rlyeh_cache/` 目录下的产物持久化。
 //!
 //! 布局：
 //! ```text
-//! .zeta_cache/
+//! .rlyeh_cache/
 //! ├── index.json                 ← 缓存索引（文件名 → 元数据）
 //! └── artifacts/<hash>.ll        ← LLVM IR 产物（以源码哈希命名）
 //! ```
@@ -80,7 +80,7 @@ impl CacheStats {
     }
 }
 
-/// 增量编译缓存（管理 `.zeta_cache` 目录）。
+/// 增量编译缓存（管理 `.rlyeh_cache` 目录）。
 #[derive(Debug, Clone)]
 pub struct IncrementalCache {
     /// 缓存根目录
@@ -92,11 +92,11 @@ pub struct IncrementalCache {
 }
 
 impl IncrementalCache {
-    /// 打开（或创建）`<dir>/.zeta_cache` 缓存。
+    /// 打开（或创建）`<dir>/.rlyeh_cache` 缓存。
     ///
     /// 索引损坏时静默降级为空缓存并记录 `recovered`。
     pub fn open(dir: &Path) -> Result<Self, DriverError> {
-        let root = dir.join(".zeta_cache");
+        let root = dir.join(".rlyeh_cache");
         let mut recovered = false;
         let index = match Self::load_index(&root) {
             Ok(Some(idx)) if idx.version == CACHE_VERSION => idx,
@@ -250,7 +250,7 @@ mod tests {
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("zeta-cache-test-{}-{name}", std::process::id()));
+            std::env::temp_dir().join(format!("rlyeh-cache-test-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -259,16 +259,16 @@ mod tests {
     fn store_and_lookup_roundtrip() {
         let dir = temp_dir("roundtrip");
         let mut cache = IncrementalCache::open(&dir).unwrap();
-        assert!(cache.lookup_llvm("a.zeta", "h1").unwrap().is_none());
+        assert!(cache.lookup_llvm("a.rl", "h1").unwrap().is_none());
 
         cache
-            .store_llvm("a.zeta", "h1", "iface1", "define i32 @main()")
+            .store_llvm("a.rl", "h1", "iface1", "define i32 @main()")
             .unwrap();
-        let llvm = cache.lookup_llvm("a.zeta", "h1").unwrap().expect("命中");
+        let llvm = cache.lookup_llvm("a.rl", "h1").unwrap().expect("命中");
         assert_eq!(llvm, "define i32 @main()");
 
         // 源码哈希变化 → 未命中
-        assert!(cache.lookup_llvm("a.zeta", "h2").unwrap().is_none());
+        assert!(cache.lookup_llvm("a.rl", "h2").unwrap().is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -277,12 +277,12 @@ mod tests {
         let dir = temp_dir("persist");
         {
             let mut cache = IncrementalCache::open(&dir).unwrap();
-            cache.store_llvm("a.zeta", "h1", "i1", "ir-a").unwrap();
+            cache.store_llvm("a.rl", "h1", "i1", "ir-a").unwrap();
         }
         {
             let cache = IncrementalCache::open(&dir).unwrap();
             assert_eq!(
-                cache.lookup_llvm("a.zeta", "h1").unwrap().as_deref(),
+                cache.lookup_llvm("a.rl", "h1").unwrap().as_deref(),
                 Some("ir-a")
             );
         }
@@ -292,20 +292,20 @@ mod tests {
     #[test]
     fn corrupted_index_recovers_to_empty() {
         let dir = temp_dir("corrupt");
-        let cache_dir = dir.join(".zeta_cache");
+        let cache_dir = dir.join(".rlyeh_cache");
         std::fs::create_dir_all(&cache_dir).unwrap();
         std::fs::write(cache_dir.join("index.json"), "{ 这不是 JSON !!!").unwrap();
 
         let cache = IncrementalCache::open(&dir).unwrap();
         assert!(cache.was_recovered());
-        assert!(cache.lookup_llvm("a.zeta", "h1").unwrap().is_none());
+        assert!(cache.lookup_llvm("a.rl", "h1").unwrap().is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn version_mismatch_invalidates() {
         let dir = temp_dir("version");
-        let cache_dir = dir.join(".zeta_cache");
+        let cache_dir = dir.join(".rlyeh_cache");
         std::fs::create_dir_all(&cache_dir).unwrap();
         let bad = CacheIndex {
             version: CACHE_VERSION + 99,
@@ -327,7 +327,7 @@ mod tests {
     fn clean_stale_removes_unreferenced_only() {
         let dir = temp_dir("stale");
         let mut cache = IncrementalCache::open(&dir).unwrap();
-        cache.store_llvm("a.zeta", "keep", "i1", "ir-keep").unwrap();
+        cache.store_llvm("a.rl", "keep", "i1", "ir-keep").unwrap();
 
         // 模拟历史残留产物
         let stale = cache.root().join("artifacts/stale-hash.ll");

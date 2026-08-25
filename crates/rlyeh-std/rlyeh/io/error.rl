@@ -1,6 +1,6 @@
-// io/error.zeta：IO 错误分类（std-lib.md §12）。
-// 目录化（2026-08）：由原 io.zeta 拆分。符号完整路径 io::error::IoError 等，
-// core.zeta 经 `import io::error::...` 重导出到根命名空间（裸名 IoError 即用）。
+// io/error.rl：IO 错误分类（std-lib.md §12）。
+// 目录化（2026-08）：由原 io.rl 拆分。符号完整路径 io::error::IoError 等，
+// core.rl 经 `import io::error::...` 重导出到根命名空间（裸名 IoError 即用）。
 
 // M1a（2026-08）：IO 错误分类枚举（C-like，无数据载荷）。
 // 对齐 std-lib.md §12：M1b 起由 IoError { kind, message } 携带。

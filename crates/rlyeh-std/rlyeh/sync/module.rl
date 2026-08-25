@@ -1,5 +1,5 @@
 // ===== sync 模块（B4，2026-08）：pthread 互斥锁 / 读写锁 =====
-// 基于 extern FFI 绑定 pthread 家族（extern 声明于根模块 core.zeta 的
+// 基于 extern FFI 绑定 pthread 家族（extern 声明于根模块 core.rl 的
 // extern 集中区）；原语对象（pthread_mutex_t / pthread_rwlock_t）承载于
 // malloc 缓冲，句柄（i64 指针）存于结构体字段。
 // 注意：malloc 缓冲无显式释放（MVP 无析构函数），进程退出时由 OS 回收。
@@ -9,11 +9,11 @@
 // 分配用 `calloc` 而非 `malloc`：内建 alloc_array/alloc_bytes 已按
 // `i8* @malloc(i64)` 声明 malloc，再以 i64 返回声明会触发 LLVM
 // "invalid redefinition of function 'malloc'"；calloc 符号无内建冲突。
-// 目录化（2026-08）：sync/module.zeta = 原 sync.zeta（模块规模小，保持单文件）。
+// 目录化（2026-08）：sync/module.rl = 原 sync.rl（模块规模小，保持单文件）。
 
 // ===== MutexGuard（P2，2026-08）：作用域守卫自动解锁 =====
 // `let g = m.lock_guard();` 后编译器在所在块尾自动注入 `g.unlock();`
-// （desugar 阶段对方法名 `lock_guard` 特判，见 zeta-desugar/src/guard.rs；
+// （desugar 阶段对方法名 `lock_guard` 特判，见 rlyeh-desugar/src/guard.rs；
 // 注入覆盖所在块 stmts 末尾，final_expr 之前）。
 // MVP 限制：if/match 分支内的提前 return / break 不注入（块尾注入前置，
 // 显式 `g.unlock()` 手动调用仍可用）；按方法名 `lock_guard` 特判。
@@ -91,7 +91,7 @@ impl RwLock {
 }
 
 // ===== P 阶段（2026-08）：条件变量 / 屏障 / 并发通道 =====
-// 线程创建已支持（S0 ✅，driver 注入 __zeta_thread_spawn），
+// 线程创建已支持（S0 ✅，driver 注入 __rlyeh_thread_spawn），
 // wait/signal 协作与屏障的 count>1 语义可在多线程下验证。
 
 // 条件变量（p 为 pthread_cond_t*；macOS = 40 字节、Linux = 48 字节，calloc(1, 64) 双平台安全）。
@@ -155,7 +155,7 @@ struct ChannelPair { tx: sync::Sender, rx: sync::Receiver }
 
 fn channel() -> sync::ChannelPair {
     // 构造调用用裸名（`sync::Mutex::new()` 路径 typecheck 不支持；
-    // 裸名经 core.zeta `import sync::Mutex` 别名解析为 sync::Mutex）
+    // 裸名经 core.rl `import sync::Mutex` 别名解析为 sync::Mutex）
     let ch = Rc::new(sync::Channel {
         m: Mutex::new(),
         cv: Condvar::new(),

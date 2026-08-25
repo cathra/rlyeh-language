@@ -1,6 +1,6 @@
 //! NIO 事件类型：关注标志与就绪事件。
 //!
-//! 对应 Zeta 标准库 `std::nio` 中的 `Interest` 与 `Event` 类型。
+//! 对应 Rlyeh 标准库 `std::nio` 中的 `Interest` 与 `Event` 类型。
 
 /// 事件关注标志（readiness interest）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

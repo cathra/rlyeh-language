@@ -1,6 +1,6 @@
 // 对照实现: region_batch.swift —— 手动 bump（与 region 语义对齐：一次性预分配 + 线性分配）
 // UnsafeMutablePointer 读写为 Swift 显式内存操作（编译器保守保留），
-// escape() 黑盒读强制真实内存带宽，对齐 region_batch.zeta。
+// escape() 黑盒读强制真实内存带宽，对齐 region_batch.rl。
 // 输出 = 2000497500000
 import Foundation
 

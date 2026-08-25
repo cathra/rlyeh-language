@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use zeta_hir::{FieldScalar, HirBinaryOp, HirUnaryOp};
-use zeta_mir::{BasicBlock, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
+use rlyeh_hir::{FieldScalar, HirBinaryOp, HirUnaryOp};
+use rlyeh_mir::{BasicBlock, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
 
 use crate::error::LirError;
 use crate::{

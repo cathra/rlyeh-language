@@ -1,8 +1,8 @@
-//! zeta-codegen 测试：构造 LIR 程序验证 LLVM IR 文本生成。
+//! rlyeh-codegen 测试：构造 LIR 程序验证 LLVM IR 文本生成。
 
-use zeta_codegen::generate_llvm;
-use zeta_lir::{HirBinaryOp, HirUnaryOp};
-use zeta_lir::{LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType};
+use rlyeh_codegen::generate_llvm;
+use rlyeh_lir::{HirBinaryOp, HirUnaryOp};
+use rlyeh_lir::{LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType};
 
 fn simple_main(
     stmts: Vec<LirStmt>,
@@ -31,7 +31,7 @@ fn gen_hello_world_string() {
         vec![
             LirStmt::Assign {
                 target: "_t0".to_string(),
-                value: LirOperand::String("Hello, Zeta!".to_string()),
+                value: LirOperand::String("Hello, Rlyeh!".to_string()),
             },
             LirStmt::Call {
                 target: Some("_t1".to_string()),
@@ -45,7 +45,7 @@ fn gen_hello_world_string() {
     let ll = generate_llvm(&p).expect("生成 LLVM IR");
     assert!(ll.contains("declare i32 @printf(i8*, ...)"));
     assert!(ll.contains("define i32 @main()"));
-    assert!(ll.contains("c\"Hello, Zeta!\\00\""));
+    assert!(ll.contains("c\"Hello, Rlyeh!\\00\""));
     assert!(ll.contains("c\"%s\\0A\\00\""));
     assert!(ll.contains("getelementptr"));
     assert!(ll.contains("ret i32 0"));

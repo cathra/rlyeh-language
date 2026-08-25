@@ -1,18 +1,18 @@
-//! Zep 命令行入口。
+//! Dagon 命令行入口。
 
 use clap::{Parser, Subcommand};
 
-use zep::commands::{
+use dagon::commands::{
     Ctx, cmd_add, cmd_build, cmd_clean, cmd_init, cmd_new, cmd_publish, cmd_remove, cmd_run,
     cmd_search, cmd_test, cmd_update,
 };
 
 #[derive(Parser)]
 #[command(
-    name = "zep",
+    name = "dagon",
     version,
-    about = "Zeta 包管理器（MVP）",
-    long_about = "Zep 是 Zeta 语言的包管理器：项目脚手架、依赖解析、注册表发布与构建集成。\n\n示例:\n  zep new myapp && cd myapp\n  zep add foo@^1.0\n  zep build && zep run\n  zep publish --registry /tmp/registry\n  zep search foo"
+    about = "Rlyeh 包管理器（MVP）",
+    long_about = "Dagon 是 Rlyeh 语言的包管理器：项目脚手架、依赖解析、注册表发布与构建集成。\n\n示例:\n  dagon new myapp && cd myapp\n  dagon add foo@^1.0\n  dagon build && dagon run\n  dagon publish --registry /tmp/registry\n  dagon search foo"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -22,7 +22,7 @@ struct Cli {
     #[arg(long, global = true)]
     verbose: bool,
 
-    /// 注册表地址（默认 ~/.zeta/registry；支持路径或 http://）
+    /// 注册表地址（默认 ~/.rl/registry；支持路径或 http://）
     #[arg(long, global = true, value_name = "URL")]
     registry: Option<String>,
 }
@@ -33,7 +33,7 @@ enum Commands {
     New {
         /// 项目名
         name: String,
-        /// 创建库项目（src/lib.zeta）
+        /// 创建库项目（src/lib.rl）
         #[arg(long)]
         lib: bool,
     },
@@ -63,15 +63,15 @@ enum Commands {
         #[arg(long)]
         release: bool,
     },
-    /// 编译并运行（程序参数需以 -- 分隔：zep run -- --flag x）
+    /// 编译并运行（程序参数需以 -- 分隔：dagon run -- --flag x）
     Run {
         /// 传给程序的参数
         #[arg(last = true)]
         args: Vec<String>,
     },
-    /// 构建并运行测试（tests/*.zeta）
+    /// 构建并运行测试（tests/*.rl）
     Test,
-    /// 重新解析依赖并更新 Zeta.lock
+    /// 重新解析依赖并更新 Rlyeh.lock
     Update {
         /// 指定包名（MVP 全量更新，忽略此参数）
         package: Option<String>,

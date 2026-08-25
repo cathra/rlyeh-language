@@ -1,4 +1,4 @@
-// N1a：OpenMode 枚举（io.zeta）+ fopen 模式字符串映射
+// N1a：OpenMode 枚举（io.rl）+ fopen 模式字符串映射
 fn match_code(m: OpenMode) -> i64 {
     match m {
         OpenMode::Read => 1,

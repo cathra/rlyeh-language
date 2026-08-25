@@ -1,4 +1,4 @@
-//! E2 WebAssembly 目标测试：`--target wasm32-wasi` 编译 Zeta 源码为 `.wasm`，
+//! E2 WebAssembly 目标测试：`--target wasm32-wasi` 编译 Rlyeh 源码为 `.wasm`，
 //! 用 wasmtime 运行验证（WASI preview1）。
 //!
 //! 依赖（缺一即优雅跳过）：
@@ -25,7 +25,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn tmp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("zeta-wasm-{tag}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-wasm-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -67,7 +67,7 @@ fn wasm_toolchain_ready() -> bool {
 }
 
 /// wasm 版 Actor 运行时静态库是否就位（L4b：`cargo build --target
-/// wasm32-wasip1 -p zeta-actor-runtime` 产物；driver 探测路径之一）。
+/// wasm32-wasip1 -p rlyeh-actor-runtime` 产物；driver 探测路径之一）。
 fn wasm_actor_runtime_ready() -> bool {
     let root = workspace_root();
     for target in ["wasm32-wasip1", "wasm32-wasi"] {
@@ -76,7 +76,7 @@ fn wasm_actor_runtime_ready() -> bool {
                 .join("target")
                 .join(target)
                 .join(profile)
-                .join("libzeta_actor_runtime.a");
+                .join("librlyeh_actor_runtime.a");
             if p.exists() {
                 return true;
             }
@@ -88,7 +88,7 @@ fn wasm_actor_runtime_ready() -> bool {
 /// 编译入口文件为 `.wasm` 并用 wasmtime 运行，返回 stdout。
 fn build_and_run_wasm(entry: &Path, dir: &Path, tag: &str) -> String {
     let wasm = dir.join(format!("{tag}.wasm"));
-    zeta_driver::build_executable_file_with_target(entry, &wasm, Some("wasm32-wasi")).unwrap();
+    rlyeh_driver::build_executable_file_with_target(entry, &wasm, Some("wasm32-wasi")).unwrap();
     assert!(wasm.exists(), "应生成 .wasm 产物: {}", wasm.display());
     let out = Command::new("wasmtime").arg(&wasm).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -102,12 +102,12 @@ fn build_and_run_wasm(entry: &Path, dir: &Path, tag: &str) -> String {
 
 #[test]
 fn is_wasm_triple_detection() {
-    assert!(zeta_driver::is_wasm_triple("wasm32-wasi"));
-    assert!(zeta_driver::is_wasm_triple("wasm32-unknown-unknown"));
-    assert!(zeta_driver::is_wasm_triple("wasm64-wasi"));
-    assert!(!zeta_driver::is_wasm_triple("aarch64-apple-macosx"));
-    assert!(!zeta_driver::is_wasm_triple("x86_64-unknown-linux-gnu"));
-    assert!(!zeta_driver::is_wasm_triple(""));
+    assert!(rlyeh_driver::is_wasm_triple("wasm32-wasi"));
+    assert!(rlyeh_driver::is_wasm_triple("wasm32-unknown-unknown"));
+    assert!(rlyeh_driver::is_wasm_triple("wasm64-wasi"));
+    assert!(!rlyeh_driver::is_wasm_triple("aarch64-apple-macosx"));
+    assert!(!rlyeh_driver::is_wasm_triple("x86_64-unknown-linux-gnu"));
+    assert!(!rlyeh_driver::is_wasm_triple(""));
 }
 
 /// hello world 编译为 .wasm 并在 wasmtime 下运行。
@@ -120,12 +120,12 @@ fn wasm_hello_world_runs() {
         return;
     }
     let root = workspace_root();
-    let hello = root.join("tests/run-pass/hello.zeta");
+    let hello = root.join("tests/run-pass/hello.rl");
     assert!(hello.exists(), "缺测试用例: {}", hello.display());
     let dir = tmp_dir("hello");
     let stdout = build_and_run_wasm(&hello, &dir, "hello");
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(stdout, "Hello, Zeta!\n");
+    assert_eq!(stdout, "Hello, Rlyeh!\n");
 }
 
 /// 标准库类型（Vec / String + 算术 + 位运算）在 wasm 下编译运行，
@@ -137,7 +137,7 @@ fn wasm_std_features_runs() {
         return;
     }
     let dir = tmp_dir("std");
-    let f = dir.join("std-demo.zeta");
+    let f = dir.join("std-demo.rl");
     std::fs::write(
         &f,
         "fn main() {\n\
@@ -161,8 +161,8 @@ fn wasm_std_features_runs() {
 /// L4b: Actor 交叉编译 / WASM 支持——ask 往返 + send 异步 + FIFO 在
 /// `wasm32-wasi` 目标下编译运行，输出与原生完全一致。
 ///
-/// wasm 版 Actor 运行时（`zeta-actor-runtime` 同步模式）为单线程实现：
-/// 无 dlsym / 线程池，符号经 driver 注入的静态表 `zeta_actor_resolve` 解析，
+/// wasm 版 Actor 运行时（`rlyeh-actor-runtime` 同步模式）为单线程实现：
+/// 无 dlsym / 线程池，符号经 driver 注入的静态表 `rlyeh_actor_resolve` 解析，
 /// 消息同步派发（与 L1 `async` 的 MVP 同步语义一致）。
 #[test]
 fn wasm_actor_runs() {
@@ -172,12 +172,12 @@ fn wasm_actor_runs() {
     }
     if !wasm_actor_runtime_ready() {
         eprintln!(
-            "跳过: 缺 wasm 版 Actor 运行时（先执行 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`）"
+            "跳过: 缺 wasm 版 Actor 运行时（先执行 `cargo build --target wasm32-wasip1 -p rlyeh-actor-runtime`）"
         );
         return;
     }
     let root = workspace_root();
-    let ping_pong = root.join("tests/run-pass/actor-ping-pong.zeta");
+    let ping_pong = root.join("tests/run-pass/actor-ping-pong.rl");
     assert!(ping_pong.exists(), "缺测试用例: {}", ping_pong.display());
     let dir = tmp_dir("actor");
     let stdout = build_and_run_wasm(&ping_pong, &dir, "actor");
@@ -195,12 +195,12 @@ fn wasm_actor_supervised_runs() {
     }
     if !wasm_actor_runtime_ready() {
         eprintln!(
-            "跳过: 缺 wasm 版 Actor 运行时（先执行 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`）"
+            "跳过: 缺 wasm 版 Actor 运行时（先执行 `cargo build --target wasm32-wasip1 -p rlyeh-actor-runtime`）"
         );
         return;
     }
     let dir = tmp_dir("actor-sup");
-    let f = dir.join("actor-supervised.zeta");
+    let f = dir.join("actor-supervised.rl");
     std::fs::write(
         &f,
         "// 受监督 actor：value 达 100 崩溃一次，supervisor 重建初始状态\n\

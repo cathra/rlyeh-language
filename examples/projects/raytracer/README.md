@@ -1,4 +1,4 @@
-# raytracer — Zeta 光线追踪示例
+# raytracer — Rlyeh 光线追踪示例
 
 一个纯软件、全 i64 定点的光线追踪渲染器，输出 PPM 图像。
 
@@ -15,24 +15,24 @@
 ```bash
 scripts/build.sh     # 编译为 ./raytracer
 scripts/run.sh       # 编译并生成 output.ppm（macOS 同时生成 output.png）
-scripts/bench.sh     # zeta bench 基准
+scripts/bench.sh     # rlyeh bench 基准
 ```
 
 或直接：
 
 ```bash
-zeta run src/main.zeta    # 或 zeta build src/main.zeta -o raytracer
+rlyeh run src/main.rl    # 或 rlyeh build src/main.rl -o raytracer
 ```
 
 ## 调整参数
 
-编辑 `src/main.zeta` 中的内置常量：
+编辑 `src/main.rl` 中的内置常量：
 
 - `width` / `height`：图像尺寸
 - `depth`：反射递归层数
 - `eye` / `look` / `focal`：相机位置、目标与焦距
 
-场景球体、光源、颜色在 `src/scene.zeta` 中定义。
+场景球体、光源、颜色在 `src/scene.rl` 中定义。
 
 ## 产物
 

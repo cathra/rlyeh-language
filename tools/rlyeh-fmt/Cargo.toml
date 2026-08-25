@@ -1,15 +1,15 @@
 [package]
-name = "zeta-fmt"
+name = "rlyeh-fmt"
 version.workspace = true
 edition.workspace = true
-description = "Zeta 语言代码格式化器（基于 AST 重建，规范缩进与空格）"
+description = "Rlyeh 语言代码格式化器（基于 AST 重建，规范缩进与空格）"
 
 [dependencies]
-zeta-ast = { workspace = true }
-zeta-parser = { workspace = true }
+rlyeh-ast = { workspace = true }
+rlyeh-parser = { workspace = true }
 
 [[bin]]
-name = "zeta-fmt"
+name = "rlyeh-fmt"
 path = "src/main.rs"
 
 [lib]

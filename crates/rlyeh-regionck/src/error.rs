@@ -4,7 +4,7 @@ use std::fmt;
 
 /// 区域检查错误。
 ///
-/// 注意：HIR 节点不携带源码位置（见 zeta-hir 设计约定），
+/// 注意：HIR 节点不携带源码位置（见 rlyeh-hir 设计约定），
 /// `line` / `col` 当前恒为 0，位置信息留待引入 Span 传播后填充。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegionError {

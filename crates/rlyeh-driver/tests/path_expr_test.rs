@@ -3,7 +3,7 @@
 //! 覆盖：无参/带参变体构造、模块常量、模块函数、嵌套模块、
 //! 跨模块泛型变体 + match、裸变体回归、compile-fail 场景。
 
-use zeta_driver::run_source;
+use rlyeh_driver::run_source;
 
 const MODULE_VARIANT_NO_ARG: &str = r#"
 mod shape {

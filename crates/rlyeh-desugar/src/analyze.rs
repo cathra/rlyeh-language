@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use zeta_ast::{AstBlock, AstExpr, AstFnDecl, AstParam, AstPattern, AstStmt, AstType, ExprKind};
-use zeta_lexer::Span;
+use rlyeh_ast::{AstBlock, AstExpr, AstFnDecl, AstParam, AstPattern, AstStmt, AstType, ExprKind};
+use rlyeh_lexer::Span;
 
 use crate::DesugarError;
 

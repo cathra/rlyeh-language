@@ -1,4 +1,4 @@
-# Zeta 语义要点（v0.1.0 MVP）
+# Rlyeh 语义要点（v0.1.0 MVP）
 
 > 权威规范：`docs/semantics.md`、`docs/memory-model.md`、`docs/actor-model.md`。本节解释**运行时行为**，
 > 用于调试与代码审查。
@@ -33,7 +33,7 @@
 
 - `region 'r { ... }`：块结束**批量释放**；`in 'r` 分配进区域。
 - `return transfer d out of 'r;`：所有权转移出区域（返回值）。
-- `region 'r adaptive`：编译器自动推断大小（可用 PGO 画像回灌初始容量，见 `zeta profile`）。
+- `region 'r adaptive`：编译器自动推断大小（可用 PGO 画像回灌初始容量，见 `rlyeh profile`）。
 
 ## 5. Actor 协议
 
@@ -61,4 +61,4 @@
 ## 8. 常量折叠与编译期检查
 
 - 位运算、算术支持常量折叠（编译期可算出字面量结果）。
-- `zeta check` 静态分析：未使用变量 / 恒常条件 / 冗余比较 / 不可达代码。
+- `rlyeh check` 静态分析：未使用变量 / 恒常条件 / 冗余比较 / 不可达代码。

@@ -1,8 +1,8 @@
 [package]
-name = "zeta-macro"
+name = "rlyeh-macro"
 version.workspace = true
 edition.workspace = true
-description = "Zeta 声明式宏展开器（macro_rules! MVP）"
+description = "Rlyeh 声明式宏展开器（macro_rules! MVP）"
 
 [dependencies]
-zeta-lexer = { workspace = true }
+rlyeh-lexer = { workspace = true }

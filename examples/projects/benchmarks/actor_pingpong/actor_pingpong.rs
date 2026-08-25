@@ -1,5 +1,5 @@
 // 基准: actor_pingpong —— 5 万次线程间同步往返（mpsc 双通道）
-// 与 actor_pingpong.zeta 逻辑严格一致。输出 = 1250025000
+// 与 actor_pingpong.rl 逻辑严格一致。输出 = 1250025000
 use std::sync::mpsc;
 use std::thread;
 

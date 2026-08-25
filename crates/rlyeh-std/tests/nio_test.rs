@@ -1,4 +1,4 @@
-//! zeta-std NIO 与 sendfile 集成测试。
+//! rlyeh-std NIO 与 sendfile 集成测试。
 
 #![cfg(unix)]
 
@@ -8,7 +8,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-use zeta_std::nio::{is_nonblocking, sendfile, set_nonblocking, Interest, Poller};
+use rlyeh_std::nio::{is_nonblocking, sendfile, set_nonblocking, Interest, Poller};
 
 /// sendfile 原生支持平台（Linux 与 macOS/BSD）。
 #[cfg(any(
@@ -24,7 +24,7 @@ fn temp_file(contents: &[u8]) -> (std::path::PathBuf, File) {
     use std::sync::atomic::{AtomicU32, Ordering};
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let path = std::env::temp_dir().join(format!(
-        "zeta-nio-test-{}-{}.tmp",
+        "rlyeh-nio-test-{}-{}.tmp",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));

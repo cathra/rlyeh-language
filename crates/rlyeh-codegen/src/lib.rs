@@ -1,6 +1,6 @@
-//! # zeta-codegen
+//! # rlyeh-codegen
 //!
-//! Zeta 代码生成：LIR → 后端指令。
+//! Rlyeh 代码生成：LIR → 后端指令。
 //!
 //! MVP 提供 **LLVM IR 文本后端**（见 [`llvm::generate_llvm`]）：
 //! 输出人类可读的 `.ll` 模块，经系统 `clang` 汇编 / 链接为可执行文件。

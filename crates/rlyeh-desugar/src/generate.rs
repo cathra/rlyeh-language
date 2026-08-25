@@ -2,11 +2,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use zeta_ast::{
+use rlyeh_ast::{
     AstBlock, AstExpr, AstFnDecl, AstImplBlock, AstItem, AstParam, AstPattern, AstStmt,
     AstStructDecl, AstStructField, AstType, CompareOp, ExprKind, MatchArm,
 };
-use zeta_lexer::Span;
+use rlyeh_lexer::Span;
 
 use crate::analyze::{AnalyzedAsync, AwaitInfo, AwaitTarget, Segment};
 
@@ -88,7 +88,7 @@ fn assign(target: AstExpr, value: AstExpr, span: Span) -> AstStmt {
     AstStmt::Semi(AstExpr::new(
         ExprKind::Assign {
             target,
-            op: zeta_ast::AssignOp::Assign,
+            op: rlyeh_ast::AssignOp::Assign,
             value,
         },
         span,
@@ -554,7 +554,7 @@ fn rewrite_stmt(
                     return Some(AstStmt::Semi(AstExpr::new(
                         ExprKind::Assign {
                             target: self_field(x, span),
-                            op: zeta_ast::AssignOp::Assign,
+                            op: rlyeh_ast::AssignOp::Assign,
                             value: rewrite_expr(init, lifted, span),
                         },
                         span,

@@ -1,6 +1,6 @@
-# Zeta 开发任务书索引（归档）
+# Rlyeh 开发任务书索引（归档）
 
-> **目录定位**：本目录归档 Zeta 编译器/工具链从零起步的 13 份开发任务书（Prompt）及其执行记录。
+> **目录定位**：本目录归档 Rlyeh 编译器/工具链从零起步的 13 份开发任务书（Prompt）及其执行记录。
 > **归档说明（2026-08-24）**：P001–P013 **已全部完成**；各任务书的持久内容（实现决策、落地偏差、
 > 已知限制、关键 bug）已提炼并入 `docs/` 对应权威文档的**"附录 A：实现纪要"**，本目录仅保留原始任务书供追溯。
 > 新功能开发以 [`../../docs/`](../../) 权威规范与 [`../../CODEBUDDY.md`](../../../CODEBUDDY.md) 为准。
@@ -13,19 +13,19 @@
 
 | 编号 | 文件 | 模块 | 对应设计稿 | 预估工期 |
 |------|------|------|-----------|----------|
-| P001 | [P001_词法分析器核心.md](./P001_词法分析器核心.md) | `zeta-lexer` | [design/01](../01_词法分析器.md) | 3-5 天 |
-| P002 | [P002_语法分析器核心.md](./P002_语法分析器核心.md) | `zeta-parser` | [design/02](../02_语法分析器.md) | 5-7 天 |
-| P003 | [P003_比较链语义分析.md](./P003_比较链语义分析.md) | `zeta-typecheck` | [design/03](../03_类型系统.md) / [design/06](../06_比较链与条件判断.md) | 3-5 天 |
-| P004 | [P004_区域系统实现.md](./P004_区域系统实现.md) | `zeta-regionck` | [design/05](../05_区域内存管理系统.md) | 5-7 天 |
-| P005 | [P005_Transfer语义实现.md](./P005_Transfer语义实现.md) | `zeta-regionck` | [design/05](../05_区域内存管理系统.md) | 3-5 天 |
-| P006 | [P006_Actor运行时.md](./P006_Actor运行时.md) | `zeta-actor-runtime` | [design/07](../07_Actor并发模型.md) | 5-7 天 |
-| P007 | [P007_增量编译引擎.md](./P007_增量编译引擎.md) | `zeta-driver` | [design/09](../09_工具链设计.md) | 5-7 天 |
-| P008 | [P008_包管理器Zep.md](./P008_包管理器Zep.md) | `zep` | [design/09](../09_工具链设计.md) | 5-7 天 |
-| P009 | [P009_标准库核心模块.md](./P009_标准库核心模块.md) | `zeta-std` | [design/10](../10_标准库规划.md) | 5-7 天 |
-| P010 | [P010_智能区域分配器.md](./P010_智能区域分配器.md) | `zeta-region-alloc` | [design/05](../05_区域内存管理系统.md) | 5-7 天 |
-| P011 | [P011_MIR中间表示实现.md](./P011_MIR中间表示实现.md) | `zeta-mir` | [design/08](../08_编译器后端与代码生成.md) | 5-7 天 |
-| P012 | [P012_L0借用检查器实现.md](./P012_L0借用检查器实现.md) | `zeta-borrowck` | [design/04](../04_所有权与借用检查器.md) | 3-5 天 |
-| P013 | [P013_LLVM后端与代码生成.md](./P013_LLVM后端与代码生成.md) | `zeta-lir`+`zeta-codegen`+`zeta-driver` | [design/08](../08_编译器后端与代码生成.md) | 7-10 天 |
+| P001 | [P001_词法分析器核心.md](./P001_词法分析器核心.md) | `rlyeh-lexer` | [design/01](../01_词法分析器.md) | 3-5 天 |
+| P002 | [P002_语法分析器核心.md](./P002_语法分析器核心.md) | `rlyeh-parser` | [design/02](../02_语法分析器.md) | 5-7 天 |
+| P003 | [P003_比较链语义分析.md](./P003_比较链语义分析.md) | `rlyeh-typecheck` | [design/03](../03_类型系统.md) / [design/06](../06_比较链与条件判断.md) | 3-5 天 |
+| P004 | [P004_区域系统实现.md](./P004_区域系统实现.md) | `rlyeh-regionck` | [design/05](../05_区域内存管理系统.md) | 5-7 天 |
+| P005 | [P005_Transfer语义实现.md](./P005_Transfer语义实现.md) | `rlyeh-regionck` | [design/05](../05_区域内存管理系统.md) | 3-5 天 |
+| P006 | [P006_Actor运行时.md](./P006_Actor运行时.md) | `rlyeh-actor-runtime` | [design/07](../07_Actor并发模型.md) | 5-7 天 |
+| P007 | [P007_增量编译引擎.md](./P007_增量编译引擎.md) | `rlyeh-driver` | [design/09](../09_工具链设计.md) | 5-7 天 |
+| P008 | [P008_包管理器Dagon.md](./P008_包管理器Dagon.md) | `dagon` | [design/09](../09_工具链设计.md) | 5-7 天 |
+| P009 | [P009_标准库核心模块.md](./P009_标准库核心模块.md) | `rlyeh-std` | [design/10](../10_标准库规划.md) | 5-7 天 |
+| P010 | [P010_智能区域分配器.md](./P010_智能区域分配器.md) | `rlyeh-region-alloc` | [design/05](../05_区域内存管理系统.md) | 5-7 天 |
+| P011 | [P011_MIR中间表示实现.md](./P011_MIR中间表示实现.md) | `rlyeh-mir` | [design/08](../08_编译器后端与代码生成.md) | 5-7 天 |
+| P012 | [P012_L0借用检查器实现.md](./P012_L0借用检查器实现.md) | `rlyeh-borrowck` | [design/04](../04_所有权与借用检查器.md) | 3-5 天 |
+| P013 | [P013_LLVM后端与代码生成.md](./P013_LLVM后端与代码生成.md) | `rlyeh-lir`+`rlyeh-codegen`+`rlyeh-driver` | [design/08](../08_编译器后端与代码生成.md) | 7-10 天 |
 
 **总计**：约 59-98 天（单人），2-3 个月（3-4 人团队）
 
@@ -73,11 +73,11 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 | P006 | ✅ 完成 | 2026-08-20 | 15/15 (100%) | Actor 运行时（工作窃取调度 + 邮箱互斥 + ask/reply + Supervisor 恢复 + Router/Timer + 优雅关闭）；补齐 M2.1 |
 | P007 | ✅ 完成 | 2026-08-20 | 24/24 (100%) | 增量编译（源码/接口哈希 + 多版本产物缓存 + 损坏恢复 + 依赖图 + 多文件模块缓存）；补齐 M2.3 |
 | — | ✅ 完成 | 2026-08-20 | 7/7 (100%) | 模块系统（嵌套 `mod` + `use` 导入别名 + `mod foo;` 多文件加载 + 扁平符号名 + 模块内符号解析）——parser/typecheck/driver/codegen 跨层联动 |
-| P008 | ✅ 完成 | 2026-08-20 | 29/29 (100%) | 包管理器 Zep（pubgrub 依赖解析 + 本地/HTTP 注册表 + 打包解包 + 构建驱动）；补齐 M2.2 |
+| P008 | ✅ 完成 | 2026-08-20 | 29/29 (100%) | 包管理器 Dagon（pubgrub 依赖解析 + 本地/HTTP 注册表 + 打包解包 + 构建驱动）；补齐 M2.2 |
 | — | ✅ 完成 | 2026-08-20 | 10/10 (100%) | 聚合对象语言特性（enum + match + impl + trait + 泛型单态化） |
 | — | ✅ 完成 | 2026-08-20 | 62/62 (100%) | 聚合对象语言特性扩展（`impl<T>` 泛型 self、语句式 while/for/loop/region、struct 字面量、`&self`/`&mut self` 方法、match 引用解构、loop Never、泛型替换下沉模式） |
 | — | ✅ 完成 | 2026-08-20 | 63/63 (100%) | 标准库预置接入 + 聚合类型全链路修复（stdlib 搜索路径 + LIR 类型传播 + MIR Never 分支 phi） |
-| P009 | ✅ 完成 | 2026-08-20 | 6/6 (100%) | 标准库核心类型（Option/Result 纯 Zeta 实现于 core.zeta）+ 编译器标准库搜索路径接入 |
+| P009 | ✅ 完成 | 2026-08-20 | 6/6 (100%) | 标准库核心类型（Option/Result 纯 Rlyeh 实现于 core.rl）+ 编译器标准库搜索路径接入 |
 | — | ✅ 完成 | 2026-08-20 | 9/9 (100%) | for 循环 range 迭代器（desugar 为 loop + 临时边界变量；修复 continue 死循环） |
 | — | ✅ 完成 | 2026-08-20 | 11/11 (100%) | 跨模块路径表达式（`mod::Enum::Variant`）+ 模块常量引用 + match 多段路径模式 |
 | — | ✅ 完成 | 2026-08-20 | 12/12 (100%) | 索引访问 `a[i]` 与数组字面量（Alloc + 逐元素 FieldSet；GEP+bitcast+load；步长 8/1 字节）——M2.5 collections 硬前提 |
@@ -96,21 +96,21 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 
 ```bash
 # 创建并运行新项目
-zeta new hello_world
+rlyeh new hello_world
 cd hello_world
-zeta run src/main.zeta        # 预期输出：Hello, Zeta!
+rlyeh run src/main.rl        # 预期输出：Hello, Rlyeh!
 
 # 手动编译 hello world（内建打印，无宏）
-echo 'fn main() { println("Hello, Zeta!"); }' > test.zeta
-zeta run test.zeta            # 预期输出：Hello, Zeta!
+echo 'fn main() { println("Hello, Rlyeh!"); }' > test.rl
+rlyeh run test.rl            # 预期输出：Hello, Rlyeh!
 
 # 测试比较链与集合判断
 echo 'fn main() {
   let x = 5;
   if 0 < x < 10 { println("in range"); }
   if x in (1, 3, 5) { println("in set"); }
-}' > test2.zeta
-zeta run test2.zeta
+}' > test2.rl
+rlyeh run test2.rl
 # 预期输出：in range\nin set
 
 # 测试区域系统（区域名用单引号 'r，打印用 println(x) 而非 println!("{}", x)）
@@ -119,8 +119,8 @@ echo 'fn main() {
     let x = 42 in '\''r'\'';
     println(x);
   }
-}' > test3.zeta
-zeta run test3.zeta
+}' > test3.rl
+rlyeh run test3.rl
 # 预期输出：42
 
 # 测试动态切片（数组 / Vec）
@@ -129,8 +129,8 @@ echo 'fn main() {
   let a = arr[1..<3];
   println(a.len());
   println(a.get(0));
-}' > test4.zeta
-zeta run test4.zeta
+}' > test4.rl
+rlyeh run test4.rl
 # 预期输出：2\n20
 
 # 测试 Actor 并发（ask 往返 + fire-and-forget）
@@ -142,8 +142,8 @@ fn main() {
   let c = Counter::new();
   println(c.increment(10).await);
   send c.increment(1);
-}' > test5.zeta
-zeta run test5.zeta
+}' > test5.rl
+rlyeh run test5.rl
 # 预期输出：10
 
 # 全量回归
@@ -174,7 +174,7 @@ cargo test --workspace        # 全部通过（当前 111 套件）
 ### 文件头模板
 
 ```rust
-//! # zeta-xxx
+//! # rlyeh-xxx
 //!
 //! 简要描述本模块的功能。
 //!
@@ -208,5 +208,5 @@ cargo test --workspace        # 全部通过（当前 111 套件）
 
 ---
 
-> **维护者**：Zeta Language Team
+> **维护者**：Rlyeh Language Team
 > **License**：MIT / Apache-2.0

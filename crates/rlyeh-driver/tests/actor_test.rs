@@ -1,30 +1,30 @@
 //! 阶段 C：Actor 语言级接线集成测试。
 //!
 //! 覆盖：
-//! - `Actor::new()` → `zeta_actor_spawn`（编译器生成 `__state_new` 初始化状态）
-//! - 方法调用 `.await` → `zeta_actor_ask`（同步往返）
-//! - `send actor.method(args)` → `zeta_actor_send`（异步 fire-and-forget）
+//! - `Actor::new()` → `rlyeh_actor_spawn`（编译器生成 `__state_new` 初始化状态）
+//! - 方法调用 `.await` → `rlyeh_actor_ask`（同步往返）
+//! - `send actor.method(args)` → `rlyeh_actor_send`（异步 fire-and-forget）
 //! - 多实例独立状态 / 多字段多方法 / 复合赋值
 //! - Supervisor 恢复（语言级生成的 `__handle`/`__state_new` 符号 + extern 监督 spawn）
 
 use std::path::PathBuf;
 
-use zeta_driver::run_source_file;
+use rlyeh_driver::run_source_file;
 
 /// 独立临时目录，避免并行测试互相覆盖。
 fn temp_dir() -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("zeta-actor-{}-{seq}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-actor-{}-{seq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("创建临时目录失败");
     dir
 }
 
-/// 运行内联源码（自动注入 core.zeta），返回程序输出。
-fn run_zeta(src: &str) -> String {
+/// 运行内联源码（自动注入 core.rl），返回程序输出。
+fn run_rlyeh(src: &str) -> String {
     let dir = temp_dir();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("actor 测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     out
@@ -65,7 +65,7 @@ fn main() {
     println(c.increment(7).await);
 }
 "#;
-    assert_eq!(run_zeta(src), "10\n15\n15\n0\n7\n");
+    assert_eq!(run_rlyeh(src), "10\n15\n15\n0\n7\n");
 }
 
 /// 2. send 异步：fire-and-forget 后 get 可见
@@ -95,7 +95,7 @@ fn main() {
     println(c.get().await);
 }
 "#;
-    assert_eq!(run_zeta(src), "100\n103\n");
+    assert_eq!(run_rlyeh(src), "100\n103\n");
 }
 
 /// 3. ping-pong：echo 往返 + 方法链
@@ -124,7 +124,7 @@ fn main() {
     println(e.peek().await);
 }
 "#;
-    assert_eq!(run_zeta(src), "42\n84\n84\n");
+    assert_eq!(run_rlyeh(src), "42\n84\n84\n");
 }
 
 /// 4. 多实例独立状态
@@ -158,7 +158,7 @@ fn main() {
     println(a.get().await);
 }
 "#;
-    assert_eq!(run_zeta(src), "3\n9\n4\n9\n4\n");
+    assert_eq!(run_rlyeh(src), "3\n9\n4\n9\n4\n");
 }
 
 /// 5. 多字段多方法：字段种类（i64/bool）+ 多参数（≤3）+ 复杂运算
@@ -205,11 +205,11 @@ fn main() {
     println(st2);
 }
 "#;
-    assert_eq!(run_zeta(src), "6\n66\n-2\n1\n6602\n");
+    assert_eq!(run_rlyeh(src), "6\n66\n-2\n1\n6602\n");
 }
 
 /// 6）Supervisor 恢复：语言级 `Boom::new_supervised(0)`（编译器自动生成
-/// `zeta_actor_spawn_supervised` extern 声明），崩溃（返回 -1）后重启，
+/// `rlyeh_actor_spawn_supervised` extern 声明），崩溃（返回 -1）后重启，
 /// 由 `__state_new` 重建初始状态（不再依赖手工 extern 声明）。
 #[test]
 fn supervisor_restart() {
@@ -240,7 +240,7 @@ fn main() {
     println(r2);
 }
 "#;
-    assert_eq!(run_zeta(src), "12\n0\n10\n");
+    assert_eq!(run_rlyeh(src), "12\n0\n10\n");
 }
 
 /// 7）无监督崩溃：`new()`（无 supervisor）下方法返回 -1，
@@ -271,7 +271,7 @@ fn main() {
     println(w.add(1).await);
 }
 "#;
-    assert_eq!(run_zeta(src), "7\n0\n0\n");
+    assert_eq!(run_rlyeh(src), "7\n0\n0\n");
 }
 
 /// 8）send FIFO 顺序：连续 `send` 的消息按入队顺序处理，
@@ -303,7 +303,7 @@ fn main() {
     println(b.total().await);
 }
 "#;
-    assert_eq!(run_zeta(src), "6\n36\n");
+    assert_eq!(run_rlyeh(src), "6\n36\n");
 }
 
 /// 9）resolve 支持：`use` 导入模块内 actor 后，短名构造 / 方法调用 / send
@@ -312,7 +312,7 @@ fn main() {
 #[test]
 fn use_imported_actor_resolve() {
     let src = r#"
-mod service {
+module service {
     actor Counter {
         value: i64 = 0,
 
@@ -327,7 +327,7 @@ mod service {
     }
 }
 
-use service::Counter;
+import service::Counter;
 
 fn main() {
     let c = Counter::new();
@@ -338,5 +338,5 @@ fn main() {
     println(r2);
 }
 "#;
-    assert_eq!(run_zeta(src), "10\n15\n");
+    assert_eq!(run_rlyeh(src), "10\n15\n");
 }

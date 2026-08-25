@@ -1,8 +1,8 @@
-//! zeta-driver 聚合对象集成测试：enum + match + impl 方法 + 泛型单态化。
+//! rlyeh-driver 聚合对象集成测试：enum + match + impl 方法 + 泛型单态化。
 //!
 //! 需要系统 clang（与 driver_test.rs 相同）。
 
-use zeta_driver::{compile_to_llvm, run_source};
+use rlyeh_driver::{compile_to_llvm, run_source};
 
 /// 枚举构造 + match 判别：tag 槽与字段槽的读写。
 const ENUM_MATCH: &str = r#"

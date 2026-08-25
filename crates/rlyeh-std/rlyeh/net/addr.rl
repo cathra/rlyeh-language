@@ -1,5 +1,5 @@
-// net/addr.zeta：IP 地址与端口承载（std-lib.md §5.1）。
-// 目录化（2026-08）：由原 net.zeta 拆分。符号完整路径 net::addr::SocketAddr 等。
+// net/addr.rl：IP 地址与端口承载（std-lib.md §5.1）。
+// 目录化（2026-08）：由原 net.rl 拆分。符号完整路径 net::addr::SocketAddr 等。
 
 // O1a：IPv4 八位组承载（ipv4_octets 解析结果）。
 struct Ipv4Octets {

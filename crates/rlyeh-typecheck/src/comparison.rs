@@ -1,10 +1,10 @@
 //! 比较链（`0 < x < 10`）方向检查与展开。
 
-use zeta_ast::{AstExpr, CompareOp};
-use zeta_hir::{
+use rlyeh_ast::{AstExpr, CompareOp};
+use rlyeh_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirStmt, HirUnaryOp,
 };
-use zeta_lexer::Span;
+use rlyeh_lexer::Span;
 
 use crate::check_expr;
 use crate::context::TypeContext;

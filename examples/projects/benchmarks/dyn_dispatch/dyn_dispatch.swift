@@ -1,5 +1,5 @@
 // 基准: dyn_dispatch —— 2000 万次多态分派（protocol 存在类型 witness table）
-// 与 dyn_dispatch.zeta 逻辑严格一致。输出 = 70000000
+// 与 dyn_dispatch.rl 逻辑严格一致。输出 = 70000000
 protocol Shape {
     func sides() -> Int64
 }

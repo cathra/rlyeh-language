@@ -1,6 +1,6 @@
 # P005: Transfer 语义实现
 
-> **模块路径**：`crates/zeta-regionck/` (扩展)  
+> **模块路径**：`crates/rlyeh-regionck/` (扩展)  
 > **预估工期**：3-5 天  
 > **前置依赖**：P004（区域系统）  
 > **输出**：完整的 transfer 语义——从区域安全转移所有权  
@@ -23,7 +23,7 @@
 ### Transfer 操作流程
 
 ```rust
-// crates/zeta-regionck/src/transfer.rs
+// crates/rlyeh-regionck/src/transfer.rs
 
 #![warn(missing_docs)]
 
@@ -186,7 +186,7 @@ impl TransferChecker {
 ### Region 侧的配合修改
 
 ```rust
-// crates/zeta-region-alloc/src/region.rs (扩展)
+// crates/rlyeh-region-alloc/src/region.rs (扩展)
 
 impl Region {
     /// 从析构列表中移除指定对象
@@ -249,7 +249,7 @@ impl Region {
 - [ ] 插入析构列表操作（MIR 阶段）
 
 ### 4. MIR  lowering
-- [ ] Transfer 变为 `region_remove_destructor` + `bitcast`（依赖 `zeta-mir`，当前占位）
+- [ ] Transfer 变为 `region_remove_destructor` + `bitcast`（依赖 `rlyeh-mir`，当前占位）
 - [ ] 调用约定调整（依赖 MIR）
 
 ---
@@ -257,10 +257,10 @@ impl Region {
 ## 测试用例
 
 ```rust
-// crates/zeta-regionck/tests/transfer_test.rs
+// crates/rlyeh-regionck/tests/transfer_test.rs
 
-use zeta_regionck::{TransferChecker, TransferError};
-use zeta_parser::Parser;
+use rlyeh_regionck::{TransferChecker, TransferError};
+use rlyeh_parser::Parser;
 
 fn check(source: &str) -> Result<(), Vec<TransferError>> {
     let mut parser = Parser::new(source).unwrap();
@@ -387,10 +387,10 @@ fn test_transfer_then_use_in_region() {
 ```
 
 ```rust
-// crates/zeta-region-alloc/tests/transfer_runtime_test.rs
+// crates/rlyeh-region-alloc/tests/transfer_runtime_test.rs
 
-use zeta_region_alloc::Region;
-use zeta_region_alloc::GrowthStrategy;
+use rlyeh_region_alloc::Region;
+use rlyeh_region_alloc::GrowthStrategy;
 
 #[test]
 fn test_runtime_transfer() {
@@ -459,10 +459,10 @@ fn test_destructor_not_called_for_transferred() {
 ## 性能基准
 
 ```rust
-// crates/zeta-region-alloc/benches/transfer_bench.rs
+// crates/rlyeh-region-alloc/benches/transfer_bench.rs
 use criterion::{black_box, Criterion};
-use zeta_region_alloc::Region;
-use zeta_region_alloc::GrowthStrategy;
+use rlyeh_region_alloc::Region;
+use rlyeh_region_alloc::GrowthStrategy;
 
 fn bench_transfer(c: &mut Criterion) {
     c.bench_function("transfer_1k_objects", |b| {
@@ -507,14 +507,14 @@ fn bench_transfer(c: &mut Criterion) {
 ## 交付文件
 
 ```
-crates/zeta-regionck/src/
+crates/rlyeh-regionck/src/
 ├── lib.rs
 ├── checker.rs       ← 主检查器
 ├── transfer.rs      ← Transfer 语义（本 Prompt 重点）
 ├── escape.rs        ← 逃逸分析
 └── error.rs
 
-crates/zeta-region-alloc/src/
+crates/rlyeh-region-alloc/src/
 ├── lib.rs
 ├── region.rs        ← 扩展：remove_destructor, mark_transferred
 ├── destructor.rs
@@ -529,10 +529,10 @@ crates/zeta-region-alloc/src/
 
 ## 实施记录（2026-08-20）
 
-- **运行时**（`zeta-region-alloc`）：`Region` 新增 `execute_transfer<T>(&mut self, ptr) -> &'static mut T`
+- **运行时**（`rlyeh-region-alloc`）：`Region` 新增 `execute_transfer<T>(&mut self, ptr) -> &'static mut T`
   （移除析构 + 标记已迁出 + 返回所有权句柄）与 `is_transferred(ptr)` 查询；
   `mark_transferred` 保留为底层簿记入口。
-- **语义**（`zeta-regionck`）：新增 `OuterRegionTransfer` 检查——`transfer v out of 'r`
+- **语义**（`rlyeh-regionck`）：新增 `OuterRegionTransfer` 检查——`transfer v out of 'r`
   的源区域必须是**当前活跃区域栈栈顶**，从内层区域转移外层区域对象报错；
   transfer 非变量表达式（调用结果、复合表达式等无法静态判定归属）报 `PartialTransfer`。
 - **错误类型**：`RegionError` 新增 `CannotTransferReference` / `OuterRegionTransfer` /
@@ -540,8 +540,8 @@ crates/zeta-region-alloc/src/
 
 ## 落地偏差说明
 
-- `zeta-regionck` 未新建 `transfer.rs`，Transfer 检查并入 `checker.rs` 的 `check_transfer`（与 P004 一致）。
-- `execute_transfer` 归属 `zeta-region-alloc::region`（P005 原稿放在 regionck 的 TransferChecker 内；
+- `rlyeh-regionck` 未新建 `transfer.rs`，Transfer 检查并入 `checker.rs` 的 `check_transfer`（与 P004 一致）。
+- `execute_transfer` 归属 `rlyeh-region-alloc::region`（P005 原稿放在 regionck 的 TransferChecker 内；
   运行时操作涉及 `DestructorRegistry` 内部字段，放 Region 侧更内聚）。
 - 未公开 `remove_destructor`：`mark_transferred` 已内部完成"移除析构 + 标记"；
   单独公开会导致"析构被移除但未标记"的泄漏状态，保留单一入口。
@@ -556,9 +556,9 @@ crates/zeta-region-alloc/src/
 
 ## 测试清单（新增 9 项）
 
-- `zeta-region-alloc/tests/transfer_runtime_test.rs`（3 项）：所有权句柄读写、10 对象 transfer 5 个
+- `rlyeh-region-alloc/tests/transfer_runtime_test.rs`（3 项）：所有权句柄读写、10 对象 transfer 5 个
   后销毁仅析构 5 个（无 double free）、`is_transferred` 状态查询。
-- `zeta-regionck/tests/transfer_test.rs`（6 项）：内层 transfer 内层对象 OK、内层 transfer 外层对象
+- `rlyeh-regionck/tests/transfer_test.rs`（6 项）：内层 transfer 内层对象 OK、内层 transfer 外层对象
   报 `OuterRegionTransfer`、内层结束后外层直接作用域 transfer OK、transfer 复合表达式/调用结果报
   `PartialTransfer`、防御性变体 Display。
 

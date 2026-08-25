@@ -8,9 +8,9 @@
 //! - [`crate::in_expr::check_in_range_expression`]：`in` 右侧为**裸范围**
 //!   （`InRange`），区间判断：`x in 0..<10` ≡ `x >= 0 && x < 10`。
 
-use zeta_ast::{AstExpr, ExprKind};
-use zeta_hir::{HirBinaryOp, HirExpr};
-use zeta_lexer::Span;
+use rlyeh_ast::{AstExpr, ExprKind};
+use rlyeh_hir::{HirBinaryOp, HirExpr};
+use rlyeh_lexer::Span;
 
 use crate::check_expr;
 use crate::context::TypeContext;
@@ -143,7 +143,7 @@ fn const_eval_int(expr: &AstExpr, span: Span) -> Result<i128, TypeError> {
             Ok(i128::from(*hour) * 60 + i128::from(*minute))
         }
         ExprKind::Unary {
-            op: zeta_ast::UnaryOp::Neg,
+            op: rlyeh_ast::UnaryOp::Neg,
             operand,
         } => Ok(-const_eval_int(operand, span)?),
         _ => Err(TypeError::NonConstantBound { span }),

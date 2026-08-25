@@ -1,12 +1,12 @@
-//! zeta-parser 集成测试（对应 P002 验收用例）。
+//! rlyeh-parser 集成测试（对应 P002 验收用例）。
 //!
 //! 覆盖：let / if / 比较链 / in 集合 / not in /
 //! region（含选项与嵌套）/ transfer / actor / match / 时间字面量。
 
-use zeta_ast::{
+use rlyeh_ast::{
     AstItem, AstPattern, AstProgram, AstStmt, AstType, CompareOp, ExprKind, LiteralValue,
 };
-use zeta_parser::parse;
+use rlyeh_parser::parse;
 
 /// 断言源码可成功解析为程序
 fn parse_ok(src: &str) -> AstProgram {
@@ -14,7 +14,7 @@ fn parse_ok(src: &str) -> AstProgram {
 }
 
 /// 提取顶层语句中的表达式
-fn top_expr(program: &AstProgram) -> &zeta_ast::AstExpr {
+fn top_expr(program: &AstProgram) -> &rlyeh_ast::AstExpr {
     let AstItem::Statement(stmt) = &program.items[0] else {
         panic!("expected statement item");
     };

@@ -1,6 +1,6 @@
 // 对照实现: region_batch.rs —— 手动 bump（与 region 语义对齐：一次性预分配 + 线性分配）
 // write_volatile/read_volatile：阻止 LLVM DSE（bump 内存不 escape 时会被整体消除，
-// 测出纯计算假数据；volatile 强制真实内存带宽，对齐 region_batch.zeta）。
+// 测出纯计算假数据；volatile 强制真实内存带宽，对齐 region_batch.rl）。
 // 输出 = 2000497500000
 struct Big {
     a: i64,

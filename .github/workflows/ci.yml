@@ -46,14 +46,14 @@ jobs:
       - name: Cross-compile smoke (macOS dual-arch)
         if: runner.os == 'macOS'
         run: |
-          cargo run -p zeta-driver -- build examples/hello-world.zeta --target arm64-apple-macosx -o /tmp/hello-arm64
-          cargo run -p zeta-driver -- build examples/hello-world.zeta --target x86_64-apple-macosx -o /tmp/hello-x86_64
-          /tmp/hello-arm64 | grep -q "Hello, Zeta!"
-          /tmp/hello-x86_64 | grep -q "Hello, Zeta!"
+          cargo run -p rlyeh-driver -- build examples/hello-world.rl --target arm64-apple-macosx -o /tmp/hello-arm64
+          cargo run -p rlyeh-driver -- build examples/hello-world.rl --target x86_64-apple-macosx -o /tmp/hello-x86_64
+          /tmp/hello-arm64 | grep -q "Hello, Rlyeh!"
+          /tmp/hello-x86_64 | grep -q "Hello, Rlyeh!"
 
       # E2：WASM 编译 + wasmtime 运行冒烟（工具缺失时跳过）
       - name: WASM smoke
         run: |
           if ! command -v wasmtime >/dev/null; then echo "wasmtime missing, skipping"; exit 0; fi
-          cargo run -p zeta-driver -- build examples/hello-world.zeta --target wasm32-wasi -o /tmp/hello.wasm
-          wasmtime /tmp/hello.wasm | grep -q "Hello, Zeta!"
+          cargo run -p rlyeh-driver -- build examples/hello-world.rl --target wasm32-wasi -o /tmp/hello.wasm
+          wasmtime /tmp/hello.wasm | grep -q "Hello, Rlyeh!"

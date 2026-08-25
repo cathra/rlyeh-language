@@ -2,13 +2,13 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use zeta_ast::{AstActorDecl, AstActorField};
-use zeta_lexer::Token;
+use rlyeh_ast::{AstActorDecl, AstActorField};
+use rlyeh_lexer::Token;
 
 impl<'src> Parser<'src> {
     /// 解析 actor 声明：
     ///
-    /// ```zeta
+    /// ```rlyeh
     /// actor Counter {
     ///     value: u32 = 0,
     ///     pub fn increment(amount: u32) -> u32 { ... }

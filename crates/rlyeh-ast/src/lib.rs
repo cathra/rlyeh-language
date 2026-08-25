@@ -1,22 +1,22 @@
-//! # zeta-ast
+//! # rlyeh-ast
 //!
-//! Zeta 语言抽象语法树（AST）定义。
+//! Rlyeh 语言抽象语法树（AST）定义。
 //!
-//! 语法分析器（zeta-parser）将 Token 流转换为本 crate 定义的 AST，
+//! 语法分析器（rlyeh-parser）将 Token 流转换为本 crate 定义的 AST，
 //! 供后续 HIR 生成、类型检查等阶段使用。
 //!
 //! ## 设计约定
 //!
-//! - 所有携带位置的节点均带有 [`Span`]（来自 zeta-lexer）。
+//! - 所有携带位置的节点均带有 [`Span`]（来自 rlyeh-lexer）。
 //! - 表达式统一包装为 [`AstExpr`]（`kind` + `span`）。
-//! - 比较链、`in` 集合判断、`region`、`transfer` 等 Zeta
+//! - 比较链、`in` 集合判断、`region`、`transfer` 等 Rlyeh
 //!   核心语法均以显式节点表达，语义检查（如比较链方向一致性）
 //!   在后续阶段完成。
 
 #![warn(missing_docs)]
 #![warn(unsafe_code)]
 
-use zeta_lexer::Span;
+use rlyeh_lexer::Span;
 
 /// 完整程序（一个编译单元）。
 #[derive(Debug, Clone, PartialEq)]
@@ -207,7 +207,7 @@ pub struct AstModDecl {
     pub name: String,
     /// 模块内项（`mod foo;` 外部文件形式为空）
     pub items: Vec<AstItem>,
-    /// 是否为外部文件形式（`module foo;` → 内容在 `foo.zeta` 或 `foo/module.zeta`）
+    /// 是否为外部文件形式（`module foo;` → 内容在 `foo.rl` 或 `foo/module.rl`）
     pub external: bool,
     /// 源码位置
     pub span: Span,

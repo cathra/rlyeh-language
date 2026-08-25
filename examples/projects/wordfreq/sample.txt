@@ -1,6 +1,6 @@
-Zeta is a systems programming language for the next decade.
-Zeta combines the safety of Rust, the speed of Go, the concurrency of Erlang,
+Rlyeh is a systems programming language for the next decade.
+Rlyeh combines the safety of Rust, the speed of Go, the concurrency of Erlang,
 and the expressiveness of Python.
-Hello Zeta! Hello World! Hello everyone.
+Hello Rlyeh! Hello World! Hello everyone.
 The quick brown fox jumps over the lazy dog. The quick brown fox.
 Words, words, and more words - sorted by frequency. Count them all!

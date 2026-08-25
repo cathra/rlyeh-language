@@ -1,37 +1,37 @@
-//! 构建集成：调用 `zeta` 编译器完成 build/run/test。
+//! 构建集成：调用 `rlyeh` 编译器完成 build/run/test。
 //!
-//! `zeta` 二进制路径可通过 `ZETA_BIN` 环境变量或 [`BuildConfig`] 指定；
-//! 默认使用 PATH 中的 `zeta`。
+//! `rlyeh` 二进制路径可通过 `RLYEH_BIN` 环境变量或 [`BuildConfig`] 指定；
+//! 默认使用 PATH 中的 `rlyeh`。
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 use crate::manifest::Manifest;
 use crate::sandbox::{SandboxOutput, run_sandboxed};
 
 /// 构建配置。
 #[derive(Debug, Clone)]
 pub struct BuildConfig {
-    /// `zeta` 可执行文件路径（默认取 `ZETA_BIN` 环境变量，否则 `zeta`）。
-    pub zeta_bin: String,
+    /// `rlyeh` 可执行文件路径（默认取 `RLYEH_BIN` 环境变量，否则 `rlyeh`）。
+    pub rlyeh_bin: String,
     /// 是否 release 构建（MVP 透传，驱动暂未区分）。
     pub release: bool,
-    /// 编译器缓存目录（默认 `target/zeta-cache`）。
+    /// 编译器缓存目录（默认 `target/rlyeh-cache`）。
     pub cache_dir: Option<PathBuf>,
     /// 子进程超时。
     pub timeout: Duration,
     /// 是否启用受限环境沙箱。
     pub sandbox: bool,
-    /// 是否透传 `--verbose` 到 zeta。
+    /// 是否透传 `--verbose` 到 rlyeh。
     pub verbose: bool,
 }
 
 impl Default for BuildConfig {
     fn default() -> Self {
-        let zeta_bin = std::env::var("ZETA_BIN").unwrap_or_else(|_| "zeta".to_string());
+        let rlyeh_bin = std::env::var("RLYEH_BIN").unwrap_or_else(|_| "rlyeh".to_string());
         Self {
-            zeta_bin,
+            rlyeh_bin,
             release: false,
             cache_dir: None,
             timeout: Duration::from_secs(300),
@@ -41,12 +41,12 @@ impl Default for BuildConfig {
     }
 }
 
-/// 项目的源码入口（仅支持 bin 目标：`src/main.zeta`）。
+/// 项目的源码入口（仅支持 bin 目标：`src/main.rl`）。
 pub fn entry_point(project_dir: &Path) -> Result<PathBuf> {
-    let main = project_dir.join("src").join("main.zeta");
+    let main = project_dir.join("src").join("main.rl");
     if !main.exists() {
-        return Err(ZepError::Build(format!(
-            "缺少入口文件 {}（MVP 仅支持 src/main.zeta）",
+        return Err(DagonError::Build(format!(
+            "缺少入口文件 {}（MVP 仅支持 src/main.rl）",
             main.display()
         )));
     }
@@ -61,9 +61,9 @@ pub fn build_project(
 ) -> Result<PathBuf> {
     let entry = entry_point(project_dir)?;
     let target = project_dir.join("target");
-    let out_dir = target.join("zeta");
+    let out_dir = target.join("rlyeh");
     std::fs::create_dir_all(&out_dir)
-        .map_err(|e| ZepError::Build(format!("创建 {} 失败: {e}", out_dir.display())))?;
+        .map_err(|e| DagonError::Build(format!("创建 {} 失败: {e}", out_dir.display())))?;
     let out = out_dir.join(&manifest.package.name);
 
     let mut args = vec![
@@ -75,7 +75,7 @@ pub fn build_project(
     let cache_dir = config
         .cache_dir
         .clone()
-        .unwrap_or_else(|| target.join("zeta-cache"));
+        .unwrap_or_else(|| target.join("rlyeh-cache"));
     args.push("--cache-dir".to_string());
     args.push(cache_dir.display().to_string());
     if config.verbose {
@@ -83,22 +83,22 @@ pub fn build_project(
     }
 
     let output = run_sandboxed(
-        &config.zeta_bin,
+        &config.rlyeh_bin,
         &args,
         &[],
         config.timeout,
         config.sandbox,
     )?;
     if !output.success() {
-        return Err(ZepError::Build(format!(
+        return Err(DagonError::Build(format!(
             "编译失败（{} {}）：\n{}",
-            config.zeta_bin,
+            config.rlyeh_bin,
             args.join(" "),
             output.stderr.trim()
         )));
     }
     if !out.exists() {
-        return Err(ZepError::Build(format!(
+        return Err(DagonError::Build(format!(
             "编译成功但未找到产物 {}",
             out.display()
         )));
@@ -119,7 +119,7 @@ pub fn run_project(
         entry.display().to_string(),
         "--cache-dir".to_string(),
         target
-            .join("zeta-cache")
+            .join("rlyeh-cache")
             .display()
             .to_string(),
     ];
@@ -129,7 +129,7 @@ pub fn run_project(
     args.extend_from_slice(program_args);
 
     let output = run_sandboxed(
-        &config.zeta_bin,
+        &config.rlyeh_bin,
         &args,
         &[],
         config.timeout,
@@ -150,12 +150,12 @@ pub fn test_project(project_dir: &Path, manifest: &Manifest, config: &BuildConfi
     let mut entries: Vec<_> = std::fs::read_dir(&tests_dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "zeta"))
+        .filter(|p| p.extension().is_some_and(|x| x == "rlyeh"))
         .collect();
     entries.sort();
     for test_file in entries {
         let output = run_sandboxed(
-            &config.zeta_bin,
+            &config.rlyeh_bin,
             &[
                 "run".to_string(),
                 test_file.display().to_string(),
@@ -173,7 +173,7 @@ pub fn test_project(project_dir: &Path, manifest: &Manifest, config: &BuildConfi
         for (f, err) in &failed {
             msg.push_str(&format!("- {}: {}\n", f.display(), err.trim()));
         }
-        return Err(ZepError::Build(msg));
+        return Err(DagonError::Build(msg));
     }
     Ok(())
 }
@@ -183,10 +183,10 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn fake_zeta_bin(dir: &Path) -> PathBuf {
-        // 生成一个 fake zeta 脚本：参数记录到脚本同目录 log.txt 并模拟产物。
+    fn fake_rlyeh_bin(dir: &Path) -> PathBuf {
+        // 生成一个 fake rlyeh 脚本：参数记录到脚本同目录 log.txt 并模拟产物。
         // 日志路径取自 $0，避免并行测试共享环境变量的竞争。
-        let bin = dir.join("zeta");
+        let bin = dir.join("rlyeh");
         let script = r##"#!/bin/sh
 log="$(dirname "$0")/log.txt"
 echo "$@" >> "$log"
@@ -213,41 +213,41 @@ exit 0
     }
 
     fn tmp_project(name: &str, with_tests: bool) -> (std::path::PathBuf, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("zep-build-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dagon-build-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
-        std::fs::write(dir.join("Zeta.toml"), "[package]\nname = \"app\"\nversion = \"0.1.0\"\n").unwrap();
-        std::fs::write(dir.join("src/main.zeta"), "fn main() { println(\"hi\"); }\n").unwrap();
+        std::fs::write(dir.join("Rlyeh.toml"), "[package]\nname = \"app\"\nversion = \"0.1.0\"\n").unwrap();
+        std::fs::write(dir.join("src/main.rl"), "fn main() { println(\"hi\"); }\n").unwrap();
         if with_tests {
             std::fs::create_dir_all(dir.join("tests")).unwrap();
-            std::fs::write(dir.join("tests/t1.zeta"), "fn main() {}\n").unwrap();
+            std::fs::write(dir.join("tests/t1.rl"), "fn main() {}\n").unwrap();
         }
-        let bin_dir = std::env::temp_dir().join(format!("zep-bin-{}-{name}", std::process::id()));
+        let bin_dir = std::env::temp_dir().join(format!("dagon-bin-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&bin_dir);
         std::fs::create_dir_all(&bin_dir).unwrap();
         (dir, bin_dir)
     }
 
     #[test]
-    fn build_invokes_zeta_with_expected_args() {
+    fn build_invokes_rlyeh_with_expected_args() {
         let (project, bin_dir) = tmp_project("build", false);
         let log = bin_dir.join("log.txt");
-        let zeta = fake_zeta_bin(&bin_dir);
-        let manifest = Manifest::load(&project.join("Zeta.toml")).unwrap();
+        let rlyeh = fake_rlyeh_bin(&bin_dir);
+        let manifest = Manifest::load(&project.join("Rlyeh.toml")).unwrap();
         let config = BuildConfig {
-            zeta_bin: zeta.display().to_string(),
+            rlyeh_bin: rlyeh.display().to_string(),
             sandbox: false,
             timeout: Duration::from_secs(10),
             ..Default::default()
         };
 
         let out = build_project(&project, &manifest, &config).unwrap();
-        assert_eq!(out, project.join("target/zeta/app"));
+        assert_eq!(out, project.join("target/rlyeh/app"));
 
-        // fake zeta 记录了调用参数
+        // fake rlyeh 记录了调用参数
         let log_text = std::fs::read_to_string(&log).unwrap();
         assert!(log_text.contains("build"), "参数应为 build: {log_text}");
-        assert!(log_text.contains("src/main.zeta"));
+        assert!(log_text.contains("src/main.rl"));
         assert!(log_text.contains("-o"));
     }
 
@@ -255,9 +255,9 @@ exit 0
     fn run_passes_program_args() {
         let (project, bin_dir) = tmp_project("run", false);
         let log = bin_dir.join("log.txt");
-        let zeta = fake_zeta_bin(&bin_dir);
+        let rlyeh = fake_rlyeh_bin(&bin_dir);
         let config = BuildConfig {
-            zeta_bin: zeta.display().to_string(),
+            rlyeh_bin: rlyeh.display().to_string(),
             sandbox: false,
             timeout: Duration::from_secs(10),
             ..Default::default()
@@ -273,10 +273,10 @@ exit 0
     #[test]
     fn test_project_builds_and_runs_tests() {
         let (project, bin_dir) = tmp_project("test", true);
-        let zeta = fake_zeta_bin(&bin_dir);
-        let manifest = Manifest::load(&project.join("Zeta.toml")).unwrap();
+        let rlyeh = fake_rlyeh_bin(&bin_dir);
+        let manifest = Manifest::load(&project.join("Rlyeh.toml")).unwrap();
         let config = BuildConfig {
-            zeta_bin: zeta.display().to_string(),
+            rlyeh_bin: rlyeh.display().to_string(),
             sandbox: false,
             timeout: Duration::from_secs(10),
             ..Default::default()
@@ -287,7 +287,7 @@ exit 0
 
     #[test]
     fn missing_entry_reports_error() {
-        let dir = std::env::temp_dir().join(format!("zep-noentry-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dagon-noentry-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert!(entry_point(&dir).is_err());

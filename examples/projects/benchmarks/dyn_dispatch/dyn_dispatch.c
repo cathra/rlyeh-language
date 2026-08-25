@@ -1,5 +1,5 @@
 // 基准: dyn_dispatch —— 2000 万次 vtable 多态分派（函数指针表）
-// 与 dyn_dispatch.zeta 逻辑严格一致。输出 = 70000000
+// 与 dyn_dispatch.rl 逻辑严格一致。输出 = 70000000
 #include <stdio.h>
 #include <stdint.h>
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-统一性能对比脚本：Zeta vs C / C++ / Go / Swift / Rust
-用法: python3 run.py [--runs N] [--warmup N] [--only fib,matmul] [--skip-zeta-build]
+统一性能对比脚本：Rlyeh vs C / C++ / Go / Swift / Rust
+用法: python3 run.py [--runs N] [--warmup N] [--only fib,matmul] [--skip-rlyeh-build]
 说明:
   - 每个 benchmark 每种语言独立二进制（bench_<lang>）
-  - 编译优化级别: Zeta=clang -O3 发布级优化（LLVM opt 管线）; C/C++=clang -O3;
+  - 编译优化级别: Rlyeh=clang -O3 发布级优化（LLVM opt 管线）; C/C++=clang -O3;
     Go=go build（gc 编译器默认优化）; Swift=swiftc -O; Rust=rustc -O
   - 计时: warmup 后 runs 次取中位数（毫秒）
-  - 编译耗时: 每次构建计时（Zeta 用 --force 全量冷编译，绕开增量缓存，
+  - 编译耗时: 每次构建计时（Rlyeh 用 --force 全量冷编译，绕开增量缓存，
     保证与 C/C++/Swift/Rust 同为"从源码全量编译"的公平对比）
   - 输出一致性: 构建后首次运行捕获各语言 stdout，跨语言不一致时告警
 """
@@ -20,14 +20,14 @@ import json
 import datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-ZETA_DRIVER = os.path.join(ROOT, "..", "..", "..", "target", "release", "zeta-driver")
+RLYEH_DRIVER = os.path.join(ROOT, "..", "..", "..", "target", "release", "rlyeh-driver")
 
 BENCHMARKS = ["fib", "loop_sum", "matmul", "strcat", "hashmap", "sort",
               "actor_pingpong", "btree", "hashmap_str", "dyn_dispatch",
               "region_alloc", "region_batch", "nqueens"]
 
 LANGS = [
-    ("Zeta",  "zeta",  "zeta"),
+    ("Rlyeh",  "rlyeh",  "rlyeh"),
     ("C",     "c",     "c"),
     ("C++",   "cpp",   "cpp"),
     ("Go",    "go",    "go"),
@@ -42,11 +42,11 @@ DESC = {
     "strcat":         "字符串拼接 10 万次（缓冲扩容）",
     "hashmap":        "20 万 insert + 20 万 get，i64 键（哈希表）",
     "sort":           "LCG 生成 5000 个 i64 排序（排序算法）",
-    "actor_pingpong": "5 万次 actor 同步往返（Zeta 并发模型 vs 线程通道）",
+    "actor_pingpong": "5 万次 actor 同步往返（Rlyeh 并发模型 vs 线程通道）",
     "btree":          "深度 15 完全二叉树构造 + 递归求和（内存访问 + 递归）",
     "hashmap_str":    "1 万条字符串键 insert + get（字符串哈希 + 键构造）",
     "dyn_dispatch":   "2000 万次 dyn Trait / 虚函数多态分派",
-    "region_alloc":   "100 万次小对象分配（Zeta region 批量 vs 逐次分配）",
+    "region_alloc":   "100 万次小对象分配（Rlyeh region 批量 vs 逐次分配）",
     "region_batch":   "100 万循环 × 每次 4 小对象分配（批量提升 vs 手动 bump 真实写带宽）",
     "nqueens":        "12 皇后回溯搜索（纯整数递归 + 剪枝分支）",
 }
@@ -58,8 +58,8 @@ THREAD_BENCHES = {"actor_pingpong"}
 def build(bench: str, name: str, lang: str, ext: str) -> tuple[str | None, float | None]:
     src = os.path.join(ROOT, bench, f"{bench}.{ext}")
     out = os.path.join(ROOT, bench, f"bench_{lang}")
-    if lang == "zeta":
-        cmd = [ZETA_DRIVER, "build", src, "-o", out, "--force"]
+    if lang == "rlyeh":
+        cmd = [RLYEH_DRIVER, "build", src, "-o", out, "--force"]
     elif lang == "c":
         cmd = ["clang", "-O3", "-o", out, src]
     elif lang == "cpp":
@@ -109,18 +109,18 @@ def main() -> int:
             warmup = int(args[i + 1]); i += 2
         elif args[i] == "--only" and i + 1 < len(args):
             only = args[i + 1].split(","); i += 2
-        elif args[i] == "--skip-zeta-build":
+        elif args[i] == "--skip-rlyeh-build":
             skip_build = True; i += 1
         else:
             i += 1
 
     benches = [b for b in BENCHMARKS if only is None or b in only]
-    if not os.path.exists(ZETA_DRIVER):
-        print(f"未找到 zeta-driver: {ZETA_DRIVER}")
+    if not os.path.exists(RLYEH_DRIVER):
+        print(f"未找到 rlyeh-driver: {RLYEH_DRIVER}")
         return 1
 
-    print(f"Zeta 编译器: {ZETA_DRIVER}")
-    print(f"编译策略: Zeta=clang -O3（--force 冷编译） / C,C++=-O3 / Go=go build / Swift=-O / Rust=-O")
+    print(f"Rlyeh 编译器: {RLYEH_DRIVER}")
+    print(f"编译策略: Rlyeh=clang -O3（--force 冷编译） / C,C++=-O3 / Go=go build / Swift=-O / Rust=-O")
     print(f"计时: warmup={warmup} 次 + 正式 {runs} 次取中位数\n")
 
     results: dict[str, dict[str, float]] = {}
@@ -132,8 +132,8 @@ def main() -> int:
         compile_ms[bench] = {}
         outputs[bench] = {}
         for name, lang, ext in LANGS:
-            if lang == "zeta" and skip_build:
-                out = os.path.join(ROOT, bench, f"bench_zeta")
+            if lang == "rlyeh" and skip_build:
+                out = os.path.join(ROOT, bench, f"bench_rlyeh")
                 if not os.path.exists(out):
                     print(f"  [跳过] {name}（无现成二进制）")
                     continue
@@ -185,7 +185,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     os.makedirs(os.path.join(ROOT, "results"), exist_ok=True)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = []
-    lines.append("# Zeta 语言性能对比基准报告\n")
+    lines.append("# Rlyeh 语言性能对比基准报告\n")
     lines.append(f"> 生成时间: {now}  |  每次运行 warmup {warmup} 次 + 正式 {runs} 次取中位数\n")
     lines.append("## 环境\n")
     for cmd in ["uname -m", "sw_vers -productVersion", "clang --version", "go version", "swiftc --version",
@@ -202,7 +202,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     lines.append("## 编译优化级别\n")
     lines.append("| 语言 | 编译器/优化 |")
     lines.append("|------|-------------|")
-    lines.append("| Zeta | `zeta build`（clang -O3 发布级优化：LLVM 循环优化/向量化/寄存器分配） |")
+    lines.append("| Rlyeh | `rlyeh build`（clang -O3 发布级优化：LLVM 循环优化/向量化/寄存器分配） |")
     lines.append("| C    | `clang -O3` |")
     lines.append("| C++  | `clang++ -O3` |")
     lines.append("| Go   | `go build`（gc 编译器默认优化，无 -O 分级） |")
@@ -221,7 +221,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     lines.append("")
 
     lines.append("## 编译耗时（毫秒，单次全量冷编译，越低越好）\n")
-    lines.append("> Zeta 使用 `zeta build --force` 绕开增量缓存，全部语言均为从源码全量编译。\n")
+    lines.append("> Rlyeh 使用 `rlyeh build --force` 绕开增量缓存，全部语言均为从源码全量编译。\n")
     lines.append("| 基准 | " + " | ".join(langs) + " |")
     lines.append("|------|" + "-----|" * len(langs))
     for bench in BENCHMARKS:
@@ -232,14 +232,14 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
         lines.append(f"| {bench} | " + " | ".join(vals) + " |")
     lines.append("")
 
-    speed_lines = ["## 相对速度（以 Zeta = 1.0 为基准，比值越高表示比 Zeta 快）\n"]
+    speed_lines = ["## 相对速度（以 Rlyeh = 1.0 为基准，比值越高表示比 Rlyeh 快）\n"]
     speed_lines.append("| 基准 | " + " | ".join(langs) + " |")
     speed_lines.append("|------|" + "-----|" * len(langs))
     for bench in BENCHMARKS:
         if bench not in results:
             continue
         row = results[bench]
-        base = row.get("Zeta")
+        base = row.get("Rlyeh")
         ratio = [f"{base / row[l]:.1f}x" if base and l in row and row[l] > 0 else "—" for l in langs]
         speed_lines.append(f"| {bench} | " + " | ".join(ratio) + " |")
     lines.append("")
@@ -253,25 +253,25 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     lines.append("")
     lines.append("## 方法学与注意事项\n")
     lines.append("- 所有语言实现逻辑严格一致（运行期自动核对跨语言输出逐项一致）。")
-    lines.append("- Zeta 编译走 clang -O3 发布级优化管线（LLVM 循环优化/向量化/常量传播/寄存器分配），"
+    lines.append("- Rlyeh 编译走 clang -O3 发布级优化管线（LLVM 循环优化/向量化/常量传播/寄存器分配），"
                  "其余语言为各自发布级优化（-O3/-O），本报告反映各语言**当前编译器的真实水平**。")
-    lines.append("- 排序基准中 Zeta `Vec::sort_by` 为 O(n log n) 原地堆排序（std-lib §3.1），"
+    lines.append("- 排序基准中 Rlyeh `Vec::sort_by` 为 O(n log n) 原地堆排序（std-lib §3.1），"
                  "C/C++/Swift/Rust 为各自标准库排序——差距属实现差异。")
-    lines.append("- `actor_pingpong`：Zeta 侧为单 actor 5 万次 ask 同步往返（actor 运行时调度 + 邮箱消息传递），"
+    lines.append("- `actor_pingpong`：Rlyeh 侧为单 actor 5 万次 ask 同步往返（actor 运行时调度 + 邮箱消息传递），"
                  "C/C++/Swift/Rust 侧为双线程双通道同步往返（mutex/condvar、mpsc）——语义对应「请求-响应消息吞吐」。")
-    lines.append("- `region_alloc`：Zeta 侧为 region 内 100 万次 bump 分配（区域退出一次性释放），"
+    lines.append("- `region_alloc`：Rlyeh 侧为 region 内 100 万次 bump 分配（区域退出一次性释放），"
                  "C/C++/Rust/Swift 侧为逐次分配+释放（malloc/free、new/delete、Box、class+ARC）"
-                 "——反映不同内存管理模型的分配吞吐（region 批量分配 vs 逐次分配是 Zeta 的设计优势）。")
-    lines.append("- `hashmap`：Zeta/Rust/Go/Swift 侧为各语言标准/内置哈希表（std HashMap / 内置 map），"
+                 "——反映不同内存管理模型的分配吞吐（region 批量分配 vs 逐次分配是 Rlyeh 的设计优势）。")
+    lines.append("- `hashmap`：Rlyeh/Rust/Go/Swift 侧为各语言标准/内置哈希表（std HashMap / 内置 map），"
                  "C 无标准哈希表、手写线性探测表（2^20 槽，负载 ~19%）。")
     lines.append("- `hashmap_str`：各语言在插入/查询阶段每次重建键字符串（format!/sprintf/strdup/Sprintf），键构造成本计入基准。")
-    lines.append("- `dyn_dispatch`：Zeta 侧为 `dyn Trait` 胖指针 + vtable 间接分派，C++ 虚函数、Rust trait 对象、"
+    lines.append("- `dyn_dispatch`：Rlyeh 侧为 `dyn Trait` 胖指针 + vtable 间接分派，C++ 虚函数、Rust trait 对象、"
                  "Swift `any` 存在类型；局部对象多态调用在各编译器下可能被去虚拟化优化，本基准反映真实多态调用吞吐。")
-    lines.append("- `nqueens` 为 P2 复平面迭代（mandelbrot）的替代：Zeta MVP 的 `as f64` 数值转换尚未在 IR 层实现"
+    lines.append("- `nqueens` 为 P2 复平面迭代（mandelbrot）的替代：Rlyeh MVP 的 `as f64` 数值转换尚未在 IR 层实现"
                  "（Cast 在 typecheck 后被静默擦除、无转换指令，i64 位模式被直接当作 f64 值），mandelbrot 需要运行时 "
                  "i→f64 坐标计算，故改用纯整数回溯搜索覆盖「搜索 / 递归 / 分支」算力维度；`as` 转换的 IR 支持已列为后续任务。")
     lines.append("- 进程启动开销已含在计时内（各语言一致）。")
-    lines.append("- 编译耗时对比为单次全量冷编译；Zeta `--force` 绕开增量缓存，其余语言无增量缓存。")
+    lines.append("- 编译耗时对比为单次全量冷编译；Rlyeh `--force` 绕开增量缓存，其余语言无增量缓存。")
     lines.append("")
 
     out = os.path.join(ROOT, "results", "benchmark_report.md")

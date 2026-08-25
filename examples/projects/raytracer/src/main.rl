@@ -1,10 +1,10 @@
-// ===== raytracer：纯软件光线追踪渲染器（Zeta 示例项目）=====
+// ===== raytracer：纯软件光线追踪渲染器（Rlyeh 示例项目）=====
 //
 // 功能：渲染三个球 + 棋盘格地面 + 反射的简单场景，输出 P3 格式 PPM 图像。
 // 特点：全 i64 定点运算（MVP 无 f64↔i64 转换与数学库），
 //       展示结构体/方法/模块化/region 自适应分配/文件 IO。
 //
-// 运行：zeta run src/main.zeta（或 scripts/run.sh）
+// 运行：rlyeh run src/main.rl（或 scripts/run.sh）
 
 module fixed;
 module vec3;

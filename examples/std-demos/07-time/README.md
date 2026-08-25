@@ -12,10 +12,10 @@
 
 | 文件 | 说明 |
 |------|------|
-| `sleep_join.zeta` | sleep 延时 + Instant 时间测量（含多任务 join） |
+| `sleep_join.rl` | sleep 延时 + Instant 时间测量（含多任务 join） |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/07-time/sleep_join.zeta
+rlyeh run examples/std-demos/07-time/sleep_join.rl
 ```

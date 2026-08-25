@@ -1,12 +1,12 @@
-# chatd — NIO 事件驱动 TCP 聊天室（Zeta）
+# chatd — NIO 事件驱动 TCP 聊天室（Rlyeh）
 
-纯 Zeta 实现的局域网聊天室：单线程事件循环服务器 + 交互式客户端，
+纯 Rlyeh 实现的局域网聊天室：单线程事件循环服务器 + 交互式客户端，
 全程不依赖任何外部框架，只用编译器内建 NIO（`poll(2)` + 非阻塞 TCP）。
 
 ## 特性
 
 - **服务器**：`Poller`（poll(2)）+ 非阻塞 accept/读/写，单线程事件循环
-- **协议**：`NICK` / `MSG` / `LIST` / `QUIT` 行协议（`protocol.zeta`）
+- **协议**：`NICK` / `MSG` / `LIST` / `QUIT` 行协议（`protocol.rl`）
 - **会话**：`Hub` 双向映射（nick ↔ fd），昵称占用检测，在线列表
 - **广播**：单条消息写遍所有连接（`MSG` 广播 / 上下线通知）
 - **客户端**：与服务器同构的单线程 NIO——`poll` 同时监听键盘（fd 0）与 socket，
@@ -48,15 +48,15 @@ scripts/smoke.sh   # 两客户端互发 + 昵称占用校验，全部通过输�
 ## 架构
 
 ```
-protocol.zeta   Msg 枚举 + 行协议 encode/decode（两侧共用）
-hub.zeta        Hub：nick↔fd 双向映射、join/leave/count
-server.zeta     run_server：Poller 事件循环、accept、逐行处理、广播、断开清理
-client.zeta     run_client：Poller 监听 stdin(0)+socket，读键盘发协议行 / 收消息打印
-server_main.zeta 服务器入口（端口硬编码 9888，MVP 无命令行参数 API）
-client_main.zeta 客户端入口（地址/昵称硬编码，MVP 无命令行参数 API）
+protocol.rl   Msg 枚举 + 行协议 encode/decode（两侧共用）
+hub.rl        Hub：nick↔fd 双向映射、join/leave/count
+server.rl     run_server：Poller 事件循环、accept、逐行处理、广播、断开清理
+client.rl     run_client：Poller 监听 stdin(0)+socket，读键盘发协议行 / 收消息打印
+server_main.rl 服务器入口（端口硬编码 9888，MVP 无命令行参数 API）
+client_main.rl 客户端入口（地址/昵称硬编码，MVP 无命令行参数 API）
 ```
 
-## Zeta 语言亮点（本项目用到）
+## Rlyeh 语言亮点（本项目用到）
 
 - **NIO 内建**：`Poller::new/register/poll`、`Interest::Readable`、事件 `token` 分派
 - **非阻塞 TCP**：`TcpListener::bind/accept/set_nonblocking`、`TcpStream::connect/fd/read_line/write`

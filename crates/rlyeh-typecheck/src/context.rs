@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 
-use zeta_hir::HirExpr;
-use zeta_lexer::Span;
+use rlyeh_hir::HirExpr;
+use rlyeh_lexer::Span;
 
-use zeta_ast::{AstActorDecl, AstExpr, AstFnDecl};
+use rlyeh_ast::{AstActorDecl, AstExpr, AstFnDecl};
 
 use crate::error::TypeError;
 use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, TraitDef, Type};
@@ -52,7 +52,7 @@ pub struct TypeContext {
     /// 泛型实例化缓存（实例键 → 实例函数名）
     pub mono_instances: HashMap<String, String>,
     /// 泛型实例化生成的函数项（检查过程中追加）
-    pub mono_items: Vec<zeta_hir::HirItem>,
+    pub mono_items: Vec<rlyeh_hir::HirItem>,
     /// 局部变量表（变量名 → 类型）
     pub variables: HashMap<String, Type>,
     /// 局部变量初始化表达式表（变量名 → 初始化 HIR）。
@@ -79,9 +79,9 @@ pub struct TypeContext {
     pub constants: HashMap<String, (HirExpr, Type)>,
     /// Actor 定义表（完整符号名 → 声明，如 `"Counter"` / `"math::Counter"`）
     pub actors: HashMap<String, AstActorDecl>,
-    /// 已生成的 `zeta_actor_*` extern 声明名（actor 展开去重用）
+    /// 已生成的 `rlyeh_actor_*` extern 声明名（actor 展开去重用）
     pub generated_actor_externs: std::collections::HashSet<String>,
-    /// 已生成的 `zeta_gc_*` extern 声明名（K4 追踪 GC 展开去重用）
+    /// 已生成的 `rlyeh_gc_*` extern 声明名（K4 追踪 GC 展开去重用）
     pub generated_gc_externs: std::collections::HashSet<String>,
     /// 当前检查的模块前缀（顶层为空串，`mod math` 内为 `"math"`）
     pub module_prefix: String,
@@ -117,7 +117,7 @@ pub struct TypeContext {
     pub fn_shadow_seq: HashMap<String, usize>,
     /// L3 PGO 回灌：区域名 → 推荐初始容量（字节）。
     ///
-    /// 由 `zeta build --profile` 读取 `.zeta_profile` 后注入；
+    /// 由 `rlyeh build --profile` 读取 `.rl_profile` 后注入；
     /// `adaptive` 区域在检查时优先采用该容量作为 `HirRegionOptions.size`。
     pub region_hints: HashMap<String, usize>,
 }
@@ -211,7 +211,7 @@ impl TypeContext {
             return Some(a.clone());
         }
         // Q3a 修复：模块内 trait/impl 方法签名在收集阶段解析参数类型时 use 段
-        // 尚未注册，模块内短名须按 `module::Name` 前缀定位（如 `fmt/module.zeta` 中
+        // 尚未注册，模块内短名须按 `module::Name` 前缀定位（如 `fmt/module.rl` 中
         // `trait Display { fn fmt(&self, f: &mut Formatter) }`）。
         // 枚举同样按前缀定位（`protocol::Msg`），否则模块内裸名枚举类型注解
         // （`fn encode(m: Msg)`）与 match 模式解析失败。

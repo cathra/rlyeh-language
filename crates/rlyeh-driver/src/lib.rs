@@ -1,6 +1,6 @@
-//! # zeta-driver
+//! # rlyeh-driver
 //!
-//! Zeta 编译器驱动：串联完整编译流水线
+//! Rlyeh 编译器驱动：串联完整编译流水线
 //!
 //! ```text
 //! 源码 → typecheck（含 parse）→ borrowck → regionck
@@ -9,7 +9,7 @@
 //!
 //! 提供库级 API（[`compile_to_llvm`] / [`build_executable`] / [`run_source`]）
 //! 与增量编译入口（[`IncrementalDriver`]），以及 CLI 二进制
-//! （`zeta run` / `zeta build`，见 `main.rs`）。
+//! （`rlyeh run` / `rlyeh build`，见 `main.rs`）。
 
 #![warn(missing_docs)]
 #![warn(unsafe_code)]
@@ -27,8 +27,8 @@ use error::DriverError;
 pub use incremental::cache::CacheStats;
 use incremental::cache::IncrementalCache;
 use incremental::hash::{compute_interface_hash, compute_source_hash, extract_interface};
-use zeta_borrowck::BorrowChecker;
-use zeta_regionck::RegionChecker;
+use rlyeh_borrowck::BorrowChecker;
+use rlyeh_regionck::RegionChecker;
 
 /// 一次编译的结果（含缓存状态，供 CLI 报告）。
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ pub fn build_executable_with_target(
 /// 编译并运行源码，返回程序标准输出（UTF-8），无缓存。
 pub fn run_source(source: &str) -> Result<String, DriverError> {
     let dir = temp_dir();
-    let exe = dir.join("zeta-run");
+    let exe = dir.join("rlyeh-run");
     build_executable(source, &exe)?;
     let out = run_exe(&exe)?;
     let _ = std::fs::remove_dir_all(&dir);
@@ -75,9 +75,9 @@ pub fn run_source(source: &str) -> Result<String, DriverError> {
 
 /// 编译入口文件（含 `module foo;` 外部模块）为 LLVM IR 文本，无缓存。
 ///
-/// 入口文件所在目录下的 `<name>.zeta` 或 `<name>/module.zeta` 会被自动加载，
+/// 入口文件所在目录下的 `<name>.rl` 或 `<name>/module.rl` 会被自动加载，
 /// 所有模块文件合并为单一符号空间（扁平符号名 `模块名::item`）。
-/// 标准库预置（`zeta-std/zeta/core.zeta`，若存在）自动注入为前缀。
+/// 标准库预置（`rlyeh-std/rlyeh/core.rl`，若存在）自动注入为前缀。
 pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;
     full_pipeline(&source_with_std(source, false)?)
@@ -101,53 +101,53 @@ pub fn build_executable_file_with_target(
 /// 编译并运行入口文件（含外部模块），返回程序标准输出（UTF-8），无缓存。
 pub fn run_source_file(entry: &Path) -> Result<String, DriverError> {
     let dir = temp_dir();
-    let exe = dir.join("zeta-run");
+    let exe = dir.join("rlyeh-run");
     build_executable_file(entry, &exe)?;
     let out = run_exe(&exe)?;
     let _ = std::fs::remove_dir_all(&dir);
     Ok(out)
 }
 
-/// 读取源码文件并执行静态检查（`zeta check`）。
+/// 读取源码文件并执行静态检查（`rlyeh check`）。
 ///
 /// 解析失败返回 `parse-error` 诊断；否则返回 lint 规则诊断。
 /// 仅负责分析，不涉及完整编译流水线。
-pub fn check_source_file(path: &Path) -> Result<Vec<zeta_check::Diagnostic>, DriverError> {
+pub fn check_source_file(path: &Path) -> Result<Vec<rlyeh_check::Diagnostic>, DriverError> {
     let source = std::fs::read_to_string(path).map_err(DriverError::Io)?;
-    Ok(zeta_check::check_source(&source))
+    Ok(rlyeh_check::check_source(&source))
 }
 
-/// 读取源码文件并生成 Markdown 文档（`zeta doc`）。
-pub fn doc_source_file(path: &Path, options: &zeta_doc::DocOptions) -> Result<String, DriverError> {
+/// 读取源码文件并生成 Markdown 文档（`rlyeh doc`）。
+pub fn doc_source_file(path: &Path, options: &rlyeh_doc::DocOptions) -> Result<String, DriverError> {
     let source = std::fs::read_to_string(path).map_err(DriverError::Io)?;
-    zeta_doc::doc_source(&source, options).map_err(DriverError::Doc)
+    rlyeh_doc::doc_source(&source, options).map_err(DriverError::Doc)
 }
 
-/// 读取 PGO 画像文件并生成区域大小预测报告（`zeta profile`，阶段 F2 数据回灌消费侧）。
+/// 读取 PGO 画像文件并生成区域大小预测报告（`rlyeh profile`，阶段 F2 数据回灌消费侧）。
 ///
-/// `.zeta_profile` 为 JSON 格式（见 `zeta_region_alloc::profile`）：
+/// `.rl_profile` 为 JSON 格式（见 `rlyeh_region_alloc::profile`）：
 /// 运行时按区域记录的分配量统计（p50/p90/p95/mean/max 等）。
 /// 本函数加载画像 → 以 p95×安全系数预测初始区域大小 → 输出编译决策报告
-/// （复用 `zeta_region_alloc::PgoAdvisor` / `CompilerInterface`）。
+/// （复用 `rlyeh_region_alloc::PgoAdvisor` / `CompilerInterface`）。
 /// 语言级 region 接线后，该预测可直接回灌 `region 'r adaptive` 的初始容量。
 pub fn region_profile_report(path: &Path) -> Result<String, DriverError> {
     let text = std::fs::read_to_string(path).map_err(DriverError::Io)?;
-    let data: zeta_region_alloc::PgoData = serde_json::from_str(&text)
-        .map_err(|e| DriverError::Profile(format!("解析 `.zeta_profile` 失败: {e}")))?;
+    let data: rlyeh_region_alloc::PgoData = serde_json::from_str(&text)
+        .map_err(|e| DriverError::Profile(format!("解析 `.rl_profile` 失败: {e}")))?;
     Ok(build_region_report(&data))
 }
 
-/// 读取 `.zeta_profile`，为每个区域生成 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
+/// 读取 `.rl_profile`，为每个区域生成 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
 ///
 /// 推荐容量 = `PgoAdvisor::recommend_size`（p95 × 安全系数，下限 64KiB）。
-/// 注入到 `adaptive` 区域后，`zeta_region_enter` 以该容量创建初始块。
+/// 注入到 `adaptive` 区域后，`rlyeh_region_enter` 以该容量创建初始块。
 pub fn region_hints_from_profile(
     path: &Path,
 ) -> Result<std::collections::HashMap<String, usize>, DriverError> {
     let text = std::fs::read_to_string(path).map_err(DriverError::Io)?;
-    let data: zeta_region_alloc::PgoData = serde_json::from_str(&text)
-        .map_err(|e| DriverError::Profile(format!("解析 `.zeta_profile` 失败: {e}")))?;
-    let advisor = zeta_region_alloc::PgoAdvisor::from_data(data.clone());
+    let data: rlyeh_region_alloc::PgoData = serde_json::from_str(&text)
+        .map_err(|e| DriverError::Profile(format!("解析 `.rl_profile` 失败: {e}")))?;
+    let advisor = rlyeh_region_alloc::PgoAdvisor::from_data(data.clone());
     let mut hints = std::collections::HashMap::new();
     for id in data.region_ids() {
         if let Some(size) = advisor.recommend_size(&id) {
@@ -162,10 +162,10 @@ pub fn region_hints_from_profile(
 /// 每个区域：`estimated_size` = 历史平均分配量（静态基线）、
 /// `initial_size` = PGO 推荐（p95×安全系数，下限 64KiB）、
 /// `max_size` = 推荐×4 与历史峰值取大、`decision` 描述依据。
-pub fn build_region_report(data: &zeta_region_alloc::PgoData) -> String {
-    let advisor = zeta_region_alloc::PgoAdvisor::from_data(data.clone());
+pub fn build_region_report(data: &rlyeh_region_alloc::PgoData) -> String {
+    let advisor = rlyeh_region_alloc::PgoAdvisor::from_data(data.clone());
     let mut interface =
-        zeta_region_alloc::CompilerInterface::new().with_pgo_data(data.clone());
+        rlyeh_region_alloc::CompilerInterface::new().with_pgo_data(data.clone());
     let mut ids = data.region_ids();
     ids.sort_unstable();
     for id in &ids {
@@ -181,7 +181,7 @@ pub fn build_region_report(data: &zeta_region_alloc::PgoData) -> String {
             region.size_stats.p95, region.size_stats.p50, region.size_stats.mean,
             region.size_stats.max
         );
-        interface = interface.register_region(zeta_region_alloc::RegionCompileInfo {
+        interface = interface.register_region(rlyeh_region_alloc::RegionCompileInfo {
             region_id: id.to_string(),
             estimated_size: region.size_stats.mean,
             initial_size: initial,
@@ -194,9 +194,9 @@ pub fn build_region_report(data: &zeta_region_alloc::PgoData) -> String {
 
 /// 增量编译驱动：源码哈希命中时跳过完整流水线，直接复用缓存 LLVM IR。
 ///
-/// 缓存目录为 `<cache_dir>/.zeta_cache`；`--force` 语义下强制全量重编译。
+/// 缓存目录为 `<cache_dir>/.rlyeh_cache`；`--force` 语义下强制全量重编译。
 pub struct IncrementalDriver {
-    /// 缓存根（`.zeta_cache` 的父目录）
+    /// 缓存根（`.rlyeh_cache` 的父目录）
     cache_dir: PathBuf,
     /// 强制全量重编译（忽略缓存）
     force: bool,
@@ -206,7 +206,7 @@ pub struct IncrementalDriver {
     target: Option<String>,
     /// 会话内缓存统计
     stats: CacheStats,
-    /// L3 PGO 回灌：区域名 → 推荐初始容量（`zeta build --profile` 注入）
+    /// L3 PGO 回灌：区域名 → 推荐初始容量（`rlyeh build --profile` 注入）
     region_hints: std::collections::HashMap<String, usize>,
 }
 
@@ -236,7 +236,7 @@ impl IncrementalDriver {
         self
     }
 
-    /// 禁用标准库预置注入（文件入口 API 默认注入 `core.zeta`）。
+    /// 禁用标准库预置注入（文件入口 API 默认注入 `core.rl`）。
     pub fn with_no_std(mut self, no_std: bool) -> Self {
         self.no_std = no_std;
         self
@@ -314,7 +314,7 @@ impl IncrementalDriver {
         source: &str,
     ) -> Result<(String, BuildOutcome), DriverError> {
         let dir = temp_dir();
-        let exe = dir.join("zeta-run");
+        let exe = dir.join("rlyeh-run");
         let outcome = self.build_executable(file, source, &exe)?;
         let stdout = run_exe(&exe)?;
         let _ = std::fs::remove_dir_all(&dir);
@@ -348,7 +348,7 @@ impl IncrementalDriver {
         entry: &Path,
     ) -> Result<(String, BuildOutcome), DriverError> {
         let dir = temp_dir();
-        let exe = dir.join("zeta-run");
+        let exe = dir.join("rlyeh-run");
         let outcome = self.build_executable_file(entry, &exe)?;
         let stdout = run_exe(&exe)?;
         let _ = std::fs::remove_dir_all(&dir);
@@ -378,7 +378,7 @@ fn full_pipeline_with_hints(
     region_hints: &std::collections::HashMap<String, usize>,
 ) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR）
-    let hir = zeta_typecheck::typecheck_source_with_region_hints(source, region_hints)
+    let hir = rlyeh_typecheck::typecheck_source_with_region_hints(source, region_hints)
         .map_err(|e| DriverError::Typecheck(e.to_string()))?;
 
     // 2. 借用检查（L0 所有权）
@@ -392,14 +392,14 @@ fn full_pipeline_with_hints(
         .map_err(|errs| DriverError::Region(join_errors(errs)))?;
 
     // 4. MIR lowering + 优化
-    let mut mir = zeta_mir::lower::lower_program(&hir);
-    zeta_mir::passes::optimize(&mut mir);
+    let mut mir = rlyeh_mir::lower::lower_program(&hir);
+    rlyeh_mir::passes::optimize(&mut mir);
 
     // 5. LIR lowering
-    let lir = zeta_lir::lower::lower_program(&mir).map_err(|e| DriverError::Lir(e.to_string()))?;
+    let lir = rlyeh_lir::lower::lower_program(&mir).map_err(|e| DriverError::Lir(e.to_string()))?;
 
     // 6. LLVM IR 文本生成
-    zeta_codegen::generate_llvm(&lir).map_err(|e| DriverError::Codegen(e.to_string()))
+    rlyeh_codegen::generate_llvm(&lir).map_err(|e| DriverError::Codegen(e.to_string()))
 }
 
 /// LLVM IR 文本 → clang 汇编 / 链接 → 可执行文件。
@@ -413,7 +413,7 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     let dir = temp_dir();
     std::fs::create_dir_all(&dir).map_err(DriverError::Io)?;
     let ll_path = dir.join("main.ll");
-    // 注入平台内建（`__zeta_target_os`）后写盘——codegen 对 `__zeta_` 前缀 extern 不生成 declare。
+    // 注入平台内建（`__rlyeh_target_os`）后写盘——codegen 对 `__rlyeh_` 前缀 extern 不生成 declare。
     let llvm_with_builtins = format!("{llvm}\n{}", platform_builtin_ir(target));
     // L4b: wasm 目标注入 actor 符号解析表（静态查表替代 dlsym，见 actor_resolve_ir）。
     let llvm_final = match target {
@@ -437,12 +437,12 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     }
 
     let clang = clang_path();
-    // 运行时 C ABI（staticlib）：Zeta 程序经 `extern fn zeta_actor_*` /
-    // `extern fn zeta_gc_*` 调用。链接器按需提取对象——不含相应特性的程序不受影响
+    // 运行时 C ABI（staticlib）：Rlyeh 程序经 `extern fn rlyeh_actor_*` /
+    // `extern fn rlyeh_gc_*` 调用。链接器按需提取对象——不含相应特性的程序不受影响
     // （库可缺失则跳过）。交叉编译到其他架构时本机 staticlib 无法链接，跳过并提示。
     let runtime_libs: Vec<PathBuf> = if is_cross_target(target) {
         eprintln!(
-            "zeta: 提示: 交叉编译目标 `{}` 与主机架构不同，跳过 Actor / GC 运行时库（相关特性暂不支持交叉编译）",
+            "rlyeh: 提示: 交叉编译目标 `{}` 与主机架构不同，跳过 Actor / GC 运行时库（相关特性暂不支持交叉编译）",
             target.unwrap_or_default()
         );
         Vec::new()
@@ -470,7 +470,7 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
             lib.file_name()
                 .and_then(|n| n.to_str())
                 .map(|n| n.trim_start_matches("lib").trim_end_matches(".a"))
-                .unwrap_or("zeta_runtime"),
+                .unwrap_or("rlyeh_runtime"),
         );
     }
     cmd.arg("-o").arg(out_path);
@@ -482,8 +482,8 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
         return Err(DriverError::Clang(stderr));
     }
-    // 调试：设置 ZETA_KEEP_TMP=1 时保留临时目录（含 main.ll 中间 IR）
-    if std::env::var("ZETA_KEEP_TMP").is_err() {
+    // 调试：设置 RLYEH_KEEP_TMP=1 时保留临时目录（含 main.ll 中间 IR）
+    if std::env::var("RLYEH_KEEP_TMP").is_err() {
         let _ = std::fs::remove_dir_all(&dir);
     }
     Ok(())
@@ -500,7 +500,7 @@ pub fn is_wasm_triple(triple: &str) -> bool {
 /// - wasi-libc（`brew install wasi-libc`，或 `WASI_SYSROOT` 环境变量指向 sysroot）
 /// - wasm-ld（`brew install lld`；已在 PATH 则直接使用）
 ///
-/// 入口语义：WASI 的 `_start` 由 wasi-libc crt1.o 提供并调用 Zeta 生成的 `main()`；
+/// 入口语义：WASI 的 `_start` 由 wasi-libc crt1.o 提供并调用 Rlyeh 生成的 `main()`；
 /// 标准库中 WASI 不存在的 extern 符号（socket/pthread 等）仅在被引用时才会链接，
 /// 未使用的模块不会引入未定义符号。
 fn assemble_wasm(
@@ -526,12 +526,12 @@ fn assemble_wasm(
     };
     let clang = clang_path();
     // WASI 入口适配：wasi-libc 的 `__main_void`（crt1 链）调用
-    // `__main_argc_argv(int argc, char **argv)`，而 Zeta 生成的是无参 `@main`。
+    // `__main_argc_argv(int argc, char **argv)`，而 Rlyeh 生成的是无参 `@main`。
     // 将 IR 中的 main 定义重命名为 `__main_argc_argv` 并补齐 ABI 参数，
     // 使 crt1.o 能解析入口；同时避免 clang 为无参 main 生成额外包装符号。
     let mut ll = std::fs::read_to_string(ll_path).map_err(DriverError::Io)?;
     // wasm32 指针/尺寸位宽适配：wasi-libc 的 malloc(size_t)/memcmp(size_t)
-    // 为 32 位参数，而 Zeta 的 IR 按 64 位（isize）声明调用；将声明与调用的
+    // 为 32 位参数，而 Rlyeh 的 IR 按 64 位（isize）声明调用；将声明与调用的
     // 参数位宽降为 i32（值用 trunc 包装），避免 import 签名不匹配 trap。
     fn adapt_wide_int_args(src: &str, marker: &str) -> String {
         let mut out = String::with_capacity(src.len());
@@ -547,7 +547,7 @@ fn assemble_wasm(
                 if inner.starts_with('%') {
                     // trunc 是 instruction 不能内联在 call 参数位：在 call 行前
                     // 插入 trunc 定义，参数改用新寄存器。
-                    let tmp = format!("%zeta.wasm32.{counter}");
+                    let tmp = format!("%rlyeh.wasm32.{counter}");
                     counter += 1;
                     if let Some(nl) = out.rfind('\n') {
                         out.insert_str(
@@ -604,7 +604,7 @@ fn assemble_wasm(
                 if let Some(inner) = p.strip_prefix("i64 ") {
                     let inner = inner.trim();
                     if inner.starts_with('%') {
-                        let tmp = format!("%zeta.wasm32.c{counter}");
+                        let tmp = format!("%rlyeh.wasm32.c{counter}");
                         counter += 1;
                         if let Some(nl) = out.rfind('\n') {
                             out.insert_str(
@@ -658,13 +658,13 @@ fn assemble_wasm(
     // 注意：marker 止于 `(`，参数区从 `i64 ` 开始解析。
     ll = adapt_wide_int_args(&ll, "call i8* @malloc(");
     ll = adapt_wide_int_args(&ll, "call i32 @memcmp(i8*, i8*, ");
-    // calloc 适配：wasi-libc 的 calloc(size_t, size_t) 为 32 位签名，而 Zeta IR
+    // calloc 适配：wasi-libc 的 calloc(size_t, size_t) 为 32 位签名，而 Rlyeh IR
     // 声明/调用按 i64（返回值经 inttoptr 转 i8*）。将声明与调用点参数降为 i32，
     // 并把紧跟的 `inttoptr i64 %r64 to i8*` 同步降宽（i32 值直转 32 位指针）。
     ll = ll.replace("declare i64 @calloc(i64, i64)", "declare i32 @calloc(i32, i32)");
     ll = adapt_calloc_wasm32(&ll);
     // WASI 入口适配：wasi-libc 的 `__main_void`（crt1 链）调用
-    // `__main_argc_argv(int argc, char **argv)`，而 Zeta 生成的是无参 `@main`。
+    // `__main_argc_argv(int argc, char **argv)`，而 Rlyeh 生成的是无参 `@main`。
     // 将 IR 中的 main 定义重命名为 `__main_argc_argv` 并补齐 ABI 参数，
     // 使 crt1.o 能解析入口；同时避免 clang 为无参 main 生成额外包装符号。
     if ll.contains("define i32 @main()") {
@@ -682,14 +682,14 @@ fn assemble_wasm(
     cmd.arg("-O3");
     // 关闭 clang 默认的 compiler-rt builtins 链接（wasm32 的 libclang_rt.builtins.a
     // 不在 Xcode CLT / brew llvm 内），改由 wasi-libc 的 crt1.o + libc.a 提供入口与库函数。
-    // Zeta 的 i64/f64 运算在 wasm32 均为原生指令，不依赖 software-intrinsic。
+    // Rlyeh 的 i64/f64 运算在 wasm32 均为原生指令，不依赖 software-intrinsic。
     cmd.arg("-nostdlib");
     cmd.arg(ll_path);
     cmd.arg(lib_dir.join("crt1.o"));
     cmd.arg(lib_dir.join("libc.a"));
     // L4b: 链接 wasm 版 Actor 运行时（单线程同步模式，替代 dlsym）。
-    // 程序引用 zeta_actor_* 而库缺失时给出明确诊断（避免链接器 undefined symbol）。
-    let uses_actor = ll.contains("@zeta_actor_");
+    // 程序引用 rlyeh_actor_* 而库缺失时给出明确诊断（避免链接器 undefined symbol）。
+    let uses_actor = ll.contains("@rlyeh_actor_");
     match wasm_actor_runtime_lib_path() {
         Some(lib) => {
             cmd.arg(lib);
@@ -698,7 +698,7 @@ fn assemble_wasm(
             let _ = std::fs::remove_dir_all(dir);
             return Err(DriverError::Clang(
                 "wasm 目标下 actor 程序需要 wasm 版运行时: 请先执行 \
-                 `cargo build --target wasm32-wasip1 -p zeta-actor-runtime`"
+                 `cargo build --target wasm32-wasip1 -p rlyeh-actor-runtime`"
                     .to_string(),
             ));
         }
@@ -718,8 +718,8 @@ fn assemble_wasm(
         let stderr = String::from_utf8_lossy(&result.stderr).to_string();
         return Err(DriverError::Clang(stderr));
     }
-    // 调试：设置 ZETA_KEEP_TMP=1 时保留临时目录（含 main.ll 中间 IR）。
-    if std::env::var("ZETA_KEEP_TMP").is_err() {
+    // 调试：设置 RLYEH_KEEP_TMP=1 时保留临时目录（含 main.ll 中间 IR）。
+    if std::env::var("RLYEH_KEEP_TMP").is_err() {
         let _ = std::fs::remove_dir_all(dir);
     }
     Ok(())
@@ -776,7 +776,7 @@ fn actor_runtime_lib_path() -> Option<PathBuf> {
     let lib = manifest
         .join("../../target")
         .join(profile)
-        .join("libzeta_actor_runtime.a");
+        .join("librlyeh_actor_runtime.a");
     lib.exists().then_some(lib)
 }
 
@@ -788,7 +788,7 @@ fn gc_runtime_lib_path() -> Option<PathBuf> {
     let lib = manifest
         .join("../../target")
         .join(profile)
-        .join("libzeta_gc_runtime.a");
+        .join("librlyeh_gc_runtime.a");
     lib.exists().then_some(lib)
 }
 
@@ -800,7 +800,7 @@ fn region_runtime_lib_path() -> Option<PathBuf> {
     let lib = manifest
         .join("../../target")
         .join(profile)
-        .join("libzeta_region_alloc.a");
+        .join("librlyeh_region_alloc.a");
     lib.exists().then_some(lib)
 }
 
@@ -849,7 +849,7 @@ fn host_arch() -> &'static str {
     }
 }
 
-/// 平台内建 `__zeta_target_os()` 的返回码（0=未知 1=linux 2=macos 3=windows 4=freebsd 5=wasi）。
+/// 平台内建 `__rlyeh_target_os()` 的返回码（0=未知 1=linux 2=macos 3=windows 4=freebsd 5=wasi）。
 ///
 /// 从目标 triple 提取 OS 段（`None` = 主机）；标准库据此做平台分支
 /// （如 `sockaddr_in4` 的 `sin_len` 布局：macOS 有、Linux 无；WASI 下无 socket
@@ -874,11 +874,11 @@ pub fn target_os_code(target: Option<&str>) -> i32 {
     }
 }
 
-/// 注入平台内建的 LLVM IR 定义文本（`__zeta_target_os` 返回当前目标 OS 码）。
+/// 注入平台内建的 LLVM IR 定义文本（`__rlyeh_target_os` 返回当前目标 OS 码）。
 fn platform_builtin_ir(target: Option<&str>) -> String {
     let os = target_os_code(target);
     format!(
-        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__zeta_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n",
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n",
         os,
         sendfile_builtin_ir(os),
         thread_builtin_ir(os),
@@ -886,7 +886,7 @@ fn platform_builtin_ir(target: Option<&str>) -> String {
     )
 }
 
-/// `__zeta_sendfile(i64 out_fd, i64 in_fd, i64* off, i64 count) -> i64` 的平台实现。
+/// `__rlyeh_sendfile(i64 out_fd, i64 in_fd, i64* off, i64 count) -> i64` 的平台实现。
 /// 语言侧 io::sendfile::sendfile 统一调用此符号，平台签名差异在此屏蔽：
 /// - Linux（码 1）：`ssize_t sendfile(int out, int in, off_t* off, size_t count)`，
 ///   off 为 in/out 指针（count==0 发送到 EOF，返回实际字节数，失败 -1）。
@@ -899,7 +899,7 @@ fn sendfile_builtin_ir(os: i32) -> String {
         1 => r#"
 ; Linux：sendfile(2) 4 参；off 指针 in/out，count==0 到 EOF
 declare i64 @sendfile(i64, i64, i64*, i64)
-define internal i64 @__zeta_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
+define internal i64 @__rlyeh_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
 entry:
   %r = call i64 @sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count)
   ret i64 %r
@@ -909,7 +909,7 @@ entry:
         2 => r#"
 ; macOS：sendfile(2) 6 参；off 传值、len in/out（初值=count），成功 0 / 失败 -1
 declare i32 @sendfile(i64, i64, i64, i64*, i64, i32)
-define internal i64 @__zeta_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
+define internal i64 @__rlyeh_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
 entry:
   %offv = load i64, i64* %off
   %len = alloca i64
@@ -927,7 +927,7 @@ fail:
         .to_string(),
         _ => r#"
 ; 其他平台（freebsd/windows/wasi）：sendfile(2) 不可用，返回 -1
-define internal i64 @__zeta_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
+define internal i64 @__rlyeh_sendfile(i64 %out_fd, i64 %in_fd, i64* %off, i64 %count) {
 entry:
   ret i64 -1
 }
@@ -936,11 +936,11 @@ entry:
     }
 }
 
-/// 线程平台内建（S0，2026-08）：`__zeta_thread_spawn/__zeta_thread_join/__zeta_thread_self`；
-/// S2a（2026-08）增补 `__zeta_thread_sleep`（usleep 绑定）。
+/// 线程平台内建（S0，2026-08）：`__rlyeh_thread_spawn/__rlyeh_thread_join/__rlyeh_thread_self`；
+/// S2a（2026-08）增补 `__rlyeh_thread_sleep`（usleep 绑定）。
 /// 语言侧 `thread::Thread::spawn/join/current` 与 `thread::sleep` 统一调用，pthread 差异在此屏蔽：
 /// - Linux/macOS（码 1/2）：pthread_create/join/self/usleep 完整实现。线程入口为
-///   `i64 (i8*)*`——Zeta `fn() -> i64` 函数指针值（按地址整数经语言侧 extern 传入，
+///   `i64 (i8*)*`——Rlyeh `fn() -> i64` 函数指针值（按地址整数经语言侧 extern 传入，
 ///   参数位 i64）在此 `inttoptr` + `bitcast` 后交给 pthread_create；被调线程忽略
 ///   argv（i8* 多余参数，ABI 安全），返回值 i64 与 void* 同寄存器，join 经 i64* 槽读回。
 ///   sleep 经 `usleep(3)`（POSIX，微秒，useconds_t 截断 u32，上限约 71 分钟）。
@@ -963,7 +963,7 @@ declare i32 @pthread_create(i64*, i64*, i64 (i8*)*, i8*)
 declare i32 @pthread_join(i64, i64*)
 declare i64 @pthread_self()
 declare i32 @usleep(i32)
-define internal i64 @__zeta_thread_spawn(i64 %ep_addr, i64 %arg) {
+define internal i64 @__rlyeh_thread_spawn(i64 %ep_addr, i64 %arg) {
 entry:
   %tid = alloca i64
   %ep = inttoptr i64 %ep_addr to i8*
@@ -978,7 +978,7 @@ done:
 fail:
   ret i64 -1
 }
-define internal i64 @__zeta_thread_join(i64 %tid) {
+define internal i64 @__rlyeh_thread_join(i64 %tid) {
 entry:
   %rv = alloca i64
   store i64 0, i64* %rv
@@ -991,12 +991,12 @@ done:
 fail:
   ret i64 -1
 }
-define internal i64 @__zeta_thread_self() {
+define internal i64 @__rlyeh_thread_self() {
 entry:
   %r = call i64 @pthread_self()
   ret i64 %r
 }
-define internal i64 @__zeta_thread_sleep(i64 %micros) {
+define internal i64 @__rlyeh_thread_sleep(i64 %micros) {
 entry:
   %us = trunc i64 %micros to i32
   %r = call i32 @usleep(i32 %us)
@@ -1012,19 +1012,19 @@ fail:
     } else {
         r#"
 ; --- 线程平台内建（其他平台禁用）---
-define internal i64 @__zeta_thread_spawn(i64 %ep_addr, i64 %arg) {
+define internal i64 @__rlyeh_thread_spawn(i64 %ep_addr, i64 %arg) {
 entry:
   ret i64 -1
 }
-define internal i64 @__zeta_thread_join(i64 %tid) {
+define internal i64 @__rlyeh_thread_join(i64 %tid) {
 entry:
   ret i64 -1
 }
-define internal i64 @__zeta_thread_self() {
+define internal i64 @__rlyeh_thread_self() {
 entry:
   ret i64 -1
 }
-define internal i64 @__zeta_thread_sleep(i64 %micros) {
+define internal i64 @__rlyeh_thread_sleep(i64 %micros) {
 entry:
   ret i64 -1
 }
@@ -1034,7 +1034,7 @@ entry:
 }
 
 /// 时间平台内建（墙钟，S2b）：
-/// - `__zeta_clock_monotonic() -> i64`：`clock_gettime(CLOCK_MONOTONIC)` 微秒值。
+/// - `__rlyeh_clock_monotonic() -> i64`：`clock_gettime(CLOCK_MONOTONIC)` 微秒值。
 ///   Linux（os 1）/macOS（os 2）为真实现，timespec 经 [2 x i64] 缓冲传指针，
 ///   `tv_sec*1e6 + tv_nsec/1000`；失败返回 -1。
 ///   注意：CLOCK_MONOTONIC 常量随平台不同——Linux = 1，Darwin(macOS) = 6。
@@ -1047,7 +1047,7 @@ fn time_builtin_ir(os: i32) -> String {
             r#"
 ; --- 时间平台内建（墙钟：clock_gettime CLOCK_MONOTONIC={monotonic}）---
 declare i32 @clock_gettime(i32, i64*)
-define internal i64 @__zeta_clock_monotonic() {{
+define internal i64 @__rlyeh_clock_monotonic() {{
 entry:
   %ts = alloca [2 x i64]
   %tsb = bitcast [2 x i64]* %ts to i8*
@@ -1074,7 +1074,7 @@ fail:
     } else {
         r#"
 ; --- 时间平台内建（其他平台禁用，退回 clock()）---
-define internal i64 @__zeta_clock_monotonic() {
+define internal i64 @__rlyeh_clock_monotonic() {
 entry:
   ret i64 -1
 }
@@ -1106,7 +1106,7 @@ fn llvm_quoted_name(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\22"))
 }
 
-/// 从 LLVM IR 文本解析所有 Zeta actor 的 handle / factory 函数名
+/// 从 LLVM IR 文本解析所有 Rlyeh actor 的 handle / factory 函数名
 /// （`<actor>::__handle` / `<actor>::__state_new` 结尾的 `define`）。
 fn actor_symbols_from_ir(llvm: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -1137,9 +1137,9 @@ fn actor_symbols_from_ir(llvm: &str) -> Vec<String> {
 
 /// 生成 wasm 目标的 actor 符号解析表（L4b）：替代 `dlsym` 的静态查表。
 ///
-/// 编译期已知全部 handle / factory 函数，生成 `zeta_actor_resolve(name)`
+/// 编译期已知全部 handle / factory 函数，生成 `rlyeh_actor_resolve(name)`
 /// （`strcmp` 字符串比较 → `ptrtoint` 函数地址），wasm 版运行时
-/// （`zeta-actor-runtime` 同步模式）据此解析符号。返回空串表示无 actor。
+/// （`rlyeh-actor-runtime` 同步模式）据此解析符号。返回空串表示无 actor。
 fn actor_resolve_ir(llvm: &str) -> String {
     let symbols = actor_symbols_from_ir(llvm);
     if symbols.is_empty() {
@@ -1156,7 +1156,7 @@ fn actor_resolve_ir(llvm: &str) -> String {
         ));
     }
     // 外部链接：wasm 版运行时（静态库）需解析该符号；internal 对链接器不可见。
-    out.push_str("define i64 @zeta_actor_resolve(i8* %name) {\n");
+    out.push_str("define i64 @rlyeh_actor_resolve(i8* %name) {\n");
     out.push_str("entry:\n");
     let mut blocks = Vec::new();
     for (i, s) in symbols.iter().enumerate() {
@@ -1182,7 +1182,7 @@ fn actor_resolve_ir(llvm: &str) -> String {
 }
 
 /// 探测 wasm 版 Actor 运行时静态库路径（`cargo build --target wasm32-wasip1
-/// -p zeta-actor-runtime` 产物）；无则返回 `None`。
+/// -p rlyeh-actor-runtime` 产物）；无则返回 `None`。
 fn wasm_actor_runtime_lib_path() -> Option<std::path::PathBuf> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()?
@@ -1193,7 +1193,7 @@ fn wasm_actor_runtime_lib_path() -> Option<std::path::PathBuf> {
                 .join("target")
                 .join(target)
                 .join(profile)
-                .join("libzeta_actor_runtime.a");
+                .join("librlyeh_actor_runtime.a");
             if p.exists() {
                 return Some(p);
             }
@@ -1225,7 +1225,7 @@ static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64
 fn temp_dir() -> PathBuf {
     let seq = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "zeta-mvp-{}-{}-{seq}",
+        "rlyeh-mvp-{}-{}-{seq}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

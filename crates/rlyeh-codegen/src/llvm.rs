@@ -8,20 +8,20 @@
 //! - **内建函数**：`print` / `println` 映射为 `printf` 调用（参数按类型分派
 //!   格式串）；`true` / `false` 通过 `select` 选择字符串指针；
 //! - **区域标注指令**：MVP 后端直接忽略（分配语义由后续后端 / 运行时提供）；
-//! - **`main` 特化**：Zeta 的 `main` 生成 `define i32 @main()`（返回 0）。
+//! - **`main` 特化**：Rlyeh 的 `main` 生成 `define i32 @main()`（返回 0）。
 
 use std::collections::{HashMap, HashSet};
 
-use zeta_lir::{
+use rlyeh_lir::{
     FieldScalar, LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType,
     Local,
 };
 
 use crate::error::CodegenError;
 
-/// 内建函数名（与 `zeta-lir::lower::BUILTIN_FUNCTIONS` 保持一致）。
+/// 内建函数名（与 `rlyeh-lir::lower::BUILTIN_FUNCTIONS` 保持一致）。
 /// libc 变参函数白名单（R 阶段，2026-08）：这些符号在 libc 中按
-/// `(int, int, ...)` 等**变参原型**声明，而 Zeta extern 只能表达固定参数。
+/// `(int, int, ...)` 等**变参原型**声明，而 Rlyeh extern 只能表达固定参数。
 /// 元组第二项 = libc 原型的**固定形参个数**（fcntl = 2：fd、cmd）。
 ///
 /// 若把 declare 写成固定参数（`(i64, i64, i64)`），LLVM 调用点不会生成 SysV
@@ -31,7 +31,7 @@ use crate::error::CodegenError;
 /// （3 个"固定"参数），LLVM 会认为 3 个参数全部走寄存器而不写保存区，
 /// 同样错位。
 ///
-/// 正确做法：只保留 libc 的固定形参个数（fcntl = 2），其余 Zeta 参数并入
+/// 正确做法：只保留 libc 的固定形参个数（fcntl = 2），其余 Rlyeh 参数并入
 /// `...` 变参——LLVM 生成变参调用序（复制到保存区 + 设 %al），libc 的
 /// va_arg 从保存区读到正确值。
 const VARIADIC_EXTERNS: &[(&str, usize)] = &[("fcntl", 2)];
@@ -243,39 +243,39 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     }
 
     let mut out = String::new();
-    out.push_str("; ModuleID = 'zeta'\n");
+    out.push_str("; ModuleID = 'rlyeh'\n");
     out.push_str("declare i32 @printf(i8*, ...)\n");
     // POSIX `dprintf(fd, fmt, ...)`：eprint/eprintln 直写 fd 2（stderr）。
     // 不引用 `stderr` 符号（macOS 为 `__stderrp`，不可移植）；WASI 亦提供 dprintf。
     out.push_str("declare i32 @dprintf(i32, i8*, ...)\n");
     out.push_str("declare i8* @malloc(i64)\n");
     // calloc 预置声明必须**早于所有调用点**（LLVM IR parser 对 call 自动创建的
-    // 隐式声明与后续显式 declare 视为 redefinition 报错）。标准库 core.zeta 的
+    // 隐式声明与后续显式 declare 视为 redefinition 报错）。标准库 core.rl 的
     // `extern fn calloc -> i64` 声明由 emit_function 跳过（见下），避免重复。
     // 返回值为 i64，内置分配点经 inttoptr 转 i8*。
     out.push_str("declare i64 @calloc(i64, i64)\n");
     out.push_str("declare void @free(i8*)\n");
     out.push_str("declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)\n");
     out.push_str("declare i32 @memcmp(i8*, i8*, i64)\n");
-    // L3 region 接线：zeta-region-alloc 运行时（driver 链接 libzeta_region_alloc.a）
+    // L3 region 接线：rlyeh-region-alloc 运行时（driver 链接 librlyeh_region_alloc.a）
     // noalias：enter/alloc 返回新分配内存（Box<Region> / 新块），与入参不 alias；
     // nounwind：extern "C" 运行时不 unwind（C ABI 默认，显式标注供优化器推理）。
     // 注意：不可标 argmemonly/readnone——运行时内部走 std::alloc（系统堆）。
-    out.push_str("declare noalias i8* @zeta_region_enter(i8*, i64, i64, i8, double, i8, i8, i8) nounwind\n");
-    out.push_str("declare noalias i8* @zeta_region_alloc(i8*, i64, i64) nounwind\n");
-    out.push_str("declare void @zeta_region_transfer(i8*, i8*) nounwind\n");
-    out.push_str("declare void @zeta_region_exit(i8*) nounwind\n");
+    out.push_str("declare noalias i8* @rlyeh_region_enter(i8*, i64, i64, i8, double, i8, i8, i8) nounwind\n");
+    out.push_str("declare noalias i8* @rlyeh_region_alloc(i8*, i64, i64) nounwind\n");
+    out.push_str("declare void @rlyeh_region_transfer(i8*, i8*) nounwind\n");
+    out.push_str("declare void @rlyeh_region_exit(i8*) nounwind\n");
     // —— TBAA 访问域（module 级 metadata）——
     // !0 根 → !1 内存域 → !2 Region 头、!3 Region 体。
     // 打标规则（保守，防 UB）：仅 Region 头字段 load/store 标 !2、值镜像
-    // memcpy 标 !3；用户内存（栈/全局/堆对象）一律不标——Zeta 数组索引 /
+    // memcpy 标 !3；用户内存（栈/全局/堆对象）一律不标——Rlyeh 数组索引 /
     // `&` 引用存在别名共享，用户对象间打标才是别名逃逸源头。Region 头
     // 物理上独立于 bump 块与用户内存（Box<Region> ≠ std::alloc 块），
     // 标 !2/!3 后 LLVM 可证「Region 头与用户数据不重叠」，重排/消除 reload。
-    out.push_str("!0 = !{!\"zeta_root\"}\n");
-    out.push_str("!1 = !{!\"zeta_mem\", !0}\n");
-    out.push_str("!2 = !{!\"zeta_region_header\", !1}\n");
-    out.push_str("!3 = !{!\"zeta_region_body\", !1}\n");
+    out.push_str("!0 = !{!\"rlyeh_root\"}\n");
+    out.push_str("!1 = !{!\"rlyeh_mem\", !0}\n");
+    out.push_str("!2 = !{!\"rlyeh_region_header\", !1}\n");
+    out.push_str("!3 = !{!\"rlyeh_region_body\", !1}\n");
     for g in &emitter.globals {
         out.push_str(g);
         out.push('\n');
@@ -294,7 +294,7 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
 /// 的 phi（`%ncur`/`%nbase`/`%nlim`）作为回边值，循环退出（header
 /// 条件为假跳出）时把 `%hcur` 写回 Region 头 cursor。
 ///
-/// 背景：内联 bump 慢路径 `call @zeta_region_alloc` 会改写
+/// 背景：内联 bump 慢路径 `call @rlyeh_region_alloc` 会改写
 /// base/cursor/limit（grow 时 `self.base/limit/cursor` 均更新），LLVM
 /// 无法证明调用不写 Region 头，因此 LICM 无法把 base/limit/cursor 的
 /// load 提升出循环——每次分配都重复 3 次访存。本提升在 IR 层自行维护
@@ -914,9 +914,9 @@ impl LlvmEmitter {
     /// 生成单个函数定义（extern 声明生成 `declare`）。
     fn emit_function(&mut self, f: &LirFunction) -> Result<(), CodegenError> {
         if f.is_extern {
-            // `__zeta_` 前缀为驱动注入的平台内建（如 `__zeta_target_os`）：
+            // `__rlyeh_` 前缀为驱动注入的平台内建（如 `__rlyeh_target_os`）：
             // 跳过 declare——driver 在汇编阶段追加 `define internal`（同符号 declare+define 冲突）。
-            if f.name.starts_with("__zeta_") {
+            if f.name.starts_with("__rlyeh_") {
                 return Ok(());
             }
             // calloc 已在模块头（preamble）预置 `declare i64 @calloc(i64, i64)`，
@@ -1217,14 +1217,14 @@ impl LlvmEmitter {
                 let v = self.operand_value(operand, *ty, body, f)?;
                 let r = self.reg();
                 match op {
-                    zeta_lir::HirUnaryOp::Neg => {
+                    rlyeh_lir::HirUnaryOp::Neg => {
                         if *ty == LirType::F64 {
                             body.push_str(&format!("  %{r} = fneg double {v}\n"));
                         } else {
                             body.push_str(&format!("  %{r} = sub i64 0, {v}\n"));
                         }
                     }
-                    zeta_lir::HirUnaryOp::Not => {
+                    rlyeh_lir::HirUnaryOp::Not => {
                         body.push_str(&format!("  %{r} = xor i1 true, {v}\n"));
                     }
                 }
@@ -1509,7 +1509,7 @@ impl LlvmEmitter {
                     body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
                 }
             }
-            // L3 region 接线：region 指令 → zeta-region-alloc 运行时调用
+            // L3 region 接线：region 指令 → rlyeh-region-alloc 运行时调用
             // （区域句柄槽 `%{key}.rh` 已在入口块预分配）
             LirStmt::RegionEnter { name, options } => {
                 let key = match name {
@@ -1540,7 +1540,7 @@ impl LlvmEmitter {
                 let strategy = if options.strategy.is_some() { 1 } else { 0 };
                 let r = self.reg();
                 body.push_str(&format!(
-                    "  %{r} = call i8* @zeta_region_enter({nptr_arg}, i64 {nlen}, i64 {initial}, i8 {allow_growth}, double {factor_s}, i8 {exact}, i8 {adaptive}, i8 {strategy}) nounwind\n"
+                    "  %{r} = call i8* @rlyeh_region_enter({nptr_arg}, i64 {nlen}, i64 {initial}, i8 {allow_growth}, double {factor_s}, i8 {exact}, i8 {adaptive}, i8 {strategy}) nounwind\n"
                 ));
                 body.push_str(&format!("  store i8* %{r}, i8** %{handle}\n"));
             }
@@ -1552,7 +1552,7 @@ impl LlvmEmitter {
                 let handle = format!("{key}.rh");
                 let r = self.reg();
                 body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
-                body.push_str(&format!("  call void @zeta_region_exit(i8* %{r}) nounwind\n"));
+                body.push_str(&format!("  call void @rlyeh_region_exit(i8* %{r}) nounwind\n"));
             }
             LirStmt::AllocInRegion { target, region, size } => {
                 // 仅聚合对象（Ptr 槽）接线：区域内 bump 分配 + 值镜像；
@@ -1615,7 +1615,7 @@ impl LlvmEmitter {
                 body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
                 let v = self.operand_value(&LirOperand::Local(place.clone()), LirType::Ptr, body, f)?;
                 body.push_str(&format!(
-                    "  call void @zeta_region_transfer(i8* %{r}, i8* {v}) nounwind\n"
+                    "  call void @rlyeh_region_transfer(i8* %{r}, i8* {v}) nounwind\n"
                 ));
             }
         }
@@ -1693,7 +1693,7 @@ impl LlvmEmitter {
     ///
     /// 语义等价性：size 为 `slot_count × 8`（8 的倍数），每次 bump 对齐后
     /// cursor 恒保持 8 对齐，故「一次 bump(Σsize) + 偏移派生」与「N 次独立
-    /// bump(size_i)」逐字节一致；慢路径一次 `zeta_region_alloc(total)` 分配
+    /// bump(size_i)」逐字节一致；慢路径一次 `rlyeh_region_alloc(total)` 分配
     /// 连续整块，与 N 次调用等价（仅 alloc_count 统计差异——内联快路径
     /// 本就不计数，统计语义见 region.rs）。
     ///
@@ -1774,9 +1774,9 @@ impl LlvmEmitter {
 
     /// 生成内联 bump 快路径（`AllocInRegion` / `AllocInRegionDirect` 共用）：
     /// 直接读写 repr(C) `Region` 首部固定偏移字段（base+0 / cursor+8 /
-    /// limit+16 / alloc_count+24，见 zeta-region-alloc/src/region.rs
+    /// limit+16 / alloc_count+24，见 rlyeh-region-alloc/src/region.rs
     /// FAST_*_OFF 常量），仅当前块空间不足时分支到慢路径
-    /// （`call @zeta_region_alloc` 扩容）。
+    /// （`call @rlyeh_region_alloc` 扩容）。
     ///
     /// 与 `Region::try_bump` 公式逐位一致：
     /// `aligned = (cursor+align-1) & !(align-1)`，`new = aligned+size`；
@@ -1793,7 +1793,7 @@ impl LlvmEmitter {
         slot: &str,
         body: &mut String,
     ) -> String {
-        let align = 8u64; // 与 zeta-region-alloc MemoryBlock::BASE_ALIGN 一致
+        let align = 8u64; // 与 rlyeh-region-alloc MemoryBlock::BASE_ALIGN 一致
         let amask = align - 1; // 7
         let not_amask = !amask; // 18446744073709551607
         let b = self.reg();
@@ -1818,7 +1818,7 @@ impl LlvmEmitter {
         // 注意：LLVM IR 中 label 定义不带 `%`（引用时才带 `%`）。
         body.push_str(&format!("{fast}:\n"));
         // 快路径：更新 cursor。alloc_count 不在此递增——为换取热路径
-        // 性能，内联快路径不计数（统计语义见 zeta-region-alloc/src/region.rs）。
+        // 性能，内联快路径不计数（统计语义见 rlyeh-region-alloc/src/region.rs）。
         body.push_str(&format!("  store i64 %{new}, i64* %{cv}, !tbaa !2\n"));
         let fp = self.reg();
         body.push_str(&format!("  %{fp} = getelementptr i8, i8* %{base}, i64 %{al}\n"));
@@ -1828,7 +1828,7 @@ impl LlvmEmitter {
         body.push_str(&format!("{slow}:\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @zeta_region_alloc(i8* %{b}, i64 {size}, i64 8) nounwind\n"
+            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{b}, i64 {size}, i64 8) nounwind\n"
         ));
         body.push_str(&format!("  store i8* %{sp}, i8** %{slot}\n"));
         body.push_str(&format!("  br label %{join}\n"));
@@ -1910,7 +1910,7 @@ impl LlvmEmitter {
         body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}, !tbaa !2\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @zeta_region_alloc(i8* %{h}, i64 {size}, i64 8) nounwind\n"
+            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{h}, i64 {size}, i64 8) nounwind\n"
         ));
         let rc = self.reg();
         body.push_str(&format!("  %{rc} = load i64, i64* %{cv}, !tbaa !2\n"));
@@ -1997,7 +1997,7 @@ impl LlvmEmitter {
         body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}, !tbaa !2\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @zeta_region_alloc(i8* %{h}, i64 {total}, i64 8) nounwind\n"
+            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{h}, i64 {total}, i64 8) nounwind\n"
         ));
         let rc = self.reg();
         body.push_str(&format!("  %{rc} = load i64, i64* %{cv}, !tbaa !2\n"));
@@ -2062,7 +2062,7 @@ impl LlvmEmitter {
                 body.push_str(&format!("  %{d} = load i8*, i8** %{addr}\n"));
                 arg_v.push(format!("%{d}"));
             } else if *pt == LirType::I64 && local_type(f, arg.as_str()) == LirType::Ptr {
-                // 函数指针值（i8* 槽）→ i64 形参（S0 线程入口 `__zeta_thread_spawn(f, 0)`）：
+                // 函数指针值（i8* 槽）→ i64 形参（S0 线程入口 `__rlyeh_thread_spawn(f, 0)`）：
                 // 函数指针按地址整数传递，取地址后 ptrtoint 为 i64。
                 let p = self.operand_value(&LirOperand::Local(arg.clone()), LirType::Ptr, body, f)?;
                 let r = self.reg();
@@ -2189,7 +2189,7 @@ impl LlvmEmitter {
         let fnty = fn_llvm_type(param_tys, ret_ty)?;
         let cast = self.reg();
         body.push_str(&format!("  %{cast} = bitcast i8* {fp} to {fnty}\n"));
-        // 实参（不特判 extern String：间接调用目标为 Zeta 函数，
+        // 实参（不特判 extern String：间接调用目标为 Rlyeh 函数，
         // String 参数是结构体指针，签名类型名解析一致）
         let mut arg_v = Vec::with_capacity(args.len());
         for (arg, pt) in args.iter().zip(param_tys) {
@@ -2712,8 +2712,8 @@ fn fn_llvm_type(param_tys: &[LirType], ret_ty: LirType) -> Result<String, Codege
 }
 
 /// 二元运算指令映射。
-fn binary_instr(op: &zeta_lir::HirBinaryOp, ty: LirType) -> Result<&'static str, CodegenError> {
-    use zeta_lir::HirBinaryOp::*;
+fn binary_instr(op: &rlyeh_lir::HirBinaryOp, ty: LirType) -> Result<&'static str, CodegenError> {
+    use rlyeh_lir::HirBinaryOp::*;
     let ok = |s: &'static str| Ok(s);
     match (op, ty) {
         (Add, LirType::I64) => ok("add"),

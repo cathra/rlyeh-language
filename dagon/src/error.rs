@@ -1,9 +1,9 @@
-//! Zep 统一错误类型。
+//! Dagon 统一错误类型。
 
-/// Zep 全链路错误。
+/// Dagon 全链路错误。
 #[derive(Debug, thiserror::Error)]
-pub enum ZepError {
-    /// 清单（Zeta.toml）相关错误。
+pub enum DagonError {
+    /// 清单（Rlyeh.toml）相关错误。
     #[error("清单错误: {0}")]
     Manifest(String),
 
@@ -56,5 +56,5 @@ pub enum ZepError {
     Other(String),
 }
 
-/// Zep 便捷结果别名。
-pub type Result<T> = std::result::Result<T, ZepError>;
+/// Dagon 便捷结果别名。
+pub type Result<T> = std::result::Result<T, DagonError>;

@@ -1,15 +1,15 @@
 //! 顶层项检查（函数签名收集 + 函数体 / const 检查 + 模块 / use 支持
 //! + enum / trait / impl 收集）。
 
-use zeta_ast::{
+use rlyeh_ast::{
     AstActorDecl, AstEnumDecl, AstFnDecl, AstImplBlock, AstItem, AstModDecl, AstProgram,
     AstStructDecl, AstTraitDecl, AstUseDecl,
 };
-use zeta_hir::{
+use rlyeh_hir::{
     FieldScalar, HirBinaryOp, HirBlock, HirConstDecl, HirExpr, HirFnDecl, HirItem, HirItemKind,
     HirParam, HirProgram, HirStmt,
 };
-use zeta_lexer::Span;
+use rlyeh_lexer::Span;
 
 use crate::check_expr::{
     check_block, check_block_with_expected_final, fix_deferred_closure_with_sig, infer_expr,
@@ -36,7 +36,7 @@ pub fn typecheck(program: &AstProgram) -> Result<HirProgram, TypeError> {
 
 /// 类型检查完整程序，并注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
 ///
-/// 无提示时等价于 [`typecheck`]；`zeta build --profile` 编译路径使用本入口。
+/// 无提示时等价于 [`typecheck`]；`rlyeh build --profile` 编译路径使用本入口。
 pub fn typecheck_with_region_hints(
     program: &AstProgram,
     region_hints: &std::collections::HashMap<String, usize>,
@@ -101,7 +101,7 @@ fn collect_item_decls(
                 // std 原名留在表中供 std 模块内部裸名调用绑定；用户顶层代码
                 // 经 `fn_shadow_of` 绑定自身版本；下游符号名因此唯一不冲突。
                 // 签名相同 → 视为无害重声明（FFI 惯用法：用户重复 extern 声明
-                // 同一符号，如 `extern fn __zeta_target_os() -> i32`），保留原名。
+                // 同一符号，如 `extern fn __rlyeh_target_os() -> i32`），保留原名。
                 if prefix.is_empty()
                     && ctx.fn_signatures.get(&full).is_some_and(|existing| existing != &sig)
                 {
@@ -124,7 +124,7 @@ fn collect_item_decls(
             let new_prefix = full_name(prefix, &m.name);
             // Q3a 修复：模块内符号（struct/trait/impl）的短名解析须感知模块前缀。
             // 模块内 trait/impl 方法签名在收集阶段即 resolve_ast_type（如
-            // `fmt/module.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
+            // `fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
             // 此时文件后部的 use 段尚未注册 use_aliases，须按 `mod::Name` 前缀回退。
             let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {
@@ -408,7 +408,7 @@ fn is_actor_scalar_type(ty: &Type) -> bool {
 }
 
 /// actor 展开（check 阶段）：生成状态初始化函数 + 方法函数 + dispatch handle
-/// 与 `zeta_actor_*` runtime extern 声明，全部为普通 HirItem，
+/// 与 `rlyeh_actor_*` runtime extern 声明，全部为普通 HirItem，
 /// 下游 MIR / LIR / codegen 复用现有机制。
 fn expand_actor(
     ctx: &mut TypeContext,
@@ -575,7 +575,7 @@ fn check_actor_method_body(
     ctx: &mut TypeContext,
     m: &AstFnDecl,
     actor_full: &str,
-) -> Result<zeta_hir::HirBlock, TypeError> {
+) -> Result<rlyeh_hir::HirBlock, TypeError> {
     let saved = std::mem::take(&mut ctx.variables);
     ctx.insert_variable(
         "self".to_string(),
@@ -608,17 +608,17 @@ fn check_actor_method_body(
     Ok(hir_body)
 }
 
-/// 生成 `zeta_actor_*` runtime extern 声明（程序级去重，多 actor 只生成一份）。
+/// 生成 `rlyeh_actor_*` runtime extern 声明（程序级去重，多 actor 只生成一份）。
 fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
     let specs: &[(&str, &[&str], &str)] = &[
-        ("zeta_actor_spawn", &["String", "i64"], "i64"),
+        ("rlyeh_actor_spawn", &["String", "i64"], "i64"),
         // supervised 的 factory 是符号名字符串（runtime 内部 dlsym 解析）
-        ("zeta_actor_spawn_supervised", &["String", "String", "i64"], "i64"),
-        ("zeta_actor_ask", &["i64", "i64", "i64", "i64", "i64"], "i64"),
+        ("rlyeh_actor_spawn_supervised", &["String", "String", "i64"], "i64"),
+        ("rlyeh_actor_ask", &["i64", "i64", "i64", "i64", "i64"], "i64"),
         // send 返回 i32（runtime 消息 ID）：extern_ret32 标记 → `declare i32` + sext
-        ("zeta_actor_send", &["i64", "i64", "i64", "i64", "i64"], "i32"),
-        ("zeta_actor_stop", &["i64"], "i64"),
-        ("zeta_actor_shutdown", &[], "i64"),
+        ("rlyeh_actor_send", &["i64", "i64", "i64", "i64", "i64"], "i32"),
+        ("rlyeh_actor_stop", &["i64"], "i64"),
+        ("rlyeh_actor_shutdown", &[], "i64"),
     ];
     for (name, args, ret) in specs {
         if !ctx.generated_actor_externs.insert((*name).to_string()) {
@@ -650,16 +650,16 @@ fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
     }
 }
 
-/// 生成 `zeta_gc_*` runtime extern 声明（程序级去重，K4 追踪 GC）。
+/// 生成 `rlyeh_gc_*` runtime extern 声明（程序级去重，K4 追踪 GC）。
 ///
 /// 类型名：`Ptr` 经 LIR `parse_extern_type` 解析为指针（未知名默认 Ptr）；
-/// `zeta_gc_alloc` 返回堆块基址（指针），`zeta_gc_escape` 接收 Gc 对象指针。
+/// `rlyeh_gc_alloc` 返回堆块基址（指针），`rlyeh_gc_escape` 接收 Gc 对象指针。
 fn emit_gc_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirItem>) {
     let specs: &[(&str, &[&str], &str)] = &[
-        ("zeta_gc_alloc", &["i64"], "Ptr"),
-        ("zeta_gc_region_begin", &[], "()"),
-        ("zeta_gc_escape", &["Ptr"], "()"),
-        ("zeta_gc_collect", &[], "()"),
+        ("rlyeh_gc_alloc", &["i64"], "Ptr"),
+        ("rlyeh_gc_region_begin", &[], "()"),
+        ("rlyeh_gc_escape", &["Ptr"], "()"),
+        ("rlyeh_gc_collect", &[], "()"),
     ];
     for (name, args, ret) in specs {
         if !ctx.generated_gc_externs.insert((*name).to_string()) {
@@ -812,7 +812,7 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
                 // `&self` / `&mut self` / `self` 统一按聚合指针传递：
                 // 引用形式记 Ref，值形式记 self 类型本身（MIR 层均为指针）
                 let ty = match &p.type_ {
-                    zeta_ast::AstType::Ref(_, is_mut) => {
+                    rlyeh_ast::AstType::Ref(_, is_mut) => {
                         let m = if *is_mut {
                             Mutability::Mutable
                         } else {
@@ -863,7 +863,7 @@ pub fn collect_fn_signatures(
     // （async fn 实际签名返回 `__Fut_X`，且用户类型可能引用生成项）。
     // 与 typecheck_source 挂载点保持一致，clone 后处理，不修改调用方持有的 AST。
     let mut program = program.clone();
-    zeta_desugar::desugar_program(&mut program).map_err(|e| TypeError::Unsupported {
+    rlyeh_desugar::desugar_program(&mut program).map_err(|e| TypeError::Unsupported {
         what: e.to_string(),
         span: e.span(),
     })?;
@@ -912,7 +912,7 @@ fn collect_mod_types_inner(
 ) -> Result<(), TypeError> {
     let new_prefix = full_name(prefix, &m.name);
     // Q3a：与 `collect_item_decls` 的 ModDecl 分支一致，模块内短名解析须感知
-    // 模块前缀（`fmt/module.zeta` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
+    // 模块前缀（`fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
     // 等——collect_impl/collect_trait 收集阶段即 resolve_ast_type，use 段未注册）。
     let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
     for inner in &m.items {
@@ -1018,7 +1018,7 @@ pub(crate) fn fn_signature_with_self(
 fn check_fn_body(
     ctx: &mut TypeContext,
     f: &AstFnDecl,
-) -> Result<Option<zeta_hir::HirBlock>, TypeError> {
+) -> Result<Option<rlyeh_hir::HirBlock>, TypeError> {
     check_fn_body_with_self(ctx, f, None)
 }
 
@@ -1027,7 +1027,7 @@ pub(crate) fn check_fn_body_with_self(
     ctx: &mut TypeContext,
     f: &AstFnDecl,
     self_ty: Option<&Type>,
-) -> Result<Option<zeta_hir::HirBlock>, TypeError> {
+) -> Result<Option<rlyeh_hir::HirBlock>, TypeError> {
     let body = match &f.body {
         Some(b) => b,
         None => {
@@ -1067,7 +1067,7 @@ pub(crate) fn check_fn_body_with_self(
         && body
             .final_expr
             .as_ref()
-            .is_some_and(|e| matches!(&*e.kind, zeta_ast::ExprKind::Closure { .. }))
+            .is_some_and(|e| matches!(&*e.kind, rlyeh_ast::ExprKind::Closure { .. }))
     {
         check_block_with_expected_final(ctx, body, Some(&return_type))?
     } else {

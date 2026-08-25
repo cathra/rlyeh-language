@@ -1,7 +1,7 @@
 //! 语句类型检查。
 
-use zeta_ast::{AstPattern, AstStmt, ExprKind};
-use zeta_hir::{HirExpr, HirStmt};
+use rlyeh_ast::{AstPattern, AstStmt, ExprKind};
+use rlyeh_hir::{HirExpr, HirStmt};
 
 use crate::check_expr::{
     check_closure_expected, check_closure_value_binding, check_deferred_closure_binding, coerce_to_dyn,

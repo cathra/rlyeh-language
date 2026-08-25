@@ -3,9 +3,9 @@
 //! 将入口文件及其全部外部子模块（`module foo;`）展开为单文件等价源码。
 //!
 //! 文件解析规则（对齐 Rust）：
-//! - 入口 `main.zeta` 中 `module math;` → `<项目目录>/math.zeta` 或 `<项目目录>/math/module.zeta`
-//! - `a.zeta` 中 `module b;` → `<项目目录>/a/b.zeta` 或 `<项目目录>/a/b/module.zeta`
-//! - `a/b/module.zeta` 中 `module c;` → `<项目目录>/a/b/c.zeta`
+//! - 入口 `main.rl` 中 `module math;` → `<项目目录>/math.rl` 或 `<项目目录>/math/module.rl`
+//! - `a.rl` 中 `module b;` → `<项目目录>/a/b.rl` 或 `<项目目录>/a/b/module.rl`
+//! - `a/b/module.rl` 中 `module c;` → `<项目目录>/a/b/c.rl`
 //!
 //! 展开方式为文本级变换：解析每个文件，利用 AST span 精确定位外部
 //! `module name;` 声明，替换为 `module name { <子模块源码> }`（递归展开）。
@@ -15,7 +15,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use zeta_ast::AstItem;
+use rlyeh_ast::AstItem;
 
 use crate::error::DriverError;
 
@@ -31,7 +31,7 @@ pub(crate) fn load_combined_source(entry: &Path) -> Result<String, DriverError> 
 
 /// 读取并解析单个模块文件，将其外部子模块声明展开为内联模块。
 ///
-/// `mod_root` 是该文件在项目内的逻辑模块路径（入口为空，`a.zeta` 为 `a`）。
+/// `mod_root` 是该文件在项目内的逻辑模块路径（入口为空，`a.rl` 为 `a`）。
 fn load_file(
     path: &Path,
     mod_root: &Path,
@@ -55,7 +55,7 @@ fn load_file(
         }
     })?;
 
-    let program = zeta_parser::parse(&source).map_err(|e| {
+    let program = rlyeh_parser::parse(&source).map_err(|e| {
         DriverError::Typecheck(format!("语法错误 ({}): {e}", path.display()))
     })?;
 
@@ -81,8 +81,8 @@ fn load_file(
     Ok(out)
 }
 
-/// 定位并加载子模块：优先 `<project>/<mod_root>/<name>.zeta`，
-/// 回退 `<project>/<mod_root>/<name>/module.zeta`。
+/// 定位并加载子模块：优先 `<project>/<mod_root>/<name>.rl`，
+/// 回退 `<project>/<mod_root>/<name>/module.rl`。
 fn load_submodule(
     mod_root: &Path,
     name: &str,
@@ -90,8 +90,8 @@ fn load_submodule(
     visited: &mut HashSet<PathBuf>,
 ) -> Result<String, DriverError> {
     let sub_root = mod_root.join(name);
-    let file_candidate = project_dir.join(&sub_root).with_extension("zeta");
-    let dir_candidate = project_dir.join(&sub_root).join("module.zeta");
+    let file_candidate = project_dir.join(&sub_root).with_extension("rl");
+    let dir_candidate = project_dir.join(&sub_root).join("module.rl");
     if file_candidate.is_file() {
         load_file(&file_candidate, &sub_root, project_dir, visited)
     } else if dir_candidate.is_file() {

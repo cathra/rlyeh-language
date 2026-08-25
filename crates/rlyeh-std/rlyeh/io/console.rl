@@ -1,5 +1,5 @@
-// io/console.zeta：控制台 IO（stdout/stderr + stdin 读取，std-lib.md §4.2）。
-// 目录化（2026-08）：由原 io.zeta 拆分。符号完整路径 io::console::Stdout 等。
+// io/console.rl：控制台 IO（stdout/stderr + stdin 读取，std-lib.md §4.2）。
+// 目录化（2026-08）：由原 io.rl 拆分。符号完整路径 io::console::Stdout 等。
 
 // N2a（2026-08）：stdout/stderr 句柄对象（std-lib.md §4.2）。
 // POSIX fd 1/2 封装；`println!` 内建宏之外的程序化输出通道。

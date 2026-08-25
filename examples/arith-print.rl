@@ -1,4 +1,4 @@
-// arith-print.zeta — 算术运算 + 内建打印
+// arith-print.rl — 算术运算 + 内建打印
 fn add(a: i64, b: i64) -> i64 {
     a + b
 }

@@ -1,4 +1,4 @@
-// benchmark: LCG 生成 5000 个 i64 排序 —— 与 sort.zeta 同逻辑
+// benchmark: LCG 生成 5000 个 i64 排序 —— 与 sort.rl 同逻辑
 let n = 5000
 var v = [Int64]()
 v.reserveCapacity(n)

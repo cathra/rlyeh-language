@@ -1,5 +1,5 @@
-// net/http.zeta：HTTP 同步 MVP（std-lib.md §5.2）。
-// 目录化（2026-08）：由原 net.zeta 拆分。符号完整路径 net::http::HttpClient 等。
+// net/http.rl：HTTP 同步 MVP（std-lib.md §5.2）。
+// 目录化（2026-08）：由原 net.rl 拆分。符号完整路径 net::http::HttpClient 等。
 // MVP 简化：URL 仅支持 `http://host[:port]/path`（IPv4）；每次请求新连接
 // （无连接复用）；响应解析不依赖 Content-Length（依赖 Connection: close
 // 的 EOF 终止 body）；无重定向/分块传输。json 反序列化用 L2 自由函数
@@ -101,7 +101,7 @@ impl HttpClient {
         net::http::HttpClient { _unit: 0 }
     }
     fn get(url: String) -> Result<net::http::Response, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("HTTP disabled on WASI"),
@@ -124,7 +124,7 @@ impl HttpClient {
         net::http::parse_response(all)
     }
     fn post(url: String, body: String) -> Result<net::http::Response, io::error::IoError> {
-        if __zeta_target_os() == 5 {
+        if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
                 io::error::IoErrorKind::Other,
                 String::from("HTTP disabled on WASI"),

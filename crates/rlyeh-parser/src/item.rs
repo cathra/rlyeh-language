@@ -2,11 +2,11 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use zeta_ast::{
+use rlyeh_ast::{
     AstConstDecl, AstEnumDecl, AstEnumVariant, AstFnDecl, AstImplBlock, AstModDecl, AstParam,
     AstStructDecl, AstStructField, AstTraitDecl, AstType, AstUseDecl,
 };
-use zeta_lexer::Token;
+use rlyeh_lexer::Token;
 
 impl<'src> Parser<'src> {
     /// 解析函数声明（含 pub / async / unsafe / extern 前置修饰符）

@@ -1,14 +1,14 @@
 [package]
-name = "zeta-typecheck"
+name = "rlyeh-typecheck"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-zeta-ast = { workspace = true }
-zeta-desugar = { workspace = true }
-zeta-hir = { workspace = true }
-zeta-lexer = { workspace = true }
-zeta-parser = { workspace = true }
+rlyeh-ast = { workspace = true }
+rlyeh-desugar = { workspace = true }
+rlyeh-hir = { workspace = true }
+rlyeh-lexer = { workspace = true }
+rlyeh-parser = { workspace = true }
 thiserror = { workspace = true }
 
 [lib]

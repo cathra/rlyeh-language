@@ -1,4 +1,4 @@
-// benchmark: 1 亿次 i64 循环累加 —— 与 loop_sum.zeta 同逻辑
+// benchmark: 1 亿次 i64 循环累加 —— 与 loop_sum.rl 同逻辑
 #include <stdio.h>
 
 int main(void) {

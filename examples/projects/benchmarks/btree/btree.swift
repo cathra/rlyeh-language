@@ -1,5 +1,5 @@
 // 基准: btree —— 深度 15 完全二叉树（数组存储）+ 递归遍历求和
-// 与 btree.zeta 逻辑严格一致。输出 = 2166712927200
+// 与 btree.rl 逻辑严格一致。输出 = 2166712927200
 let total: Int64 = 65535
 
 func treeSum(_ a: [Int64], _ idx: Int64, _ total: Int64) -> Int64 {

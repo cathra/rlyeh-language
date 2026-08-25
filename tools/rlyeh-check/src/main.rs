@@ -1,7 +1,7 @@
-//! zeta-check 命令行入口。
+//! rlyeh-check 命令行入口。
 //!
 //! ```text
-//! zeta-check <file>
+//! rlyeh-check <file>
 //! ```
 //!
 //! 打印所有诊断（`line:col: level[rule]: message`）；
@@ -12,7 +12,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
-        eprintln!("usage: zeta-check <file>");
+        eprintln!("usage: rlyeh-check <file>");
         return ExitCode::from(2);
     }
     let file = &args[1];
@@ -20,12 +20,12 @@ fn main() -> ExitCode {
     let src = match std::fs::read_to_string(file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("zeta-check: cannot read {}: {}", file, e);
+            eprintln!("rlyeh-check: cannot read {}: {}", file, e);
             return ExitCode::from(1);
         }
     };
 
-    let diags = zeta_check::check_source(&src);
+    let diags = rlyeh_check::check_source(&src);
     if diags.is_empty() {
         println!("{}: ok", file);
         return ExitCode::SUCCESS;
@@ -33,7 +33,7 @@ fn main() -> ExitCode {
     let mut has_error = false;
     for d in &diags {
         eprintln!("{}: {}", file, d.render());
-        if d.level == zeta_check::Level::Error {
+        if d.level == rlyeh_check::Level::Error {
             has_error = true;
         }
     }

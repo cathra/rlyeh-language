@@ -1,7 +1,7 @@
 //! 语法错误类型。
 
 use thiserror::Error;
-use zeta_lexer::{LexError, Span};
+use rlyeh_lexer::{LexError, Span};
 
 /// 语法分析错误
 #[derive(Debug, Error, PartialEq)]

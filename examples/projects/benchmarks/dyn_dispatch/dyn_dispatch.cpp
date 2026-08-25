@@ -1,5 +1,5 @@
 // 基准: dyn_dispatch —— 2000 万次虚函数多态分派
-// 与 dyn_dispatch.zeta 逻辑严格一致。输出 = 70000000
+// 与 dyn_dispatch.rl 逻辑严格一致。输出 = 70000000
 #include <cstdio>
 #include <cstdint>
 

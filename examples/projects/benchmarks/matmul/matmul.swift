@@ -1,4 +1,4 @@
-// benchmark: 256x256 f64 矩阵乘法 —— 与 matmul.zeta 同逻辑
+// benchmark: 256x256 f64 矩阵乘法 —— 与 matmul.rl 同逻辑
 let n = 256
 let total = n * n
 var a = [Double](repeating: 1.0001, count: total)

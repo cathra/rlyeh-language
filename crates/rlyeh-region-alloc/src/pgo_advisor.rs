@@ -1,4 +1,4 @@
-//! PGO 顾问：根据运行时画像（`.zeta_profile`）推荐区域初始大小。
+//! PGO 顾问：根据运行时画像（`.rl_profile`）推荐区域初始大小。
 
 use crate::profile::PgoData;
 

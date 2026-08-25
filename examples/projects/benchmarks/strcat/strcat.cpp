@@ -1,4 +1,4 @@
-// benchmark: std::string += 10 万次 —— 与 strcat.zeta 同逻辑
+// benchmark: std::string += 10 万次 —— 与 strcat.rl 同逻辑
 #include <cstdio>
 #include <string>
 

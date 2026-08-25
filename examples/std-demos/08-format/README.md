@@ -15,12 +15,12 @@
 
 | 文件 | 说明 |
 |------|------|
-| `display_fmt.zeta` | Q3 Display/Debug trait + Formatter + `{}` / `{:?}` 占位 |
-| `eprintln.zeta` | stderr 输出：eprintln! / eprint! |
+| `display_fmt.rl` | Q3 Display/Debug trait + Formatter + `{}` / `{:?}` 占位 |
+| `eprintln.rl` | stderr 输出：eprintln! / eprint! |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/08-format/display_fmt.zeta
-zeta run examples/std-demos/08-format/eprintln.zeta
+rlyeh run examples/std-demos/08-format/display_fmt.rl
+rlyeh run examples/std-demos/08-format/eprintln.rl
 ```

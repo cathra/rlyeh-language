@@ -2,12 +2,12 @@
 
 use crate::error::ParseError;
 use crate::parser::{Parser, MAX_MACRO_DEPTH};
-use zeta_ast::{
+use rlyeh_ast::{
     AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, BinaryOp, CaptureMode, CompareOp, ExprKind,
     UnaryOp,
 };
-use zeta_lexer::{LocatedToken, Span, Token};
-use zeta_macro::expand as expand_macro;
+use rlyeh_lexer::{LocatedToken, Span, Token};
+use rlyeh_macro::expand as expand_macro;
 
 /// 运算符优先级（数值越大优先级越高）。
 ///
@@ -672,7 +672,7 @@ impl<'src> Parser<'src> {
     /// - 内置格式化宏（`println!`/`print!`/`format!`/`dbg!`）：收集定界内容，
     ///   参数按表达式列表解析，产出 `ExprKind::MacroCall`（由 typecheck 层 I2
     ///   desugar 为字符串拼接 + 打印内建）；
-    /// - 用户 `macro_rules!`：收集定界内容 token 流 → `zeta-macro` 展开 →
+    /// - 用户 `macro_rules!`：收集定界内容 token 流 → `rlyeh-macro` 展开 →
     ///   子 Parser 递归解析为表达式（展开发生在 parse 阶段、typecheck 之前）；
     /// - 未知宏：报错。
     fn parse_macro_call(&mut self, name: String, start: Span) -> Result<AstExpr, ParseError> {

@@ -1,6 +1,6 @@
 [package]
-name = "zeta-lexer"
-description = "Zeta 语言词法分析器"
+name = "rlyeh-lexer"
+description = "Rlyeh 语言词法分析器"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

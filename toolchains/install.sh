@@ -1,38 +1,38 @@
 #!/usr/bin/env bash
 #
-# Zeta 工具链本地发布脚本
+# Rlyeh 工具链本地发布脚本
 #
-# 将编译好的 Zeta 工具链（编译器 zeta 命令 + fmt/check/doc/bench + zep 包管理器
-# + 标准库 + zeta-language 技能）发布到本地目录，默认 $HOME/.zeta
-# （与本地 zep 注册表 ~/.zeta/registry 同根）。可由 build.sh 调用，也可单独运行。
+# 将编译好的 Rlyeh 工具链（编译器 rlyeh 命令 + fmt/check/doc/bench + dagon 包管理器
+# + 标准库 + rlyeh-language 技能）发布到本地目录，默认 $HOME/.rl
+# （与本地 dagon 注册表 ~/.rl/registry 同根）。可由 build.sh 调用，也可单独运行。
 #
 # 用法:
-#   ./install.sh                      # 发布到默认位置 ~/.zeta
-#   ZETA_PREFIX=/opt/zeta ./install.sh  # 自定义前缀
+#   ./install.sh                      # 发布到默认位置 ~/.rl
+#   RLYEH_PREFIX=/opt/rlyeh ./install.sh  # 自定义前缀
 #
 # 安装布局:
 #   <prefix>/
 #   ├── bin/
-#   │   ├── zeta              # 入口命令（可重定位 wrapper：自动注入 ZETA_STD_PATH）
-#   │   ├── zeta-driver       # 真实编译器二进制
-#   │   ├── zeta-fmt|check|doc|bench   # 独立工具
-#   │   └── zep               # 包管理器
-#   ├── std/                  # 标准库源码（core.zeta + time/io/net/... 模块）
-#   ├── skills/               # zeta-language 技能（SKILL.md + references/）
+#   │   ├── rlyeh              # 入口命令（可重定位 wrapper：自动注入 RLYEH_STD_PATH）
+#   │   ├── rlyeh-driver       # 真实编译器二进制
+#   │   ├── rlyeh-fmt|check|doc|bench   # 独立工具
+#   │   └── dagon               # 包管理器
+#   ├── std/                  # 标准库源码（core.rl + time/io/net/... 模块）
+#   ├── skills/               # rlyeh-language 技能（SKILL.md + references/）
 #   ├── examples/             # std-demos 用例项目（纯代码，不编译）
-#   └── registry/             # 本地 zep 注册表（publish 目标，自动创建）
+#   └── registry/             # 本地 dagon 注册表（publish 目标，自动创建）
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
-PREFIX="${ZETA_PREFIX:-$HOME/.zeta}"
-RELEASE="${ZETA_RELEASE_DIR:-$REPO/target/release}"
+PREFIX="${RLYEH_PREFIX:-$HOME/.rl}"
+RELEASE="${RLYEH_RELEASE_DIR:-$REPO/target/release}"
 
-BINARIES=(zeta-driver zeta-fmt zeta-check zeta-doc zeta-bench zep)
-STD_SRC="$REPO/crates/zeta-std/zeta"
+BINARIES=(rlyeh-driver rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon)
+STD_SRC="$REPO/crates/rlyeh-std/rlyeh"
 
-echo "==> Zeta 工具链本地发布"
+echo "==> Rlyeh 工具链本地发布"
 echo "    仓库:   $REPO"
 echo "    前缀:   $PREFIX"
 
@@ -59,23 +59,23 @@ for b in "${BINARIES[@]}"; do
 done
 echo "    二进制 -> $PREFIX/bin"
 
-# 4. 复制标准库（core.zeta / future.zeta + 全部模块子目录）
+# 4. 复制标准库（core.rl / future.rl + 全部模块子目录）
 rm -rf "$PREFIX/std"
 mkdir -p "$PREFIX/std"
 cp -R "$STD_SRC"/. "$PREFIX/std/"
 echo "    标准库 -> $PREFIX/std"
 
-# 5. 复制 zeta-language 技能（SKILL.md + references/，随工具链发布）
+# 5. 复制 rlyeh-language 技能（SKILL.md + references/，随工具链发布）
 #    优先项目根 skills/（仓库一级内容），回退 .codebuddy/skills/（IDE 加载副本）
-SKILL_SRC="$REPO/skills/zeta-language"
+SKILL_SRC="$REPO/skills/rlyeh-language"
 if [[ ! -d "$SKILL_SRC" ]]; then
-    SKILL_SRC="$REPO/.codebuddy/skills/zeta-language"
+    SKILL_SRC="$REPO/.codebuddy/skills/rlyeh-language"
 fi
 if [[ -d "$SKILL_SRC" ]]; then
-    rm -rf "$PREFIX/skills/zeta-language"
+    rm -rf "$PREFIX/skills/rlyeh-language"
     mkdir -p "$PREFIX/skills"
     cp -R "$SKILL_SRC" "$PREFIX/skills/"
-    echo "    技能 -> $PREFIX/skills/zeta-language（来源: $SKILL_SRC）"
+    echo "    技能 -> $PREFIX/skills/rlyeh-language（来源: $SKILL_SRC）"
 else
     echo "!! 未找到技能目录（$SKILL_SRC），跳过"
 fi
@@ -91,16 +91,16 @@ else
     echo "!! 未找到用例项目目录（$DEMOS_SRC），跳过"
 fi
 
-# 6. 生成 zeta 入口命令
+# 6. 生成 rlyeh 入口命令
 #    可重定位：bin/ 与 std/ 同级，归档解压到任意位置均可自洽。
-#    用户环境变量 ZETA_STD_PATH 优先。
-cat > "$PREFIX/bin/zeta" <<EOF
+#    用户环境变量 RLYEH_STD_PATH 优先。
+cat > "$PREFIX/bin/rlyeh" <<EOF
 #!/usr/bin/env bash
-# Zeta 编译器入口（本地发布版，可重定位）
-export ZETA_STD_PATH="\${ZETA_STD_PATH:-\$(cd "\$(dirname "\$0")/.." && pwd)/std}"
-exec "\$(dirname "\$0")/zeta-driver" "\$@"
+# Rlyeh 编译器入口（本地发布版，可重定位）
+export RLYEH_STD_PATH="\${RLYEH_STD_PATH:-\$(cd "\$(dirname "\$0")/.." && pwd)/std}"
+exec "\$(dirname "\$0")/rlyeh-driver" "\$@"
 EOF
-chmod +x "$PREFIX/bin/zeta"
+chmod +x "$PREFIX/bin/rlyeh"
 
 # 7. PATH 提示
 case ":$PATH:" in
@@ -115,14 +115,14 @@ esac
 # 8. 冒烟验证
 echo
 echo "==> 验证"
-"$PREFIX/bin/zeta" --version || true
+"$PREFIX/bin/rlyeh" --version || true
 
 TMP="$(mktemp -d)"
-printf 'fn main() {\n    println("toolchain ok");\n}\n' > "$TMP/hello.zeta"
-if "$PREFIX/bin/zeta" run "$TMP/hello.zeta" > /dev/null 2>&1; then
+printf 'fn main() {\n    println("toolchain ok");\n}\n' > "$TMP/hello.rl"
+if "$PREFIX/bin/rlyeh" run "$TMP/hello.rl" > /dev/null 2>&1; then
     echo "    编译运行: OK"
 else
-    echo "!! 冒烟失败（可先 export ZETA_STD_PATH=$PREFIX/std 排查）"
+    echo "!! 冒烟失败（可先 export RLYEH_STD_PATH=$PREFIX/std 排查）"
 fi
 rm -rf "$TMP"
 

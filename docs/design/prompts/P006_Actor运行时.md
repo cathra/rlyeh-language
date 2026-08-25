@@ -1,6 +1,6 @@
 # P006: Actor 运行时
 
-> **模块路径**：`crates/zeta-actor-runtime/`  
+> **模块路径**：`crates/rlyeh-actor-runtime/`  
 > **预估工期**：5-7 天  
 > **前置依赖**：P004（区域系统，用于 Actor 状态分配）  
 > **输出**：可工作的 Actor 运行时，支持消息传递、调度、Supervisor
@@ -9,7 +9,7 @@
 
 ## 任务描述
 
-实现 Zeta 的 Actor 并发模型运行时：
+实现 Rlyeh 的 Actor 并发模型运行时：
 1. **Actor 创建与状态管理**
 2. **消息队列与分发**
 3. **工作窃取调度器**
@@ -51,9 +51,9 @@
 ## 代码框架
 
 ```rust
-// crates/zeta-actor-runtime/Cargo.toml
+// crates/rlyeh-actor-runtime/Cargo.toml
 [package]
-name = "zeta-actor-runtime"
+name = "rlyeh-actor-runtime"
 version = "0.1.0"
 edition = "2021"
 
@@ -70,7 +70,7 @@ uuid = { version = "1", features = ["v4"] }
 ```
 
 ```rust
-// crates/zeta-actor-runtime/src/lib.rs
+// crates/rlyeh-actor-runtime/src/lib.rs
 
 #![warn(missing_docs)]
 #![warn(unsafe_code)]
@@ -544,9 +544,9 @@ impl ActorState for Timer {
 ## 测试用例
 
 ```rust
-// crates/zeta-actor-runtime/tests/actor_test.rs
+// crates/rlyeh-actor-runtime/tests/actor_test.rs
 
-use zeta_actor_runtime::*;
+use rlyeh_actor_runtime::*;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
@@ -813,9 +813,9 @@ fn test_high_throughput() {
 ## 性能基准
 
 ```rust
-// crates/zeta-actor-runtime/benches/actor_bench.rs
+// crates/rlyeh-actor-runtime/benches/actor_bench.rs
 use criterion::{black_box, Criterion};
-use zeta_actor_runtime::*;
+use rlyeh_actor_runtime::*;
 
 fn bench_send_only(c: &mut Criterion) {
     c.bench_function("send_100k", |b| {
@@ -859,7 +859,7 @@ fn bench_send_only(c: &mut Criterion) {
 ## 交付文件
 
 ```
-crates/zeta-actor-runtime/
+crates/rlyeh-actor-runtime/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs           ← 入口

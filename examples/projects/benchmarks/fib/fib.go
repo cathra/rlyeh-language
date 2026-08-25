@@ -1,4 +1,4 @@
-// benchmark: fib(30) —— 与 fib.zeta 同逻辑。输出 = 832040
+// benchmark: fib(30) —— 与 fib.rl 同逻辑。输出 = 832040
 package main
 
 import "fmt"

@@ -1,12 +1,12 @@
-# Zeta 内存模型规范
+# Rlyeh 内存模型规范
 
 > 版本：0.1.0  
 > 最后更新：2026-08-24
 
 > **⚠️ 实现状态**：L1 区域系统（§3）**已实现**（bump 分配 + 批量释放 + `adaptive`/`with_size`/`strategy (bump)` +
-> **运行时接线（L3 ✅）**——region 指令调用 `zeta-region-alloc` C ABI 层（`zeta_region_enter`/`zeta_region_alloc`/
-> `zeta_region_transfer`/`zeta_region_exit`），聚合对象 `in 'r` 经 bump 分配器分配（值镜像浅拷贝，不注册析构），
-> `transfer x out of 'r` 标记所有权移出；PGO 数据回灌（F2，`.zeta_profile`，简化格式）注入 `adaptive` 初始容量）；
+> **运行时接线（L3 ✅）**——region 指令调用 `rlyeh-region-alloc` C ABI 层（`rlyeh_region_enter`/`rlyeh_region_alloc`/
+> `rlyeh_region_transfer`/`rlyeh_region_exit`），聚合对象 `in 'r` 经 bump 分配器分配（值镜像浅拷贝，不注册析构），
+> `transfer x out of 'r` 标记所有权移出；PGO 数据回灌（F2，`.rl_profile`，简化格式）注入 `adaptive` 初始容量）；
 > L0（§2）已实现（值拷贝/移动语义 + 方法接收者 + `&`/`&mut` 引用与宽松借用检查 G1 ✅ + `Box` K2 ✅；
 > `Copy` trait 规划中）；L2 引用计数（§4）已实现（K3 ✅：`Rc`/`Arc`/`Weak`，含 `strong_count`/`downgrade`/
 > `try_unwrap`）；L3 可选 GC（§5）已实现（K4 ✅：保守标记-清除 `Gc<T>`，多线程/增量回收规划中）。
@@ -24,7 +24,7 @@
 
 ## 1. 概述
 
-Zeta 提供**分层内存管理**，从底层到高层依次为：
+Rlyeh 提供**分层内存管理**，从底层到高层依次为：
 
 | 层级 | 名称 | 机制 | 开销 | 确定性 |
 |------|------|------|------|----------|
@@ -59,7 +59,7 @@ Stack Frame:
 ```
 
 **堆分配**（大小运行时确定；`Box` 已实现（K2 ✅，含 `Box::leak` T3a ✅ 返回 `*mut T`），堆分配经 std `Vec`/`String` 内部完成）：
-```zeta
+```rlyeh
 let boxed = Box::new(42);  // 目标语法：堆上分配 8 字节
 // boxed 本身在栈上（指针 + 元数据），指向堆上的数据
 ```
@@ -68,7 +68,7 @@ let boxed = Box::new(42);  // 目标语法：堆上分配 8 字节
 
 变量按**逆声明顺序**析构：
 
-```zeta
+```rlyeh
 {
     let a = Resource::new("a");
     let b = Resource::new("b");
@@ -154,7 +154,7 @@ impl BumpAllocator {
 **性能**：每次分配仅 3-5 条指令，无锁、无链表查找。
 
 > **codegen 内联 bump 快路径**：LLVM 后端对 `AllocInRegion` 生成内联 bump 序列（对齐 + 越界检查 +
-> 指针递增），**不调用运行时函数**，仅越界时才 `call zeta_region_alloc`（慢路径扩容）。为进一步消除
+> 指针递增），**不调用运行时函数**，仅越界时才 `call rlyeh_region_alloc`（慢路径扩容）。为进一步消除
 > 热循环中每次 bump 对 Region 头（base/cursor/limit 三字段）的访存，codegen 实施**循环级 region 状态提升**
 > （见 [附录 A.4](#a4-循环级-region-状态提升2026-08-24) 单 bump 点与 [附录 A.6](#a6-批量提升多-bump-点聚合2026-08-24)
 > 多 bump 点批量聚合）：preheader 快照 → header phi 维护提升状态 → latch 快路径零访存（仅寄存器运算）→
@@ -296,7 +296,7 @@ impl AdaptiveAllocator {
 
 编译器在 HIR 阶段分析区域内的分配：
 
-```zeta
+```rlyeh
 // 源码
 region 'r {
     let a = Point::new() in 'r;     // 大小已知：32 bytes
@@ -321,7 +321,7 @@ RegionPlan {
 
 ### 3.8 PGO 数据格式
 
-> **实现状态**：✅ 已实现（F2，`zeta profile` + `zeta build --profile`）。实际格式为 `.zeta_profile`
+> **实现状态**：✅ 已实现（F2，`rlyeh profile` + `rlyeh build --profile`）。实际格式为 `.rl_profile`
 > JSON（含各区域 size_stats 的 p50/p95/mean/max 等），建议初始容量 = p95×1.1（下限 64KiB）。
 > 与下述目标格式一致（示例中 `min/max/avg/p50/p95/p99` 字段实现为 `min/max/mean/p50/p95/p99`）。
 
@@ -395,9 +395,9 @@ struct ArcInner<T> {
 
 ### 4.3 循环引用检测
 
-Zeta 提供 `Weak<T>` 打破循环：
+Rlyeh 提供 `Weak<T>` 打破循环：
 
-```zeta
+```rlyeh
 struct Node {
     parent: Weak<Node>,    // 不增加引用计数
     children: Vec<Rc<Node>>,
@@ -408,7 +408,7 @@ struct Node {
 
 ## 5. L3：可选 GC
 
-> **实现状态**：✅ MVP 已实现（K4，`zeta-gc-runtime` 保守标记-清除）。
+> **实现状态**：✅ MVP 已实现（K4，`rlyeh-gc-runtime` 保守标记-清除）。
 > 目标设计（Immix 增量标记-清除 + 复制、write barrier、逃逸限制）见下，MVP 注记见 §5.3。
 
 ### 5.1 设计（目标）
@@ -417,7 +417,7 @@ struct Node {
 - 仅在显式启用的代码块中可用
 - 与 L0/L1 对象互不干扰
 
-```zeta
+```rlyeh
 // 在 GC 区域内分配
 gc_region {
     let obj = Gc::new(ExpensiveObject::new());
@@ -435,10 +435,10 @@ gc_region {
 
 当前实现为**保守标记-清除**（非增量、非复制），目标 API 与设计细节见上。
 
-**布局与生命周期协议**（与编译器内建 `Gc<T>` 一致，实现见 `zeta-gc-runtime`）：
+**布局与生命周期协议**（与编译器内建 `Gc<T>` 一致，实现见 `rlyeh-gc-runtime`）：
 
 - `Gc<T>` 栈上 1 槽（Ptr）指向堆 **1-槽包装**（`Alloc{slots:1}`，槽 0 存 `GcInner` 基址）；对象 = `slot_count(T)` 个 8 字节槽的连续堆块，`T` 值区自堆首槽起，与 `Box<T>` 完全同构（解引用 / 字段 / 方法 / 索引剥层零差异）。
-- `gc_region` 块 desugar 为固定调用序列：`zeta_gc_region_begin()`（`epoch += 1`）→ `zeta_gc_alloc(n)`（malloc 对象 + 注册块表 + 记录当前 epoch）→ `zeta_gc_escape(ptr)`（块返回值登记逃逸 root，空指针空操作）→ `zeta_gc_collect()`（从逃逸 root 标记 → 清除 `epoch` 匹配的未标记对象 → 存活对象提升为 root → `epoch -= 1`）。
+- `gc_region` 块 desugar 为固定调用序列：`rlyeh_gc_region_begin()`（`epoch += 1`）→ `rlyeh_gc_alloc(n)`（malloc 对象 + 注册块表 + 记录当前 epoch）→ `rlyeh_gc_escape(ptr)`（块返回值登记逃逸 root，空指针空操作）→ `rlyeh_gc_collect()`（从逃逸 root 标记 → 清除 `epoch` 匹配的未标记对象 → 存活对象提升为 root → `epoch -= 1`）。
 - **epoch 分层**：块外分配对象 `epoch` 恒小于任何块 → 永不回收（MVP 泄漏语义）；块内对象仅回收本块未标记的；跨块存活的引用链经"存活提升"连续保护（内层逃逸对象在后续块 collect 中为 root）。
 - **保守扫描**：值区内任意槽位值等于已注册对象基址即视为引用（线性查找），标量误判为安全漏回收。
 
@@ -448,7 +448,7 @@ gc_region {
 - 递归标记（DFS），深引用图可能爆栈。
 - `gc_region` 结束后块内对象失效（逃逸限制，无悬空指针防护）；跨块逃逸对象及其引用图泄漏至程序结束。
 - 无 write barrier（保守扫描规避精确性要求）。
-- 分配器约束：运行时全部动态内存**只用 `libc::malloc` / `libc::free`**（对象块 + 元数据链表），不用 Rust 堆分配与 `realloc`——macOS C 主程序环境实测 `RawVec` / `realloc` 在 `libc::malloc` 之后调用触发 `libsystem_malloc` 的 `mfm_alloc` 崩溃（`_os_unfair_lock_unowned_abort` / SIGKILL），详见 `zeta-gc-runtime` 模块头注释。
+- 分配器约束：运行时全部动态内存**只用 `libc::malloc` / `libc::free`**（对象块 + 元数据链表），不用 Rust 堆分配与 `realloc`——macOS C 主程序环境实测 `RawVec` / `realloc` 在 `libc::malloc` 之后调用触发 `libsystem_malloc` 的 `mfm_alloc` 崩溃（`_os_unfair_lock_unowned_abort` / SIGKILL），详见 `rlyeh-gc-runtime` 模块头注释。
 
 ---
 
@@ -520,7 +520,7 @@ gc_region {
 
 ### 7.4 区域循环分配实测（2026-08-24）
 
-基准用例（`examples/projects/benchmarks/region_alloc/region_alloc.zeta`，100 万次循环、每次 32B 聚合对象 `in 'r` bump 分配，
+基准用例（`examples/projects/benchmarks/region_alloc/region_alloc.rl`，100 万次循环、每次 32B 聚合对象 `in 'r` bump 分配，
 30 次运行取中位数，Apple Silicon arm64 / clang -O3）：
 
 | 版本 | 100 万次 bump 耗时 | 热循环 Region 头访存/迭代 |
@@ -532,7 +532,7 @@ gc_region {
 （对齐 `and` + 越界 `cmp` + 基址 `add`）。上表"优化后"为热循环零访存的**理论形态**（单块不扩容场景）；
 **完整语义**（含附录 A.5 慢路径 cursor 回写修复、13 次真实扩容）下的最终基准见下表。
 
-#### Zeta 各 region 策略对比（同机同构 100 万次 32B 对象，10 次取中位数）
+#### Rlyeh 各 region 策略对比（同机同构 100 万次 32B 对象，10 次取中位数）
 
 | 策略 | 语法 | 块数（扩容次数） | 内存峰值 | 耗时 (ms) | 较最优 |
 |------|------|:---:|:---:|-----:|:---:|
@@ -558,8 +558,8 @@ gc_region {
 
 | 实现 | 分配方式 | 耗时 (ms) | 较 C |
 |------|----------|-----:|:---:|
-| Zeta（批量提升，P4） | 寄存器 bump：单次溢出检查 + 4 派生 | 13.684 | **1.04x** |
-| Zeta（批量 bump，P3，A/B 对照） | 每次迭代 Region 头访存 + 单次 bump | 13.39 | ~1.0x（内部对照） |
+| Rlyeh（批量提升，P4） | 寄存器 bump：单次溢出检查 + 4 派生 | 13.684 | **1.04x** |
+| Rlyeh（批量 bump，P3，A/B 对照） | 每次迭代 Region 头访存 + 单次 bump | 13.39 | ~1.0x（内部对照） |
 | Rust | 手动 bump + `write_volatile` | 13.265 | 1.00x |
 | C | 手动 bump + `volatile` 写读 | 13.218 | 1.0x |
 | C++ | 手动 bump + `volatile` 写读 | 13.220 | 1.00x |
@@ -569,8 +569,8 @@ gc_region {
 > 注：本表为同环境交替 A/B 对照（P3/P4 21 轮取中位，跨语言 7 轮取中位）。**对照修复说明**：旧 C/Rust/Swift
 > 对照为 `malloc`/`free` 与 `Box::new`/class 分配循环——bump 内存不 escape 时 LLVM 证明 store 全为死代码并
 > **整体消除**（C 热循环汇编只剩 10 条 SIMD 纯计算指令、零内存访问），测出 2.9/4.99/4.19ms 的「纯计算假数据」，
-> 造成 Zeta 4.8x 的假差距。修复后各语言强制真实内存写（volatile / `write_volatile` / escape 黑盒），
-> 128MB 线性写为带宽受限场景：**Zeta 与 C/C++/Rust 持平（1.04x，噪声内并列最快）**——批量提升已将
+> 造成 Rlyeh 4.8x 的假差距。修复后各语言强制真实内存写（volatile / `write_volatile` / escape 黑盒），
+> 128MB 线性写为带宽受限场景：**Rlyeh 与 C/C++/Rust 持平（1.04x，噪声内并列最快）**——批量提升已将
 > 热循环压到内存带宽极限，逐 bump 检查全部摊薄。完整跨语言对比见
 > [`benchmarks/README.md`](../examples/projects/benchmarks/README.md)。
 
@@ -583,10 +583,10 @@ gc_region {
 
 ### A.1 区域系统运行时与检查器（对应 P004，2026-08-20 ✅）
 
-- **运行时**（`zeta-region-alloc`）：bump 分配器（块链表 + bump 指针），支持默认增长、
+- **运行时**（`rlyeh-region-alloc`）：bump 分配器（块链表 + bump 指针），支持默认增长、
   `adaptive`（EWMA 预测）、`with_size (N)`（精确预分配）、`strategy (bump)` 四策略；LIFO 析构
   （`DestructorRegistry`，region 退出按注册逆序调用）。
-- **检查器**（`zeta-regionck`）：区域嵌套合法性、`in 'r` 对象归属、`transfer` 方向（§6.2）、
+- **检查器**（`rlyeh-regionck`）：区域嵌套合法性、`in 'r` 对象归属、`transfer` 方向（§6.2）、
   区域存活期/引用逃逸（escape）检查。
 - **落地偏差**：检查器未拆分 `escape.rs`/`transfer.rs`，全部并入 `checker.rs`；`GrowthStrategy`
   以 struct 变体承载四策略；`Region::new()` 无参 + 默认增长参数；错误 `line`/`col` 占位 0；
@@ -619,10 +619,10 @@ gc_region {
 ### A.4 循环级 region 状态提升（codegen 优化，2026-08-24 ✅）
 
 - **动机**：`AllocInRegion` 在 LLVM 后端生成内联 bump 快路径（对齐 + 越界检查 + 指针递增），仅越界时
-  `call zeta_region_alloc`。但慢路径 `Region::grow()`（`zeta-region-alloc/src/region.rs`）扩容时会改写
+  `call rlyeh_region_alloc`。但慢路径 `Region::grow()`（`rlyeh-region-alloc/src/region.rs`）扩容时会改写
   Region 头的 base/cursor/limit 三字段——LLVM 无法证明 call 不写 Region 头，LICM 失效，热循环每次 bump
   均从内存重读三字段（反汇编为 `ldp [x19,#8]`/`ldr [x19]`/`str [x19,#8]` 3 次访存/迭代）。
-- **方案**（`zeta-codegen/src/llvm.rs`）：识别规范 while 循环并做循环级状态提升——
+- **方案**（`rlyeh-codegen/src/llvm.rs`）：识别规范 while 循环并做循环级状态提升——
   - **保守命中条件**（`find_loop_promo`）：恰一条回边（`dom[src] ∋ dst`，迭代数据流 O(n²·E)）、非自循环、
     唯一 preheader、体内无 `RegionEnter`/`RegionExit`、无嵌套回边、latch 恰一个 `AllocInRegion` bump、
     恰一条退出边（源为 header、退出目标唯一前驱为 header）。
@@ -642,11 +642,11 @@ gc_region {
 ### A.5 慢路径 cursor 回写修复（2026-08-24 ✅）
 
 - **缺陷**：循环提升后 bump 状态完全寄存器化，但寄存器 `%cur` 仅在循环**退出**时写回 Region 头一次。
-  当慢路径被触发（`call zeta_region_alloc`，如 plain 第 14 块、自适应第 21 块）时，运行时基于 Region 头中
+  当慢路径被触发（`call rlyeh_region_alloc`，如 plain 第 14 块、自适应第 21 块）时，运行时基于 Region 头中
   **过时的 cursor/limit** 判定空间，可能返回与既有寄存器状态重叠的地址（或误判容量不足重复扩容），
   语义错误且内存利用率失真。实测（调试日志）：block_count 停在 9、总容量 72KB、used≈48KB 但循环 100 万次
   （应为 14 块、17.5MB），峰值 RSS 仅 2.3MB（应为 ~34MB）。
-- **修复**（`zeta-codegen/src/llvm.rs`，`emit_region_bump_promoted`）：在慢路径 `call zeta_region_alloc`
+- **修复**（`rlyeh-codegen/src/llvm.rs`，`emit_region_bump_promoted`）：在慢路径 `call rlyeh_region_alloc`
   **之前**先 `store i64 %hcur_{hdr}, i64* %{cv}` 将寄存器状态写回 Region 头，令运行时基于最新状态扩容，
   call 返回后 reload 三字段继续提升。快路径与循环退出写回不变。
 - **验证**：修复后 100 万次循环慢路径恰好 15 次调用（14 块扩容 + 1 次对齐补块），峰值 RSS 34.6MB；
@@ -658,12 +658,12 @@ gc_region {
 
 - **动机**：A.4 单对象提升覆盖循环内**单个** bump 点；批量场景（每次迭代分配多个对象）下每个 bump
   点仍独立发射独立对齐/越界检查/指针推进，Region 头访存与检查冗余、代码体积膨胀。
-- **实现**（`zeta-codegen/src/llvm.rs`）：
+- **实现**（`rlyeh-codegen/src/llvm.rs`）：
   - `find_loop_promo` 收集 latch 内**同 region 的全部** `AllocInRegionDirect` bump（多 bump 批量提升），
     提升状态**整组共享一组 phi**（`%hcur_{hdr}`/`%hbase_{hdr}`/`%hlim_{hdr}`）；
   - 发射期 `try_emit_region_promo_batch` 窗口聚合：首个 bump 做一次对齐 + 一次越界检查 + 一次推进
     `total = Σ size`，各对象经 `gep` 派生（`__tmp0 = base+off0`、`__tmp1 = base+off0+size0` …）；
-    慢路径一次 `call zeta_region_alloc` 扩容；
+    慢路径一次 `call rlyeh_region_alloc` 扩容；
   - 窗口收集与 P3 批量 bump（`try_emit_region_batch`）共享穿插跳过规则（`FieldSet`/`Assign`/`Binary`
     无副作用穿插可跳过），但**不排除** promo 命中。
 - **约束**：仅 `AllocInRegionDirect`（值镜像 `AllocInRegion` 需 memcpy 发射，不聚合，散落 bump 与单发
@@ -673,20 +673,20 @@ gc_region {
   初版 `in_span` 置位后不复位导致 span 扩展到块尾，**所有含字段读取的批量循环被整体拒绝**（批量基准
   19.5ms 退化至 P3 水平，IR 无 `%hcur_` phi）。
 - **验证**：`region_batch` 基准（100 万循环 × 每次 4×32B 对象，`examples/projects/benchmarks/region_batch/`）；
-  IR 确认一组 `%hcur_`/`%ncur_` phi 命中、慢路径 `zeta_region_alloc` 保持 2 处（扩容 + 对齐补块）；
+  IR 确认一组 `%hcur_`/`%ncur_` phi 命中、慢路径 `rlyeh_region_alloc` 保持 2 处（扩容 + 对齐补块）；
   同环境交替 A/B（交替测 21 轮取中位）：**P4 批量提升 12.70 ms vs P3 批量 bump 13.39 ms（+5.5%）**；
   输出与 C/Go/Rust/Swift 对照严格一致（`2000497500000`）。
 - **对照修复（DSE 假差距揭穿，2026-08-24 追加）**：旧跨语言对照为 `malloc`/`free`（C/C++）、
   `Box::new`（Rust）、class 分配（Swift）——bump 内存不 escape 时 LLVM 证明所有 store 为死代码并整体消除
   （C 热循环汇编仅剩 10 条 SIMD 纯计算指令、零内存访问），测出「纯计算假数据」（C 2.62/2.91ms、Rust 4.99ms、
-  Swift 4.19ms），造成 Zeta 4.8x 假差距。修复：各语言对照统一为**手动 bump + 强制真实内存写**
+  Swift 4.19ms），造成 Rlyeh 4.8x 假差距。修复：各语言对照统一为**手动 bump + 强制真实内存写**
   （C/C++ `volatile` 写读、Rust `write_volatile`/`read_volatile`、Go `unsafe` 指针写、Swift 指针写 + escape 黑盒读），
-  与 region 线性 bump 语义对齐。修复后 128MB 线性写为带宽受限场景（§7.4 表）：**Zeta 13.684 vs
+  与 region 线性 bump 语义对齐。修复后 128MB 线性写为带宽受限场景（§7.4 表）：**Rlyeh 13.684 vs
   C 13.218 / C++ 13.220 / Rust 13.265（1.04x，噪声内并列最快）**；P3/P4 内部 A/B（+5.5%）仍为真实收益。
-  `region_alloc` 单对象场景修复后 Zeta 6.095 vs C 5.407（1.13x）——剩余差距为 region 语义必需的
+  `region_alloc` 单对象场景修复后 Rlyeh 6.095 vs C 5.407（1.13x）——剩余差距为 region 语义必需的
   逐对象越界检查（~1ns/迭代），非 codegen 缺陷。
 
 ---
 
-> **维护者**：Zeta Language Team  
+> **维护者**：Rlyeh Language Team  
 > **License**：MIT / Apache-2.0

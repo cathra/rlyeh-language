@@ -1,4 +1,4 @@
-// benchmark: fib(30) —— 与 fib.zeta 同逻辑
+// benchmark: fib(30) —— 与 fib.rl 同逻辑
 func fib(_ n: Int64) -> Int64 {
     if n < 2 { return n }
     return fib(n - 1) + fib(n - 2)

@@ -1,6 +1,6 @@
-//! # zeta-desugar
+//! # rlyeh-desugar
 //!
-//! Zeta 语言 async/await 状态机 desugar（S1c，2026-08）。
+//! Rlyeh 语言 async/await 状态机 desugar（S1c，2026-08）。
 //!
 //! 将顶层 `async fn` 编译为三个普通项（AST → AST 转换，parse 后、typecheck
 //! 前执行，下游各阶段无感知）：
@@ -34,8 +34,8 @@ mod guard;
 use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
-use zeta_ast::{AstFnDecl, AstItem, AstProgram};
-use zeta_lexer::Span;
+use rlyeh_ast::{AstFnDecl, AstItem, AstProgram};
+use rlyeh_lexer::Span;
 
 pub use analyze::{AnalyzedAsync, AwaitInfo, Segment};
 

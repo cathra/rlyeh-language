@@ -1,6 +1,6 @@
-# Zeta 语言手册（Language Manual）
+# Rlyeh 语言手册（Language Manual）
 
-> **定位**：面向已会使用 Zeta 的读者的**快速参考**：词法、类型系统、运算符、控制流、标准库 API 与工具链命令速查。
+> **定位**：面向已会使用 Rlyeh 的读者的**快速参考**：词法、类型系统、运算符、控制流、标准库 API 与工具链命令速查。
 > **入门**：新手请先阅读 [tutorial.md](./tutorial.md)（安装 → 第一个程序 → 发布项目）。
 > **完整教程**：渐进式语言教学（含示例讲解与已知限制）见 [guide.md](./guide.md)。
 > **权威规范**：`grammar.md`（EBNF）/ `semantics.md` / `memory-model.md` / `actor-model.md` / `std-lib.md`。
@@ -28,7 +28,7 @@
 
 ## 1. 语言概述
 
-Zeta 是系统级编程语言：内存安全与零 GC 默认、并发一等公民、数学式语法。编译器为 Rust bootstrap 阶段，代码生成走 LLVM IR，经 clang 汇编链接为原生可执行文件或 WASM。
+Rlyeh 是系统级编程语言：内存安全与零 GC 默认、并发一等公民、数学式语法。编译器为 Rust bootstrap 阶段，代码生成走 LLVM IR，经 clang 汇编链接为原生可执行文件或 WASM。
 
 | 维度 | 设计 |
 |------|------|
@@ -44,9 +44,9 @@ Zeta 是系统级编程语言：内存安全与零 GC 默认、并发一等公�
 
 ### 2.1 注释
 
-```zeta
+```rlyeh
 // 行注释
-/// 文档注释（zeta doc 提取生成 Markdown）
+/// 文档注释（rlyeh doc 提取生成 Markdown）
 ```
 
 ### 2.2 数字字面量
@@ -56,14 +56,14 @@ Zeta 是系统级编程语言：内存安全与零 GC 默认、并发一等公�
 
 ### 2.3 字符串与原始字符串
 
-```zeta
+```rlyeh
 let s = "hello";
 let raw = r#"C:\path\no\escape"#;   // 带哈希原始字符串（r# / r## ...，任意哈希定界、无转义）
 ```
 
 ### 2.4 时间字面量
 
-```zeta
+```rlyeh
 9am    6pm    10pm    12am    3pm    // 时间字面量（分钟值，比较链 / 区间判断用）
 ```
 
@@ -99,7 +99,7 @@ let raw = r#"C:\path\no\escape"#;   // 带哈希原始字符串（r# / r## ...�
 
 ### 3.4 trait
 
-```zeta
+```rlyeh
 trait Area { fn area(&self) -> f64; }
 impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 ```
@@ -131,7 +131,7 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 
 ### 4.1 算术与位运算
 
-```zeta
+```rlyeh
 +  -  *  /  %           // 算术
 &  |  ^  <<  >>         // 位运算
 &&  ||  !              // 逻辑
@@ -142,7 +142,7 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 
 ### 4.2 数学式比较链
 
-```zeta
+```rlyeh
 0 < x < 10        // 0 < x && x < 10（区间内 = 交集）
 0 > x > 10        // x < 0 || x > 10（区间外 = 并集）
 0 <= x <= 10      // 0 <= x && x <= 10
@@ -150,7 +150,7 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 
 ### 4.3 集合判断 `in`
 
-```zeta
+```rlyeh
 x in (1, 3, 5)              // x == 1 || x == 3 || x == 5
 x in 0..<10                 // 裸范围 = 区间判断 [0, 10)
 x in 0...10                 // [0, 10]
@@ -161,7 +161,7 @@ hour in (9am...6pm)         // 时间字面量区间
 
 ### 4.4 `?` 错误传播
 
-```zeta
+```rlyeh
 fn chain(a: i64, b: i64) -> Option<i64> {
     let q = try_div(a, b)?;     // Some 解包；None 则 return None
     Some(q + 1)
@@ -173,13 +173,13 @@ fn chain(a: i64, b: i64) -> Option<i64> {
 
 ### 4.5 `as` 类型转换
 
-```zeta
+```rlyeh
 expr as Type     // 显式类型转换（如 i64 as f64）
 ```
 
 ### 4.6 迭代器适配器
 
-```zeta
+```rlyeh
 [1, 2, 3].map(|x| x * 2)                 // Vec: [2, 4, 6]
 [1, 2, 3, 4, 5].filter(|x| x % 2 == 1)   // Vec: [1, 3, 5]
 [1, 2, 3, 4].fold(0, |acc, x| acc + x)   // 10
@@ -196,7 +196,7 @@ Counter::new(6).filter(|x| x > 1).map(|x| x * x)   // 链式
 
 ### 5.1 绑定
 
-```zeta
+```rlyeh
 let x = 6;              // 不可变绑定（类型推断）
 let mut v = Vec::new(); // 可变绑定
 let ref rz = z;         // ref 绑定：引用而非拷贝
@@ -204,14 +204,14 @@ let ref rz = z;         // ref 绑定：引用而非拷贝
 
 ### 5.2 条件
 
-```zeta
+```rlyeh
 if cond { ... } else { ... }
 if 0 < x < 10 { ... }   // 数学式比较链
 ```
 
 ### 5.3 循环
 
-```zeta
+```rlyeh
 while cond { ... }
 loop { break; continue; }
 for i in 0..<10 { ... }     // 半开区间 [0, 10)
@@ -223,7 +223,7 @@ for x in arr { ... }        // 数组迭代（索引遍历）
 
 ### 5.4 match
 
-```zeta
+```rlyeh
 match s {
     Shape::Circle(r) => 3.14 * r * r,
     Shape::Rect { w, h } => w * h,
@@ -235,7 +235,7 @@ match s {
 
 ### 5.5 函数定义
 
-```zeta
+```rlyeh
 fn add(a: i64, b: i64) -> i64 { a + b }   // 末表达式为返回值
 fn main() {}
 ```
@@ -246,7 +246,7 @@ fn main() {}
 
 ### 6.1 函数一等值
 
-```zeta
+```rlyeh
 let f = add;                    // 函数值绑定
 let g: fn(i64, i64) -> i64 = add;
 f(3, 4) / apply(add, 10, 20)
@@ -264,7 +264,7 @@ MVP 约束：参数模式仅简单标识符与 `_`；捕获闭包值不跨函数
 
 ### 6.3 async fn
 
-```zeta
+```rlyeh
 async fn get_value(x: i64) -> i64 { x * 2 }
 
 fn main() {
@@ -279,7 +279,7 @@ desugar 为 Future 结构体 + poll 状态机；`.await` 挂起/恢复。MVP：�
 
 ## 7. 模块与可见性
 
-```zeta
+```rlyeh
 module math {
     pub const PI: f64 = 3.14159;
     pub fn square(x: i64) -> i64 { x * x }
@@ -288,7 +288,7 @@ module math {
 
 import math::PI;
 import math::square as sq;
-module foo;                    // 多文件：foo.zeta / foo/module.zeta
+module foo;                    // 多文件：foo.rl / foo/module.rl
 模块名::Enum::Variant          // 跨模块路径（扁平名字空间，路径即「模块名::」）
 ```
 
@@ -319,7 +319,7 @@ module foo;                    // 多文件：foo.zeta / foo/module.zeta
 
 ### 9.2 L1 区域（Region）
 
-```zeta
+```rlyeh
 region 'r {
     let data = BigStruct::new() in 'r;   // 区域分配
 }   // 批量释放（零开销）
@@ -331,11 +331,11 @@ region 's with_size (4096) { ... }       // 精确预分配
 region 't strategy (bump) { ... }        // bump 分配策略
 ```
 
-运行时接线 `zeta-region-alloc` C ABI（`zeta_region_enter/alloc/transfer/exit`）。
+运行时接线 `rlyeh-region-alloc` C ABI（`rlyeh_region_enter/alloc/transfer/exit`）。
 
 ### 9.3 L2 智能指针
 
-```zeta
+```rlyeh
 Box::new(x)                 // 1 槽指针；* 解引用；字段/方法自动剥层
 Rc::new(x) / r.clone()      // 强计数共享
 r.strong_count() / r.weak_count()
@@ -348,14 +348,14 @@ MVP：无自动 drop（计数只增不减，与 Vec/String 一致）。
 
 ### 9.4 L3 GC
 
-```zeta
+```rlyeh
 gc_region {
     let a = Gc::new(42);    // 块结束触发标记-清除周期
 }
 let g = gc_region { let inner = Gc::new(100); inner };  // 逃逸对象登记为 root
 ```
 
-保守标记-清除运行时（`zeta-gc-runtime`），单线程无锁。MVP 限制：块外对象永不回收、stop-the-world 非增量、递归标记。
+保守标记-清除运行时（`rlyeh-gc-runtime`），单线程无锁。MVP 限制：块外对象永不回收、stop-the-world 非增量、递归标记。
 
 ---
 
@@ -363,7 +363,7 @@ let g = gc_region { let inner = Gc::new(100); inner };  // 逃逸对象登记为
 
 ### 10.1 Actor
 
-```zeta
+```rlyeh
 actor Counter {
     value: i64 = 0,
 
@@ -399,7 +399,7 @@ send c.increment(1);             // fire-and-forget
 
 ### 11.1 内建打印
 
-```zeta
+```rlyeh
 println("Hello") / println(42) / println(3.14) / println(true) / println() / print(x)
 // 格式化宏：println! / print! / format! / dbg! / eprintln! / eprint!
 println!("value = {}", x);      // {} 占位
@@ -449,12 +449,12 @@ println!("value = {}", x);      // {} 占位
 ## 12. 编译器与构建
 
 ```bash
-zeta build hello.zeta -o hello && ./hello          # 本机编译
-zeta build app.zeta --target arm64-apple-macosx    # 交叉编译
-zeta build app.zeta --target wasm32-wasip1 -o app.wasm && wasmtime app.wasm
+rlyeh build hello.rl -o hello && ./hello          # 本机编译
+rlyeh build app.rl --target arm64-apple-macosx    # 交叉编译
+rlyeh build app.rl --target wasm32-wasip1 -o app.wasm && wasmtime app.wasm
 ```
 
-- 平台内建 `__zeta_target_os`：linux=1 / macos=2 / windows=3 / freebsd=4 / 其他=0 / wasi=5
+- 平台内建 `__rlyeh_target_os`：linux=1 / macos=2 / windows=3 / freebsd=4 / 其他=0 / wasi=5
 - WASM 依赖 `wasi-libc` sysroot 与 `wasm-ld`；actor 程序支持 WASI（需先构建 wasm 版 actor 运行时）
 - 详细说明（含 Actor 交叉编译）见 [guide.md §11](./guide.md#11-编译目标与工具链)
 
@@ -468,13 +468,13 @@ zeta build app.zeta --target wasm32-wasip1 -o app.wasm && wasmtime app.wasm
 ### 12.2 PGO profile
 
 ```bash
-zeta profile app.zeta_profile --out report.md    # 画像 → 区域大小预测报告
-# zeta build --profile 注入 PGO；region adaptive 据此建议容量
+rlyeh profile app.rl_profile --out report.md    # 画像 → 区域大小预测报告
+# rlyeh build --profile 注入 PGO；region adaptive 据此建议容量
 ```
 
 ### 12.3 FFI
 
-```zeta
+```rlyeh
 extern fn clock() -> i64;
 extern fn fopen(path: String, mode: String) -> i64;
 ```
@@ -493,38 +493,38 @@ extern fn fopen(path: String, mode: String) -> i64;
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `PATH` | — | 需含 `$HOME/.zeta/bin` |
-| `ZETA_STD_PATH` | `~/.zeta/std`（wrapper 自动注入） | 标准库目录（含 core.zeta） |
-| `ZETA_PREFIX` | `$HOME/.zeta` | 安装前缀（install.sh 用） |
+| `PATH` | — | 需含 `$HOME/.rl/bin` |
+| `RLYEH_STD_PATH` | `~/.rl/std`（wrapper 自动注入） | 标准库目录（含 core.rl） |
+| `RLYEH_PREFIX` | `$HOME/.rl` | 安装前缀（install.sh 用） |
 
-### 13.2 编译器命令 `zeta`
+### 13.2 编译器命令 `rlyeh`
 
 ```
 用法:
-  zeta run <file.zeta> [--cache-dir <dir>] [--force] [--no-std] [--verbose]
+  rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--verbose]
       编译并运行
-  zeta build <file.zeta> [-o <out>] [--cache-dir <dir>] [--force] [--no-std]
+  rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std]
               [--verbose] [--target <triple>]
       编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）
-  zeta test [<tests-dir>]
+  rlyeh test [<tests-dir>]
       运行测试目录用例（compile-pass/compile-fail/run-pass）
-  zeta fmt <file.zeta> [--check] [-w|--write] [--indent N]
+  rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N]
       格式化代码（默认输出到 stdout）
-  zeta check <file.zeta>
+  rlyeh check <file.rl>
       静态分析（未使用变量/恒常条件/冗余比较/不可达代码）
-  zeta doc <file.zeta> [--out <file.md>] [--title <标题>]
+  rlyeh doc <file.rl> [--out <file.md>] [--title <标题>]
       提取 /// 注释生成 Markdown 文档
-  zeta bench <file.zeta> [-o <out>] [--runs N] [--warmup N]
+  rlyeh bench <file.rl> [-o <out>] [--runs N] [--warmup N]
       编译并基准计时
-  zeta new <name> [--lib]
-      创建新项目脚手架（Zeta.toml + src/main.zeta 或 lib.zeta）
-  zeta publish [--registry <URL>] [--verbose]
-      打包发布到 zep 注册表（重复版本拦截）
-  zeta lsp
+  rlyeh new <name> [--lib]
+      创建新项目脚手架（Rlyeh.toml + src/main.rl 或 lib.rl）
+  rlyeh publish [--registry <URL>] [--verbose]
+      打包发布到 dagon 注册表（重复版本拦截）
+  rlyeh lsp
       启动语言服务器（LSP over stdio，诊断推送）
-  zeta profile <file.zeta_profile> [--out <report.md>]
+  rlyeh profile <file.rl_profile> [--out <report.md>]
       PGO 画像 → 区域大小预测报告
-  zeta --version
+  rlyeh --version
       版本信息
 ```
 
@@ -532,33 +532,33 @@ extern fn fopen(path: String, mode: String) -> i64;
 
 | 子命令 | 用途 | 典型用法 |
 |--------|------|----------|
-| `run` | 编译并运行 | `zeta run main.zeta` |
-| `build` | 编译为可执行文件 | `zeta build main.zeta -o app` |
-| `test` | 运行测试用例目录 | `zeta test tests/` |
-| `fmt` | 格式化代码 | `zeta fmt src/main.zeta -w` |
-| `check` | 静态分析 | `zeta check src/main.zeta` |
-| `doc` | 从 `///` 注释生成文档 | `zeta doc lib.zeta --out api.md` |
-| `bench` | 基准计时 | `zeta bench fib.zeta --runs 5` |
-| `new` | 项目脚手架 | `zeta new myapp`（`--lib` 生成 lib.zeta） |
-| `publish` | 发布到注册表 | `zeta publish` |
+| `run` | 编译并运行 | `rlyeh run main.rl` |
+| `build` | 编译为可执行文件 | `rlyeh build main.rl -o app` |
+| `test` | 运行测试用例目录 | `rlyeh test tests/` |
+| `fmt` | 格式化代码 | `rlyeh fmt src/main.rl -w` |
+| `check` | 静态分析 | `rlyeh check src/main.rl` |
+| `doc` | 从 `///` 注释生成文档 | `rlyeh doc lib.rl --out api.md` |
+| `bench` | 基准计时 | `rlyeh bench fib.rl --runs 5` |
+| `new` | 项目脚手架 | `rlyeh new myapp`（`--lib` 生成 lib.rl） |
+| `publish` | 发布到注册表 | `rlyeh publish` |
 | `lsp` | 语言服务器 | 编辑器集成 |
-| `profile` | PGO 画像分析 | `zeta profile app.zeta_profile` |
+| `profile` | PGO 画像分析 | `rlyeh profile app.rl_profile` |
 
 ### 13.3 独立工具
 
 | 工具 | 完整用法 | 说明 |
 |------|----------|------|
-| `zeta-fmt` | `zeta-fmt [--check] [-w\|--write] [--indent N] <file>` | 格式化；`--check` 只检查、`-w` 写回、`--indent` 指定缩进 |
-| `zeta-check` | `zeta-check <file>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
-| `zeta-doc` | `zeta-doc <file.zeta> [--out <file.md>] [--title <标题>]` | 提取 `///` 注释生成 Markdown |
-| `zeta-bench` | `zeta-bench <file.zeta \| 可执行文件> [--runs N] [--warmup N] [--out <路径>] [--quiet]` | 基准计时；支持 `.zeta` 源码或已编译可执行文件 |
+| `rlyeh-fmt` | `rlyeh-fmt [--check] [-w\|--write] [--indent N] <file>` | 格式化；`--check` 只检查、`-w` 写回、`--indent` 指定缩进 |
+| `rlyeh-check` | `rlyeh-check <file>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
+| `rlyeh-doc` | `rlyeh-doc <file.rl> [--out <file.md>] [--title <标题>]` | 提取 `///` 注释生成 Markdown |
+| `rlyeh-bench` | `rlyeh-bench <file.rl \| 可执行文件> [--runs N] [--warmup N] [--out <路径>] [--quiet]` | 基准计时；支持 `.rl` 源码或已编译可执行文件 |
 
-> 注：`zeta-fmt`/`zeta-check`/`zeta-doc` 接受文件名参数（非 `--help` 风格）；`zeta-bench` 支持 `-h/--help`。
+> 注：`rlyeh-fmt`/`rlyeh-check`/`rlyeh-doc` 接受文件名参数（非 `--help` 风格）；`rlyeh-bench` 支持 `-h/--help`。
 
-### 13.4 包管理器 `zep`
+### 13.4 包管理器 `dagon`
 
 ```
-Zep 是 Zeta 语言的包管理器：项目脚手架、依赖解析、注册表发布与构建集成。
+Dagon 是 Rlyeh 语言的包管理器：项目脚手架、依赖解析、注册表发布与构建集成。
 
 Commands:
   new      创建新项目
@@ -566,30 +566,30 @@ Commands:
   add      添加依赖（name[@req]，如 foo@^1.0）
   remove   移除依赖
   build    编译项目
-  run      编译并运行（程序参数需以 -- 分隔：zep run -- --flag x）
-  test     构建并运行测试（tests/*.zeta）
-  update   重新解析依赖并更新 Zeta.lock
+  run      编译并运行（程序参数需以 -- 分隔：dagon run -- --flag x）
+  test     构建并运行测试（tests/*.rl）
+  update   重新解析依赖并更新 Rlyeh.lock
   publish  打包并发布到注册表
   search   在注册表中搜索包
   clean    清理 target 目录
 
 Options:
       --verbose                详细输出
-      --registry <URL>         注册表地址（默认 ~/.zeta/registry）
+      --registry <URL>         注册表地址（默认 ~/.rl/registry）
 ```
 
-**本地注册表机制**：默认 `file://$HOME/.zeta/registry`；包存储于 `pkgs/<name>-<ver>.tar.gz` + 索引 `index/<name>.json`。指定其他注册表：`zep --registry /path/to/reg` 或 `zeta publish --registry file:///path/to/reg`。
+**本地注册表机制**：默认 `file://$HOME/.rl/registry`；包存储于 `pkgs/<name>-<ver>.tar.gz` + 索引 `index/<name>.json`。指定其他注册表：`dagon --registry /path/to/reg` 或 `rlyeh publish --registry file:///path/to/reg`。
 
 ### 13.5 故障排查
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `缺少 release 产物` | 未先构建 | `cargo build --release` 后重跑 install.sh |
-| 模块未找到 | 标准库未正确复制 | 重跑 install.sh（重建 `~/.zeta/std`） |
-| `zeta: command not found` | PATH 未配置 | `export PATH="$HOME/.zeta/bin:$PATH"` |
+| 模块未找到 | 标准库未正确复制 | 重跑 install.sh（重建 `~/.rl/std`） |
+| `rlyeh: command not found` | PATH 未配置 | `export PATH="$HOME/.rl/bin:$PATH"` |
 | clang 链接报错 | 无 LLVM/Clang | `xcode-select --install` |
 | wasm 目标缺失 | 未装 target | `rustup target add wasm32-wasip1` |
-| `zeta build --target wasm` 报 actor 缺失 | wasm actor 运行时未构建 | `cargo build --target wasm32-wasip1 -p zeta-actor-runtime` |
+| `rlyeh build --target wasm` 报 actor 缺失 | wasm actor 运行时未构建 | `cargo build --target wasm32-wasip1 -p rlyeh-actor-runtime` |
 
 ---
 
@@ -603,4 +603,4 @@ MVP 已知限制的完整说明见 **[guide.md §13](./guide.md#13-参考与已�
 - `Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划中
 - 无自动 drop（`Box`/`Rc`/`Vec`/`String` 显式释放语义规划中）
 
-实现约束：标准库位于 `zeta-std/zeta/`（core.zeta 根模块 + time/io/net/sync/fs 子目录）；WASI 下 `net` 模块禁用；闭包捕获不跨函数边界；trait 非泛型；`HashMap` 键限 i64/String。
+实现约束：标准库位于 `rlyeh-std/rlyeh/`（core.rl 根模块 + time/io/net/sync/fs 子目录）；WASI 下 `net` 模块禁用；闭包捕获不跨函数边界；trait 非泛型；`HashMap` 键限 i64/String。

@@ -14,14 +14,14 @@
 
 | 文件 | 说明 |
 |------|------|
-| `mutex_guard.zeta` | Mutex 加锁 / 临界区 / 释放 |
-| `channel.zeta` | P1 并发通道：send/recv、try_*、close、iter、多 Sender 共享 |
+| `mutex_guard.rl` | Mutex 加锁 / 临界区 / 释放 |
+| `channel.rl` | P1 并发通道：send/recv、try_*、close、iter、多 Sender 共享 |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/06-sync/mutex_guard.zeta
-zeta run examples/std-demos/06-sync/channel.zeta
+rlyeh run examples/std-demos/06-sync/mutex_guard.rl
+rlyeh run examples/std-demos/06-sync/channel.rl
 ```
 
 > `RwLock` / `Condvar` / `Barrier` 规划见 std-lib.md §6.1。

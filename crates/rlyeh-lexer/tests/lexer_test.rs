@@ -1,9 +1,9 @@
-//! zeta-lexer 集成测试（对应 P001 验收用例）。
+//! rlyeh-lexer 集成测试（对应 P001 验收用例）。
 
 // 3.14 等是 P001 规定的验收用例值
 #![allow(clippy::approx_constant)]
 
-use zeta_lexer::{LexError, Lexer, Token};
+use rlyeh_lexer::{LexError, Lexer, Token};
 
 #[test]
 fn test_basic_keywords() {

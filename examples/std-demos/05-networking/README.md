@@ -12,15 +12,15 @@
 
 | 文件 | 说明 |
 |------|------|
-| `tcp_addr.zeta` | SocketAddr 构造与解析（含非法输入回退） |
-| `tcp_echo.zeta` | TCP echo 服务器：监听 → accept → 回显（常驻循环，需 Ctrl-C 退出） |
+| `tcp_addr.rl` | SocketAddr 构造与解析（含非法输入回退） |
+| `tcp_echo.rl` | TCP echo 服务器：监听 → accept → 回显（常驻循环，需 Ctrl-C 退出） |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/05-networking/tcp_addr.zeta
+rlyeh run examples/std-demos/05-networking/tcp_addr.rl
 # echo 服务器为常驻进程，前台运行观察，Ctrl-C 退出：
-zeta run examples/std-demos/05-networking/tcp_echo.zeta
+rlyeh run examples/std-demos/05-networking/tcp_echo.rl
 ```
 
 > HTTP 客户端（get / post）规划见 std-lib.md §5.2，MVP 阶段以 TCP 为基础能力。

@@ -1,5 +1,5 @@
 // 基准: dyn_dispatch —— 2000 万次多态分派（trait 对象 vtable）
-// 与 dyn_dispatch.zeta 逻辑严格一致。输出 = 70000000
+// 与 dyn_dispatch.rl 逻辑严格一致。输出 = 70000000
 trait Shape {
     fn sides(&self) -> i64;
 }

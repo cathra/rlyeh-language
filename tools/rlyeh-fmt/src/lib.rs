@@ -1,6 +1,6 @@
-//! # zeta-fmt
+//! # rlyeh-fmt
 //!
-//! Zeta 语言代码格式化器：解析源码为 AST，再按统一规范重新打印。
+//! Rlyeh 语言代码格式化器：解析源码为 AST，再按统一规范重新打印。
 //!
 //! ## 格式化约定
 //!
@@ -15,7 +15,7 @@
 #![warn(missing_docs)]
 #![warn(unsafe_code)]
 
-use zeta_ast::*;
+use rlyeh_ast::*;
 
 /// 格式化选项。
 #[derive(Debug, Clone, Copy)]
@@ -37,7 +37,7 @@ pub fn format_source(source: &str) -> Result<String, String> {
 
 /// 解析并格式化源码（自定义选项）。
 pub fn format_source_with_options(source: &str, opts: &FmtOptions) -> Result<String, String> {
-    match zeta_parser::parse(source) {
+    match rlyeh_parser::parse(source) {
         Ok(prog) => Ok(format_program_with_options(&prog, opts)),
         Err(e) => Err(e.to_string()),
     }
@@ -1162,7 +1162,7 @@ mod tests {
         ];
         for src in cases {
             let out = fmt(src);
-            let reparsed = zeta_parser::parse(&out);
+            let reparsed = rlyeh_parser::parse(&out);
             assert!(reparsed.is_ok(), "reparse failed for {:?}:\n{}", src, out);
         }
     }

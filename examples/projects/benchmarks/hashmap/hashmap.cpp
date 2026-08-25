@@ -1,4 +1,4 @@
-// benchmark: 20 万 insert + 20 万 get（LCG 键）—— 与 hashmap.zeta 同逻辑
+// benchmark: 20 万 insert + 20 万 get（LCG 键）—— 与 hashmap.rl 同逻辑
 #include <cstdio>
 #include <unordered_map>
 

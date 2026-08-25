@@ -1,10 +1,10 @@
-//! zeta-driver 集成测试：完整流水线 + clang 汇编 / 运行（需要系统 clang）。
+//! rlyeh-driver 集成测试：完整流水线 + clang 汇编 / 运行（需要系统 clang）。
 
-use zeta_driver::{build_executable, compile_to_llvm, run_source};
+use rlyeh_driver::{build_executable, compile_to_llvm, run_source};
 
 const HELLO_WORLD: &str = r#"
 fn main() {
-    println("Hello, Zeta!");
+    println("Hello, Rlyeh!");
 }
 "#;
 
@@ -35,7 +35,7 @@ fn compile_hello_world_llvm() {
     eprintln!("--- LLVM IR ---\n{ll}\n--- END ---");
     assert!(ll.contains("declare i32 @printf(i8*, ...)"));
     assert!(ll.contains("define i32 @main()"));
-    assert!(ll.contains("Hello, Zeta!"));
+    assert!(ll.contains("Hello, Rlyeh!"));
     assert!(ll.contains("@.fmt."));
 }
 
@@ -52,7 +52,7 @@ fn compile_arith_llvm() {
 #[test]
 fn run_hello_world() {
     let out = run_source(HELLO_WORLD).expect("运行失败");
-    assert_eq!(out, "Hello, Zeta!\n");
+    assert_eq!(out, "Hello, Rlyeh!\n");
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn run_arith_print() {
 fn build_hello_world_executable() {
     let dir = std::env::temp_dir();
     let exe = dir.join(format!(
-        "zeta-test-{}-{}.exe",
+        "rlyeh-test-{}-{}.exe",
         std::process::id(),
         rand_suffix()
     ));

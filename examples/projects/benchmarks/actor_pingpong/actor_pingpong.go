@@ -1,5 +1,5 @@
 // 基准: actor_pingpong —— 5 万次 goroutine 间同步往返（双无缓冲 channel）
-// 与 actor_pingpong.zeta 逻辑严格一致。输出 = 1250025000
+// 与 actor_pingpong.rl 逻辑严格一致。输出 = 1250025000
 package main
 
 import "fmt"

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use zeta_lir::LirType;
+use rlyeh_lir::LirType;
 
 /// 代码生成错误。
 #[derive(Debug, Clone, PartialEq)]

@@ -10,7 +10,7 @@ fn main() {
     }
 
     // 2. String `ref r`：绑定 &String，方法调用自动剥引用层
-    let s = String::from("zeta");
+    let s = String::from("rlyeh");
     match s {
         ref r => println(r.len()),  // 4
     }

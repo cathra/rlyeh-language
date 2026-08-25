@@ -1,9 +1,9 @@
 // 基准: region_alloc —— 100 万次小对象分配（region 语义对照）
 // 对照: 手动 bump 分配器（一次性预分配 + 线性 bump，退出一次性释放），
-//       对齐 region_alloc.zeta 的 region 批量分配语义。
+//       对齐 region_alloc.rl 的 region 批量分配语义。
 // 注: 旧版为 malloc/free（glibc tcache 复用同一小块内存，测的是 tcache 命中，
 //     与 region 线性消耗带宽不对等），已替换为 bump 版。
-// 输出: 499500000（与 region_alloc.zeta 一致）
+// 输出: 499500000（与 region_alloc.rl 一致）
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>

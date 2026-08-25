@@ -63,7 +63,7 @@ impl Scheduler {
                 let sched = self.clone();
                 let runtime = runtime.clone();
                 std::thread::Builder::new()
-                    .name(format!("zeta-worker-{worker_id}"))
+                    .name(format!("rlyeh-worker-{worker_id}"))
                     .spawn(move || Self::worker_loop(sched, runtime, worker_id))
                     .expect("spawn worker thread")
             })

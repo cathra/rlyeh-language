@@ -1,4 +1,4 @@
-//! D3 集成测试：`zeta doc`（/// 文档提取）与 `zeta bench`（基准计时）在
+//! D3 集成测试：`rlyeh doc`（/// 文档提取）与 `rlyeh bench`（基准计时）在
 //! driver 层的可用性验证。
 
 use std::path::{Path, PathBuf};
@@ -13,13 +13,13 @@ fn workspace_root() -> PathBuf {
 }
 
 fn tmp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("zeta-{tag}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
-// ---------- zeta-doc ----------
+// ---------- rlyeh-doc ----------
 
 const DOC_SOURCE: &str = r#"
 //! 文件级说明：一个示例模块。
@@ -42,7 +42,7 @@ enum Shape { Circle(f64), Rect { w: f64, h: f64 } }
 
 #[test]
 fn doc_extracts_comments_and_signatures() {
-    let md = zeta_doc::doc_source(DOC_SOURCE, &zeta_doc::DocOptions::default()).unwrap();
+    let md = rlyeh_doc::doc_source(DOC_SOURCE, &rlyeh_doc::DocOptions::default()).unwrap();
     // 文件级注释
     assert!(md.contains("文件级说明：一个示例模块。"));
     // 项注释与签名
@@ -64,7 +64,7 @@ fn doc_extracts_comments_and_signatures() {
 #[test]
 fn doc_lists_items_without_comments() {
     let md =
-        zeta_doc::doc_source("fn foo() {}\nstruct Bar {}\n", &zeta_doc::DocOptions::default())
+        rlyeh_doc::doc_source("fn foo() {}\nstruct Bar {}\n", &rlyeh_doc::DocOptions::default())
             .unwrap();
     assert!(md.contains("## 函数"));
     assert!(md.contains("fn foo()"));
@@ -74,15 +74,15 @@ fn doc_lists_items_without_comments() {
 
 #[test]
 fn doc_parse_error_reported() {
-    assert!(zeta_doc::doc_source("fn broken(", &zeta_doc::DocOptions::default()).is_err());
+    assert!(rlyeh_doc::doc_source("fn broken(", &rlyeh_doc::DocOptions::default()).is_err());
 }
 
 #[test]
 fn doc_driver_file_api() {
     let dir = tmp_dir("doc");
-    let f = dir.join("docme.zeta");
+    let f = dir.join("docme.rl");
     std::fs::write(&f, "/// 外部函数。\nextern fn putchar(c: i32);\nfn main() {}\n").unwrap();
-    let md = zeta_driver::doc_source_file(&f, &zeta_doc::DocOptions::default()).unwrap();
+    let md = rlyeh_driver::doc_source_file(&f, &rlyeh_doc::DocOptions::default()).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     assert!(md.contains("外部函数。"));
     assert!(md.contains("extern fn putchar(c: i32)"));
@@ -91,19 +91,19 @@ fn doc_driver_file_api() {
 #[test]
 fn doc_driver_file_api_parse_error() {
     let dir = tmp_dir("doc-err");
-    let f = dir.join("bad.zeta");
+    let f = dir.join("bad.rl");
     std::fs::write(&f, "fn broken(\n").unwrap();
-    let res = zeta_driver::doc_source_file(&f, &zeta_doc::DocOptions::default());
+    let res = rlyeh_driver::doc_source_file(&f, &rlyeh_doc::DocOptions::default());
     let _ = std::fs::remove_dir_all(&dir);
     assert!(res.is_err());
 }
 
-// ---------- zeta-bench ----------
+// ---------- rlyeh-bench ----------
 
 #[test]
 fn bench_report_statistics_sanity() {
     // 直接构造耗时数据验证统计计算（不启动进程）
-    let report = zeta_bench::BenchReport::from_measurements(vec![0.01, 0.02, 0.03]);
+    let report = rlyeh_bench::BenchReport::from_measurements(vec![0.01, 0.02, 0.03]);
     assert_eq!(report.measurements.len(), 3);
     assert!((report.mean - 0.02).abs() < 1e-12);
     assert!((report.median - 0.02).abs() < 1e-12);
@@ -117,17 +117,17 @@ fn bench_report_statistics_sanity() {
 #[test]
 fn bench_times_compiled_executable() {
     let root = workspace_root();
-    let hello = root.join("tests/run-pass/hello.zeta");
+    let hello = root.join("tests/run-pass/hello.rl");
     assert!(hello.exists(), "缺测试用例: {}", hello.display());
     let dir = tmp_dir("bench");
     let exe = dir.join("hello-bench");
-    zeta_driver::build_executable_file(&hello, &exe).unwrap();
-    let opts = zeta_bench::BenchOptions {
+    rlyeh_driver::build_executable_file(&hello, &exe).unwrap();
+    let opts = rlyeh_bench::BenchOptions {
         warmup: 1,
         runs: 3,
         quiet: true,
     };
-    let report = zeta_bench::bench_executable(&exe, &opts).unwrap();
+    let report = rlyeh_bench::bench_executable(&exe, &opts).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(report.measurements.len(), 3);
     assert!(report.mean > 0.0);
@@ -137,16 +137,16 @@ fn bench_times_compiled_executable() {
 #[test]
 fn bench_compile_and_time_source() {
     let root = workspace_root();
-    let hello = root.join("tests/run-pass/hello.zeta");
+    let hello = root.join("tests/run-pass/hello.rl");
     let dir = tmp_dir("bench-src");
     let exe = dir.join("hello-bench");
-    let opts = zeta_bench::BenchOptions {
+    let opts = rlyeh_bench::BenchOptions {
         warmup: 1,
         runs: 3,
         quiet: true,
     };
-    let report = zeta_bench::bench_source(&hello, &exe, &opts, |src, out| {
-        zeta_driver::build_executable_file(src, out).map_err(|e| e.to_string())
+    let report = rlyeh_bench::bench_source(&hello, &exe, &opts, |src, out| {
+        rlyeh_driver::build_executable_file(src, out).map_err(|e| e.to_string())
     })
     .unwrap();
     let _ = std::fs::remove_dir_all(&dir);
@@ -156,9 +156,9 @@ fn bench_compile_and_time_source() {
 
 #[test]
 fn bench_missing_executable_is_error() {
-    let res = zeta_bench::bench_executable(
-        Path::new("/nonexistent/zeta-bench-bin"),
-        &zeta_bench::BenchOptions::default(),
+    let res = rlyeh_bench::bench_executable(
+        Path::new("/nonexistent/rlyeh-bench-bin"),
+        &rlyeh_bench::BenchOptions::default(),
     );
     assert!(res.is_err());
 }

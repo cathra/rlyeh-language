@@ -1,4 +1,4 @@
-# Zeta 标准库用例项目（std-demos）
+# Rlyeh 标准库用例项目（std-demos）
 
 按 **std 标准库功能点**组织的可运行用例项目集合。每个目录对应一个功能点，
 源码直接取自 `tests/run-pass` 已通过全量回归验证的用例，保证可编译、可运行、
@@ -24,30 +24,30 @@
 ## 构建工具链
 
 ```bash
-cargo build --release -p zeta-driver
-# 产物：target/release/zeta
+cargo build --release -p rlyeh-driver
+# 产物：target/release/rlyeh
 ```
 
 ## 运行单个用例
 
 ```bash
-zeta run examples/std-demos/<目录>/<文件>.zeta
+rlyeh run examples/std-demos/<目录>/<文件>.rl
 ```
 
 也可一次跑完所有纯计算用例：
 
 ```bash
-for f in examples/std-demos/0*/[0-9]*.zeta; do
+for f in examples/std-demos/0*/[0-9]*.rl; do
   # 跳过需交互/常驻的用例（stdin_enhance、tcp_echo）
   case "$f" in *stdin_enhance*|*tcp_echo*) continue;; esac
-  echo "== $f =="; zeta run "$f"
+  echo "== $f =="; rlyeh run "$f"
 done
 ```
 
 ## 特殊用例说明
 
-- `04-file-io/stdin_enhance.zeta`：需标准输入，如 `echo "hello" | zeta run ...`
-- `05-networking/tcp_echo.zeta`：常驻 TCP echo 服务器，Ctrl-C 退出
+- `04-file-io/stdin_enhance.rl`：需标准输入，如 `echo "hello" | rlyeh run ...`
+- `05-networking/tcp_echo.rl`：常驻 TCP echo 服务器，Ctrl-C 退出
 - 其余用例均为纯计算 / 有限 IO，直接运行即可
 
 ## 与测试体系的关系
@@ -56,8 +56,8 @@ done
 
 ```bash
 cargo test --workspace -- --test-threads=1
-zeta test tests
+rlyeh test tests
 ```
 
-> 新增 std 功能点用例时：先落地 `tests/run-pass/<name>.zeta` 通过回归，
+> 新增 std 功能点用例时：先落地 `tests/run-pass/<name>.rl` 通过回归，
 > 再同步复制到本目录对应功能点，保证示例始终可运行。

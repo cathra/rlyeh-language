@@ -1,5 +1,5 @@
 [package]
-name = "zeta-actor-runtime"
+name = "rlyeh-actor-runtime"
 version.workspace = true
 edition.workspace = true
 

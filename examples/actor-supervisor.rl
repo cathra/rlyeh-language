@@ -1,4 +1,4 @@
-// actor-supervisor.zeta — Supervisor 恢复示例
+// actor-supervisor.rl — Supervisor 恢复示例
 //
 // 演示：
 // - `Machine::new_supervised(0)` 语言级受监督构造（strategy 0 = OneForOne）

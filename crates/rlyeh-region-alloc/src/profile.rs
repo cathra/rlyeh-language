@@ -1,6 +1,6 @@
 //! PGO 数据格式：区域运行时画像的持久化模型与收集器。
 //!
-//! P010 智能区域分配器通过 Profile 文件（`.zeta_profile`）保存运行时统计
+//! P010 智能区域分配器通过 Profile 文件（`.rl_profile`）保存运行时统计
 //! （分配大小分布、扩容记录），供下一次编译期选择初始块大小使用。
 
 use std::collections::HashMap;

@@ -1,10 +1,10 @@
-//! zeta-lir 集成测试：HIR → MIR（lower + 优化）→ LIR lowering。
+//! rlyeh-lir 集成测试：HIR → MIR（lower + 优化）→ LIR lowering。
 
-use zeta_lir::lower::lower_program;
-use zeta_lir::{LirOperand, LirProgram, LirStmt, LirTerminator, LirType};
-use zeta_mir::lower::lower_program as lower_mir;
-use zeta_mir::passes::optimize;
-use zeta_typecheck::typecheck_source;
+use rlyeh_lir::lower::lower_program;
+use rlyeh_lir::{LirOperand, LirProgram, LirStmt, LirTerminator, LirType};
+use rlyeh_mir::lower::lower_program as lower_mir;
+use rlyeh_mir::passes::optimize;
+use rlyeh_typecheck::typecheck_source;
 
 /// 完整降低：typecheck → MIR → 优化 → LIR。
 fn lower(src: &str) -> LirProgram {
@@ -15,7 +15,7 @@ fn lower(src: &str) -> LirProgram {
 }
 
 /// 提取函数（按名）。
-fn find_fn<'a>(p: &'a LirProgram, name: &str) -> &'a zeta_lir::LirFunction {
+fn find_fn<'a>(p: &'a LirProgram, name: &str) -> &'a rlyeh_lir::LirFunction {
     p.functions
         .iter()
         .find(|f| f.name == name)
@@ -23,7 +23,7 @@ fn find_fn<'a>(p: &'a LirProgram, name: &str) -> &'a zeta_lir::LirFunction {
 }
 
 /// 收集块内全部语句。
-fn all_stmts(f: &zeta_lir::LirFunction) -> Vec<&LirStmt> {
+fn all_stmts(f: &rlyeh_lir::LirFunction) -> Vec<&LirStmt> {
     f.blocks.iter().flat_map(|b| b.stmts.iter()).collect()
 }
 
@@ -71,7 +71,7 @@ fn main() {
         matches!(
             s,
             LirStmt::Binary {
-                op: zeta_hir::HirBinaryOp::Gt,
+                op: rlyeh_hir::HirBinaryOp::Gt,
                 ty: LirType::I64,
                 ..
             }

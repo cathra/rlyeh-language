@@ -58,7 +58,7 @@ fn main() {
     // 捕获字符串后拼接（闭包体内方法调用）
     let suffix = String::from("!");
     let f13 = |s: String| s + suffix;
-    println(f13("zeta"));           // zeta!
+    println(f13("rlyeh"));           // rlyeh!
 
     // 捕获数组变量做索引
     let table = [2, 4, 6];

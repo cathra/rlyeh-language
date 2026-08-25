@@ -1,5 +1,5 @@
 // 基准: actor_pingpong —— 5 万次 actor 同步往返（ask）
-// 测: 消息传递 + actor 运行时调度（Zeta 并发模型核心卖点）
+// 测: 消息传递 + actor 运行时调度（Rlyeh 并发模型核心卖点）
 // 逻辑: main 循环发送 ping(i)，actor 收到后 count+1 并回传 count，
 //       main 累加全部回传值。输出 = Σ(1..50000) = 1,250,025,000
 actor Pong {

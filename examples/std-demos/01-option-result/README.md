@@ -14,14 +14,14 @@
 
 | 文件 | 说明 |
 |------|------|
-| `question.zeta` | K1 `?` 运算符：链式解包、表达式中间嵌套 `?`、失败提前返回 |
-| `error_trait.zeta` | M2 `Error` trait：`impl Error for IoError` + dyn vtable 分派 + 错误转换 |
-| `io_result.zeta` | IO 操作返回 `Result<i64, IoError>` 的错误处理模式 |
+| `question.rl` | K1 `?` 运算符：链式解包、表达式中间嵌套 `?`、失败提前返回 |
+| `error_trait.rl` | M2 `Error` trait：`impl Error for IoError` + dyn vtable 分派 + 错误转换 |
+| `io_result.rl` | IO 操作返回 `Result<i64, IoError>` 的错误处理模式 |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/01-option-result/question.zeta
-zeta run examples/std-demos/01-option-result/error_trait.zeta
-zeta run examples/std-demos/01-option-result/io_result.zeta
+rlyeh run examples/std-demos/01-option-result/question.rl
+rlyeh run examples/std-demos/01-option-result/error_trait.rl
+rlyeh run examples/std-demos/01-option-result/io_result.rl
 ```

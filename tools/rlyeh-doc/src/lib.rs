@@ -1,6 +1,6 @@
-//! # zeta-doc
+//! # rlyeh-doc
 //!
-//! Zeta 语言文档生成器：从源码提取 `///` 文档注释（`//!` 为文件级注释），
+//! Rlyeh 语言文档生成器：从源码提取 `///` 文档注释（`//!` 为文件级注释），
 //! 与 AST 顶层项按源码位置关联，渲染为 Markdown 文档。
 //!
 //! ## 关联规则
@@ -15,12 +15,12 @@
 
 use std::collections::BTreeSet;
 
-use zeta_ast::*;
+use rlyeh_ast::*;
 
 /// 文档生成选项。
 #[derive(Debug, Clone, Default)]
 pub struct DocOptions {
-    /// 文档标题（缺省为 `Zeta 文档`）。
+    /// 文档标题（缺省为 `Rlyeh 文档`）。
     pub title: Option<String>,
 }
 
@@ -55,7 +55,7 @@ struct DocScan {
 ///
 /// 解析失败（语法错误）时返回 `Err`。
 pub fn doc_source(source: &str, options: &DocOptions) -> Result<String, String> {
-    let program = zeta_parser::parse(source).map_err(|e| e.to_string())?;
+    let program = rlyeh_parser::parse(source).map_err(|e| e.to_string())?;
     Ok(doc_program(&program, source, options))
 }
 
@@ -68,7 +68,7 @@ pub fn doc_program(program: &AstProgram, source: &str, options: &DocOptions) -> 
     let title = options
         .title
         .clone()
-        .unwrap_or_else(|| "Zeta 文档".to_string());
+        .unwrap_or_else(|| "Rlyeh 文档".to_string());
 
     let mut out = String::new();
     out.push_str(&format!("# {title}\n\n"));
@@ -154,7 +154,7 @@ fn render_item(out: &mut String, item: &AstItem, scan: &DocScan, code_lines: &BT
     let doc = find_doc_for(scan, code_lines, span.line);
 
     out.push_str(&format!("### `{}`\n\n", item_title(item)));
-    out.push_str("```zeta\n");
+    out.push_str("```rlyeh\n");
     out.push_str(&item_signature(item));
     out.push_str("\n```\n\n");
     out.push_str(&format!("> 位置: {}:{}\n\n", span.line, span.col));
@@ -595,7 +595,7 @@ pub fn fmt_type(t: &AstType) -> String {
 }
 
 /// 顶层项的位置。
-fn item_span(item: &AstItem) -> &zeta_lexer::Span {
+fn item_span(item: &AstItem) -> &rlyeh_lexer::Span {
     match item {
         AstItem::FnDecl(f) => &f.span,
         AstItem::StructDecl(s) => &s.span,
@@ -612,7 +612,7 @@ fn item_span(item: &AstItem) -> &zeta_lexer::Span {
 }
 
 /// 语句位置（`Let` 无 span，用初始化表达式位置近似）。
-fn stmt_span(s: &AstStmt) -> &zeta_lexer::Span {
+fn stmt_span(s: &AstStmt) -> &rlyeh_lexer::Span {
     match s {
         AstStmt::Let { init, .. } => &init.span,
         AstStmt::Expr(e) => &e.span,
@@ -741,7 +741,7 @@ mod tests {
 
     #[test]
     fn signature_self_param() {
-        let prog = zeta_parser::parse("impl Foo { fn get(&self) -> i64 { 1 } }").unwrap();
+        let prog = rlyeh_parser::parse("impl Foo { fn get(&self) -> i64 { 1 } }").unwrap();
         let AstItem::ImplBlock(i) = &prog.items[0] else {
             panic!("expected impl");
         };

@@ -1,7 +1,7 @@
-// actor-ping-pong.zeta — Actor ping-pong 示例
+// actor-ping-pong.rl — Actor ping-pong 示例
 //
 // 演示：
-// - `Pong::new()` 语言级构造（编译器生成 __state_new + zeta_actor_spawn 调用）
+// - `Pong::new()` 语言级构造（编译器生成 __state_new + rlyeh_actor_spawn 调用）
 // - `p.ping(x).await` ask 同步往返（方法经消息槽传参）
 // - `send p.ping(x)` 异步 fire-and-forget（不等待结果）
 // - 同一 actor 消息按 FIFO 顺序处理，send 后立即 ask 能看到累积状态

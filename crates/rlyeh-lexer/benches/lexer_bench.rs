@@ -1,10 +1,10 @@
-//! zeta-lexer 基准测试。
+//! rlyeh-lexer 基准测试。
 //!
 //! 性能目标：10K 行代码 < 5ms，吞吐量 > 50MB/s。
 
 use criterion::Criterion;
 use std::hint::black_box;
-use zeta_lexer::Lexer;
+use rlyeh_lexer::Lexer;
 
 const SMALL_SOURCE: &str = "let x = 42; if x > 0 { println!(\"{}\", x); }";
 

@@ -1,4 +1,4 @@
-// manual_state_machine.zeta：手写状态机对照（S1c 排查用）
+// manual_state_machine.rl：手写状态机对照（S1c 排查用）
 // 与 desugar 输出完全同构：&mut Self 签名 + 函数构造器 + 字段赋值。
 struct G {
     state: i64,

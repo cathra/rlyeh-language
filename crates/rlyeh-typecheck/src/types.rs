@@ -1,4 +1,4 @@
-//! Zeta 类型系统定义。
+//! Rlyeh 类型系统定义。
 
 use std::fmt;
 
@@ -11,7 +11,7 @@ pub enum Mutability {
     Mutable,
 }
 
-/// Zeta 类型。
+/// Rlyeh 类型。
 ///
 /// 语义分析阶段使用的类型表示。字面量默认推断为 [`Type::I64`]
 /// （整数）/ [`Type::F64`]（浮点）；时间字面量归一化为分钟值后
@@ -354,7 +354,7 @@ pub struct ImplMethod {
     /// 方法签名
     pub sig: MethodSig,
     /// 原始函数 AST（抽象方法 / 仅声明为 `None`）
-    pub body: Option<zeta_ast::AstFnDecl>,
+    pub body: Option<rlyeh_ast::AstFnDecl>,
 }
 
 /// impl 块定义（inherent 或 trait impl）。
@@ -371,8 +371,8 @@ pub struct ImplDef {
 }
 
 /// 判定类型对应的对象槽标量种类（MVP 布局规则）。
-pub fn field_scalar_of(ty: &Type) -> zeta_hir::FieldScalar {
-    use zeta_hir::FieldScalar;
+pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
+    use rlyeh_hir::FieldScalar;
     match ty {
         Type::F32 | Type::F64 => FieldScalar::Float,
         Type::Bool => FieldScalar::Bool,

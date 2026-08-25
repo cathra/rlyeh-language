@@ -1,9 +1,9 @@
-// io/file.zeta：File 对象 + 文件级自由函数（std-lib.md §4.1）。
-// 目录化（2026-08）：由原 io.zeta 拆分。符号完整路径 io::file::File 等；
-// OpenMode / c_str 保持 io::OpenMode / io::c_str（io/module.zeta 顶层）。
+// io/file.rl：File 对象 + 文件级自由函数（std-lib.md §4.1）。
+// 目录化（2026-08）：由原 io.rl 拆分。符号完整路径 io::file::File 等；
+// OpenMode / c_str 保持 io::OpenMode / io::c_str（io/module.rl 顶层）。
 
 // N1b（2026-08）：File 对象（句柄封装，std-lib.md §4.1）。
-// Zeta 无 Drop，MVP 显式 close() 语义；字段对用户可见（MVP 无可见性控制）。
+// Rlyeh 无 Drop，MVP 显式 close() 语义；字段对用户可见（MVP 无可见性控制）。
 struct File {
     handle: i64,
     path: String,
@@ -36,7 +36,7 @@ impl File {
         }
         Result::Ok(io::file::File { handle: f, path: path, mode: io::OpenMode::Create })
     }
-    // 显式关闭句柄（Zeta 无 Drop）；返回 1 表示已关闭。
+    // 显式关闭句柄（Rlyeh 无 Drop）；返回 1 表示已关闭。
     fn close(self) -> i64 {
         let _ = fclose(self.handle);
         1

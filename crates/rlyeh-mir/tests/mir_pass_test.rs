@@ -1,9 +1,9 @@
 //! 优化 passes 测试：常量折叠、死代码消除、基础内联。
 
-use zeta_mir::lower::lower_program;
-use zeta_mir::passes::{constant_fold, dead_code_elimination, inline_small_functions, optimize};
-use zeta_mir::{MirProgram, MirStmt, MirTerminator, MirValue};
-use zeta_typecheck::typecheck_source;
+use rlyeh_mir::lower::lower_program;
+use rlyeh_mir::passes::{constant_fold, dead_code_elimination, inline_small_functions, optimize};
+use rlyeh_mir::{MirProgram, MirStmt, MirTerminator, MirValue};
+use rlyeh_typecheck::typecheck_source;
 
 fn lower(src: &str) -> MirProgram {
     let hir = typecheck_source(src).expect("typecheck 应成功");
@@ -11,7 +11,7 @@ fn lower(src: &str) -> MirProgram {
 }
 
 /// 第一个含函数体的用户函数（跳过注入的 extern 内建空 CFG）。
-fn first_fn(p: &MirProgram) -> &zeta_mir::MirFunction {
+fn first_fn(p: &MirProgram) -> &rlyeh_mir::MirFunction {
     p.functions
         .iter()
         .find(|f| !f.is_extern && !f.blocks.is_empty())
@@ -19,7 +19,7 @@ fn first_fn(p: &MirProgram) -> &zeta_mir::MirFunction {
 }
 
 /// 按名查找用户函数。
-fn find_fn<'a>(p: &'a MirProgram, name: &str) -> &'a zeta_mir::MirFunction {
+fn find_fn<'a>(p: &'a MirProgram, name: &str) -> &'a rlyeh_mir::MirFunction {
     p.functions
         .iter()
         .find(|f| f.name == name && !f.is_extern)
@@ -120,7 +120,7 @@ fn main() -> u32 {
         s,
         MirStmt::Assign {
             value: MirValue::Binary {
-                op: zeta_hir::HirBinaryOp::Add,
+                op: rlyeh_hir::HirBinaryOp::Add,
                 ..
             },
             ..

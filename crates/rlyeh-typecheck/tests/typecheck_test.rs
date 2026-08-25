@@ -1,17 +1,17 @@
-//! zeta-typecheck 集成测试：比较链与 `in` 表达式语义。
+//! rlyeh-typecheck 集成测试：比较链与 `in` 表达式语义。
 
-use zeta_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind};
-use zeta_parser::parse;
-use zeta_typecheck::{typecheck, TypeError};
+use rlyeh_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind};
+use rlyeh_parser::parse;
+use rlyeh_typecheck::{typecheck, TypeError};
 
 /// 对源码执行类型检查。
-fn check(source: &str) -> Result<zeta_hir::HirProgram, TypeError> {
+fn check(source: &str) -> Result<rlyeh_hir::HirProgram, TypeError> {
     let program = parse(source).expect("parse should succeed");
     typecheck(&program)
 }
 
 /// 提取第一个含函数体的函数体（跳过注入的 extern 内建声明）。
-fn first_fn_body(program: &zeta_hir::HirProgram) -> &HirBlock {
+fn first_fn_body(program: &rlyeh_hir::HirProgram) -> &HirBlock {
     program
         .items
         .iter()
@@ -25,14 +25,14 @@ fn first_fn_body(program: &zeta_hir::HirProgram) -> &HirBlock {
 /// 提取函数体中最外层 if 表达式的条件。
 ///
 /// `if` 作为块末尾表达式时位于 `final_expr`，否则位于某条语句中。
-fn first_if_cond(program: &zeta_hir::HirProgram) -> &HirExpr {
+fn first_if_cond(program: &rlyeh_hir::HirProgram) -> &HirExpr {
     let block = first_fn_body(program);
     if let Some(e) = &block.final_expr {
         return if_cond(e);
     }
     for stmt in block.stmts.iter().rev() {
         match stmt {
-            zeta_hir::HirStmt::Expr(e) | zeta_hir::HirStmt::Semi(e) => return if_cond(e),
+            rlyeh_hir::HirStmt::Expr(e) | rlyeh_hir::HirStmt::Semi(e) => return if_cond(e),
             _ => {}
         }
     }
@@ -322,7 +322,7 @@ fn test_let_type_annotation_mismatch() {
 #[test]
 fn test_typecheck_source() {
     // 便捷入口：源码 → HIR（items 含注入的 extern 内建，取含函数体的 main 断言）
-    let program = zeta_typecheck::typecheck_source("fn main() { let x = 5; if x in 0..<10 {} }")
+    let program = rlyeh_typecheck::typecheck_source("fn main() { let x = 5; if x in 0..<10 {} }")
         .expect("should typecheck");
     assert_eq!(first_fn_body(&program).stmts.len(), 1);
 }

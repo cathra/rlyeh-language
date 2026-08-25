@@ -37,7 +37,7 @@ fn main() {
     }
 
     // ? 运算符 + 文件读取
-    let content = match load(String::from("examples/projects/smoke/main.zeta")) {
+    let content = match load(String::from("examples/projects/smoke/main.rl")) {
         Result::Ok(text) => text,
         Result::Err(e) => String::from("ERR"),
     };

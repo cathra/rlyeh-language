@@ -1,6 +1,6 @@
-//! # zeta-lir
+//! # rlyeh-lir
 //!
-//! Zeta 语言低级中间表示（LIR）：目标无关的三地址码。
+//! Rlyeh 语言低级中间表示（LIR）：目标无关的三地址码。
 //!
 //! 由优化后的 MIR 降低而来（见 [`lower::lower_program`]），
 //! 与 MIR 的核心区别：
@@ -12,7 +12,7 @@
 //! - **区域标注**：`RegionEnter` / `RegionExit` / `AllocInRegion` / `Transfer`
 //!   保留为标注指令，供后续后端（分配器 / GC）使用；LLVM 后端 MVP 忽略。
 //!
-//! LIR 是代码生成（`zeta-codegen`）的输入。
+//! LIR 是代码生成（`rlyeh-codegen`）的输入。
 
 #![warn(missing_docs)]
 #![warn(unsafe_code)]
@@ -20,7 +20,7 @@
 pub mod error;
 pub mod lower;
 
-pub use zeta_hir::{FieldScalar, HirBinaryOp, HirUnaryOp};
+pub use rlyeh_hir::{FieldScalar, HirBinaryOp, HirUnaryOp};
 
 use error::LirError;
 
@@ -166,19 +166,19 @@ pub enum LirStmt {
         /// 返回类型
         ret_ty: LirType,
     },
-    /// 区域进入（L3 接线：`zeta_region_enter`）
+    /// 区域进入（L3 接线：`rlyeh_region_enter`）
     RegionEnter {
         /// 区域名（匿名区域为 `None`）
         name: Option<String>,
         /// 区域选项（初始大小 / 扩容 / 自适应 / 精确 / 策略）
-        options: zeta_hir::HirRegionOptions,
+        options: rlyeh_hir::HirRegionOptions,
     },
-    /// 区域退出（L3 接线：`zeta_region_exit`）
+    /// 区域退出（L3 接线：`rlyeh_region_exit`）
     RegionExit {
         /// 区域名（与 `RegionEnter` 配对；匿名区域为 `None`）
         name: Option<String>,
     },
-    /// 区域归属分配（L3 接线：`zeta_region_alloc` + 值镜像）
+    /// 区域归属分配（L3 接线：`rlyeh_region_alloc` + 值镜像）
     AllocInRegion {
         /// 目标变量
         target: Local,

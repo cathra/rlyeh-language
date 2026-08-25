@@ -16,18 +16,18 @@
 
 | 文件 | 说明 |
 |------|------|
-| `async-fns.zeta` | S1c async fn / await：状态机 desugar、嵌套 await |
-| `async_await.zeta` | async/await 基础用法 |
-| `block_on.zeta` | block_on 驱动 Future 直至完成 |
-| `join_all.zeta` | 多 Future 并发 join |
-| `timeout.zeta` | Future 超时控制 |
-| `manual_state_machine.zeta` | 手写 poll 状态机（底层协议演示） |
+| `async-fns.rl` | S1c async fn / await：状态机 desugar、嵌套 await |
+| `async_await.rl` | async/await 基础用法 |
+| `block_on.rl` | block_on 驱动 Future 直至完成 |
+| `join_all.rl` | 多 Future 并发 join |
+| `timeout.rl` | Future 超时控制 |
+| `manual_state_machine.rl` | 手写 poll 状态机（底层协议演示） |
 
 ## 运行
 
 ```bash
-zeta run examples/std-demos/10-async/async-fns.zeta
-zeta run examples/std-demos/10-async/block_on.zeta
-zeta run examples/std-demos/10-async/join_all.zeta
-zeta run examples/std-demos/10-async/timeout.zeta
+rlyeh run examples/std-demos/10-async/async-fns.rl
+rlyeh run examples/std-demos/10-async/block_on.rl
+rlyeh run examples/std-demos/10-async/join_all.rl
+rlyeh run examples/std-demos/10-async/timeout.rl
 ```

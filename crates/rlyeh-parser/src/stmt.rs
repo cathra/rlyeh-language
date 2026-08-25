@@ -2,8 +2,8 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use zeta_ast::{AstBlock, AstStmt, ExprKind, MatchArm};
-use zeta_lexer::Token;
+use rlyeh_ast::{AstBlock, AstStmt, ExprKind, MatchArm};
+use rlyeh_lexer::Token;
 
 impl<'src> Parser<'src> {
     /// 解析代码块 `{ stmt* final_expr? }`

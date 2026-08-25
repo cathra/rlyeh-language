@@ -323,6 +323,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dagon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flate2",
+ "libc",
+ "pubgrub",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror 1.0.69",
+ "toml",
+]
+
+[[package]]
 name = "dashmap"
 version = "5.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -748,6 +766,207 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "rlyeh-actor-runtime"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "crossbeam-channel",
+ "crossbeam-queue",
+ "dashmap",
+ "libc",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "rlyeh-ast"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-lexer",
+]
+
+[[package]]
+name = "rlyeh-bench"
+version = "0.1.0"
+
+[[package]]
+name = "rlyeh-borrowck"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-hir",
+ "rlyeh-typecheck",
+]
+
+[[package]]
+name = "rlyeh-check"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-ast",
+ "rlyeh-lexer",
+ "rlyeh-parser",
+]
+
+[[package]]
+name = "rlyeh-codegen"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-lir",
+]
+
+[[package]]
+name = "rlyeh-desugar"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-ast",
+ "rlyeh-lexer",
+ "rlyeh-parser",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "rlyeh-doc"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-ast",
+ "rlyeh-lexer",
+ "rlyeh-parser",
+]
+
+[[package]]
+name = "rlyeh-driver"
+version = "0.1.0"
+dependencies = [
+ "dagon",
+ "rlyeh-actor-runtime",
+ "rlyeh-ast",
+ "rlyeh-bench",
+ "rlyeh-borrowck",
+ "rlyeh-check",
+ "rlyeh-codegen",
+ "rlyeh-doc",
+ "rlyeh-fmt",
+ "rlyeh-lir",
+ "rlyeh-lsp",
+ "rlyeh-mir",
+ "rlyeh-parser",
+ "rlyeh-region-alloc",
+ "rlyeh-regionck",
+ "rlyeh-typecheck",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "rlyeh-fmt"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-ast",
+ "rlyeh-parser",
+]
+
+[[package]]
+name = "rlyeh-gc-runtime"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "rlyeh-hir"
+version = "0.1.0"
+
+[[package]]
+name = "rlyeh-lexer"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "thiserror 1.0.69",
+ "unicode-xid",
+]
+
+[[package]]
+name = "rlyeh-lir"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-hir",
+ "rlyeh-mir",
+ "rlyeh-typecheck",
+]
+
+[[package]]
+name = "rlyeh-lsp"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-check",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rlyeh-macro"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-lexer",
+]
+
+[[package]]
+name = "rlyeh-mir"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-hir",
+ "rlyeh-typecheck",
+]
+
+[[package]]
+name = "rlyeh-parser"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "rlyeh-ast",
+ "rlyeh-lexer",
+ "rlyeh-macro",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "rlyeh-region-alloc"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "rlyeh-regionck"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-hir",
+ "rlyeh-typecheck",
+]
+
+[[package]]
+name = "rlyeh-std"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "rlyeh-typecheck"
+version = "0.1.0"
+dependencies = [
+ "rlyeh-ast",
+ "rlyeh-desugar",
+ "rlyeh-hir",
+ "rlyeh-lexer",
+ "rlyeh-parser",
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "rustc-hash"
@@ -1201,24 +1420,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zep"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "flate2",
- "libc",
- "pubgrub",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "thiserror 1.0.69",
- "toml",
-]
-
-[[package]]
 name = "zerocopy"
 version = "0.8.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1236,207 +1437,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "zeta-actor-runtime"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "crossbeam-channel",
- "crossbeam-queue",
- "dashmap",
- "libc",
- "thiserror 1.0.69",
- "uuid",
-]
-
-[[package]]
-name = "zeta-ast"
-version = "0.1.0"
-dependencies = [
- "zeta-lexer",
-]
-
-[[package]]
-name = "zeta-bench"
-version = "0.1.0"
-
-[[package]]
-name = "zeta-borrowck"
-version = "0.1.0"
-dependencies = [
- "zeta-hir",
- "zeta-typecheck",
-]
-
-[[package]]
-name = "zeta-check"
-version = "0.1.0"
-dependencies = [
- "zeta-ast",
- "zeta-lexer",
- "zeta-parser",
-]
-
-[[package]]
-name = "zeta-codegen"
-version = "0.1.0"
-dependencies = [
- "zeta-lir",
-]
-
-[[package]]
-name = "zeta-desugar"
-version = "0.1.0"
-dependencies = [
- "thiserror 1.0.69",
- "zeta-ast",
- "zeta-lexer",
- "zeta-parser",
-]
-
-[[package]]
-name = "zeta-doc"
-version = "0.1.0"
-dependencies = [
- "zeta-ast",
- "zeta-lexer",
- "zeta-parser",
-]
-
-[[package]]
-name = "zeta-driver"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "zep",
- "zeta-actor-runtime",
- "zeta-ast",
- "zeta-bench",
- "zeta-borrowck",
- "zeta-check",
- "zeta-codegen",
- "zeta-doc",
- "zeta-fmt",
- "zeta-lir",
- "zeta-lsp",
- "zeta-mir",
- "zeta-parser",
- "zeta-region-alloc",
- "zeta-regionck",
- "zeta-typecheck",
-]
-
-[[package]]
-name = "zeta-fmt"
-version = "0.1.0"
-dependencies = [
- "zeta-ast",
- "zeta-parser",
-]
-
-[[package]]
-name = "zeta-gc-runtime"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "zeta-hir"
-version = "0.1.0"
-
-[[package]]
-name = "zeta-lexer"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "thiserror 1.0.69",
- "unicode-xid",
-]
-
-[[package]]
-name = "zeta-lir"
-version = "0.1.0"
-dependencies = [
- "zeta-hir",
- "zeta-mir",
- "zeta-typecheck",
-]
-
-[[package]]
-name = "zeta-lsp"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "zeta-check",
-]
-
-[[package]]
-name = "zeta-macro"
-version = "0.1.0"
-dependencies = [
- "zeta-lexer",
-]
-
-[[package]]
-name = "zeta-mir"
-version = "0.1.0"
-dependencies = [
- "zeta-hir",
- "zeta-typecheck",
-]
-
-[[package]]
-name = "zeta-parser"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "thiserror 1.0.69",
- "zeta-ast",
- "zeta-lexer",
- "zeta-macro",
-]
-
-[[package]]
-name = "zeta-region-alloc"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "zeta-regionck"
-version = "0.1.0"
-dependencies = [
- "zeta-hir",
- "zeta-typecheck",
-]
-
-[[package]]
-name = "zeta-std"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "zeta-typecheck"
-version = "0.1.0"
-dependencies = [
- "thiserror 1.0.69",
- "zeta-ast",
- "zeta-desugar",
- "zeta-hir",
- "zeta-lexer",
- "zeta-parser",
 ]
 
 [[package]]

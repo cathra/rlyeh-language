@@ -4,7 +4,7 @@
 
 use std::thread;
 
-use zeta_actor_runtime::{ActorContext, ActorError, ActorState, RuntimeBuilder};
+use rlyeh_actor_runtime::{ActorContext, ActorError, ActorState, RuntimeBuilder};
 
 /// 自增计数器：ask 回复当前值。
 struct Counter {

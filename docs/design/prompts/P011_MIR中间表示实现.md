@@ -1,6 +1,6 @@
 # P011: MIR 中间表示实现
 
-> **模块路径**：`crates/zeta-mir/`（新建）  
+> **模块路径**：`crates/rlyeh-mir/`（新建）  
 > **预估工期**：5-7 天  
 > **前置依赖**：P004（区域系统）、P005（Transfer 语义）、HIR + typecheck  
 > **输出**：HIR → MIR 的 CFG lowering + 基础优化 passes  
@@ -23,7 +23,7 @@
 ## 数据结构
 
 ```rust
-// crates/zeta-mir/src/lib.rs
+// crates/rlyeh-mir/src/lib.rs
 
 /// MIR 程序 = 一组函数
 pub struct MirProgram {
@@ -153,7 +153,7 @@ region 'r { let x = 5 in 'r; transfer x out of 'r; x }:
 
 ## 测试清单
 
-### `crates/zeta-mir/tests/mir_lower_test.rs`（11 项）
+### `crates/rlyeh-mir/tests/mir_lower_test.rs`（11 项）
 
 - 字面量与算术、二元运算临时变量化、布尔/字符常量
 - 比较链 `0 < x < 10` 的链式求值
@@ -165,7 +165,7 @@ region 'r { let x = 5 in 'r; transfer x out of 'r; x }:
 - 函数调用与参数传递、多函数 lowering
 - 区域操作序列（enter/alloc/bind/transfer/exit）
 
-### `crates/zeta-mir/tests/mir_pass_test.rs`（7 项）
+### `crates/rlyeh-mir/tests/mir_pass_test.rs`（7 项）
 
 - 常量折叠（算术、比较、逻辑、字符）、除零不折叠
 - 不可达块删除、死赋值消除（活跃变量后向扫描）
@@ -178,10 +178,10 @@ region 'r { let x = 5 in 'r; transfer x out of 'r; x }:
 
 | crate | 改动 |
 |-------|------|
-| `zeta-hir` | 新增 `HirExpr::While { cond, body }`、`HirExpr::Loop { body }`、`HirExpr::Assign { target, op, value }` 与 `HirAssignOp` 枚举 |
-| `zeta-typecheck` | `For` 改为显式 `Unsupported`（提示用 while）；`While` / `Loop` 生成真实节点并检查循环体；`Assign` 生成 `HirExpr::Assign`（不再静默丢弃） |
-| `zeta-regionck` | 适配新 HIR 节点（`While` / `Loop` 遍历体、`Assign` 检查右值） |
-| `zeta-parser` | 修复 `true` / `false` 布尔字面量解析（lexer 产出 `Token::True` / `Token::False`，parser 原先只处理 `Token::BoolLiteral`） |
+| `rlyeh-hir` | 新增 `HirExpr::While { cond, body }`、`HirExpr::Loop { body }`、`HirExpr::Assign { target, op, value }` 与 `HirAssignOp` 枚举 |
+| `rlyeh-typecheck` | `For` 改为显式 `Unsupported`（提示用 while）；`While` / `Loop` 生成真实节点并检查循环体；`Assign` 生成 `HirExpr::Assign`（不再静默丢弃） |
+| `rlyeh-regionck` | 适配新 HIR 节点（`While` / `Loop` 遍历体、`Assign` 检查右值） |
+| `rlyeh-parser` | 修复 `true` / `false` 布尔字面量解析（lexer 产出 `Token::True` / `Token::False`，parser 原先只处理 `Token::BoolLiteral`） |
 
 ---
 
@@ -203,7 +203,7 @@ region 'r { let x = 5 in 'r; transfer x out of 'r; x }:
 
 ## 实施记录（2026-08-20）
 
-- `zeta-mir` 从占位 crate 落地为真实实现：`lib.rs`（数据结构）+ `lower.rs`（HIR → CFG）+ `passes/`（三个优化 pass）。
+- `rlyeh-mir` 从占位 crate 落地为真实实现：`lib.rs`（数据结构）+ `lower.rs`（HIR → CFG）+ `passes/`（三个优化 pass）。
 - **关键 bug 修复**：`new_block()` 会切换当前块，导致 `lower_if` / `lower_while` / `lower_loop` 在创建分支块后把终止符发射到了错误的块（`Jump` 被发射到 after 块）。修复为：创建块前记录 entry，创建完毕后切回 entry 再发射终止符。
 - 常量条件 `CondJump` → `Jump` 的定向跳转在折叠 pass 内完成。
 - 内联 pass 预克隆函数体（`Vec<(String, MirFunction)>`）解决 `&mut program.functions` 迭代时的借用冲突（E0502）。
@@ -215,11 +215,11 @@ region 'r { let x = 5 in 'r; transfer x out of 'r; x }:
 - **`break` / `continue` 的边界检查未做**：MVP 允许 `break` 出现在非循环上下文中（typecheck 未校验），lowering 中表现为跳转到失效块 id。待 typecheck 补上下文校验。
 - **`transfer` 后仍可使用变量**：MIR 阶段不做 use-after-transfer 检查（依赖借用检查器/区域检查器，P007 范围）。
 - **循环条件中含 `return` / `break` 的表达式**：`?` 提前返回会使 entry 块未终止（边缘情况，MVP 接受）。
-- **MIR 尚未接线到编译器驱动**：`zeta-driver` 流水线仍停留在 regionck 之后（M1.8 代码生成时接线）。
+- **MIR 尚未接线到编译器驱动**：`rlyeh-driver` 流水线仍停留在 regionck 之后（M1.8 代码生成时接线）。
 
 ## 测试清单（新增 18 项）
 
 - `mir_lower_test.rs`（11 项）：覆盖上述 lowering 规则全部分支。
 - `mir_pass_test.rs`（7 项）：三个 pass 单测 + 优化流水线端到端。
 
-全 workspace 测试通过（含 zeta-mir 18 项），clippy 0 警告，`cargo fmt --check` 通过。
+全 workspace 测试通过（含 rlyeh-mir 18 项），clippy 0 警告，`cargo fmt --check` 通过。

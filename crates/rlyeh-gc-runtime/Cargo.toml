@@ -1,8 +1,8 @@
 [package]
-name = "zeta-gc-runtime"
+name = "rlyeh-gc-runtime"
 version.workspace = true
 edition.workspace = true
-description = "Zeta 追踪 GC 运行时（K4 Gc<T> 保守标记-清除）"
+description = "Rlyeh 追踪 GC 运行时（K4 Gc<T> 保守标记-清除）"
 
 [lib]
 path = "src/lib.rs"

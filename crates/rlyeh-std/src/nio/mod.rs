@@ -1,8 +1,8 @@
 //! 非阻塞 IO（NIO）与零拷贝传输（sendfile）支持。
 //!
-//! 对应 Zeta 标准库 `std::nio` 模块：
+//! 对应 Rlyeh 标准库 `std::nio` 模块：
 //!
-//! | Zeta API            | 说明                             | 绑定实现        |
+//! | Rlyeh API            | 说明                             | 绑定实现        |
 //! |---------------------|----------------------------------|-----------------|
 //! | `Interest`          | 事件关注标志                     | `event.rs`      |
 //! | `Event`             | 就绪事件（token + interest）     | `event.rs`      |
@@ -13,7 +13,7 @@
 //!
 //! 典型 NIO 用法：
 //!
-//! ```zeta
+//! ```rlyeh
 //! set_nonblocking(listener.fd, true)?;
 //! let poller = Poller::new()?;
 //! poller.register(listener.fd, 0, Interest::Readable)?;
@@ -34,7 +34,7 @@ pub mod nonblocking;
 pub mod poller;
 pub mod sendfile;
 
-/// fd 类型（Zeta 语言中为 `i32`）。
+/// fd 类型（Rlyeh 语言中为 `i32`）。
 pub type RawFd = i32;
 
 pub use event::{Event, Interest};

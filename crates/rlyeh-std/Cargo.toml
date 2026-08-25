@@ -1,5 +1,5 @@
 [package]
-name = "zeta-std"
+name = "rlyeh-std"
 version.workspace = true
 edition.workspace = true
 

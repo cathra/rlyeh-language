@@ -1,15 +1,15 @@
-//! # zeta-lsp
+//! # rlyeh-lsp
 //!
-//! Zeta 语言服务器（Language Server Protocol，MVP）。
+//! Rlyeh 语言服务器（Language Server Protocol，MVP）。
 //!
 //! 在 stdin/stdout 上以 JSON-RPC 2.0（Content-Length 帧）与客户端通信：
 //!
 //! - `initialize` / `shutdown` / `exit`：生命周期
 //! - `textDocument/didOpen|didChange|didClose`：full 文本同步
-//! - `textDocument/publishDiagnostics`：复用 `zeta-check` 静态分析推送诊断
+//! - `textDocument/publishDiagnostics`：复用 `rlyeh-check` 静态分析推送诊断
 //!   （语法错误 + 未使用变量 / 恒常条件 / 冗余比较 / 不可达代码）
 //!
-//! 命令行启动：`zeta-lsp`（或 `zeta lsp`）。
+//! 命令行启动：`rlyeh-lsp`（或 `rlyeh lsp`）。
 
 pub mod jsonrpc;
 pub mod protocol;

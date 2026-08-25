@@ -1,6 +1,6 @@
 //! 非阻塞模式设置：`fcntl` 的 `O_NONBLOCK` 封装。
 //!
-//! 对应 Zeta 标准库 `std::nio` 中的 `set_nonblocking` / `is_nonblocking`。
+//! 对应 Rlyeh 标准库 `std::nio` 中的 `set_nonblocking` / `is_nonblocking`。
 
 use std::io;
 

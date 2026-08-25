@@ -15,11 +15,11 @@ fn main() {
     println(Path::new(String::from("a/b/c.txt")).extension());  // txt
     println(Path::new(String::from("noext")).extension());      // 空串
     // exists / is_file / is_dir（自创建文件 + 系统目录）
-    let _ = fs::remove_file(String::from("/tmp/zeta_path_ops.txt"));
-    let _ = fs::write(String::from("/tmp/zeta_path_ops.txt"), String::from("x"));
-    println(Path::new(String::from("/tmp/zeta_path_ops.txt")).exists());    // 1
-    println(Path::new(String::from("/tmp/zeta_path_ops.txt")).is_file());   // 1
+    let _ = fs::remove_file(String::from("/tmp/rlyeh_path_ops.txt"));
+    let _ = fs::write(String::from("/tmp/rlyeh_path_ops.txt"), String::from("x"));
+    println(Path::new(String::from("/tmp/rlyeh_path_ops.txt")).exists());    // 1
+    println(Path::new(String::from("/tmp/rlyeh_path_ops.txt")).is_file());   // 1
     println(Path::new(String::from("/tmp")).is_dir());                      // 1
-    println(Path::new(String::from("/tmp/zeta_no_such_path_zz.txt")).exists());  // 0
-    let _ = fs::remove_file(String::from("/tmp/zeta_path_ops.txt"));
+    println(Path::new(String::from("/tmp/rlyeh_no_such_path_zz.txt")).exists());  // 0
+    let _ = fs::remove_file(String::from("/tmp/rlyeh_path_ops.txt"));
 }

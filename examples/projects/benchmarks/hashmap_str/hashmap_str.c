@@ -1,6 +1,6 @@
 // 基准: hashmap_str —— 1 万条字符串键哈希表插入与查询
-// 与 hashmap_str.zeta 逻辑严格一致。输出 = 49995000
-// 实现: 线性探测 + djb2 哈希 + strdup 键（每次构造键 = 堆分配，与 Zeta format! 对称）
+// 与 hashmap_str.rl 逻辑严格一致。输出 = 49995000
+// 实现: 线性探测 + djb2 哈希 + strdup 键（每次构造键 = 堆分配，与 Rlyeh format! 对称）
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

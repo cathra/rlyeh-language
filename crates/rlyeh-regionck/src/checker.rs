@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use zeta_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+use rlyeh_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
 
 use crate::error::RegionError;
 
@@ -72,7 +72,7 @@ impl RegionChecker {
         }
     }
 
-    fn check_item(&mut self, item: &zeta_hir::HirItem) {
+    fn check_item(&mut self, item: &rlyeh_hir::HirItem) {
         if let HirItemKind::Fn(f) = &item.kind {
             if let Some(body) = &f.body {
                 self.check_block(body);

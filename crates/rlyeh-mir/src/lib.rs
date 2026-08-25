@@ -1,6 +1,6 @@
-//! # zeta-mir
+//! # rlyeh-mir
 //!
-//! Zeta 语言中级中间表示（MIR）：控制流图（CFG）形式。
+//! Rlyeh 语言中级中间表示（MIR）：控制流图（CFG）形式。
 //!
 //! 由类型检查后的 HIR 降低而来（见 [`lower::lower_program`]），
 //! 再经基础优化 passes（常量折叠 / 死代码消除 / 基础内联，见 [`passes`]）处理，
@@ -21,7 +21,7 @@
 pub mod lower;
 pub mod passes;
 
-use zeta_hir::{HirBinaryOp, HirRegionOptions, HirUnaryOp};
+use rlyeh_hir::{HirBinaryOp, HirRegionOptions, HirUnaryOp};
 
 /// 局部变量名（MVP：仅具名变量，无字段投影）。
 pub type Local = String;
@@ -139,7 +139,7 @@ pub enum MirStmt {
         /// 槽位索引
         index: usize,
         /// 槽值标量种类
-        ty: zeta_hir::FieldScalar,
+        ty: rlyeh_hir::FieldScalar,
     },
     /// `field_set(base, index, value)`：写入聚合对象槽位。
     FieldSet {
@@ -150,7 +150,7 @@ pub enum MirStmt {
         /// 待写入的变量
         value: Local,
         /// 槽值标量种类
-        ty: zeta_hir::FieldScalar,
+        ty: rlyeh_hir::FieldScalar,
     },
     /// `target = index_get(base, index)`：运行时索引读取
     /// （数组元素步长 8 字节；字符串字符步长 1 字节）。
@@ -162,7 +162,7 @@ pub enum MirStmt {
         /// 索引变量（i64）
         index: Local,
         /// 元素标量种类
-        ty: zeta_hir::FieldScalar,
+        ty: rlyeh_hir::FieldScalar,
         /// `true` 表示字符串索引
         is_str: bool,
     },
@@ -175,7 +175,7 @@ pub enum MirStmt {
         /// 待写入的变量
         value: Local,
         /// 元素标量种类
-        ty: zeta_hir::FieldScalar,
+        ty: rlyeh_hir::FieldScalar,
         /// `true` 表示字符串索引
         is_str: bool,
     },
@@ -188,7 +188,7 @@ pub enum MirStmt {
         /// 被引用变量
         operand: Local,
         /// 被引用值的标量种类（`Ptr` 表示聚合对象）
-        pointee: zeta_hir::FieldScalar,
+        pointee: rlyeh_hir::FieldScalar,
     },
     /// `target = deref_read(base)`：解引用读取（`*p`）。
     /// 聚合（`ty = Ptr`）为指针拷贝；标量为 load。
@@ -198,7 +198,7 @@ pub enum MirStmt {
         /// 引用变量
         base: Local,
         /// 被指向值的标量种类
-        ty: zeta_hir::FieldScalar,
+        ty: rlyeh_hir::FieldScalar,
     },
     /// `deref_write(base, value)`：解引用写入（`*p = v`）。
     DerefWrite {
@@ -207,7 +207,7 @@ pub enum MirStmt {
         /// 待写入的变量
         value: Local,
         /// 被指向值的标量种类
-        ty: zeta_hir::FieldScalar,
+        ty: rlyeh_hir::FieldScalar,
     },
 }
 

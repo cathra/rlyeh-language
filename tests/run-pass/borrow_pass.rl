@@ -36,7 +36,7 @@ fn main() {
     println(*q);                     // 9
 
     // 6. ref 模式与借用检查共存（ref 指向 match 的临时拷贝，原变量不受影响）
-    let s = String::from("zeta");
+    let s = String::from("rlyeh");
     match s {
         ref r => println(r.len()),   // 4
     }

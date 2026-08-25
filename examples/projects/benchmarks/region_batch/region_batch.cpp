@@ -1,6 +1,6 @@
 // 对照实现: region_batch.cpp —— 手动 bump（与 region 语义对齐：一次性预分配 + 线性分配）
 // volatile 写/读：阻止 DSE（bump 内存不 escape 时 clang 会整体消除 store，
-// 测出纯计算假数据；volatile 强制真实内存带宽，对齐 region_batch.zeta）。
+// 测出纯计算假数据；volatile 强制真实内存带宽，对齐 region_batch.rl）。
 // 输出 = 2000497500000
 #include <cstdint>
 #include <cstdio>

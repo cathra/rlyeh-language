@@ -1,16 +1,16 @@
 [package]
-name = "zep"
+name = "dagon"
 version.workspace = true
 edition.workspace = true
-description = "Zeta Package Manager"
+description = "Rlyeh Package Manager"
 license.workspace = true
 
 [[bin]]
-name = "zep"
+name = "dagon"
 path = "src/main.rs"
 
 [lib]
-name = "zep"
+name = "dagon"
 path = "src/lib.rs"
 
 [dependencies]

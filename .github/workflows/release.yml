@@ -15,19 +15,19 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-            name: zeta-macos-arm64
+            name: rlyeh-macos-arm64
             ext: ''
           - os: macos-latest
             target: x86_64-apple-darwin
-            name: zeta-macos-x86_64
+            name: rlyeh-macos-x86_64
             ext: ''
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            name: zeta-linux-x86_64
+            name: rlyeh-linux-x86_64
             ext: ''
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            name: zeta-windows-x86_64
+            name: rlyeh-windows-x86_64
             ext: .exe
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,9 +41,9 @@ jobs:
       - name: Build release binary
         shell: bash
         run: |
-          cargo build -p zeta-driver --release --target ${{ matrix.target }}
+          cargo build -p rlyeh-driver --release --target ${{ matrix.target }}
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/zeta-driver${{ matrix.ext }} dist/${{ matrix.name }}${{ matrix.ext }}
+          cp target/${{ matrix.target }}/release/rlyeh-driver${{ matrix.ext }} dist/${{ matrix.name }}${{ matrix.ext }}
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2

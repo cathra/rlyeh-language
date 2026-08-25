@@ -1,65 +1,65 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/zeta-lexer",
-    "crates/zeta-macro",
-    "crates/zeta-parser",
-    "crates/zeta-ast",
-    "crates/zeta-hir",
-    "crates/zeta-mir",
-    "crates/zeta-lir",
-    "crates/zeta-typecheck",
-    "crates/zeta-desugar",
-    "crates/zeta-borrowck",
-    "crates/zeta-regionck",
-    "crates/zeta-codegen",
-    "crates/zeta-driver",
-    "crates/zeta-std",
-    "crates/zeta-actor-runtime",
-    "crates/zeta-gc-runtime",
-    "crates/zeta-region-alloc",
-    "crates/zeta-lsp",
-    "tools/zeta-fmt",
-    "tools/zeta-check",
-    "tools/zeta-doc",
-    "tools/zeta-bench",
-    "zep",
+    "crates/rlyeh-lexer",
+    "crates/rlyeh-macro",
+    "crates/rlyeh-parser",
+    "crates/rlyeh-ast",
+    "crates/rlyeh-hir",
+    "crates/rlyeh-mir",
+    "crates/rlyeh-lir",
+    "crates/rlyeh-typecheck",
+    "crates/rlyeh-desugar",
+    "crates/rlyeh-borrowck",
+    "crates/rlyeh-regionck",
+    "crates/rlyeh-codegen",
+    "crates/rlyeh-driver",
+    "crates/rlyeh-std",
+    "crates/rlyeh-actor-runtime",
+    "crates/rlyeh-gc-runtime",
+    "crates/rlyeh-region-alloc",
+    "crates/rlyeh-lsp",
+    "tools/rlyeh-fmt",
+    "tools/rlyeh-check",
+    "tools/rlyeh-doc",
+    "tools/rlyeh-bench",
+    "dagon",
 ]
 
 # cargo-fuzz 的 fuzz crate 独立于工作区构建（需要 nightly）
-exclude = ["crates/zeta-parser/fuzz"]
+exclude = ["crates/rlyeh-parser/fuzz"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://gitee.com/cathra/zeta-language.git"
+repository = "https://gitee.com/cathra/rlyeh-language.git"
 
 [workspace.dependencies]
 # 内部依赖
-zeta-ast = { path = "crates/zeta-ast" }
-zeta-hir = { path = "crates/zeta-hir" }
-zeta-mir = { path = "crates/zeta-mir" }
-zeta-lir = { path = "crates/zeta-lir" }
-zeta-lexer = { path = "crates/zeta-lexer" }
-zeta-macro = { path = "crates/zeta-macro" }
-zeta-parser = { path = "crates/zeta-parser" }
-zeta-typecheck = { path = "crates/zeta-typecheck" }
-zeta-desugar = { path = "crates/zeta-desugar" }
-zeta-borrowck = { path = "crates/zeta-borrowck" }
-zeta-regionck = { path = "crates/zeta-regionck" }
-zeta-codegen = { path = "crates/zeta-codegen" }
-zeta-driver = { path = "crates/zeta-driver" }
-zeta-std = { path = "crates/zeta-std" }
-zeta-actor-runtime = { path = "crates/zeta-actor-runtime" }
-zeta-gc-runtime = { path = "crates/zeta-gc-runtime" }
-zeta-region-alloc = { path = "crates/zeta-region-alloc" }
-zeta-lsp = { path = "crates/zeta-lsp" }
-zeta-fmt = { path = "tools/zeta-fmt" }
-zeta-check = { path = "tools/zeta-check" }
-zeta-doc = { path = "tools/zeta-doc" }
-zeta-bench = { path = "tools/zeta-bench" }
-zep = { path = "zep" }
+rlyeh-ast = { path = "crates/rlyeh-ast" }
+rlyeh-hir = { path = "crates/rlyeh-hir" }
+rlyeh-mir = { path = "crates/rlyeh-mir" }
+rlyeh-lir = { path = "crates/rlyeh-lir" }
+rlyeh-lexer = { path = "crates/rlyeh-lexer" }
+rlyeh-macro = { path = "crates/rlyeh-macro" }
+rlyeh-parser = { path = "crates/rlyeh-parser" }
+rlyeh-typecheck = { path = "crates/rlyeh-typecheck" }
+rlyeh-desugar = { path = "crates/rlyeh-desugar" }
+rlyeh-borrowck = { path = "crates/rlyeh-borrowck" }
+rlyeh-regionck = { path = "crates/rlyeh-regionck" }
+rlyeh-codegen = { path = "crates/rlyeh-codegen" }
+rlyeh-driver = { path = "crates/rlyeh-driver" }
+rlyeh-std = { path = "crates/rlyeh-std" }
+rlyeh-actor-runtime = { path = "crates/rlyeh-actor-runtime" }
+rlyeh-gc-runtime = { path = "crates/rlyeh-gc-runtime" }
+rlyeh-region-alloc = { path = "crates/rlyeh-region-alloc" }
+rlyeh-lsp = { path = "crates/rlyeh-lsp" }
+rlyeh-fmt = { path = "tools/rlyeh-fmt" }
+rlyeh-check = { path = "tools/rlyeh-check" }
+rlyeh-doc = { path = "tools/rlyeh-doc" }
+rlyeh-bench = { path = "tools/rlyeh-bench" }
+dagon = { path = "dagon" }
 
 # 外部依赖
 anyhow = "1"

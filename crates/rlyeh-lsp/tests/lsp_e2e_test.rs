@@ -1,4 +1,4 @@
-//! `zeta-lsp` 端到端测试：spawn 真实二进制，走 stdio Content-Length 帧协议。
+//! `rlyeh-lsp` 端到端测试：spawn 真实二进制，走 stdio Content-Length 帧协议。
 
 use std::io::{Read, Write};
 use std::process::{Child, Command, Stdio};
@@ -12,12 +12,12 @@ struct LspProcess {
 
 impl LspProcess {
     fn spawn() -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_zeta-lsp"))
+        let child = Command::new(env!("CARGO_BIN_EXE_rlyeh-lsp"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn zeta-lsp");
+            .expect("spawn rlyeh-lsp");
         Self { child }
     }
 
@@ -98,8 +98,8 @@ fn full_lifecycle_with_diagnostics() {
         "method": "textDocument/didOpen",
         "params": {
             "textDocument": {
-                "uri": "file:///tmp/e2e.zeta",
-                "languageId": "zeta",
+                "uri": "file:///tmp/e2e.rl",
+                "languageId": "rlyeh",
                 "version": 1,
                 "text": "fn main() {\n    let unused = 42;\n    println(1);\n}\n"
             }
@@ -118,7 +118,7 @@ fn full_lifecycle_with_diagnostics() {
         "jsonrpc": "2.0",
         "method": "textDocument/didChange",
         "params": {
-            "textDocument": { "uri": "file:///tmp/e2e.zeta", "version": 2 },
+            "textDocument": { "uri": "file:///tmp/e2e.rl", "version": 2 },
             "contentChanges": [{ "text": "fn main( {" }]
         }
     }));
@@ -132,7 +132,7 @@ fn full_lifecycle_with_diagnostics() {
     server.send(&serde_json::json!({
         "jsonrpc": "2.0",
         "method": "textDocument/didClose",
-        "params": { "textDocument": { "uri": "file:///tmp/e2e.zeta" } }
+        "params": { "textDocument": { "uri": "file:///tmp/e2e.rl" } }
     }));
     let notif = server.recv();
     assert_eq!(

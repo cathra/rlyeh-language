@@ -1,7 +1,7 @@
-//! zeta-fmt 命令行入口。
+//! rlyeh-fmt 命令行入口。
 //!
 //! ```text
-//! zeta-fmt [--check] [-w|--write] [--indent N] <file>
+//! rlyeh-fmt [--check] [-w|--write] [--indent N] <file>
 //! ```
 //!
 //! - 无选项：格式化结果打印到 stdout。
@@ -26,24 +26,24 @@ fn main() -> ExitCode {
             "--indent" => {
                 i += 1;
                 if i >= args.len() {
-                    eprintln!("zeta-fmt: --indent requires a value");
+                    eprintln!("rlyeh-fmt: --indent requires a value");
                     return ExitCode::from(2);
                 }
                 match args[i].parse::<usize>() {
                     Ok(n) if n > 0 && n <= 16 => indent = n,
                     _ => {
-                        eprintln!("zeta-fmt: invalid indent width '{}'", args[i]);
+                        eprintln!("rlyeh-fmt: invalid indent width '{}'", args[i]);
                         return ExitCode::from(2);
                     }
                 }
             }
             s if s.starts_with('-') => {
-                eprintln!("zeta-fmt: unknown flag '{}'", s);
+                eprintln!("rlyeh-fmt: unknown flag '{}'", s);
                 return ExitCode::from(2);
             }
             s => {
                 if file.is_some() {
-                    eprintln!("zeta-fmt: multiple input files not supported");
+                    eprintln!("rlyeh-fmt: multiple input files not supported");
                     return ExitCode::from(2);
                 }
                 file = Some(s.to_string());
@@ -53,23 +53,23 @@ fn main() -> ExitCode {
     }
 
     let Some(file) = file else {
-        eprintln!("usage: zeta-fmt [--check] [-w|--write] [--indent N] <file>");
+        eprintln!("usage: rlyeh-fmt [--check] [-w|--write] [--indent N] <file>");
         return ExitCode::from(2);
     };
 
     let src = match std::fs::read_to_string(&file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("zeta-fmt: cannot read {}: {}", file, e);
+            eprintln!("rlyeh-fmt: cannot read {}: {}", file, e);
             return ExitCode::from(1);
         }
     };
 
-    let opts = zeta_fmt::FmtOptions { indent_width: indent };
-    let formatted = match zeta_fmt::format_source_with_options(&src, &opts) {
+    let opts = rlyeh_fmt::FmtOptions { indent_width: indent };
+    let formatted = match rlyeh_fmt::format_source_with_options(&src, &opts) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("zeta-fmt: {}: {}", file, e);
+            eprintln!("rlyeh-fmt: {}: {}", file, e);
             return ExitCode::from(1);
         }
     };
@@ -89,7 +89,7 @@ fn main() -> ExitCode {
                 ExitCode::SUCCESS
             }
             Err(e) => {
-                eprintln!("zeta-fmt: cannot write {}: {}", file, e);
+                eprintln!("rlyeh-fmt: cannot write {}: {}", file, e);
                 ExitCode::from(1)
             }
         }

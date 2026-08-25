@@ -1,7 +1,7 @@
 //! Actor 运行时基准测试：send / ask / spawn 吞吐。
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use zeta_actor_runtime::{ActorContext, ActorError, ActorState, RuntimeBuilder};
+use rlyeh_actor_runtime::{ActorContext, ActorError, ActorState, RuntimeBuilder};
 
 struct BenchActor {
     count: u64,

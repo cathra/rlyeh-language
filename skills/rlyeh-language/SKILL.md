@@ -1,22 +1,22 @@
 ---
-name: zeta-language
-description: Zeta 系统级编程语言技能（v0.2.0，随工具链发布）。用于编写、阅读、审查、修复或迁移 Zeta 语言代码（.zeta 文件）；解释 Zeta 的语法、语义、分层内存模型与 Actor 并发模型；使用 zeta 工具链（build/run/test/check/fmt/bench/doc/lsp/profile）编译验证；以及在 zeta-language 仓库内开发编译器（zeta-lexer/parser/typecheck/codegen 等 crates）。当用户提到 Zeta 语言、zeta 代码、.zeta 文件、Zeta 编译错误、actor/region/比较链/in 表达式语法时触发。
+name: rlyeh-language
+description: Rlyeh 系统级编程语言技能（v0.2.0，随工具链发布）。用于编写、阅读、审查、修复或迁移 Rlyeh 语言代码（.rl 文件）；解释 Rlyeh 的语法、语义、分层内存模型与 Actor 并发模型；使用 rlyeh 工具链（build/run/test/check/fmt/bench/doc/lsp/profile）编译验证；以及在 rlyeh-language 仓库内开发编译器（rlyeh-lexer/parser/typecheck/codegen 等 crates）。当用户提到 Rlyeh 语言、rlyeh 代码、.rl 文件、Rlyeh 编译错误、actor/region/比较链/in 表达式语法时触发。
 ---
 
-# Zeta Language
+# Rlyeh Language
 
 ## Overview
 
-Zeta 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分层所有权）、编译速度对标 Go、Actor 并发一等公民、数学式比较链语法（`0 < x < 10`）。当前为 MVP（v0.1.0），bootstrap 编译器用 Rust 实现、代码生成走 LLVM IR。
+Rlyeh 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分层所有权）、编译速度对标 Go、Actor 并发一等公民、数学式比较链语法（`0 < x < 10`）。当前为 MVP（v0.1.0），bootstrap 编译器用 Rust 实现、代码生成走 LLVM IR。
 
-本技能使 LLM 能写出**可编译运行**的 Zeta 代码、准确审查既有代码、并利用工具链快速定位编译错误。MVP 有明确语法边界——不遵守会产出大量编译错误，务必先读 `references/pitfalls.md`。
+本技能使 LLM 能写出**可编译运行**的 Rlyeh 代码、准确审查既有代码、并利用工具链快速定位编译错误。MVP 有明确语法边界——不遵守会产出大量编译错误，务必先读 `references/pitfalls.md`。
 
 ## 何时使用
 
-- 用户要求编写、修改、审查、调试 `.zeta` 文件或 Zeta 项目（`Zeta.toml` + `src/main.zeta`）
-- 需要解释 Zeta 语法、语义、内存模型、Actor 模型、标准库、工具链
-- 处理 Zeta 编译器 Rust 代码（`crates/` 下各 crate）或 `zeta-std` 标准库 `.zeta` 源码
-- 将其他语言（Rust/Go/Python）代码迁移到 Zeta
+- 用户要求编写、修改、审查、调试 `.rl` 文件或 Rlyeh 项目（`Rlyeh.toml` + `src/main.rl`）
+- 需要解释 Rlyeh 语法、语义、内存模型、Actor 模型、标准库、工具链
+- 处理 Rlyeh 编译器 Rust 代码（`crates/` 下各 crate）或 `rlyeh-std` 标准库 `.rl` 源码
+- 将其他语言（Rust/Go/Python）代码迁移到 Rlyeh
 
 ## 核心工作流
 
@@ -28,22 +28,22 @@ Zeta 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分层
 
 ## 验证命令
 
-在仓库根或 Zeta 项目内使用 `zeta` 二进制（开发期可 `cargo run -p zeta-driver -- <args>`）：
+在仓库根或 Rlyeh 项目内使用 `rlyeh` 二进制（开发期可 `cargo run -p rlyeh-driver -- <args>`）：
 
 | 命令 | 用途 |
 |------|------|
-| `zeta new <name> [--lib]` | 创建项目（`Zeta.toml` + `src/main.zeta` / `src/lib.zeta`） |
-| `zeta run <file.zeta>` | 编译并运行（快速验证首选） |
-| `zeta build <file.zeta> [-o out] [--target <triple>] [--profile <pgo>]` | 编译为可执行文件；`--target` 支持交叉编译 / `wasm32-wasi` |
-| `zeta check <file.zeta>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
-| `zeta fmt <file.zeta> [--check]` | 格式化（AST 重建） |
-| `zeta test` | 跑 `tests/compile-pass` `compile-fail` `run-pass` 用例 |
-| `zeta bench <file.zeta> [--runs N]` | 基准测试 |
-| `zeta doc <file.zeta> [--out dir]` | 从 `///` 注释生成 Markdown |
-| `zeta lsp` | LSP 服务器（stdio） |
-| `zeta profile <file.zeta_profile> [--out r.md]` | PGO 画像 → 区域大小预测报告 |
+| `rlyeh new <name> [--lib]` | 创建项目（`Rlyeh.toml` + `src/main.rl` / `src/lib.rl`） |
+| `rlyeh run <file.rl>` | 编译并运行（快速验证首选） |
+| `rlyeh build <file.rl> [-o out] [--target <triple>] [--profile <pgo>]` | 编译为可执行文件；`--target` 支持交叉编译 / `wasm32-wasi` |
+| `rlyeh check <file.rl>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
+| `rlyeh fmt <file.rl> [--check]` | 格式化（AST 重建） |
+| `rlyeh test` | 跑 `tests/compile-pass` `compile-fail` `run-pass` 用例 |
+| `rlyeh bench <file.rl> [--runs N]` | 基准测试 |
+| `rlyeh doc <file.rl> [--out dir]` | 从 `///` 注释生成 Markdown |
+| `rlyeh lsp` | LSP 服务器（stdio） |
+| `rlyeh profile <file.rl_profile> [--out r.md]` | PGO 画像 → 区域大小预测报告 |
 
-调试提示：`zeta run` 的链接错误若提示 `_main` undefined，先确认源文件有 `fn main()`；LLVM 链接错误多为 extern 符号与 libc 不一致。
+调试提示：`rlyeh run` 的链接错误若提示 `_main` undefined，先确认源文件有 `fn main()`；LLVM 链接错误多为 extern 符号与 libc 不一致。
 
 ## References
 
@@ -64,11 +64,11 @@ Skill references 是 `docs/` 权威规范的提炼速查。深度问题回源：
 
 ## 随工具链发布
 
-本技能随 Zeta 工具链一起构建、发布与归档：
+本技能随 Rlyeh 工具链一起构建、发布与归档：
 
-- **源码位置**：仓库 `.codebuddy/skills/zeta-language/`（SKILL.md + `references/`）
-- **本地安装**：`toolchains/install.sh` 将整个目录复制到 `<prefix>/skills/zeta-language/`（默认 `~/.zeta/skills/zeta-language/`）
-- **归档发布**：`toolchains/build.sh` 归档 `zeta-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可被 CodeBuddy 等 IDE 作为项目级技能加载（`<prefix>/skills/zeta-language/SKILL.md`）
+- **源码位置**：仓库 `.codebuddy/skills/rlyeh-language/`（SKILL.md + `references/`）
+- **本地安装**：`toolchains/install.sh` 将整个目录复制到 `<prefix>/skills/rlyeh-language/`（默认 `~/.rl/skills/rlyeh-language/`）
+- **归档发布**：`toolchains/build.sh` 归档 `rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可被 CodeBuddy 等 IDE 作为项目级技能加载（`<prefix>/skills/rlyeh-language/SKILL.md`）
 - **版本同步**：Skill 版本与工具链发布节奏一致（当前 v0.2.0）
 
 重建或发布工具链后，若 IDE 未自动发现新版本技能，可重新加载技能或重启 IDE 会话。

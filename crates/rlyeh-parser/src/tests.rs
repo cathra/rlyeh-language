@@ -1,8 +1,8 @@
 //! 语法分析器单元测试。
 
 use crate::{ParseError, Parser};
-use zeta_ast::{AstItem, AstPattern, AstProgram, AstStmt, AstType, BinaryOp, CompareOp, ExprKind};
-use zeta_lexer::Token;
+use rlyeh_ast::{AstItem, AstPattern, AstProgram, AstStmt, AstType, BinaryOp, CompareOp, ExprKind};
+use rlyeh_lexer::Token;
 
 /// 解析成功并返回程序
 fn parse_ok(src: &str) -> AstProgram {
@@ -13,7 +13,7 @@ fn parse_ok(src: &str) -> AstProgram {
 }
 
 /// 提取顶层语句中的表达式
-fn top_expr(program: &AstProgram) -> &zeta_ast::AstExpr {
+fn top_expr(program: &AstProgram) -> &rlyeh_ast::AstExpr {
     let AstItem::Statement(stmt) = &program.items[0] else {
         panic!("expected statement item");
     };
@@ -594,7 +594,7 @@ fn test_match_expression() {
     // 臂 0：字面量
     assert!(matches!(
         &arms[0].pattern,
-        AstPattern::Literal(zeta_ast::LiteralValue::Int(0))
+        AstPattern::Literal(rlyeh_ast::LiteralValue::Int(0))
     ));
     // 臂 1：范围
     let AstPattern::Range {
@@ -904,7 +904,7 @@ fn test_closure() {
     };
     assert_eq!(params.len(), 2);
     assert!(param_types.iter().all(|t| t.is_none()));
-    assert!(matches!(capture, zeta_ast::CaptureMode::Borrow));
+    assert!(matches!(capture, rlyeh_ast::CaptureMode::Borrow));
     assert!(matches!(&*body.kind, ExprKind::Binary { .. }));
 }
 
@@ -941,7 +941,7 @@ fn test_move_closure() {
         panic!();
     };
     assert!(params.is_empty());
-    assert!(matches!(capture, zeta_ast::CaptureMode::Move));
+    assert!(matches!(capture, rlyeh_ast::CaptureMode::Move));
 }
 
 #[test]
@@ -1036,7 +1036,7 @@ fn test_trait_and_impl() {
 
 #[test]
 fn test_use_and_mod() {
-    let program = parse_ok("use foo::bar as baz; mod m { fn inner() {} }");
+    let program = parse_ok("import foo::bar as baz; module m { fn inner() {} }");
     let AstItem::UseDecl(u) = &program.items[0] else {
         panic!();
     };

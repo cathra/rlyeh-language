@@ -1,12 +1,12 @@
-//! F2「PGO 数据回灌」集成测试：`.zeta_profile` → 区域大小预测 → 编译报告。
+//! F2「PGO 数据回灌」集成测试：`.rl_profile` → 区域大小预测 → 编译报告。
 
 use std::path::PathBuf;
 
-use zeta_driver::{build_region_report, region_profile_report};
-use zeta_region_alloc::{PgoAdvisor, ProfileCollector};
+use rlyeh_driver::{build_region_report, region_profile_report};
+use rlyeh_region_alloc::{PgoAdvisor, ProfileCollector};
 
 /// 构造含两个区域的 PGO 画像（可控分布）。
-fn sample_data() -> zeta_region_alloc::PgoData {
+fn sample_data() -> rlyeh_region_alloc::PgoData {
     let mut c = ProfileCollector::new();
     // http_pool：小分配量样本（p95×1.1 低于 64KiB 下限）
     for i in 0..100 {
@@ -25,7 +25,7 @@ fn sample_data() -> zeta_region_alloc::PgoData {
 
 /// 临时文件（进程内唯一，测试后清理）。
 fn temp_path(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("zeta-profile-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-profile-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir.join(name)
 }
@@ -76,7 +76,7 @@ fn recommendation_matches_advisor_and_obeys_floor() {
 
 #[test]
 fn report_file_roundtrip() {
-    let path = temp_path("roundtrip.zeta_profile");
+    let path = temp_path("roundtrip.rl_profile");
     let json = serde_json::to_string(&sample_data()).unwrap();
     std::fs::write(&path, &json).unwrap();
 
@@ -89,7 +89,7 @@ fn report_file_roundtrip() {
 
 #[test]
 fn invalid_json_is_profile_error() {
-    let path = temp_path("invalid.zeta_profile");
+    let path = temp_path("invalid.rl_profile");
     std::fs::write(&path, "not valid json {").unwrap();
 
     let err = region_profile_report(&path).unwrap_err();
@@ -102,7 +102,7 @@ fn invalid_json_is_profile_error() {
 
 #[test]
 fn missing_file_is_io_error() {
-    let path = temp_path("nope.zeta_profile");
+    let path = temp_path("nope.rl_profile");
     let err = region_profile_report(&path).unwrap_err();
     assert!(err.to_string().contains("I/O"));
     let _ = std::fs::remove_file(&path);

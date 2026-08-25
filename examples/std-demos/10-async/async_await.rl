@@ -1,4 +1,4 @@
-// async_await.zeta：S1c 定位——手写 __Fut_f 与 desugar 生成完全同构
+// async_await.rl：S1c 定位——手写 __Fut_f 与 desugar 生成完全同构
 async fn g(x: i64) -> i64 {
     x + 1
 }

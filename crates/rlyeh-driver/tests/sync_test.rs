@@ -1,5 +1,5 @@
 //! `Mutex` / `RwLock` 同步模块集成测试（文件入口 API，自动注入
-//! `zeta-std/zeta/core.zeta`；基于 extern FFI 绑定 pthread，原语对象承载于
+//! `rlyeh-std/rlyeh/core.rl`；基于 extern FFI 绑定 pthread，原语对象承载于
 //! malloc 缓冲）。
 //!
 //! 单线程下利用 `trylock` 的 EBUSY 语义真实验证互斥性：
@@ -11,22 +11,22 @@
 
 use std::path::PathBuf;
 
-use zeta_driver::run_source_file;
+use rlyeh_driver::run_source_file;
 
 /// 独立临时项目目录，避免并行测试互相覆盖。
 fn temp_project() -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("zeta-sync-{}-{seq}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rlyeh-sync-{}-{seq}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("创建临时目录失败");
     dir
 }
 
-/// 运行内联源码（自动注入 core.zeta），返回程序输出。
+/// 运行内联源码（自动注入 core.rl），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
-    let file = dir.join("main.zeta");
-    std::fs::write(&file, src).expect("写入 main.zeta 失败");
+    let file = dir.join("main.rl");
+    std::fs::write(&file, src).expect("写入 main.rl 失败");
     let out = run_source_file(&file).expect("sync 模块测试编译运行失败");
     let _ = std::fs::remove_dir_all(&dir);
     out

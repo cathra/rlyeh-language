@@ -1,16 +1,16 @@
 //! HIR → MIR lowering 集成测试：
 //! 从源码经 typecheck 得到 HIR，再验证 CFG 结构与指令序列。
 
-use zeta_mir::lower::lower_program;
-use zeta_mir::{MirProgram, MirStmt, MirTerminator, MirValue};
-use zeta_typecheck::typecheck_source;
+use rlyeh_mir::lower::lower_program;
+use rlyeh_mir::{MirProgram, MirStmt, MirTerminator, MirValue};
+use rlyeh_typecheck::typecheck_source;
 
 fn lower(src: &str) -> MirProgram {
     let hir = typecheck_source(src).expect("typecheck 应成功");
     lower_program(&hir)
 }
 
-fn first_fn(p: &MirProgram) -> &zeta_mir::MirFunction {
+fn first_fn(p: &MirProgram) -> &rlyeh_mir::MirFunction {
     // 跳过注入的 extern 内建（`print`/`exit` 等，空 CFG），
     // 取第一个含函数体的用户函数（测试均以 `fn main` 为对象）。
     p.functions
@@ -32,7 +32,7 @@ fn test_lower_arithmetic() {
             assert!(matches!(
                 value,
                 MirValue::Binary {
-                    op: zeta_hir::HirBinaryOp::Add,
+                    op: rlyeh_hir::HirBinaryOp::Add,
                     ..
                 }
             ));
@@ -115,7 +115,7 @@ fn main() -> u32 {
         s,
         MirStmt::Assign {
             value: MirValue::Binary {
-                op: zeta_hir::HirBinaryOp::Add,
+                op: rlyeh_hir::HirBinaryOp::Add,
                 ..
             },
             ..
@@ -237,7 +237,7 @@ fn test_lower_range_check_expansion() {
             s,
             MirStmt::Assign {
                 value: MirValue::Binary {
-                    op: zeta_hir::HirBinaryOp::And,
+                    op: rlyeh_hir::HirBinaryOp::And,
                     ..
                 },
                 ..
@@ -256,7 +256,7 @@ fn test_lower_set_lookup_expansion() {
             s,
             MirStmt::Assign {
                 value: MirValue::Binary {
-                    op: zeta_hir::HirBinaryOp::Or,
+                    op: rlyeh_hir::HirBinaryOp::Or,
                     ..
                 },
                 ..

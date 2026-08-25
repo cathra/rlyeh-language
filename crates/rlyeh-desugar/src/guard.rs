@@ -11,8 +11,8 @@
 //!   （块尾注入前置，显式解锁仍可用 `g.unlock()` 手动调用）；
 //! - 按方法名 `lock_guard` 特判（AST 阶段无类型信息）。
 
-use zeta_ast::{AstBlock, AstExpr, AstItem, AstProgram, AstStmt, ExprKind};
-use zeta_lexer::Span;
+use rlyeh_ast::{AstBlock, AstExpr, AstItem, AstProgram, AstStmt, ExprKind};
+use rlyeh_lexer::Span;
 
 /// 对程序执行 guard 注入（原地修改 items）。
 pub fn inject_guard_unlocks(program: &mut AstProgram) {
@@ -63,7 +63,7 @@ fn inject_in_block(b: &mut AstBlock) {
         .iter()
         .filter_map(|s| match s {
             AstStmt::Let { pattern, init, .. } => match pattern {
-                zeta_ast::AstPattern::Ident(name) if is_lock_guard_call(init) => {
+                rlyeh_ast::AstPattern::Ident(name) if is_lock_guard_call(init) => {
                     Some(name.clone())
                 }
                 _ => None,

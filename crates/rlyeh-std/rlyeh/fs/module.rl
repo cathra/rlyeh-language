@@ -1,7 +1,7 @@
 // fs 模块（std-lib.md §4.3 Path / §4.4 fs）。
-// 目录化（2026-08）：原 fs.zeta 拆分 → fs/module.zeta（自由函数 + module 声明）+ fs/path.zeta（Path）。
+// 目录化（2026-08）：原 fs.rl 拆分 → fs/module.rl（自由函数 + module 声明）+ fs/path.rl（Path）。
 // 实现说明（N3a/N3b/N3c）：
-// - driver 不链接 zeta-std crate，无 Rust 绑定层，直接 libc extern（N1a 修订）。
+// - driver 不链接 rlyeh-std crate，无 Rust 绑定层，直接 libc extern（N1a 修订）。
 // - `Path` 为纯字符串封装（无规范化/解析）；exists 用 POSIX access(F_OK)；
 //   is_file 用 fopen 试探（无读权限文件误报，MVP）；is_dir = exists && !is_file 近似。
 // - fs::read_to_string/fs::write 为 io::read_file/write_file 包装；copy = read + write。

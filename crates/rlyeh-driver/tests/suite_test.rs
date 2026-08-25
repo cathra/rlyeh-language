@@ -1,12 +1,12 @@
-//! `zeta test` 用例套件矩阵：把工作区根 `tests/` 目录纳入 `cargo test` 驱动，
+//! `rlyeh test` 用例套件矩阵：把工作区根 `tests/` 目录纳入 `cargo test` 驱动，
 //! 保证 CI 全量跑测试时 compile-pass / compile-fail / run-pass 用例都被执行。
 
 use std::path::Path;
 
-use zeta_driver::test_runner::{run_test_suite, TestKind};
+use rlyeh_driver::test_runner::{run_test_suite, TestKind};
 
 #[test]
-fn zeta_test_suite_all_pass() {
+fn rlyeh_test_suite_all_pass() {
     // 注意：套件执行必须保持**单个测试函数**——多个测试函数会被 cargo test
     // 并行执行，同一套 run-pass 用例（如 fs_dir 的 `/tmp` 路径）被两个进程
     // 同时操作会互相竞争导致偶发失败。

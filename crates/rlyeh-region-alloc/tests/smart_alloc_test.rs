@@ -2,16 +2,16 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use zeta_region_alloc::compiler_interface::{CompilerInterface, RegionCompileInfo};
-use zeta_region_alloc::pgo_advisor::PgoAdvisor;
-use zeta_region_alloc::profile::{
+use rlyeh_region_alloc::compiler_interface::{CompilerInterface, RegionCompileInfo};
+use rlyeh_region_alloc::pgo_advisor::PgoAdvisor;
+use rlyeh_region_alloc::profile::{
     GrowthStats, PgoData, ProfileCollector, RegionProfile, SizeStats,
 };
-use zeta_region_alloc::size_advisor::{DecisionSource, SizeAdvisor};
-use zeta_region_alloc::static_sizer::{
+use rlyeh_region_alloc::size_advisor::{DecisionSource, SizeAdvisor};
+use rlyeh_region_alloc::static_sizer::{
     AllocSite, BranchInfo, ExecFrequency, SizeEstimate, StaticSizer,
 };
-use zeta_region_alloc::SmartRegion;
+use rlyeh_region_alloc::SmartRegion;
 
 /// 基础分配：无提示、无静态信息 → 自适应默认（4 KB），100 个 u64 不扩容。
 #[test]
@@ -162,7 +162,7 @@ fn test_pgo_recommendation() {
 /// PGO 数据保存 / 加载往返。
 #[test]
 fn test_pgo_save_load() {
-    let path = format!("/tmp/zeta_pgo_test_{}.json", std::process::id());
+    let path = format!("/tmp/rlyeh_pgo_test_{}.json", std::process::id());
     let mut collector = ProfileCollector::new();
     collector.record_allocation("test", 64);
     collector.record_allocation("test", 128);

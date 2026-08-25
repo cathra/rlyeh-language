@@ -1,6 +1,6 @@
-// fs/path.zeta：Path 对象（std-lib.md §4.3）。
-// 目录化（2026-08）：由原 fs.zeta 顶部拆分。符号完整路径 fs::path::Path，
-// core.zeta 经 `import fs::path::Path;` 重导出到根命名空间（裸名 Path 即用）。
+// fs/path.rl：Path 对象（std-lib.md §4.3）。
+// 目录化（2026-08）：由原 fs.rl 顶部拆分。符号完整路径 fs::path::Path，
+// core.rl 经 `import fs::path::Path;` 重导出到根命名空间（裸名 Path 即用）。
 // 实现说明：
 // - `Path` 为纯字符串封装（无规范化/解析）；exists 用 POSIX access(F_OK)；
 //   is_file 用 fopen 试探（无读权限文件误报，MVP）；is_dir = exists && !is_file 近似。

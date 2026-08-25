@@ -1,4 +1,4 @@
-// hello-world.zeta — Zeta 首个可编译运行程序
+// hello-world.rl — Rlyeh 首个可编译运行程序
 fn main() {
-    println("Hello, Zeta!");
+    println("Hello, Rlyeh!");
 }

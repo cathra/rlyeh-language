@@ -1,28 +1,28 @@
 [package]
-name = "zeta-driver"
+name = "rlyeh-driver"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Zeta 编译器驱动：串联 lexer → parser → typecheck → borrowck → regionck → MIR → LIR → 代码生成，提供 zeta CLI"
+description = "Rlyeh 编译器驱动：串联 lexer → parser → typecheck → borrowck → regionck → MIR → LIR → 代码生成，提供 rlyeh CLI"
 
 [dependencies]
-zeta-typecheck = { workspace = true }
-zeta-borrowck = { workspace = true }
-zeta-regionck = { workspace = true }
-zeta-mir = { workspace = true }
-zeta-lir = { workspace = true }
-zeta-codegen = { workspace = true }
-zeta-parser = { workspace = true }
-zeta-ast = { workspace = true }
-zeta-actor-runtime = { workspace = true }
-zeta-fmt = { workspace = true }
-zeta-check = { workspace = true }
-zeta-doc = { workspace = true }
-zeta-bench = { workspace = true }
-zeta-lsp = { workspace = true }
-zeta-region-alloc = { workspace = true }
-zep = { workspace = true }
+rlyeh-typecheck = { workspace = true }
+rlyeh-borrowck = { workspace = true }
+rlyeh-regionck = { workspace = true }
+rlyeh-mir = { workspace = true }
+rlyeh-lir = { workspace = true }
+rlyeh-codegen = { workspace = true }
+rlyeh-parser = { workspace = true }
+rlyeh-ast = { workspace = true }
+rlyeh-actor-runtime = { workspace = true }
+rlyeh-fmt = { workspace = true }
+rlyeh-check = { workspace = true }
+rlyeh-doc = { workspace = true }
+rlyeh-bench = { workspace = true }
+rlyeh-lsp = { workspace = true }
+rlyeh-region-alloc = { workspace = true }
+dagon = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

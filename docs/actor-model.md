@@ -1,4 +1,4 @@
-# Zeta Actor 并发模型规范
+# Rlyeh Actor 并发模型规范
 
 > 版本：0.1.0  
 > 最后更新：2026-08-22
@@ -34,7 +34,7 @@
 
 ### 2.1 基本语法
 
-```zeta
+```rlyeh
 actor Counter {
     // 状态字段（私有，除非加 pub）
     value: u32 = 0,  // 默认值
@@ -80,7 +80,7 @@ Actor 创建 → 初始化 → 处理消息循环 → 收到停止信号 → 清
 
 ### 3.1 发送消息
 
-```zeta
+```rlyeh
 // 创建 Actor 实例（MVP：`new()` 不接受参数；受监督构造用 `new_supervised(strategy)`）
 let counter = Counter::new();
 
@@ -174,7 +174,7 @@ struct LockFreeMailbox {
 
 ### 5.1 基本语法
 
-```zeta
+```rlyeh
 supervisor {
     strategy: OneForOne,  // 只重启崩溃的子 Actor
     max_restarts: 3,
@@ -217,7 +217,7 @@ Supervisor 收到 ExitSignal { actor: C, reason: Panic }
 
 ### 6.1 请求-响应
 
-```zeta
+```rlyeh
 actor Client {
     server: ActorRef<Server>,
     
@@ -237,7 +237,7 @@ actor Server {
 
 ### 6.2 发布-订阅
 
-```zeta
+```rlyeh
 actor EventBus {
     subscribers: Vec<ActorRef<dyn Subscriber>> = vec![],
     
@@ -255,7 +255,7 @@ actor EventBus {
 
 ### 6.3 管道（Pipeline）
 
-```zeta
+```rlyeh
 actor Pipeline {
     stages: Vec<ActorRef<dyn Stage>>,
     
@@ -275,7 +275,7 @@ actor Pipeline {
 
 ### 7.1 Actor 内部错误
 
-```zeta
+```rlyeh
 actor SafeActor {
     pub async fn risky_operation() -> Result<(), ProcessingError> {
         // 如果返回 Err，调用者收到错误
@@ -293,7 +293,7 @@ match actor.risky_operation().await {
 
 ### 7.2 Actor 崩溃
 
-```zeta
+```rlyeh
 actor UnstableActor {
     pub async fn boom() {
         // MVP：方法返回 -1 触发崩溃协议（panic! 宏未实现，属规划）
@@ -353,7 +353,7 @@ pub async fn watch(target: ActorRef) {
 
 ### 9.1 与线程的关系
 
-```zeta
+```rlyeh
 // Actor 运行在线程池之上
 // 一个 Worker Thread 可以调度多个 Actor
 // Actor 不直接绑定到特定线程
@@ -369,7 +369,7 @@ actor PinnedActor {
 
 ### 9.2 与 Channel 的互操作
 
-```zeta
+```rlyeh
 // Actor 可以暴露 channel 接口
 actor ChannelBridge {
     sender: Sender<Message>,
@@ -383,7 +383,7 @@ actor ChannelBridge {
 
 ### 9.3 与传统锁的互操作
 
-```zeta
+```rlyeh
 // Actor 内部不需要锁（单线程执行）
 // 但可以与外部共享资源交互
 actor FileWriter {
@@ -404,7 +404,7 @@ actor FileWriter {
 > 下述 `ActorRef`/`supervisor {}`/`format!` 等为规划语法；MVP 可运行版本见
 > [`guide.md`](./guide.md) §9.2（监督计数示例）。
 
-```zeta
+```rlyeh
 // Chat Room 示例
 actor ChatRoom {
     name: String,
@@ -492,16 +492,16 @@ supervisor {
 ### A.2 ask 快速路径（fast path，2026-08-24 ✅）
 
 **动机**：`actor_pingpong` 基准（5 万次 actor 同步往返）原始 341ms（28.3x 差距）——每次 `ask` 都要经
-调度器入队 + Worker 唤醒 + 邮箱往返，而 Zeta 的 `CallbackActor`（Zeta 语言生成的 handler）消息本可
+调度器入队 + Worker 唤醒 + 邮箱往返，而 Rlyeh 的 `CallbackActor`（Rlyeh 语言生成的 handler）消息本可
 在调用线程直接同步处理。
 
-**实现**（`zeta-actor-runtime/src/runtime.rs`）：
+**实现**（`rlyeh-actor-runtime/src/runtime.rs`）：
 
 1. **句柄共享**：`ActorRef` 从持有 mailbox 改为持有 `Arc<ActorHandle>`（含 `id`、`Arc<Mutex<Option<Box<dyn ActorState>>>>`
    的 state、`Arc<ArrayQueue<Envelope>>` mailbox、`running` CAS 标志、runtime 弱引用）。
 2. **`try_fast_ask`**：`ask_blocking` 先尝试快速路径——`running.swap(true)` CAS 抢占（与 Worker 同一互斥域）→
    邮箱 `is_empty` 检查 → state `try_lock` → `CallbackActor` 经 **supertrait upcasting**（`&mut dyn ActorState`
-   → `&mut dyn Any`）直接 downcast → 调 Zeta handler（`extern "C"`，消息槽 u64 传递），全程零调度 / 零通道。
+   → `&mut dyn Any`）直接 downcast → 调 Rlyeh handler（`extern "C"`，消息槽 u64 传递），全程零调度 / 零通道。
 3. **`FastPathOutcome` 枚举**（`Handled(Box<dyn Any>)` / `Fallback(Box<dyn Any>)`）：解决"消息提前消费"问题——
    所有回退路径原样归还消息，慢路径（`Envelope::with_reply` + 回复 channel）行为与原先完全一致。
 4. **崩溃语义一致**：fast path 中 handler 返回 -1 同样回复 0、丢 state、保持 `running=true`，与慢路径协议一致。
@@ -509,7 +509,7 @@ supervisor {
    锁被 Worker 持有 / 非 `CallbackActor`（自定义 ActorState，如 `Counter`）。
 
 **效果**：341ms → 6.7ms（50.9x），超越 Go 12.3ms（1.8x）、C 192ms、Rust/Swift 173ms，成为 6 语言最快。
-回归测试：`zeta-actor-runtime/tests/fast_path_concurrency.rs`（多线程并发 ask/send、批量短时间片快速路径、
+回归测试：`rlyeh-actor-runtime/tests/fast_path_concurrency.rs`（多线程并发 ask/send、批量短时间片快速路径、
 自发送无死锁，19 个 crate 测试全过）。
 
 > **陷阱记录**：并发测试中 `Box::new(1)` 整数字面量默认推断为 `i32`，与 `downcast_ref::<i64>()` 不匹配导致
@@ -517,5 +517,5 @@ supervisor {
 
 ---
 
-> **维护者**：Zeta Language Team  
+> **维护者**：Rlyeh Language Team  
 > **License**：MIT / Apache-2.0

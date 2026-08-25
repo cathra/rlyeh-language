@@ -20,7 +20,7 @@ pub struct ModuleInterface {
     pub functions: Vec<FunctionSignature>,
 }
 
-/// 函数签名（类型以规范化字符串表示，与 `zeta_typecheck::Type` 的
+/// 函数签名（类型以规范化字符串表示，与 `rlyeh_typecheck::Type` 的
 /// `Display` 保持一致）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionSignature {
@@ -44,7 +44,7 @@ pub fn compute_source_hash(source: &str) -> String {
 /// 仅依赖接口内容本身，与函数体实现无关。
 pub fn compute_interface_hash(interface: &ModuleInterface) -> String {
     let mut canonical = String::new();
-    canonical.push_str(&format!("zeta-interface-v{INTERFACE_VERSION}\n"));
+    canonical.push_str(&format!("rlyeh-interface-v{INTERFACE_VERSION}\n"));
     for f in &interface.functions {
         canonical.push_str(&f.name);
         canonical.push('(');
@@ -63,8 +63,8 @@ pub fn compute_interface_hash(interface: &ModuleInterface) -> String {
 /// 显著轻于完整流水线，增量命中时无需走到类型检查。
 pub fn extract_interface(source: &str) -> Result<ModuleInterface, DriverError> {
     let program =
-        zeta_parser::parse(source).map_err(|e| DriverError::Typecheck(format!("语法错误: {e}")))?;
-    let sigs = zeta_typecheck::collect_fn_signatures(&program)
+        rlyeh_parser::parse(source).map_err(|e| DriverError::Typecheck(format!("语法错误: {e}")))?;
+    let sigs = rlyeh_typecheck::collect_fn_signatures(&program)
         .map_err(|e| DriverError::Typecheck(e.to_string()))?;
     Ok(ModuleInterface {
         functions: sigs

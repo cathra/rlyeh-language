@@ -22,14 +22,14 @@ use flate2::Compression;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::error::{Result, ZepError};
+use crate::error::{Result, DagonError};
 
 /// 默认注册表：用户目录下的本地注册表。
 pub fn default_registry() -> String {
     if let Ok(home) = std::env::var("HOME") {
-        format!("file://{home}/.zeta/registry")
+        format!("file://{home}/.rl/registry")
     } else {
-        "file://~/.zeta/registry".to_string()
+        "file://~/.rl/registry".to_string()
     }
 }
 
@@ -102,7 +102,7 @@ pub trait RegistryClient {
 /// - `https://` → 报错（暂不支持 TLS）
 pub fn client_from_url(url: &str) -> Result<Box<dyn RegistryClient>> {
     if url.starts_with("https://") {
-        return Err(ZepError::Registry(
+        return Err(DagonError::Registry(
             "HTTPS 注册表需要 TLS，暂不支持；请使用 http:// 或本地路径".into(),
         ));
     }
@@ -183,35 +183,35 @@ impl RegistryClient for LocalRegistry {
             return Ok(None);
         }
         let s = fs::read_to_string(&path)
-            .map_err(|e| ZepError::Registry(format!("读取索引 {} 失败: {e}", path.display())))?;
+            .map_err(|e| DagonError::Registry(format!("读取索引 {} 失败: {e}", path.display())))?;
         let idx: PackageIndex = serde_json::from_str(&s)
-            .map_err(|e| ZepError::Registry(format!("索引 {} 解析失败: {e}", path.display())))?;
+            .map_err(|e| DagonError::Registry(format!("索引 {} 解析失败: {e}", path.display())))?;
         Ok(Some(idx))
     }
 
     fn download(&self, name: &str, version: &str) -> Result<Vec<u8>> {
         let idx = self.get_index(name)?.ok_or_else(|| {
-            ZepError::Registry(format!("包 {name} 不存在于注册表"))
+            DagonError::Registry(format!("包 {name} 不存在于注册表"))
         })?;
         let meta = idx.find(version).ok_or_else(|| {
-            ZepError::Registry(format!("包 {name} 没有版本 {version}"))
+            DagonError::Registry(format!("包 {name} 没有版本 {version}"))
         })?;
         let path = self.tarball_path(name, version);
         let bytes = fs::read(&path)
-            .map_err(|e| ZepError::Registry(format!("读取 {} 失败: {e}", path.display())))?;
+            .map_err(|e| DagonError::Registry(format!("读取 {} 失败: {e}", path.display())))?;
         verify_checksum(&bytes, meta.checksum.as_deref(), name, version)?;
         Ok(bytes)
     }
 
     fn publish(&self, index: &PackageIndex, version: &str, tarball: &[u8]) -> Result<()> {
         let meta = index.find(version).ok_or_else(|| {
-            ZepError::Registry(format!("索引中缺少版本 {version}"))
+            DagonError::Registry(format!("索引中缺少版本 {version}"))
         })?;
         // 校验和一致性
         let checksum = sha256_hex(tarball);
         if let Some(recorded) = &meta.checksum {
             if recorded != &checksum {
-                return Err(ZepError::Registry(format!(
+                return Err(DagonError::Registry(format!(
                     "包 {}-{} 校验和不一致",
                     index.name, version
                 )));
@@ -222,7 +222,7 @@ impl RegistryClient for LocalRegistry {
         fs::create_dir_all(&tarball_dir)?;
         let path = self.tarball_path(&index.name, version);
         fs::write(&path, tarball)
-            .map_err(|e| ZepError::Registry(format!("写入 {} 失败: {e}", path.display())))?;
+            .map_err(|e| DagonError::Registry(format!("写入 {} 失败: {e}", path.display())))?;
         // 更新索引
         let index_dir = self.root.join("index");
         fs::create_dir_all(&index_dir)?;
@@ -236,9 +236,9 @@ impl RegistryClient for LocalRegistry {
             merged.versions.push(meta.clone());
         }
         let json = serde_json::to_string_pretty(&merged)
-            .map_err(|e| ZepError::Registry(format!("索引序列化失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("索引序列化失败: {e}")))?;
         fs::write(&index_path, json)
-            .map_err(|e| ZepError::Registry(format!("写入索引 {} 失败: {e}", index_path.display())))?;
+            .map_err(|e| DagonError::Registry(format!("写入索引 {} 失败: {e}", index_path.display())))?;
         Ok(())
     }
 
@@ -273,12 +273,12 @@ impl HttpRegistry {
         let rest = self
             .base_url
             .strip_prefix("http://")
-            .ok_or_else(|| ZepError::Registry("仅支持 http:// 协议".into()))?;
+            .ok_or_else(|| DagonError::Registry("仅支持 http:// 协议".into()))?;
         let (host, port) = match rest.split_once(':') {
             Some((h, p)) => {
                 let port: u16 = p
                     .parse()
-                    .map_err(|_| ZepError::Registry(format!("非法端口: {p:?}")))?;
+                    .map_err(|_| DagonError::Registry(format!("非法端口: {p:?}")))?;
                 (h.to_string(), port)
             }
             None => (rest.to_string(), 80),
@@ -289,31 +289,31 @@ impl HttpRegistry {
             payload.len()
         );
         let mut stream = TcpStream::connect((host.as_str(), port))
-            .map_err(|e| ZepError::Registry(format!("连接 {host}:{port} 失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("连接 {host}:{port} 失败: {e}")))?;
         stream
             .write_all(req_head.as_bytes())
-            .map_err(|e| ZepError::Registry(format!("发送请求失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("发送请求失败: {e}")))?;
         if !payload.is_empty() {
             stream
                 .write_all(payload)
-                .map_err(|e| ZepError::Registry(format!("发送请求体失败: {e}")))?;
+                .map_err(|e| DagonError::Registry(format!("发送请求体失败: {e}")))?;
         }
         stream
             .flush()
-            .map_err(|e| ZepError::Registry(format!("冲刷请求失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("冲刷请求失败: {e}")))?;
         let mut buf = Vec::new();
         stream
             .read_to_end(&mut buf)
-            .map_err(|e| ZepError::Registry(format!("读取响应失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("读取响应失败: {e}")))?;
         let text = String::from_utf8_lossy(&buf);
         let Some((status_line, rest)) = text.split_once("\r\n") else {
-            return Err(ZepError::Registry("响应格式非法（缺状态行）".into()));
+            return Err(DagonError::Registry("响应格式非法（缺状态行）".into()));
         };
         let status: u16 = status_line
             .split_whitespace()
             .nth(1)
             .and_then(|s| s.parse().ok())
-            .ok_or_else(|| ZepError::Registry(format!("响应状态行非法: {status_line:?}")))?;
+            .ok_or_else(|| DagonError::Registry(format!("响应状态行非法: {status_line:?}")))?;
         let (_, body_text) = rest
             .split_once("\r\n\r\n")
             .unwrap_or((rest, ""));
@@ -327,11 +327,11 @@ impl RegistryClient for HttpRegistry {
         match status {
             200 => {
                 let idx: PackageIndex = serde_json::from_slice(&body)
-                    .map_err(|e| ZepError::Registry(format!("索引解析失败: {e}")))?;
+                    .map_err(|e| DagonError::Registry(format!("索引解析失败: {e}")))?;
                 Ok(Some(idx))
             }
             404 => Ok(None),
-            s => Err(ZepError::Registry(format!("GET /index/{name}.json 返回 {s}"))),
+            s => Err(DagonError::Registry(format!("GET /index/{name}.json 返回 {s}"))),
         }
     }
 
@@ -342,15 +342,15 @@ impl RegistryClient for HttpRegistry {
             None,
         )?;
         if status != 200 {
-            return Err(ZepError::Registry(format!(
+            return Err(DagonError::Registry(format!(
                 "下载 {name}-{version} 失败（HTTP {status}）"
             )));
         }
         let idx = self.get_index(name)?.ok_or_else(|| {
-            ZepError::Registry(format!("包 {name} 不存在于注册表"))
+            DagonError::Registry(format!("包 {name} 不存在于注册表"))
         })?;
         let meta = idx.find(version).ok_or_else(|| {
-            ZepError::Registry(format!("包 {name} 没有版本 {version}"))
+            DagonError::Registry(format!("包 {name} 没有版本 {version}"))
         })?;
         verify_checksum(&body, meta.checksum.as_deref(), name, version)?;
         Ok(body)
@@ -364,20 +364,20 @@ impl RegistryClient for HttpRegistry {
             Some(tarball),
         )?;
         if !(200..300).contains(&status) {
-            return Err(ZepError::Registry(format!(
+            return Err(DagonError::Registry(format!(
                 "上传 {}-{version} 失败（HTTP {status}）",
                 index.name
             )));
         }
         let json = serde_json::to_vec(index)
-            .map_err(|e| ZepError::Registry(format!("索引序列化失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("索引序列化失败: {e}")))?;
         let (status, _) = self.request(
             "PUT",
             &format!("/index/{}.json", index.name),
             Some(&json),
         )?;
         if !(200..300).contains(&status) {
-            return Err(ZepError::Registry(format!(
+            return Err(DagonError::Registry(format!(
                 "更新索引 {} 失败（HTTP {status}）",
                 index.name
             )));
@@ -392,10 +392,10 @@ impl RegistryClient for HttpRegistry {
             None,
         )?;
         if status != 200 {
-            return Err(ZepError::Registry(format!("搜索失败（HTTP {status}）")));
+            return Err(DagonError::Registry(format!("搜索失败（HTTP {status}）")));
         }
         let hits: Vec<String> = serde_json::from_slice(&body)
-            .map_err(|e| ZepError::Registry(format!("搜索结果解析失败: {e}")))?;
+            .map_err(|e| DagonError::Registry(format!("搜索结果解析失败: {e}")))?;
         Ok(hits)
     }
 }
@@ -425,7 +425,7 @@ fn verify_checksum(
     if let Some(expected) = expected {
         let actual = sha256_hex(bytes);
         if actual != expected {
-            return Err(ZepError::Package(format!(
+            return Err(DagonError::Package(format!(
                 "{name}-{version} 校验和不匹配（期望 {expected}，实际 {actual}）"
             )));
         }
@@ -471,13 +471,13 @@ pub fn pack_directory(root: &Path, excludes: &[String]) -> Result<Vec<u8>> {
         for (abs, rel) in &files {
             builder
                 .append_path_with_name(abs, rel)
-                .map_err(|e| ZepError::Package(format!("打包 {rel} 失败: {e}")))?;
+                .map_err(|e| DagonError::Package(format!("打包 {rel} 失败: {e}")))?;
         }
         let enc = builder
             .into_inner()
-            .map_err(|e| ZepError::Package(format!("完成打包失败: {e}")))?;
+            .map_err(|e| DagonError::Package(format!("完成打包失败: {e}")))?;
         enc.finish()
-            .map_err(|e| ZepError::Package(format!("压缩失败: {e}")))?;
+            .map_err(|e| DagonError::Package(format!("压缩失败: {e}")))?;
     }
     Ok(buf)
 }
@@ -488,17 +488,17 @@ pub fn unpack_tarball(bytes: &[u8], dest: &Path) -> Result<()> {
     let mut archive = tar::Archive::new(decoder);
     let entries = archive
         .entries()
-        .map_err(|e| ZepError::Package(format!("读取压缩包失败: {e}")))?;
+        .map_err(|e| DagonError::Package(format!("读取压缩包失败: {e}")))?;
     for entry in entries {
         let mut entry =
-            entry.map_err(|e| ZepError::Package(format!("读取压缩项失败: {e}")))?;
+            entry.map_err(|e| DagonError::Package(format!("读取压缩项失败: {e}")))?;
         let rel = entry
             .path()
-            .map_err(|e| ZepError::Package(format!("读取路径失败: {e}")))?
+            .map_err(|e| DagonError::Package(format!("读取路径失败: {e}")))?
             .to_path_buf();
         // 防路径穿越：拒绝绝对路径与 .. 组件
         if rel.is_absolute() || rel.components().any(|c| c == std::path::Component::ParentDir) {
-            return Err(ZepError::Package(format!(
+            return Err(DagonError::Package(format!(
                 "压缩包含非法路径: {}",
                 rel.display()
             )));
@@ -509,7 +509,7 @@ pub fn unpack_tarball(bytes: &[u8], dest: &Path) -> Result<()> {
         }
         entry
             .unpack(&target)
-            .map_err(|e| ZepError::Package(format!("解包 {} 失败: {e}", rel.display())))?;
+            .map_err(|e| DagonError::Package(format!("解包 {} 失败: {e}", rel.display())))?;
     }
     Ok(())
 }
@@ -521,7 +521,7 @@ mod tests {
 
     fn tmpdir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!(
-            "zep-registry-test-{}-{}",
+            "dagon-registry-test-{}-{}",
             std::process::id(),
             name
         ));
@@ -533,17 +533,17 @@ mod tests {
     #[test]
     fn pack_unpack_roundtrip() {
         let dir = tmpdir("pack");
-        fs::write(dir.join("Zeta.toml"), "[package]\nname=\"x\"\n").unwrap();
+        fs::write(dir.join("Rlyeh.toml"), "[package]\nname=\"x\"\n").unwrap();
         fs::create_dir_all(dir.join("src")).unwrap();
-        fs::write(dir.join("src/main.zeta"), "fn main() {}\n").unwrap();
+        fs::write(dir.join("src/main.rl"), "fn main() {}\n").unwrap();
         fs::create_dir_all(dir.join("target")).unwrap();
         fs::write(dir.join("target/artifact"), "junk").unwrap();
 
         let tarball = pack_directory(&dir, &["target".to_string()]).unwrap();
         let dest = tmpdir("unpack");
         unpack_tarball(&tarball, &dest).unwrap();
-        assert!(dest.join("Zeta.toml").exists());
-        assert!(dest.join("src/main.zeta").exists());
+        assert!(dest.join("Rlyeh.toml").exists());
+        assert!(dest.join("src/main.rl").exists());
         assert!(!dest.join("target/artifact").exists());
     }
 
