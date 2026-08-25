@@ -10,7 +10,9 @@
 
 | 文档 | 定位 | 读者 | 说明 |
 |------|------|------|------|
-| [guide.md](./guide.md) | 语言教程 | 语言使用者 | 示例均可运行的渐进式教程，含 MVP 已知限制汇总 |
+| [tutorial.md](./tutorial.md) | 新手入门 | 新读者 | 安装 → 第一个程序 → 发布项目全流程 |
+| [guide.md](./guide.md) | 语言教程 | 语言使用者 | 示例均可运行的渐进式教程（主文档），含 MVP 已知限制汇总 |
+| [manual.md](./manual.md) | 语言参考 | 语言使用者 | 速查：词法 / 类型 / 运算符 / 标准库 API / 工具链命令 |
 | [grammar.md](./grammar.md) | 语法规范 | 编译器开发者 / 使用者 | 完整 EBNF 语法（含规划标注） |
 | [semantics.md](./semantics.md) | 语义规则 | 编译器开发者 | 类型 / 求值 / 名称解析规则（含规划标注） |
 | [memory-model.md](./memory-model.md) | 内存模型 | 编译器开发者 / 使用者 | 分层内存管理（L0 所有权 → L3 GC）规范 |
@@ -22,7 +24,7 @@
 
 ## 2. 建议阅读顺序
 
-- **语言使用者**：`guide.md` →（按需）`std-lib.md` → `grammar.md` / `memory-model.md`
+- **语言使用者**：`tutorial.md`（新手入口）→ `guide.md` →（按需）`manual.md` / `std-lib.md` → `grammar.md` / `memory-model.md`
 - **编译器开发者**：`semantics.md` → `grammar.md` → `memory-model.md` → `actor-model.md` → `module-system.md` →（各文档尾部"实现纪要"附录，任务书归档于 [`../design/prompts/`](design/prompts/README.md)）
 - **标准库开发者**：`std-lib.md` + `design/10_标准库规划.md`
 - **团队排期**：`mvp-gaps-plan.md`（当前主线）→ `development-plan.md`（历史阶段）

@@ -1,7 +1,8 @@
 # Zeta 编程语言指南
 
 > 版本：v2.0（MVP）
-> 本文为面向读者的语言教程。所有示例均为 `examples/`、`tests/run-pass/` 中可编译运行的已验证代码（或其简化）。
+> 本文为面向读者的**语言教程**（主文档）。所有示例均为 `examples/`、`tests/run-pass/` 中可编译运行的已验证代码（或其简化）。
+> 新手入门（安装 → 第一个程序 → 实战）见 [tutorial.md](./tutorial.md)；语言速查 / 命令参考见 [manual.md](./manual.md)。
 > 权威规范见：[grammar.md](./grammar.md)（EBNF）、[semantics.md](./semantics.md)（语义）、[memory-model.md](./memory-model.md)、[actor-model.md](./actor-model.md)、[std-lib.md](./std-lib.md)。
 
 ---

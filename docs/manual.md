@@ -1,8 +1,9 @@
 # Zeta 语言手册（Language Manual）
 
-> 版本：v2.0（MVP）
-> 本文为 Zeta 语言的**完整参考手册**：词法、类型系统、表达式、控制流、模块、泛型、内存模型、并发模型、标准库、编译器与工具链。
-> 初学者请先阅读 [tutorial.md](./tutorial.md)。权威规范：`grammar.md`（EBNF）/ `semantics.md` / `memory-model.md` / `actor-model.md` / `std-lib.md`。
+> **定位**：面向已会使用 Zeta 的读者的**快速参考**：词法、类型系统、运算符、控制流、标准库 API 与工具链命令速查。
+> **入门**：新手请先阅读 [tutorial.md](./tutorial.md)（安装 → 第一个程序 → 发布项目）。
+> **完整教程**：渐进式语言教学（含示例讲解与已知限制）见 [guide.md](./guide.md)。
+> **权威规范**：`grammar.md`（EBNF）/ `semantics.md` / `memory-model.md` / `actor-model.md` / `std-lib.md`。
 
 ---
 
@@ -20,14 +21,14 @@
 10. [并发模型](#10-并发模型)
 11. [标准库参考](#11-标准库参考)
 12. [编译器与构建](#12-编译器与构建)
-13. [工具链手册](#13-工具链手册)
-14. [已知限制与规划](#14-已知限制与规划)
+13. [工具链命令速查](#13-工具链命令速查)
+14. [已知限制](#14-已知限制)
 
 ---
 
 ## 1. 语言概述
 
-Zeta 是系统级编程语言，内存安全与零 GC 默认、并发一等公民、数学式语法。编译器为 Rust bootstrap 阶段，代码生成走 LLVM IR，经 clang 汇编链接为原生可执行文件或 WASM。
+Zeta 是系统级编程语言：内存安全与零 GC 默认、并发一等公民、数学式语法。编译器为 Rust bootstrap 阶段，代码生成走 LLVM IR，经 clang 汇编链接为原生可执行文件或 WASM。
 
 | 维度 | 设计 |
 |------|------|
@@ -57,13 +58,13 @@ Zeta 是系统级编程语言，内存安全与零 GC 默认、并发一等公�
 
 ```zeta
 let s = "hello";
-let raw = r#"C:\path\no\escape"#;   // 带哈希原始字符串（r# / r## ...）
+let raw = r#"C:\path\no\escape"#;   // 带哈希原始字符串（r# / r## ...，任意哈希定界、无转义）
 ```
 
 ### 2.4 时间字面量
 
 ```zeta
-9am    6pm    10pm    12am    3pm    // 时间字面量（比较链 / 区间判断用）
+9am    6pm    10pm    12am    3pm    // 时间字面量（分钟值，比较链 / 区间判断用）
 ```
 
 ### 2.5 标识符
@@ -99,12 +100,8 @@ let raw = r#"C:\path\no\escape"#;   // 带哈希原始字符串（r# / r## ...�
 ### 3.4 trait
 
 ```zeta
-trait Area {
-    fn area(&self) -> f64;
-}
-impl Area for Shape {
-    fn area(&self) -> f64 { /* ... */ }
-}
+trait Area { fn area(&self) -> f64; }
+impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 ```
 
 `dyn Trait`：trait 对象（2 槽胖指针 = 数据指针 + vtable），`&T` 强制转换，方法经 vtable 间接分派。MVP 限制：trait/impl 须非泛型，含 `Self` 签名的方法不可经 dyn 调用。
@@ -119,7 +116,7 @@ impl Area for Shape {
 |------|------|
 | `&T` / `&mut T` | 不可变 / 可变引用；`&x` / `&mut x` 表达式；`*` 解引用；字段访问/方法调用自动剥引用层 |
 | `&str` | String 只读借用视图（`s.as_str()`，零拷贝） |
-| `*const T` / `*mut T` | 裸指针（G3，与 `&T` 互视） |
+| `*const T` / `*mut T` | 裸指针（与 `&T` 互视） |
 | `Box<T>` / `Rc<T>` / `Arc<T>` / `Gc<T>` | 智能指针（见 §9） |
 
 ### 3.7 字符串类型
@@ -247,7 +244,7 @@ fn main() {}
 
 ## 6. 函数与闭包
 
-### 6.1 函数一等值（H1）
+### 6.1 函数一等值
 
 ```zeta
 let f = add;                    // 函数值绑定
@@ -259,9 +256,9 @@ f(3, 4) / apply(add, 10, 20)
 
 | 形态 | 语法 | 说明 |
 |------|------|------|
-| 无捕获闭包（H2） | `\|x, y\| expr` | desugar 为匿名函数 + 函数指针，需 fn 类型上下文 |
-| 捕获闭包 IIFE（H3） | `(\|x\| expr)(args)` | 立即调用，外层变量按值捕获 |
-| 闭包值对象（H5） | `let f = \|x: i64\| expr;` | 绑定后反复调用；无注解参数由首次调用点实参推断 |
+| 无捕获闭包 | `\|x, y\| expr` | desugar 为匿名函数 + 函数指针，需 fn 类型上下文 |
+| 捕获闭包 IIFE | `(\|x\| expr)(args)` | 立即调用，外层变量按值捕获 |
+| 闭包值对象 | `let f = \|x: i64\| expr;` | 绑定后反复调用；无注解参数由首次调用点实参推断 |
 
 MVP 约束：参数模式仅简单标识符与 `_`；捕获闭包值不跨函数边界（作 fn 实参/返回值报错）；不支持嵌套捕获闭包；按引用捕获与 `move` 规划中。
 
@@ -451,85 +448,48 @@ println!("value = {}", x);      // {} 占位
 
 ## 12. 编译器与构建
 
-### 12.1 本机编译
-
 ```bash
-zeta build hello.zeta -o hello && ./hello
+zeta build hello.zeta -o hello && ./hello          # 本机编译
+zeta build app.zeta --target arm64-apple-macosx    # 交叉编译
+zeta build app.zeta --target wasm32-wasip1 -o app.wasm && wasmtime app.wasm
 ```
 
-### 12.2 交叉编译
+- 平台内建 `__zeta_target_os`：linux=1 / macos=2 / windows=3 / freebsd=4 / 其他=0 / wasi=5
+- WASM 依赖 `wasi-libc` sysroot 与 `wasm-ld`；actor 程序支持 WASI（需先构建 wasm 版 actor 运行时）
+- 详细说明（含 Actor 交叉编译）见 [guide.md §11](./guide.md#11-编译目标与工具链)
 
-```bash
-zeta build app.zeta --target x86_64-apple-macosx
-zeta build app.zeta --target arm64-apple-macosx
-```
-
-平台内建 `__zeta_target_os`：linux=1 / macos=2 / windows=3 / freebsd=4 / 其他=0 / wasi=5。
-
-### 12.3 WebAssembly
-
-```bash
-zeta build app.zeta --target wasm32-wasip1 -o app.wasm
-wasmtime app.wasm
-```
-
-依赖 `wasi-libc` sysroot 与 `wasm-ld`。actor 程序支持 WASI（需先构建 wasm 版 actor 运行时）。
-
-### 12.4 宏系统
+### 12.1 宏系统
 
 - 声明式宏 `macro_rules!`：`$x:expr` / `$x:ident` / `$x:ty` / `$x:tt` + 重复 `*`/`+`/`?`
 - 内置宏：`println!` / `print!` / `format!` / `dbg!` / `eprintln!` / `eprint!` / `arr!` / `vec!` / `map!`
 - 原始字符串：`r#"..."#`（任意哈希定界）
 - 限制：无卫生宏
 
-### 12.5 PGO profile
+### 12.2 PGO profile
 
 ```bash
 zeta profile app.zeta_profile --out report.md    # 画像 → 区域大小预测报告
 # zeta build --profile 注入 PGO；region adaptive 据此建议容量
 ```
 
-### 12.6 FFI
+### 12.3 FFI
 
 ```zeta
 extern fn clock() -> i64;
 extern fn fopen(path: String, mode: String) -> i64;
 ```
 
-支持的标量类型：`i8..i64` / `isize` / `u8..u64` / `usize` / `f32` / `f64` / `bool` / `char` / `()` / `&T` / `String`。`String` 参数 ABI 层传 data 指针；`i32` 返回值自动 sext 清洗。
+支持的标量类型：`i8..i64` / `isize` / `u8..u64` / `usize` / `f32` / `f64` / `bool` / `char` / `()` / `&T` / `String`。`String` 参数 ABI 层传 data 指针；`i32` 返回值自动 sext 清洗。详见 [guide.md §12](./guide.md#12-外部函数接口ffi)。
 
 ---
 
-## 13. 工具链手册
+## 13. 工具链命令速查
 
 ### 13.1 部署与安装
 
-#### 前置依赖
+前置依赖（Rust ≥ 1.75 / LLVM-Clang / git）、一键构建（`./toolchains/build.sh`）、本地发布（`./toolchains/install.sh`）、归档分发见 **[tutorial.md §2](./tutorial.md#2-工具链部署与安装)**。
 
-| 依赖 | 用途 |
-|------|------|
-| Rust 工具链（≥ 1.75） | 编译器自举构建 |
-| LLVM/Clang | 汇编与链接后端 |
-| git | 版本信息 |
-
-#### 一键构建
-
-```bash
-./toolchains/build.sh                          # 环境检查 → build → test → 发布 → 冒烟 → 归档
-./toolchains/build.sh --no-test                # 跳过测试
-./toolchains/build.sh --no-install             # 仅构建 + 归档
-./toolchains/build.sh --no-tar                 # 不打包
-./toolchains/build.sh --prefix /opt/zeta       # 自定义前缀
-```
-
-#### 本地发布
-
-```bash
-./toolchains/install.sh                        # 发布到 ~/.zeta
-ZETA_PREFIX=/opt/zeta ./toolchains/install.sh  # 自定义前缀
-```
-
-#### PATH 与环境变量
+环境变量：
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
@@ -537,16 +497,7 @@ ZETA_PREFIX=/opt/zeta ./toolchains/install.sh  # 自定义前缀
 | `ZETA_STD_PATH` | `~/.zeta/std`（wrapper 自动注入） | 标准库目录（含 core.zeta） |
 | `ZETA_PREFIX` | `$HOME/.zeta` | 安装前缀（install.sh 用） |
 
-```bash
-export PATH="$HOME/.zeta/bin:$PATH"
-zeta --version    # → zeta 0.1.0
-```
-
-#### 归档分发
-
-`toolchains/dist/zeta-toolchain-<ver>-<os>-<arch>.tar.gz`：解压到任意目录，`bin` 加入 PATH 即可（wrapper 按 `bin/../std` 相对定位标准库，可重定位）。
-
-### 13.2 编译器命令 `zeta`（全参考）
+### 13.2 编译器命令 `zeta`
 
 ```
 用法:
@@ -577,7 +528,7 @@ zeta --version    # → zeta 0.1.0
       版本信息
 ```
 
-**子命令速查**
+**子命令速查**：
 
 | 子命令 | 用途 | 典型用法 |
 |--------|------|----------|
@@ -593,7 +544,7 @@ zeta --version    # → zeta 0.1.0
 | `lsp` | 语言服务器 | 编辑器集成 |
 | `profile` | PGO 画像分析 | `zeta profile app.zeta_profile` |
 
-### 13.3 独立工具（详细使用说明）
+### 13.3 独立工具
 
 | 工具 | 完整用法 | 说明 |
 |------|----------|------|
@@ -642,35 +593,14 @@ Options:
 
 ---
 
-## 14. 已知限制与规划
+## 14. 已知限制
 
-**规划中 / 未实现**：
-- 生命周期标注 `<'a>` / `&'a T`：MVP 语法接受后丢弃（宽松检查），严格验证规划中
-- 闭包按引用捕获、`move` 所有权语义
-- 多线程 GC（全局锁 / 线程局部堆）、增量回收、write barrier
-- `fmt` 模块规划；`Serialize`/`Deserialize` trait 与 `#[derive]` 宏
-- 泛型 `join_all` / `timeout` / `sync` 并发原语
-- `strategy (pool)` 区域分配策略
+MVP 已知限制的完整说明见 **[guide.md §13](./guide.md#13-参考与已知限制)**，要点：
+
+- 生命周期标注 `<'a>` / `&'a T`：语法接受后丢弃（宽松检查），严格验证规划中
+- 闭包按引用捕获、`move` 所有权语义规划中
+- 多线程 GC / 增量回收 / write barrier 规划中
+- `Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划中
 - 无自动 drop（`Box`/`Rc`/`Vec`/`String` 显式释放语义规划中）
 
-**实现约束**：
-- 标准库位于 `zeta-std/zeta/`（core.zeta 根模块 + time/io/net/sync/fs 子目录），driver 模块展开 + import 重导出，用户侧裸名即用
-- WASI 下 `net` 模块明确禁用（`__zeta_target_os == 5` 短路）
-- 闭包捕获不跨函数边界；trait 非泛型；`HashMap` 键限 i64/String
-
-## 权威文档导航
-
-| 文档 | 内容 |
-|------|------|
-| [guide.md](./guide.md) | 教程（v2.0，示例导向） |
-| [tutorial.md](./tutorial.md) | 教程指南（新手入门，含工具链部署） |
-| [grammar.md](./grammar.md) | 完整语法规范（EBNF） |
-| [semantics.md](./semantics.md) | 语义规则 |
-| [memory-model.md](./memory-model.md) | 分层内存管理规范 |
-| [actor-model.md](./actor-model.md) | Actor 并发模型规范 |
-| [std-lib.md](./std-lib.md) | 标准库 API 规范 |
-| [development-plan.md](./development-plan.md) | 开发计划（阶段 A–F） |
-| [mvp-gaps-plan.md](./mvp-gaps-plan.md) | 已知限制消解计划（阶段 G–L） |
-| [../toolchains/README.md](../toolchains/README.md) | 工具链构建与发布总览 |
-| [../toolchains/docs/REBUILD.md](../toolchains/docs/REBUILD.md) | 重新构建教程 |
-| [../toolchains/docs/MANUAL.md](../toolchains/docs/MANUAL.md) | 工具链快速手册 |
+实现约束：标准库位于 `zeta-std/zeta/`（core.zeta 根模块 + time/io/net/sync/fs 子目录）；WASI 下 `net` 模块禁用；闭包捕获不跨函数边界；trait 非泛型；`HashMap` 键限 i64/String。
