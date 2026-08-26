@@ -4,7 +4,7 @@
 > **归档说明（2026-08-24）**：P001–P013 **已全部完成**；各任务书的持久内容（实现决策、落地偏差、
 > 已知限制、关键 bug）已提炼并入 `docs/` 对应权威文档的**"附录 A：实现纪要"**，本目录仅保留原始任务书供追溯。
 > 新功能开发以 [`../../docs/`](../../) 权威规范与 [`../../CODEBUDDY.md`](../../../CODEBUDDY.md) 为准。
-> 执行记录：阶段 A–F 见 [`../../docs/development-plan.md`](../../development-plan.md)，阶段 G–T 剩余任务消解见 [`../../docs/mvp-gaps-plan.md`](../../mvp-gaps-plan.md)。
+> 执行记录：阶段 A–Z 见 [`../../docs/development-plan.md`](../../development-plan.md)（阶段 A–F 已完成 + §6 剩余任务消解 G–L / M–T / U–Z）。
 > 设计稿 → 权威规范 → 实现任务 三方映射见 [`../README.md`](../README.md)（本目录上一级为设计稿归档区）。
 
 ---
@@ -52,7 +52,7 @@ P001 ──→ P002 ──→ P003 ──→ P004 ──→ P005 ──→ P012 
 ## 3. 使用方式（历史指引）
 
 > 以下流程为 P001–P013 开发阶段的用法；**当前所有 Prompt 均已完成**。
-> 新增开发任务请直接参考 `docs/development-plan.md`（阶段 A–F）或 `docs/mvp-gaps-plan.md`（阶段 G–T）的阶段划分，不必回放历史任务书。
+> 新增开发任务请直接参考 `docs/development-plan.md`（阶段 A–Z）的阶段划分，不必回放历史任务书。
 
 1. 在下方索引中选择要执行的 Prompt
 2. 全选复制对应 `Pxxx_*.md` 文件内容
@@ -196,8 +196,7 @@ cargo test --workspace        # 全部通过（当前 111 套件）
 |------|------|------|
 | 项目总纲 | [../CODEBUDDY.md](../../../CODEBUDDY.md) | 项目全景 + 工具链命令 + 特性速览 |
 | 文档导航（docs 入口） | [../docs/README.md](../../README.md) | docs/ 文档地图 + 阅读顺序 + 一致性规则 |
-| 开发计划（阶段 A–F，已完成） | [../docs/development-plan.md](../../development-plan.md) | 执行记录 + 遗留问题清单 |
-| 剩余任务消解（阶段 G–T，进行中） | [../docs/mvp-gaps-plan.md](../../mvp-gaps-plan.md) | guide §13 限制 + std-lib 规划消解计划 |
+| 开发计划（阶段 A–Z） | [../docs/development-plan.md](../../development-plan.md) | 阶段 A–F 已完成 + §6 剩余任务消解 G–L / M–T / U–Z |
 | 语言教程 | [../docs/guide.md](../../guide.md) | 面向读者（示例均可运行） |
 | 语法规范 | [../docs/grammar.md](../../grammar.md) | EBNF 语法（含规划） |
 | 语义规则 | [../docs/semantics.md](../../semantics.md) | 类型/求值规则 |

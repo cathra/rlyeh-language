@@ -498,6 +498,7 @@ fn expand_actor(
         init: HirExpr::Alloc {
             slots: slots.len(),
             by_value: false,
+            is_strfat: false,
         },
         mutable: true,
     }];
@@ -813,6 +814,10 @@ fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &str) -> Resul
             name: m.name.clone(),
             params,
             return_type,
+            // V3 trait 默认方法：trait 方法带 body（`fn f(...) { ... }`）时保留其
+            // 完整方法 AST（含签名与默认实现体）；`impl Trait for X` 未实现该方法
+            // 时回退（`check_method_call`）。抽象方法（无 body）为 `None`。
+            default_body: m.body.is_some().then(|| m.clone()),
         });
     }
 
@@ -922,6 +927,7 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
                 name: m.name.clone(),
                 params,
                 return_type,
+                default_body: None,
             },
             body: Some(m.clone()),
         });

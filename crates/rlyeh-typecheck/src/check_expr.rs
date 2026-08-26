@@ -108,6 +108,7 @@ pub(crate) fn coerce_to_dyn(
         init: HirExpr::Alloc {
             slots: 3 + n,
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     });
@@ -152,6 +153,7 @@ pub(crate) fn coerce_to_dyn(
         init: HirExpr::Alloc {
             slots: 2,
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     });
@@ -2622,12 +2624,18 @@ fn check_call(
             let (mut hir, mut ty) = infer_expr(ctx, &args[0])?;
             // 引用参数自动剥一层（G1 剥层语义覆盖 print/println 内建：
             // `println(r)` 打印解引用值而非地址，与字段访问 / 方法调用剥层一致）
+            // 例外：`&str`（`Ref(Str)`）保留为 StrFat 双槽胖指针 `{data, len}`，
+            // **不得剥层成瘦指针 `Str`**——否则子区间视图的 len 信息丢失，
+            // codegen 走 `Str` 打印（到 NUL 读到全串）而非 `StrFat` 打印
+            // （`%.*s` 长度限定，仅打印子区间）。`&str` 本就是 by-value 双槽值。
             if let Type::Ref(inner, _) = &ty {
-                hir = HirExpr::Deref {
-                    expr: Box::new(hir),
-                    ty: field_scalar_of(inner),
-                };
-                ty = (**inner).clone();
+                if !matches!(&**inner, Type::Str) {
+                    hir = HirExpr::Deref {
+                        expr: Box::new(hir),
+                        ty: field_scalar_of(inner),
+                    };
+                    ty = (**inner).clone();
+                }
             }
             if let Type::Named(n, _) = peel_ref(&ty) {
                 let full = ctx
@@ -2824,6 +2832,27 @@ fn check_call(
             && (method == "with_capacity" || method == "new")
         {
             return check_hashmap_construct(ctx, method, args, span);
+        }
+        // `VecDeque` 构造器特判（V5，2026-08-26）：`new()` / `with_capacity(n)`
+        // 3 槽环形双端队列（槽 0 = buf: Vec<T> 指针、槽 1 = front、槽 2 = len）
+        if ty_full == "VecDeque" && ctx.lookup_struct(&ty_full).is_some()
+            && (method == "with_capacity" || method == "new")
+        {
+            return check_vecdeque_construct(ctx, method, args, span);
+        }
+        // `HashSet` 构造器特判（V5，2026-08-26）：`new()` / `with_capacity(n)`
+        // 5 槽哈希集合（槽 0 = items 指针、1 = states、2 = len、3 = used、4 = cap）
+        if ty_full == "HashSet" && ctx.lookup_struct(&ty_full).is_some()
+            && (method == "with_capacity" || method == "new")
+        {
+            return check_hashset_construct(ctx, method, args, span);
+        }
+        // `BTreeMap` 构造器特判（V5，2026-08-26）：`new()` / `with_capacity(n)`
+        // 3 槽有序映射（槽 0 = keys 指针、1 = vals 指针、2 = len）
+        if ty_full == "BTreeMap" && ctx.lookup_struct(&ty_full).is_some()
+            && (method == "with_capacity" || method == "new")
+        {
+            return check_btreemap_construct(ctx, method, args, span);
         }
         // `Iter` / `IterMut` 构造器特判（V1 瘦指针迭代器，2026-08）：
         // `Iter::new(data, len)`（2 槽）/ `IterMut::new(data, cur, len)`（3 槽）
@@ -3265,6 +3294,7 @@ pub(crate) fn check_deferred_closure_binding(
     Ok((HirExpr::Alloc {
         slots: 0,
         by_value: false,
+        is_strfat: false,
     }, ty))
 }
 
@@ -3340,6 +3370,7 @@ pub(crate) fn check_closure_value_binding(
         init: HirExpr::Alloc {
             slots: captures.len(),
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     }];
@@ -3564,6 +3595,7 @@ fn check_deferred_closure_call(
         init: HirExpr::Alloc {
             slots: captures.len(),
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     }];
@@ -4272,6 +4304,7 @@ fn check_struct_construct(
         init: HirExpr::Alloc {
             slots: def.fields.len(),
             by_value: struct_by_value,
+            is_strfat: false,
         },
         mutable: false,
     }];
@@ -4375,6 +4408,7 @@ fn check_vec_construct(
             init: HirExpr::Alloc {
             slots: 3,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -4454,6 +4488,7 @@ fn check_string_construct(
             init: HirExpr::Alloc {
             slots: 3,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -4575,6 +4610,7 @@ fn check_hashmap_construct(
             init: HirExpr::Alloc {
             slots: 7,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -4628,6 +4664,285 @@ fn check_hashmap_construct(
             final_expr: Some(HirExpr::Variable(base)),
         })),
         Type::Named("HashMap".to_string(), vec![Type::Infer, Type::Infer]),
+    ))
+}
+
+/// `VecDeque::with_capacity(cap)` / `VecDeque::new()`（V5，2026-08-26）：
+/// 编译器直接展开，3 槽环形双端队列。
+///
+/// 与 `VecDeque` 结构体字段顺序一致（3 槽）：槽 0 = buf（`Vec<T>` 对象指针，
+/// Ptr）、槽 1 = front（头索引，Int，初始 0）、槽 2 = len（元素个数，Int，初始
+/// 0）。底层 `Vec` 复用 `check_vec_construct` 展开（`new` → `Vec::new()`、
+/// `with_capacity` → `Vec::with_capacity(cap)`）。返回 `VecDeque<Infer>`，类型
+/// 参数由上下文（如 `let d: VecDeque<i64> = ...` 注解）统一。
+fn check_vecdeque_construct(
+    ctx: &mut TypeContext,
+    method: &str,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 校验参数个数：`new` 0 参、`with_capacity` 1 参
+    if method == "with_capacity" && args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "VecDeque::with_capacity".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    // 底层 Vec 构造（new → Vec::new / with_capacity → Vec::with_capacity(cap)）
+    let (buf_hir, _) = check_vec_construct(ctx, method, args, span)?;
+
+    let base = ctx.fresh_temp();
+    let stmts = vec![
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc {
+                slots: 3,
+                by_value: false,
+                is_strfat: false,
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(buf_hir),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("VecDeque".to_string(), vec![Type::Infer]),
+    ))
+}
+
+/// `HashSet::with_capacity(cap)` / `HashSet::new()`（V5，2026-08-26）：
+/// 编译器直接展开，5 槽开放寻址哈希集合。
+///
+/// 与 `HashSet` 结构体字段顺序一致（5 槽）：槽 0 = items 指针（`[T; 0]`，
+/// Ptr）、槽 1 = states 指针（`[i64; 0]`，0=空 1=占用 2=墓碑，Ptr）、槽 2 =
+/// len（元素个数，Int，初始 0）、槽 3 = used（已占用槽数，Int，初始 0）、
+/// 槽 4 = cap（2 的幂容量，Int）。`with_capacity` 的 cap 经 `next_pow2` 规整。
+/// 返回 `HashSet<Infer>`，类型参数由上下文注解统一。
+fn check_hashset_construct(
+    ctx: &mut TypeContext,
+    method: &str,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let cap = if method == "new" {
+        AstExpr::new(ExprKind::IntLiteral(8), span)
+    } else if args.len() == 1 {
+        args[0].clone()
+    } else {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("HashSet::{method}"),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    };
+    let (cap_hir, cap_ty) = infer_expr(ctx, &cap)?;
+    if !cap_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: cap_ty.to_string(),
+            span,
+        });
+    }
+    let cap_hir = if method == "with_capacity" {
+        HirExpr::Call {
+            callee: "next_pow2".to_string(),
+            args: vec![cap_hir],
+        }
+    } else {
+        cap_hir
+    };
+
+    let items_tmp = ctx.fresh_temp();
+    let states_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let cap_for_alloc = cap_hir.clone();
+    let stmts = vec![
+        HirStmt::Let {
+            name: items_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_for_alloc],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: states_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_hir.clone()],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc {
+                slots: 5,
+                by_value: false,
+                is_strfat: false,
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(items_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::Variable(states_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 3,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 4,
+            value: Box::new(cap_hir),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("HashSet".to_string(), vec![Type::Infer]),
+    ))
+}
+
+/// `BTreeMap::with_capacity(cap)` / `BTreeMap::new()`（V5，2026-08-26）：
+/// 编译器直接展开，3 槽有序映射（有序键数组，二分插入 + 移动）。
+///
+/// 与 `BTreeMap` 结构体字段顺序一致（3 槽）：槽 0 = keys 指针（`[K; 0]`，
+/// Ptr）、槽 1 = vals 指针（`[V; 0]`，Ptr）、槽 2 = len（元素个数，Int，初始
+/// 0）。`with_capacity` 的 cap 经 `next_pow2` 规整。返回 `BTreeMap<Infer,
+/// Infer>`，类型参数由上下文注解统一。
+fn check_btreemap_construct(
+    ctx: &mut TypeContext,
+    method: &str,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let cap = if method == "new" {
+        AstExpr::new(ExprKind::IntLiteral(8), span)
+    } else if args.len() == 1 {
+        args[0].clone()
+    } else {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("BTreeMap::{method}"),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    };
+    let (cap_hir, cap_ty) = infer_expr(ctx, &cap)?;
+    if !cap_ty.is_integer() {
+        return Err(TypeError::ExpectedInt {
+            found: cap_ty.to_string(),
+            span,
+        });
+    }
+    let cap_hir = if method == "with_capacity" {
+        HirExpr::Call {
+            callee: "next_pow2".to_string(),
+            args: vec![cap_hir],
+        }
+    } else {
+        cap_hir
+    };
+
+    let keys_tmp = ctx.fresh_temp();
+    let vals_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let cap_for_alloc = cap_hir.clone();
+    let stmts = vec![
+        HirStmt::Let {
+            name: keys_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_for_alloc],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: vals_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_array".to_string(),
+                args: vec![cap_hir.clone()],
+            },
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc {
+                slots: 3,
+                by_value: false,
+                is_strfat: false,
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(keys_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::Variable(vals_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }),
+    ];
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Named("BTreeMap".to_string(), vec![Type::Infer, Type::Infer]),
     ))
 }
 
@@ -4695,6 +5010,7 @@ fn check_iter_construct(
             init: HirExpr::Alloc {
                 slots: expected,
                 by_value: name == "Iter",
+                is_strfat: false,
             },
             mutable: false,
         },
@@ -4781,80 +5097,94 @@ pub(crate) fn check_string_from(
         ));
     }
     // `&str`（String 对象的只读借用视图）→ 深拷贝：
-    // 运行期读 data/len 槽 → alloc_bytes(len+1) → copy_bytes → 三槽构造（cap = len）。
+    // 运行期读 data/len 槽 → 独立 alloc_bytes(len+1) 数据缓冲 + 独立 3 槽 String 对象。
+    // 注意：数据缓冲与 String 对象必须**两个独立分配**——若共用 base，copy_bytes 写入的
+    // 字符串字节会被随后的 FieldSet 对象头（前 24 字节）覆盖，破坏数据（V2-D 修复）。
     if let Type::Ref(inner, _) = &s_ty {
         if matches!(**inner, Type::Str) {
-        let len_tmp = ctx.fresh_temp();
-        let data_tmp = ctx.fresh_temp();
-        let base = ctx.fresh_temp();
-        let len_plus1 = |var: String| {
-            HirExpr::Binary(
-                HirBinaryOp::Add,
-                Box::new(HirExpr::Variable(var)),
-                Box::new(HirExpr::IntLiteral(1)),
-            )
-        };
-        let stmts = vec![
-            HirStmt::Let {
-                name: len_tmp.clone(),
-                init: HirExpr::FieldGet {
-                    base: Box::new(s_hir.clone()),
-                    index: 1,
-                    ty: FieldScalar::Int,
+            let len_tmp = ctx.fresh_temp();
+            let data_src = ctx.fresh_temp();
+            let data_tmp = ctx.fresh_temp();
+            let base = ctx.fresh_temp();
+            let len_plus1 = |var: String| {
+                HirExpr::Binary(
+                    HirBinaryOp::Add,
+                    Box::new(HirExpr::Variable(var)),
+                    Box::new(HirExpr::IntLiteral(1)),
+                )
+            };
+            let stmts = vec![
+                HirStmt::Let {
+                    name: len_tmp.clone(),
+                    init: HirExpr::FieldGet {
+                        base: Box::new(s_hir.clone()),
+                        index: 1,
+                        ty: FieldScalar::Int,
+                    },
+                    mutable: false,
                 },
-                mutable: false,
-            },
-            HirStmt::Let {
-                name: data_tmp.clone(),
-                init: HirExpr::FieldGet {
-                    base: Box::new(s_hir),
+                HirStmt::Let {
+                    name: data_src.clone(),
+                    init: HirExpr::FieldGet {
+                        base: Box::new(s_hir),
+                        index: 0,
+                        ty: FieldScalar::Ptr,
+                    },
+                    mutable: false,
+                },
+                // 独立数据缓冲（len+1 字节，含 NUL）
+                HirStmt::Let {
+                    name: data_tmp.clone(),
+                    init: HirExpr::Call {
+                        callee: "alloc_bytes".to_string(),
+                        args: vec![len_plus1(len_tmp.clone())],
+                    },
+                    mutable: false,
+                },
+                HirStmt::Semi(HirExpr::Call {
+                    callee: "copy_bytes".to_string(),
+                    args: vec![
+                        HirExpr::Variable(data_tmp.clone()),
+                        HirExpr::Variable(data_src),
+                        len_plus1(len_tmp.clone()),
+                    ],
+                }),
+                // 独立 String 对象（3 槽：data/len/cap）
+                HirStmt::Let {
+                    name: base.clone(),
+                    init: HirExpr::Alloc {
+                        slots: 3,
+                        by_value: false,
+                        is_strfat: false,
+                    },
+                    mutable: false,
+                },
+                HirStmt::Semi(HirExpr::FieldSet {
+                    base: Box::new(HirExpr::Variable(base.clone())),
                     index: 0,
+                    value: Box::new(HirExpr::Variable(data_tmp)),
                     ty: FieldScalar::Ptr,
-                },
-                mutable: false,
-            },
-            HirStmt::Let {
-                name: base.clone(),
-                init: HirExpr::Call {
-                    callee: "alloc_bytes".to_string(),
-                    args: vec![len_plus1(len_tmp.clone())],
-                },
-                mutable: false,
-            },
-            HirStmt::Semi(HirExpr::Call {
-                callee: "copy_bytes".to_string(),
-                args: vec![
-                    HirExpr::Variable(base.clone()),
-                    HirExpr::Variable(data_tmp.clone()),
-                    len_plus1(len_tmp.clone()),
-                ],
-            }),
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(base.clone())),
-                index: 0,
-                value: Box::new(HirExpr::Variable(data_tmp)),
-                ty: FieldScalar::Ptr,
-            }),
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(base.clone())),
-                index: 1,
-                value: Box::new(HirExpr::Variable(len_tmp.clone())),
-                ty: FieldScalar::Int,
-            }),
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(base.clone())),
-                index: 2,
-                value: Box::new(HirExpr::Variable(len_tmp)),
-                ty: FieldScalar::Int,
-            }),
-        ];
-        return Ok((
-            HirExpr::Block(Box::new(HirBlock {
-                stmts,
-                final_expr: Some(HirExpr::Variable(base)),
-            })),
-            Type::Named("String".to_string(), vec![]),
-        ));
+                }),
+                HirStmt::Semi(HirExpr::FieldSet {
+                    base: Box::new(HirExpr::Variable(base.clone())),
+                    index: 1,
+                    value: Box::new(HirExpr::Variable(len_tmp.clone())),
+                    ty: FieldScalar::Int,
+                }),
+                HirStmt::Semi(HirExpr::FieldSet {
+                    base: Box::new(HirExpr::Variable(base.clone())),
+                    index: 2,
+                    value: Box::new(HirExpr::Variable(len_tmp)),
+                    ty: FieldScalar::Int,
+                }),
+            ];
+            return Ok((
+                HirExpr::Block(Box::new(HirBlock {
+                    stmts,
+                    final_expr: Some(HirExpr::Variable(base)),
+                })),
+                Type::Named("String".to_string(), vec![]),
+            ));
         }
     }
     // 字面量直用；`let s = "..."` 绑定的变量经 local_inits 表追踪回字面量，
@@ -4902,6 +5232,7 @@ pub(crate) fn check_string_from(
             init: HirExpr::Alloc {
             slots: 3,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -5240,6 +5571,7 @@ fn check_slice(
                 init: HirExpr::Alloc {
             slots: 3,
             by_value: false,
+            is_strfat: false,
         },
                 mutable: false,
             },
@@ -5451,6 +5783,7 @@ fn check_box_new(
         init: HirExpr::Alloc {
             slots: 1,
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     });
@@ -5545,6 +5878,7 @@ fn check_rc_new(
         init: HirExpr::Alloc {
             slots: 1,
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     });
@@ -5625,6 +5959,7 @@ fn check_gc_new(
         init: HirExpr::Alloc {
             slots: 1,
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     });
@@ -5736,6 +6071,7 @@ fn rc_clone(
             init: HirExpr::Alloc {
             slots: 1,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -5843,6 +6179,7 @@ fn rc_downgrade(
             init: HirExpr::Alloc {
             slots: 1,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -5952,6 +6289,7 @@ fn rc_try_unwrap(
             init: HirExpr::Alloc {
             slots: res_slots,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -6032,6 +6370,7 @@ fn weak_upgrade(
             init: HirExpr::Alloc {
             slots: 1,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -6084,6 +6423,7 @@ fn weak_upgrade(
             init: HirExpr::Alloc {
             slots: opt_slots,
             by_value: false,
+            is_strfat: false,
         },
             mutable: false,
         },
@@ -6311,6 +6651,7 @@ fn check_array_lit(
         init: HirExpr::Alloc {
             slots: elems.len(),
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     }];
@@ -6423,6 +6764,7 @@ fn check_variant_construct(
         init: HirExpr::Alloc {
             slots: enum_def.slot_count,
             by_value: enum_by_value,
+            is_strfat: false,
         },
         mutable: false,
     }];
@@ -6951,6 +7293,7 @@ fn check_thread_start_closure(
         init: HirExpr::Alloc {
             slots: n + 1,
             by_value: false,
+            is_strfat: false,
         },
         mutable: false,
     }];
@@ -7169,7 +7512,35 @@ fn check_method_call(
     // `r#` 前缀（关键字转义，如 `fn r#send`）在方法调用处去前缀，
     // 与定义侧 parse_fn 归一化（`r#send` → `send`）保持一致。
     let method = method.strip_prefix("r#").unwrap_or(method);
-    let (recv_hir, recv_ty) = infer_expr(ctx, receiver)?;
+    let (mut recv_hir, mut recv_ty) = infer_expr(ctx, receiver)?;
+    // V2-B：`&str`（StrFat）接收者调 String 方法时，先深拷贝为临时 String 对象。
+    // StrFat 是 by_value `{data,len}`，而 String 方法 self 期望 String 对象指针（Ptr）；
+    // 直接传 StrFat 会污染 LIR param_types 传播（同一方法被 String receiver 调用时
+    // 也误标 StrFat，破坏 `x.trim()`）。深拷贝后 self 统一为 String，无类型冲突。
+    // （V2-B 链式 `x.trim().trim()` / `s.trim().to_upper()`）
+    if comparison::is_str_view(&recv_ty) {
+        let tmp = ctx.fresh_temp();
+        let data_h = HirExpr::FieldGet {
+            base: Box::new(recv_hir.clone()),
+            index: 0,
+            ty: FieldScalar::Ptr,
+        };
+        let len_h = HirExpr::FieldGet {
+            base: Box::new(recv_hir),
+            index: 1,
+            ty: FieldScalar::Int,
+        };
+        let conv = make_strfat_to_string(ctx, data_h, len_h);
+        recv_hir = HirExpr::Block(Box::new(HirBlock {
+            stmts: vec![HirStmt::Let {
+                name: tmp.clone(),
+                init: conv,
+                mutable: false,
+            }],
+            final_expr: Some(HirExpr::Variable(tmp)),
+        }));
+        recv_ty = Type::Named("String".to_string(), vec![]);
+    }
     // `push_str(字面量实参)` 整体特判：改调 `String::push_bytes(src, n)` 快速路径，
     // 免去字面量实参每次 alloc_bytes + copy_bytes 深拷贝（strcat 类拼接基准收益
     // ~3 个数量级；直接字面量实参的字节数与内容编译期已知）。
@@ -7413,6 +7784,7 @@ fn check_method_call(
                 init: HirExpr::Alloc {
                     slots: 2,
                     by_value: true,
+                    is_strfat: true,
                 },
                 mutable: false,
             },
@@ -7439,10 +7811,15 @@ fn check_method_call(
     }
     // `String::as_str_range(start, end)` → `&str` 子区间视图（V2 零拷贝）：
     // 构造 StrFat `{ data 指针 + start 偏移, end - start }`（对齐 Rust `&self[a..b]`）。
-    // receiver 可为 `&String`（std 方法 `as_str_range(&self)` 内 `self` 是 `&String`）。
+    // receiver 可为 `&String`（std 方法 `as_str_range(&self)` 内 `self` 是 `&String`），
+    // 也可为 `&str`（V2-B 链式 `x.trim().trim()`：对 StrFat 子区间再裁剪，data 槽即 StrFat
+    // 的 data 指针，FieldGet(recv,0) 读之）。
+    let recv_core = peel_refs_and_heap(&recv_ty);
     if method == "as_str_range"
         && args.len() == 2
-        && comparison::is_string_type(ctx, &peel_refs_and_heap(&recv_ty))
+        && (comparison::is_string_type(ctx, &recv_core)
+            || comparison::is_str_view(&recv_ty)
+            || comparison::is_str_value(&recv_core))
     {
         let (start_hir, start_ty) = infer_expr(ctx, &args[0])?;
         let (end_hir, _) = infer_expr(ctx, &args[1])?;
@@ -7492,6 +7869,7 @@ fn check_method_call(
                 init: HirExpr::Alloc {
                     slots: 2,
                     by_value: true,
+                    is_strfat: true,
                 },
                 mutable: false,
             },
@@ -7581,10 +7959,14 @@ fn check_method_call(
         }
     }
 
-    // 查找含该方法的 impl 块（inherent 优先，trait 次之）
+    // 查找含该方法的 impl 块（inherent 优先，trait 次之）。
+    // V3（2026-08-26）：`find_impl_for_method` 找不到"实现了该方法的 impl"时，
+    // 回退到 `find_trait_default_impl`——类型匹配的 trait impl 且 trait 声明了
+    // 该方法的默认实现（`impl Trait for X {}` 未显式实现该方法）。
     let impl_def = ctx
         .find_impl_for_method(&self_ty, method)
         .cloned()
+        .or_else(|| ctx.find_trait_default_impl(&self_ty, method).cloned())
         .ok_or_else(|| TypeError::FunctionNotFound {
             name: format!("{self_ty}::{method}"),
             span,
@@ -7594,6 +7976,9 @@ fn check_method_call(
         .iter()
         .find(|m| m.sig.name == method)
         .cloned()
+        // V3 回退：impl 未实现该方法但 trait 有默认实现 → 构造 ImplMethod
+        // （签名取 trait 方法签名，body 取 trait 默认实现 AST）。
+        .or_else(|| trait_default_method(ctx, &impl_def, method))
         .ok_or_else(|| TypeError::FunctionNotFound {
             name: format!("{self_ty}::{method}"),
             span,
@@ -7711,12 +8096,75 @@ fn check_method_call(
     ))
 }
 
-/// H4 去虚拟化：`dyn` 绑定变量（`let d: dyn Trait = &obj;`）的方法调用
-/// 静态分派到具体类型实现，替代 vtable 间接调用。
-///
-/// 静态调用可被 LLVM 内联 / 常量折叠（vtable 调用在循环中受间接调用屏障
-/// 阻止优化）；dyn 变量被重新赋值时映射已失效，自动回退 vtable。
-/// 任何检查失败一律返回 `None`，由调用方走 vtable 分支（错误信息保持一致）。
+/// V2-B：由 StrFat（`&str`）的 data/len 深拷贝为独立 String 对象（3 槽）。
+/// 供 `&str` receiver 调 String 方法前转换 receiver 为 String（避免 param_types 污染）。
+fn make_strfat_to_string(ctx: &mut TypeContext, data_h: HirExpr, len_h: HirExpr) -> HirExpr {
+    let len_tmp = ctx.fresh_temp();
+    let data_tmp = ctx.fresh_temp();
+    let base = ctx.fresh_temp();
+    let len_plus1 = |var: String| {
+        HirExpr::Binary(
+            HirBinaryOp::Add,
+            Box::new(HirExpr::Variable(var)),
+            Box::new(HirExpr::IntLiteral(1)),
+        )
+    };
+    let stmts = vec![
+        HirStmt::Let {
+            name: len_tmp.clone(),
+            init: len_h,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: data_tmp.clone(),
+            init: HirExpr::Call {
+                callee: "alloc_bytes".to_string(),
+                args: vec![len_plus1(len_tmp.clone())],
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::Call {
+            callee: "copy_bytes".to_string(),
+            args: vec![
+                HirExpr::Variable(data_tmp.clone()),
+                data_h,
+                len_plus1(len_tmp.clone()),
+            ],
+        }),
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc {
+                slots: 3,
+                by_value: false,
+                is_strfat: false,
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::Variable(data_tmp)),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(HirExpr::Variable(len_tmp.clone())),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 2,
+            value: Box::new(HirExpr::Variable(len_tmp)),
+            ty: FieldScalar::Int,
+        }),
+    ];
+    HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(base)),
+    }))
+}
+
 fn devirtualize_dyn_call(
     ctx: &mut TypeContext,
     var: &str,
@@ -8022,6 +8470,30 @@ fn instantiate_generic_fn(
     Ok((mono_name, sig))
 }
 
+/// V3 trait 默认方法回退（2026-08-26）：`impl Trait for X {}` 未显式实现某方法、
+/// 但 trait 声明了该方法的默认实现（带 body）时，构造 `ImplMethod`——签名取 trait
+/// 方法签名（`self` 为 `Generic("Self")` 占位，由 impl 目标类型统一）、body 取
+/// trait 默认实现 AST。返回 `None` 表示 trait 无该方法的默认实现（保持原报错）。
+fn trait_default_method(
+    ctx: &TypeContext,
+    impl_def: &ImplDef,
+    method: &str,
+) -> Option<crate::types::ImplMethod> {
+    let trait_name = impl_def.trait_name.as_ref()?;
+    let trait_def = ctx.trait_defs.get(trait_name)?;
+    let sig = trait_def
+        .methods
+        .iter()
+        .find(|m| m.name == method)?
+        .clone();
+    // 仅当 trait 方法带默认实现 body 时才回退
+    let body = sig.default_body.clone()?;
+    Some(crate::types::ImplMethod {
+        sig,
+        body: Some(body),
+    })
+}
+
 /// 实例化泛型 impl 方法：函数名 = `Type::method__T1_T2`。
 fn instantiate_impl_method(
     ctx: &mut TypeContext,
@@ -8095,7 +8567,16 @@ fn instantiate_impl_method(
 
     // self 参数类型：impl 方法签名的首个参数（`&self` 层级已含）经替换。
     // 静态方法（无 self 参数）传 None。
-    let self_param = method_def.sig.params.first().map(|p| substitute(p, subst));
+    // V3 trait 默认方法回退：trait 默认方法的 `self` 参数类型是 `Generic("Self")`
+    // 占位，须替换为 impl 目标具体类型（与 `ctx.self_type` 一致），否则方法体内
+    // `self.next()` 等调用无法在占位上解析（`find_impl_for_method` 找不到）。
+    let self_param = method_def.sig.params.first().map(|p| {
+        if matches!(p, Type::Generic(n) if n == "Self") {
+            substitute(&impl_def.self_type, subst)
+        } else {
+            substitute(p, subst)
+        }
+    });
     // U4：方法体检查时 `Self` 类型解析为 impl 目标类型（经泛型替换）
     let saved_self = ctx.self_type.clone();
     ctx.self_type = Some(substitute(&impl_def.self_type, subst));

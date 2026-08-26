@@ -12,12 +12,12 @@
 
 ## MVP 实现状态总览
 
-> **规划阶段标注**：📋/🔧 状态任务的消解记录见 [`mvp-gaps-plan.md`](./mvp-gaps-plan.md)（阶段 G–T 已全部完成，表格末列标注归属阶段）；各章节「规划中 / MVP 退化 / 目标 API」内容的**后续完善计划见 [`mvp-gaps-plan.md`](./mvp-gaps-plan.md) §3c（阶段 U–Z：目标 API 对齐与编译器能力补齐）**，下方总表末列标注归属（U1–Y8）。
+> **规划阶段标注**：📋/🔧 状态任务的消解记录见 [`development-plan.md`](./development-plan.md)（阶段 G–T 已全部完成，表格末列标注归属阶段）；各章节「规划中 / MVP 退化 / 目标 API」内容的**后续完善计划见 [`development-plan.md`](./development-plan.md) §6.3c（阶段 U–Z：目标 API 对齐与编译器能力补齐）**，下方总表末列标注归属（U1–Y8）。
 
 | 章节 | 状态 | MVP 实际形态 | 规划阶段 |
 |------|------|--------------|---------|
 | §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 | — |
-| §2.3 Iterator | ✅ 已实现（MVP 退化） | `trait Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core.rl 顶部；关联类型 `type Item` 规划——parser/typecheck 无 trait `type` 成员载体，归属 **U2/V3**）；自定义迭代器 `impl Iterator for T` 经 for 接入（J2）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar（**V3** 迁移为 trait 默认方法） | U2/V3 |
+| §2.3 Iterator | ✅ 已实现（MVP 退化 + V3 默认方法） | `trait Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core.rl 顶部；关联类型 `type Item` 规划——parser/typecheck 无 trait `type` 成员载体，归属 **U2/V3**）；自定义迭代器 `impl Iterator for T` 经 for 接入（J2）；**V3 默认方法 ✅ 2026-08-26**——`count`/`sum`/`any`/`all`（trait 默认实现 + typecheck trait 默认方法回退机制）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar（迁移为 trait 默认方法仍 **V3** 规划，需 `Iterator::Item` + 包装迭代器） | U2/V3 |
 | §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`/`iter_mut`（**V1 瘦指针迭代器**，2026-08：`Iter<T>`/`IterMut<T>` 裸指针 + 剩余长度，`next()` 值拷贝 + `IterMut::write` 真实写回）/`get_mut`（**V4 引用语义**，2026-08-25：`Option<&mut T>` 命中原槽可变引用 + 越界 None）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（**V4 引用语义**，`Option<&mut V>` 写回真实槽）；详见 §3.1/§3.2/§3.3 差异注记（借用迭代器（引用元素）**V1**、码点迭代器 **V2**、`get_mut` 引用语义 **V4**） | V1/V2/V4 |
 | §4.1 File | ✅ 已实现 | `File::open/create/close` + `read_to_string/read/write/write_all/flush/metadata/size`（N1 ✅）+ 自由函数 `read_file/write_file/append_file`（`Result<T, IoError>`）；目标 API `open_with`/`read(&mut [u8])`/`write(&[u8])`/完整 `Metadata` 归属 **Y1** | Y1 |
 | §4.2 标准输入输出 | ✅ 已实现 | `stdout`/`stderr` 模块（`write`/`writeln`/`flush`）+ stdin `read_to_string`/`lines` + `eprintln!`/`eprint!` 宏（N4 ✅） | — |
@@ -49,7 +49,7 @@
 | 项目总纲 | [CODEBUDDY.md](../CODEBUDDY.md) | 项目全景 |
 | 设计文档 | [10_标准库规划](design/10_标准库规划.md) | 模块规划（目标架构） |
 | 实现纪要 | [附录 A](#附录-a实现纪要)（原 P009，已归档至 [design/prompts/](design/prompts/)） | 标准库落地状态 |
-| 剩余任务计划 | [mvp-gaps-plan.md](./mvp-gaps-plan.md) §3b | 阶段 M–T 开发计划（本表📋/🔧章节的规划归属） |
+| 剩余任务计划 | [development-plan.md](./development-plan.md) §6.3b | 阶段 M–T 开发计划（本表📋/🔧章节的规划归属） |
 
 ---
 
@@ -57,8 +57,9 @@
 
 > **实现状态（2026-08-23）**：已完成**目录化模块拆分**（对齐下述目标架构的目录 + 类型独立文件
 > 形式；`pub import` 以根模块 `import` 重新导出等价实现）。实际布局为
-> `rlyeh-std/rlyeh/core.rl`（根模块：String / Vec / HashMap / Option / Result + 全部 extern 声明 +
-> `module` 声明 + import 重新导出，指向各类型文件完整路径）+ 子目录：
+> `rlyeh-std/rlyeh/core.rl`（根模块：String / Vec / HashMap / HashSet / BTreeMap / VecDeque /
+> Option / Result + 全部 extern 声明 + `module` 声明 + import 重新导出，指向各类型文件完整
+> 路径）+ 子目录：
 > `time/`（Duration / Instant）、`sync/`（pthread 锁）、`io/`（module.rl 聚合 OpenMode/c_str +
 > error.rl 错误类型 + file.rl 文件对象 + console.rl 控制台）、`net/`（module.rl 聚合 socket
 > 自由函数 + byteorder.rl 字节打包 + addr.rl 地址 + tcp.rl 流与监听 + http.rl HTTP 客户端）、
@@ -219,7 +220,7 @@ trait Iterator {
 }
 ```
 
-> **已实现（T2 ✅，MVP 退化，`core.rl` 顶部）**：`trait Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 与默认方法规划（parser/typecheck 无 trait `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl Iterator for T` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 trait impl 均可）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（未迁移到 trait 默认方法，避免重构风险）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
+> **已实现（T2 ✅，MVP 退化，`core.rl` 顶部）**：`trait Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 规划（parser/typecheck 无 trait `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl Iterator for T` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 trait impl 均可）；**V3 默认方法 ✅（2026-08-26）**：`count`/`sum`/`any`/`all`（trait 默认实现，基于 `self.next()` 循环，`any`/`all` 接受 `fn(i64) -> bool` 谓词、兼容函数指针与闭包；impl 未显式实现时回退——typecheck trait 默认方法机制 `MethodSig.default_body` + `find_trait_default_impl` 回退）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（迁移到 trait 默认方法需 `Iterator::Item` 关联类型 + `Map<Self,B>` 包装迭代器，规划中）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
 
 ---
 
@@ -324,7 +325,19 @@ impl String {
 
 > **MVP 已实现（T1b ✅，`core.rl`）**：`new`/`from`/`push`/`push_str`/`len`/`split`（返回 `Vec<String>`）/`replace`/`trim`/`contains`/`starts_with`/`ends_with`/`find`/`substring`/`to_upper`/`to_lower` 已有 ✅。**T1b 新增**：`chars`（MVP 字节级——逐字节 i64 列表）、`lines`（委托 `split("\n")` 返回 `Vec<String>`）、`to_uppercase`/`to_lowercase`（API 别名，ASCII 语义）。
 >
-> **V2 ✅（2026-08-26）码点/行迭代器**：新增 `chars_iter() -> Chars`（UTF-8 码点解码——首字节定宽 1-4 + 连续字节校验，`next() -> Option<i64>` 返回**码点数值**（Rlyeh `char` 类型 codegen 仅 ASCII，用 i64 表达全 Unicode 码点）；持有 `&String` 引用 + 游标，`self.s.data[pos]` 按字节索引；实证 `"A中!"` → 65/20013/33）与 `lines_iter() -> Lines`（按 `\n`/`\r\n` 分行并剥 `\r`，`next() -> Option<String>`，尾随换行空行段对齐 split 语义；实证 `"a\nbb\r\nccc"` → 行长 1/2/3）。保留旧 `chars()->Vec<i64>`/`lines()->Vec<String>` 兼容。`trim -> &str` 目标签名需 `&str` 胖指针跨层改造（V2 规划）。
+> **V2 ✅（2026-08-26）码点/行迭代器 + `&str` 视图**：新增 `chars_iter() -> Chars`（UTF-8 码点解码——首字节定宽 1-4 + 连续字节校验，`next() -> Option<i64>` 返回**码点数值**（Rlyeh `char` 类型 codegen 仅 ASCII，用 i64 表达全 Unicode 码点）；持有 `&String` 引用 + 游标，`self.s.data[pos]` 按字节索引；实证 `"A中!"` → 65/20013/33）与 `lines_iter() -> Lines`（按 `\n`/`\r\n` 分行并剥 `\r`，`next() -> Option<String>`，尾随换行空行段对齐 split 语义；实证 `"a\nbb\r\nccc"` → 行长 1/2/3）。保留旧 `chars()->Vec<i64>`/`lines()->Vec<String>` 兼容。**V2-B `trim`/`trim_start`/`trim_end` 返回 `&str` 子区间视图**（StrFat `{data+start, len}`，零拷贝，剥离全空白）；**V2-D `&str` 参数/返回值/`String::from(&str)` 深拷贝**（StrFat 双槽 `{data, len}`）已完成。
+
+### 3.4 HashSet<T>
+
+> **V5 ✅（2026-08-26，`core.rl`）**：开放寻址哈希集合（目标架构 `collections/hashset.rl`）。**布局 5 槽**——槽 0 = items 指针（`[T; 0]`）、槽 1 = states 指针（`[i64; 0]`，0=空 1=占用 2=墓碑）、槽 2 = len、槽 3 = used、槽 4 = cap（2 的幂）。**算法**：线性探测 + 墓碑复用（插入贪心首个墓碑）+ 负载因子 `used/cap >= 7/8` 翻倍扩容重哈希（墓碑丢弃）。键哈希 `hash_value` 内建（i64 直哈希 / String djb2 内容哈希，与 HashMap 同构）。**方法**：`new`/`with_capacity`（构造器编译器特判，cap 经 `next_pow2` 规整）/`insert`（已存在忽略）/`contains`/`remove`（墓碑标记）/`clear`/`elements -> Vec<T>`/`len`/`cap`/`is_empty`。**MVP 限制**：键哈希支持 i64/String（`hash_value` 内建范围）；`union`/`intersection`/`difference` 集合运算与借用迭代器 `iter -> Iter<'_, T>` 规划中。
+
+### 3.5 BTreeMap<K, V>
+
+> **V5 ✅（2026-08-26，`core.rl`）**：有序映射（目标架构 `collections/btree.rl`，MVP 数组实现而非真 B 树）。**布局 3 槽**——槽 0 = keys 指针（`[K; 0]`）、槽 1 = vals 指针（`[V; 0]`）、槽 2 = len。**算法**：键升序存于 keys 数组、vals 平行对齐；`find` 二分查找（命中返回槽位、未命中返回 `-pos-1` 指示插入位）；`insert` 二分定位 + 右移腾位保序（O(n) 移动）、命中覆盖值；`remove` 左移覆盖。**方法**：`new`/`with_capacity`（构造器编译器特判）/`insert`/`get -> Option<V>`/`contains_key`/`remove -> bool`/`first -> Option<K>`/`last -> Option<K>`/`keys -> Vec<K>`（有序）/`values -> Vec<V>`/`len`/`is_empty`。**MVP 限制**：限 `i64` 键（有序 `<` 比较）；`range`/借用迭代器 `iter -> Iter<'_, K, V>` 规划中。
+
+### 3.6 VecDeque<T>
+
+> **V5 ✅（2026-08-26，`core.rl`）**：双端队列（目标架构 `collections/deque.rl`）。**布局 3 槽**——槽 0 = buf（`Vec<T>` 对象指针）、槽 1 = front（头索引）、槽 2 = len。**算法**：逻辑元素为 `buf[front], buf[front+1], ..., buf[front+len-1]` 连续段；`push_back` 写入逻辑尾部物理位置 `buf[front+len]`（已在物理末尾则 `push` 扩展）、`push_front` front>0 前移或整体右移腾出 `buf[0]`、`pop_front` 读 `buf[front]` 并前移头索引。**方法**：`new`/`with_capacity`（构造器编译器特判，底层 Vec 预分配）/`push_back`/`push_front`/`pop_front -> Option<T>`/`pop_back -> Option<T>`/`front -> Option<T>`/`back -> Option<T>`/`len`/`is_empty`。**MVP 限制**：非严格环形（front 偏移后 push_back 不回收头部空间，靠 push 扩展物理末尾）；`iter -> Iter<'_, T>` 借用迭代器规划中。
 
 ---
 
@@ -830,7 +843,7 @@ let s = format!("{} + {} = {}", a, b, a + b);
 
 ## 9. 序列化框架
 
-> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/module.rl` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 mvp-gaps-plan.md M2b）与 TOML 模块仍规划。
+> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/module.rl` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 development-plan.md M2b）与 TOML 模块仍规划。
 
 ### 9.1 JSON（L2 ✅，编译器内建）
 
@@ -1269,8 +1282,8 @@ enum IoErrorKind {
 | HashMap | 10 万次插入 + 查找 < 100ms | ✅ |
 | Channel | 吞吐量 > 1M msg/s（单线程） | ✅ |
 
-- **后续扩展**：剩余规划模块（HashSet、路径/文件系统、异步事件驱动等）消解计划见
-  [`mvp-gaps-plan.md`](./mvp-gaps-plan.md)。
+- **后续扩展**：剩余规划模块（V3 Iterator 默认方法 + 适配器迁移、集合借用迭代器、异步事件驱动完整化等）消解计划见
+  [`development-plan.md`](./development-plan.md)。
 
 ---
 

@@ -816,6 +816,10 @@ impl LlvmEmitter {
             }
         }
         // 2) 第一遍：收集每个函数内 `Alloc{by_value}` 的目标局部变量
+        // V2-C（2026-08-26，方案 A）：排除 `StrFat`（`&str` 双槽 `{data, len}`）。
+        // StrFat 是标量双字值，按方案 A 直接存于 `.addr` 值槽（`{i8*,i64}*`），
+        // **不作为 by_value `.obj` 对象**——否则 by_value `Alloc` 会把 `.addr`
+        // bitcast 成 `i8**` 写入 `.obj` 地址，污染 data 槽（根因，见 task-v2.md）。
         let mut by_value_locals: HashMap<String, HashSet<String>> = HashMap::new();
         for f in &program.functions {
             let mut bvs: HashSet<String> = HashSet::new();
@@ -827,7 +831,13 @@ impl LlvmEmitter {
                         ..
                     } = s
                     {
-                        bvs.insert(target.clone());
+                        let is_strfat = f
+                            .locals
+                            .iter()
+                            .any(|(n, t)| n == target && *t == LirType::StrFat);
+                        if !is_strfat {
+                            bvs.insert(target.clone());
+                        }
                     }
                 }
             }
@@ -1417,13 +1427,25 @@ impl LlvmEmitter {
                 // 若对象地址被存入其他聚合 / 作实参传出（跨函数生命周期），
                 // 该对象已从 `by_value_locals` 剔除，此处必须回退 calloc
                 // 堆分配；否则栈槽地址逃逸为悬垂指针。
+                // V2-C（2026-08-26，方案 A）：StrFat 标量双字值——不作为 by_value
+                // `.obj` 对象，也不走 calloc 堆分配，而是清零 `.addr` 值槽
+                // （`{i8*,i64}`），后续 FieldSet 直接写 `.addr` 槽，Assign/打印经
+                // `.addr` 值槽读写。避免 by_value `.obj` 污染 data 槽（根因）。
                 let in_bvs = *by_value
                     && self
                         .by_value_locals
                         .get(&f.name)
                         .map(|s| s.contains(target))
                         .unwrap_or(false);
-                if in_bvs {
+                let is_strfat = f
+                    .locals
+                    .iter()
+                    .any(|(n, t)| n == target && *t == LirType::StrFat);
+                if is_strfat {
+                    body.push_str(&format!(
+                        "  store {{ i8*, i64 }} zeroinitializer, {{ i8*, i64 }}* %{target}.addr\n"
+                    ));
+                } else if in_bvs {
                     let r = self.reg();
                     body.push_str(&format!(
                         "  %{r} = bitcast [2 x i64]* %{target}.obj to i8*\n"
@@ -1451,19 +1473,34 @@ impl LlvmEmitter {
             } => {
                 // 槽偏移 = index*8 字节；GEP 后按槽值标量类型 load
                 let lt = field_scalar_llvm(*ty)?;
-                let b = self.operand_value(
-                    &LirOperand::Local(base.clone()),
-                    LirType::Ptr,
-                    body,
-                    f,
-                )?;
-                let s = self.reg();
-                body.push_str(&format!(
-                    "  %{s} = getelementptr i8, i8* {b}, i64 {}\n",
-                    index * 8
-                ));
-                let c = self.reg();
-                body.push_str(&format!("  %{c} = bitcast i8* %{s} to {lt}*\n"));
+                // V2-C（2026-08-26，方案 A）：StrFat 值槽直接 GEP `.addr` 读槽
+                //（与 FieldSet 对称，不读 `.addr` 值当指针）。
+                let base_is_strfat = f
+                    .locals
+                    .iter()
+                    .any(|(n, t)| n == base && *t == LirType::StrFat);
+                let c = if base_is_strfat {
+                    let c = self.reg();
+                    body.push_str(&format!(
+                        "  %{c} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{base}.addr, i32 0, i32 {index}\n"
+                    ));
+                    c
+                } else {
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let s = self.reg();
+                    body.push_str(&format!(
+                        "  %{s} = getelementptr i8, i8* {b}, i64 {}\n",
+                        index * 8
+                    ));
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{s} to {lt}*\n"));
+                    c
+                };
                 let r = self.reg();
                 body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
                 self.store_to(target, &r, body, f)?;
@@ -1476,21 +1513,36 @@ impl LlvmEmitter {
             } => {
                 let lt = field_scalar_llvm(*ty)?;
                 let vty = field_scalar_lir(*ty);
-                let b = self.operand_value(
-                    &LirOperand::Local(base.clone()),
-                    LirType::Ptr,
-                    body,
-                    f,
-                )?;
-                let s = self.reg();
-                body.push_str(&format!(
-                    "  %{s} = getelementptr i8, i8* {b}, i64 {}\n",
-                    index * 8
-                ));
-                let c = self.reg();
-                body.push_str(&format!("  %{c} = bitcast i8* %{s} to {lt}*\n"));
                 let v = self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?;
-                body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
+                // V2-C（2026-08-26，方案 A）：StrFat 值槽（`.addr` = `{i8*,i64}`）
+                // 直接 GEP 写槽——**不读 `.addr` 值当对象指针**（否则 base 的 data
+                // 槽被当作指针解引用，写到错误地址，根因见 task-v2.md）。
+                let base_is_strfat = f
+                    .locals
+                    .iter()
+                    .any(|(n, t)| n == base && *t == LirType::StrFat);
+                if base_is_strfat {
+                    let c = self.reg();
+                    body.push_str(&format!(
+                        "  %{c} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{base}.addr, i32 0, i32 {index}\n"
+                    ));
+                    body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
+                } else {
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let s = self.reg();
+                    body.push_str(&format!(
+                        "  %{s} = getelementptr i8, i8* {b}, i64 {}\n",
+                        index * 8
+                    ));
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{s} to {lt}*\n"));
+                    body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
+                }
             }
             LirStmt::IndexGet {
                 target,
@@ -2667,7 +2719,7 @@ impl LlvmEmitter {
                 body.push_str(&format!("  %{len_v} = load i64, i64* %{len_p}\n"));
                 let len32 = self.reg();
                 body.push_str(&format!("  %{len32} = trunc i64 %{len_v} to i32\n"));
-                let nl = if newline { "\\n" } else { "" };
+                let nl = if newline { "\n" } else { "" };
                 let fmt = self.emit_fmt_global(&format!("%.*s{nl}"))?;
                 emit_out(body, &fmt, &format!(", i32 %{len32}, i8* %{data_v}"));
             }

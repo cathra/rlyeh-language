@@ -544,6 +544,62 @@ impl<T> IterMut<T> {
 // 泛型元素迭代器（如 StdinLines 返回 Option<String>）仍走方法式接入。
 trait Iterator {
     fn next(&mut self) -> Option<i64>;
+
+    // ===== V3 默认方法（2026-08-26）：基于 next() 的实现，impl 未显式实现时回退
+    // （typecheck trait 默认方法机制）。MVP 元素固定 i64（目标 `type Item` 关联
+    // 类型泛型化规划中）。=====
+
+    // 迭代器元素个数（耗尽剩余元素）
+    fn count(&mut self) -> i64 {
+        let mut n = 0;
+        loop {
+            match self.next() {
+                Option::Some(_) => n = n + 1,
+                Option::None => break,
+            }
+        }
+        n
+    }
+
+    // 元素求和（i64）
+    fn sum(&mut self) -> i64 {
+        let mut s = 0;
+        loop {
+            match self.next() {
+                Option::Some(v) => s = s + v,
+                Option::None => break,
+            }
+        }
+        s
+    }
+
+    // 任一元素满足谓词则 true（短路，遇 true 即返回）
+    fn any(&mut self, pred: fn(i64) -> bool) -> bool {
+        loop {
+            match self.next() {
+                Option::Some(v) => {
+                    if pred(v) {
+                        return true;
+                    }
+                }
+                Option::None => return false,
+            }
+        }
+    }
+
+    // 所有元素满足谓词则 true（短路，遇 false 即返回）
+    fn all(&mut self, pred: fn(i64) -> bool) -> bool {
+        loop {
+            match self.next() {
+                Option::Some(v) => {
+                    if !pred(v) {
+                        return false;
+                    }
+                }
+                Option::None => return true,
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -828,6 +884,42 @@ impl String {
             }
         }
         self.as_str_range(start, end)
+    }
+    // V2-B：trim_start——仅剥离开头空白，返回 `&str` 子区间视图（StrFat）。
+    fn trim_start(&self) -> &str {
+        let mut start = 0;
+        let mut scanning = 1;
+        while scanning == 1 {
+            if start < self.len {
+                let b = self.data[start];
+                if b == 32 || b == 9 || b == 10 || b == 13 {
+                    start = start + 1;
+                } else {
+                    scanning = 0;
+                }
+            } else {
+                scanning = 0;
+            }
+        }
+        self.as_str_range(start, self.len)
+    }
+    // V2-B：trim_end——仅剥离结尾空白，返回 `&str` 子区间视图（StrFat）。
+    fn trim_end(&self) -> &str {
+        let mut end = self.len;
+        let mut scanning = 1;
+        while scanning == 1 {
+            if end > 0 {
+                let b = self.data[end - 1];
+                if b == 32 || b == 9 || b == 10 || b == 13 {
+                    end = end - 1;
+                } else {
+                    scanning = 0;
+                }
+            } else {
+                scanning = 0;
+            }
+        }
+        self.as_str_range(0, end)
     }
     // V2：子区间视图 `&str`（StrFat 双槽 `{ data+start, end-start }`，零拷贝）。
     // typecheck 特判构造；此声明仅供 std 方法解析（body 不被使用）。
@@ -1507,6 +1599,371 @@ impl<K, V> HashMap<K, V> {
         } else {
             Option::Some(&mut self.vals[idx])
         }
+    }
+}
+
+// ===== V5 新集合（2026-08-26）：VecDeque / HashSet / BTreeMap =====
+// 三个集合目标 API 见 std-lib.md §1 目标架构目录（collections/hashset.rl、
+// collections/btree.rl、collections/deque.rl）。泛型 impl 静态方法（`X::new`/
+// `X::with_capacity`）MVP 不支持，构造器由 typecheck 特判展开（与 Vec/HashMap
+// 同模式，见 rlyeh-typecheck check_expr.rs check_*_construct）。
+
+// ===== VecDeque<T>：双端队列（V5） =====
+// 内部用 `Vec<T>` 作底层数组 + 头索引 `front` + 长度 `len`。逻辑元素为
+// `buf[front], buf[front+1], ..., buf[front+len-1]` 连续段。
+// - `push_back`：写入逻辑尾部物理位置 `buf[front+len]`；若已在物理末尾则 `push`
+//   扩展。`len++`。
+// - `push_front`：`front > 0` 时直接前移写入 `buf[front-1]`；`front == 0` 时整体
+//   右移腾出 `buf[0]`（先 `push` 扩展物理长度，再从尾向前搬移）。`len++`。
+// - `pop_front`：读 `buf[front]` 并 `front++`、`len--`。
+// - `pop_back`：读 `buf[front+len-1]` 并 `len--`。
+// 布局 3 槽：槽 0 = buf（`Vec<T>` 对象指针，Ptr）、槽 1 = front（头索引，Int）、
+// 槽 2 = len（元素个数，Int）。
+struct VecDeque<T> {
+    buf: Vec<T>,
+    front: i64,
+    len: i64,
+}
+
+impl<T> VecDeque<T> {
+    // 元素个数
+    fn len(&self) -> i64 {
+        self.len
+    }
+    // 是否为空
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    // 尾插：写入逻辑尾部物理位置；已在物理末尾则 push 扩展
+    fn push_back(&mut self, x: T) {
+        if self.front + self.len < self.buf.len() {
+            self.buf[self.front + self.len] = x;
+        } else {
+            self.buf.push(x);
+        }
+        self.len = self.len + 1;
+    }
+    // 头插：front > 0 直接前移；front == 0 整体右移腾出 buf[0]
+    fn push_front(&mut self, x: T) {
+        if self.front > 0 {
+            self.front = self.front - 1;
+            self.buf[self.front] = x;
+        } else {
+            self.buf.push(x); // 先扩展物理长度（临时尾元素，稍后右移）
+            let mut i = self.buf.len() - 1;
+            while i > 0 {
+                self.buf[i] = self.buf[i - 1];
+                i = i - 1;
+            }
+            self.buf[0] = x;
+        }
+        self.len = self.len + 1;
+    }
+    // 头出：非空返回头元素并右移头索引，空返回 None
+    fn pop_front(&mut self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            let v = self.buf[self.front];
+            self.front = self.front + 1;
+            self.len = self.len - 1;
+            Option::Some(v)
+        }
+    }
+    // 尾出：返回逻辑末尾元素
+    fn pop_back(&mut self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            let v = self.buf[self.front + self.len - 1];
+            self.len = self.len - 1;
+            Option::Some(v)
+        }
+    }
+    // 访问头元素（不移除）
+    fn front(&self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            Option::Some(self.buf[self.front])
+        }
+    }
+    // 访问尾元素（不移除）
+    fn back(&self) -> Option<T> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            Option::Some(self.buf[self.front + self.len - 1])
+        }
+    }
+}
+
+// ===== HashSet<T>：开放寻址哈希集合（V5） =====
+// 精简线性探测（无 Robin Hood 距离数组）：items 数组存元素、states 数组标
+// 状态（0=空 1=占用 2=墓碑）。`hash_value` 内建（i64 直哈希 / String djb2
+// 内容哈希，与 HashMap 键同构）。插入遇墓碑可复用槽位（贪心复用最早的墓碑），
+// 负载因子 used/cap >= 7/8 时翻倍扩容重哈希。
+// 布局 5 槽：槽 0 = items 指针、槽 1 = states 指针、槽 2 = len、槽 3 = used、
+// 槽 4 = cap（2 的幂）。
+struct HashSet<T> {
+    items: [T; 0],
+    states: [i64; 0],
+    len: i64,
+    used: i64,
+    cap: i64,
+}
+
+impl<T> HashSet<T> {
+    // 查找元素所在槽位，未找到返回 -1（线性探测，遇空槽终止）
+    fn find(&self, x: T) -> i64 {
+        let mask = self.cap - 1;
+        let mut idx = hash_value(x) & mask;
+        let mut d = 0;
+        while d < self.cap {
+            let s = self.states[idx];
+            if s == 0 {
+                return -1;
+            }
+            if s == 1 && self.items[idx] == x {
+                return idx;
+            }
+            idx = (idx + 1) & mask;
+            d = d + 1;
+        }
+        -1
+    }
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn cap(&self) -> i64 {
+        self.cap
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    fn contains(&self, x: T) -> bool {
+        self.find(x) >= 0
+    }
+    // 插入：已存在则忽略（集合语义），否则落位（贪心复用最早墓碑，其次空槽）
+    fn insert(&mut self, x: T) {
+        if self.used * 8 >= self.cap * 7 {
+            self.grow();
+        }
+        let mask = self.cap - 1;
+        let mut idx = hash_value(x) & mask;
+        let mut d = 0;
+        let mut tomb = -1;
+        while d < self.cap {
+            let s = self.states[idx];
+            if s == 0 {
+                if tomb >= 0 {
+                    // 复用墓碑槽
+                    self.items[tomb] = x;
+                    self.states[tomb] = 1;
+                } else {
+                    self.items[idx] = x;
+                    self.states[idx] = 1;
+                }
+                self.used = self.used + 1;
+                self.len = self.len + 1;
+                return;
+            }
+            if s == 1 && self.items[idx] == x {
+                return; // 已存在
+            }
+            if s == 2 && tomb < 0 {
+                tomb = idx; // 记录首个墓碑（可复用）
+            }
+            idx = (idx + 1) & mask;
+            d = d + 1;
+        }
+        // 表满兜底（负载 7/8 下不应发生）：扩容后重插
+        self.grow();
+        self.insert(x);
+    }
+    // 删除：命中槽位标记为墓碑，返回是否删除成功
+    fn remove(&mut self, x: T) -> bool {
+        let idx = self.find(x);
+        if idx < 0 {
+            false
+        } else {
+            self.states[idx] = 2;
+            self.len = self.len - 1;
+            true
+        }
+    }
+    // 翻倍扩容：新开双数组，重哈希所有占用槽位（墓碑丢弃），释放旧缓冲
+    fn grow(&mut self) {
+        let new_cap = self.cap * 2;
+        let new_items: [T; 0] = alloc_array(new_cap);
+        let new_states: [i64; 0] = alloc_array(new_cap);
+        let mask = new_cap - 1;
+        let mut i = 0;
+        while i < self.cap {
+            if self.states[i] == 1 {
+                let mut cur = self.items[i];
+                let mut idx = hash_value(cur) & mask;
+                let mut d = 0;
+                let mut placed = 0;
+                while placed == 0 && d < new_cap {
+                    if new_states[idx] == 0 {
+                        new_items[idx] = cur;
+                        new_states[idx] = 1;
+                        placed = 1;
+                    }
+                    idx = (idx + 1) & mask;
+                    d = d + 1;
+                }
+            }
+            i = i + 1;
+        }
+        array_free(self.items);
+        array_free(self.states);
+        self.items = new_items;
+        self.states = new_states;
+        self.used = self.len;
+        self.cap = new_cap;
+    }
+    // 清空：完全重置为容量不变的空集（重开双数组，墓碑/旧数据全部丢弃）
+    fn clear(&mut self) {
+        let n: [T; 0] = alloc_array(self.cap);
+        let s: [i64; 0] = alloc_array(self.cap);
+        array_free(self.items);
+        array_free(self.states);
+        self.items = n;
+        self.states = s;
+        self.len = 0;
+        self.used = 0;
+    }
+    // 元素集合：稀疏遍历全部槽位，收集 states == 1 的元素为 Vec<T>
+    fn elements(&self) -> Vec<T> {
+        let mut es: Vec<T> = Vec::new();
+        let mut i = 0;
+        while i < self.cap {
+            if self.states[i] == 1 {
+                es.push(self.items[i]);
+            }
+            i = i + 1;
+        }
+        es
+    }
+}
+
+// ===== BTreeMap<K, V>：有序映射（数组二分 + 移动，V5） =====
+// 键升序存于 keys 数组，vals 平行对齐。插入经二分查找定位 + 右移腾位
+// （O(n) 移动，MVP 数组实现），命中键则覆盖值。MVP 限 i64 键（有序比较）。
+// 布局 3 槽：槽 0 = keys 指针、槽 1 = vals 指针、槽 2 = len。
+struct BTreeMap<K, V> {
+    keys: [K; 0],
+    vals: [V; 0],
+    len: i64,
+}
+
+impl<K, V> BTreeMap<K, V> {
+    // 二分查找键：命中返回槽位索引，未命中返回插入位（负 = -pos-1）
+    fn find(&self, k: K) -> i64 {
+        let mut lo = 0;
+        let mut hi = self.len;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            let kv = self.keys[mid];
+            if kv == k {
+                return mid;
+            }
+            if kv < k {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        -lo - 1
+    }
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    fn contains_key(&self, k: K) -> bool {
+        self.find(k) >= 0
+    }
+    fn get(&self, k: K) -> Option<V> {
+        let idx = self.find(k);
+        if idx < 0 {
+            Option::None
+        } else {
+            Option::Some(self.vals[idx])
+        }
+    }
+    // 插入（保持有序）：命中覆盖值；未命中右移腾位插入新键值对
+    fn insert(&mut self, k: K, v: V) {
+        let idx = self.find(k);
+        if idx >= 0 {
+            self.vals[idx] = v;
+            return;
+        }
+        let pos = -idx - 1;
+        let mut i = self.len;
+        while i > pos {
+            self.keys[i] = self.keys[i - 1];
+            self.vals[i] = self.vals[i - 1];
+            i = i - 1;
+        }
+        self.keys[pos] = k;
+        self.vals[pos] = v;
+        self.len = self.len + 1;
+    }
+    // 删除：命中右移覆盖移除，返回是否成功
+    fn remove(&mut self, k: K) -> bool {
+        let idx = self.find(k);
+        if idx < 0 {
+            false
+        } else {
+            let mut i = idx;
+            while i < self.len - 1 {
+                self.keys[i] = self.keys[i + 1];
+                self.vals[i] = self.vals[i + 1];
+                i = i + 1;
+            }
+            self.len = self.len - 1;
+            true
+        }
+    }
+    // 最小键
+    fn first(&self) -> Option<K> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            Option::Some(self.keys[0])
+        }
+    }
+    // 最大键
+    fn last(&self) -> Option<K> {
+        if self.len == 0 {
+            Option::None
+        } else {
+            Option::Some(self.keys[self.len - 1])
+        }
+    }
+    // 键集合（有序）
+    fn keys(&self) -> Vec<K> {
+        let mut ks: Vec<K> = Vec::new();
+        let mut i = 0;
+        while i < self.len {
+            ks.push(self.keys[i]);
+            i = i + 1;
+        }
+        ks
+    }
+    // 值集合（与键顺序对齐）
+    fn values(&self) -> Vec<V> {
+        let mut vs: Vec<V> = Vec::new();
+        let mut i = 0;
+        while i < self.len {
+            vs.push(self.vals[i]);
+            i = i + 1;
+        }
+        vs
     }
 }
 

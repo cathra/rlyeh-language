@@ -53,6 +53,26 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
         }
     }
 
+    // V2-D（2026-08-26）：全程序函数参数类型表（函数名 → 各参数 LirType）。
+    // 用户函数参数默认 i64（LIR 无参数类型信息）；经调用点实参传播——实参为
+    // StrFat（`&str`）时对应参数标记为 StrFat（`str_len(v)` 传 `{data,len}` 双字）。
+    let mut param_types: HashMap<String, Vec<LirType>> = program
+        .functions
+        .iter()
+        .map(|f| {
+            if f.is_extern {
+                let ptys = f
+                    .extern_sig
+                    .as_ref()
+                    .map(|(ps, _)| ps.iter().map(|p| parse_extern_type(p)).collect())
+                    .unwrap_or_default();
+                (f.name.clone(), ptys)
+            } else {
+                (f.name.clone(), vec![LirType::I64; f.params.len()])
+            }
+        })
+        .collect();
+
     // 全程序函数返回类型表（供跨函数调用目标解析）
     let mut ret_types: HashMap<String, LirType> = program
         .functions
@@ -83,9 +103,32 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
             if f.is_extern {
                 continue;
             }
-            let mut resolved = ty.clone();
-            resolve_call_target_types(f, &mut resolved, &ret_types);
-            let new_ret = infer_return_type(f, &resolved);
+            // V2-C：直接更新 `ty`（而非克隆 `resolved`）——否则调用点
+            // `r = as_str_range(...)` 的 `ty[r]` 不会标记为 `StrFat`，codegen
+            // 打印 `&str` 走 Ptr 分支（输出指针地址而非子区间）。
+            resolve_call_target_types(f, ty, &ret_types);
+            // V2-D：参数类型传播——本函数内 Call 的实参为 StrFat（`&str`）时，
+            // 被调函数对应参数标记为 StrFat（跨函数 `{data,len}` 双字传递）。
+            for block in &f.blocks {
+                for stmt in &block.stmts {
+                    if let MirStmt::Call { callee, args, .. } = stmt {
+                        if BUILTIN_FUNCTIONS.contains(&callee.as_str()) {
+                            continue;
+                        }
+                        if let Some(pt) = param_types.get_mut(callee) {
+                            for (i, arg) in args.iter().enumerate() {
+                                if i < pt.len() && ty.get(arg) == Some(&LirType::StrFat) {
+                                    if pt[i] != LirType::StrFat {
+                                        pt[i] = LirType::StrFat;
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let new_ret = infer_return_type(f, ty);
             if new_ret != *ret {
                 *ret = new_ret;
                 changed = true;
@@ -117,7 +160,8 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
     let mut functions = Vec::with_capacity(program.functions.len());
     for (f, (ty, _)) in program.functions.iter().zip(&infer_results) {
         let ret = ret_types.get(&f.name).copied().unwrap_or(LirType::Unit);
-        functions.push(lower_function(f, ty, ret, &ret_types)?);
+        let ptys = param_types.get(&f.name).cloned().unwrap_or_default();
+        functions.push(lower_function(f, ty, ret, &ret_types, ptys)?);
     }
 
     Ok(LirProgram { functions })
@@ -172,8 +216,23 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                         // 函数指针变量统一为指针槽
                         changed |= set_type(&mut ty, callee, LirType::Ptr)?;
                     }
-                    MirStmt::Alloc { target, .. } => {
-                        changed |= set_type(&mut ty, target, LirType::Ptr)?;
+                    MirStmt::Alloc {
+                        target,
+                        by_value,
+                        slots,
+                        is_strfat,
+                        ..
+                    } => {
+                        // V2-C（方案 A）：StrFat 双槽推断——仅 typecheck 标记的
+                        // `is_strfat`（`as_str`/`as_str_range` 构造的 `{data,len}`）
+                        // 推断为 StrFat。普通双槽 by_value 结构体（如 `Point{x,y}`）
+                        // 不标记，保持 Ptr（避免 addr_of_field_index 误判）。
+                        let lir = if *is_strfat && *by_value && *slots == 2 {
+                            LirType::StrFat
+                        } else {
+                            LirType::Ptr
+                        };
+                        changed |= set_type(&mut ty, target, lir)?;
                     }
                     MirStmt::FieldGet { target, ty: fty, .. } => {
                         changed |= set_type(&mut ty, target, field_scalar_to_lir(*fty))?;
@@ -545,6 +604,7 @@ fn lower_function(
     ty: &HashMap<Local, LirType>,
     return_type: LirType,
     ret_types: &HashMap<String, LirType>,
+    param_types: Vec<LirType>,
 ) -> Result<LirFunction, LirError> {
     if f.is_extern {
         // extern 声明：无函数体，参数类型由 extern_sig 解析，codegen 生成 declare
@@ -584,10 +644,22 @@ fn lower_function(
     let mut ty = ty.clone();
     resolve_call_target_types(f, &mut ty, ret_types);
 
+    // V2-D：参数类型优先取跨函数传播的 `param_types`（实参为 StrFat 时参数为
+    // StrFat），否则回退局部推断 / i64。同步写回 `ty`（locals），确保函数体内
+    // 参数局部变量的 codegen 类型与函数签名一致（否则 `String::len({i8*,i64} %self)`
+    // 的 `self.addr` 被标为 `i64`，`self.len` 走通用 FieldGet 读到错误偏移）。
     let params = f
         .params
         .iter()
-        .map(|p| (p.clone(), ty.get(p).copied().unwrap_or(LirType::I64)))
+        .enumerate()
+        .map(|(i, p)| {
+            let pt = param_types
+                .get(i)
+                .copied()
+                .unwrap_or_else(|| ty.get(p).copied().unwrap_or(LirType::I64));
+            ty.insert(p.clone(), pt);
+            (p.clone(), pt)
+        })
         .collect::<Vec<_>>();
 
     // 全部局部变量类型表（排序保证确定性输出）
@@ -753,6 +825,7 @@ impl FunctionLowerer {
                 target,
                 slots,
                 by_value,
+                is_strfat: _,
             } => {
                 out.push(LirStmt::Alloc {
                     target: target.clone(),

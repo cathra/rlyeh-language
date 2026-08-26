@@ -253,7 +253,88 @@ impl BorrowChecker {
                     }
                 }
             }
+            // V2-D（2026-08-26）：`s.as_str()` / `s.as_str_range(..)` 的返回是
+            // StrFat 构造块（`Alloc{is_strfat}` + FieldSet data/len），悬垂检查需
+            // 识别其 data 槽来源：若指向局部 String（非参数），返回 `&str` 悬垂。
+            HirExpr::Block(block) => self.check_dangling_strfat_block(block),
             _ => {}
+        }
+    }
+
+    /// V2-D：检查 StrFat 构造块返回的 data 来源是否为参数。
+    ///
+    /// `as_str`/`as_str_range` 生成 `Alloc{is_strfat}` + `FieldSet(sf, 0, data)`
+    /// 的 StrFat 双槽值；data 槽来自 `FieldGet(base, 0)`（String 的 data 指针）。
+    /// 若 `base` 是局部 String（非参数），返回的 `&str` 指向将销毁的局部缓冲 → 悬垂。
+    fn check_dangling_strfat_block(&mut self, block: &HirBlock) {
+        // 找 StrFat 分配目标 sf
+        let mut sf: Option<String> = None;
+        let mut field_sets: Vec<&HirStmt> = Vec::new();
+        let mut lets: Vec<&HirStmt> = Vec::new();
+        for stmt in &block.stmts {
+            match stmt {
+                HirStmt::Let { init, name, .. } => {
+                    if let HirExpr::Alloc {
+                        is_strfat: true, ..
+                    } = init
+                    {
+                        sf = Some(name.clone());
+                    }
+                    lets.push(stmt);
+                }
+                HirStmt::Semi(HirExpr::FieldSet { base, .. }) => {
+                    if let HirExpr::Variable(b) = base.as_ref() {
+                        if sf.as_deref() == Some(b) {
+                            field_sets.push(stmt);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(sf_name) = sf else {
+            return;
+        };
+        // 找 FieldSet(sf, 0, data_tmp)：data 槽来源
+        let mut data_src: Option<String> = None;
+        for stmt in &field_sets {
+            if let HirStmt::Semi(HirExpr::FieldSet {
+                base,
+                index: 0,
+                value,
+                ..
+            }) = stmt
+            {
+                if let HirExpr::Variable(b) = base.as_ref() {
+                    if *b == sf_name {
+                        if let HirExpr::Variable(v) = value.as_ref() {
+                            data_src = Some(v.clone());
+                        }
+                    }
+                }
+            }
+        }
+        let Some(data_tmp) = data_src else {
+            return;
+        };
+        // 找 Let{name: data_tmp, init: FieldGet{base, 0}}：取 String 来源
+        let mut base_src: Option<String> = None;
+        for stmt in &lets {
+            if let HirStmt::Let { name, init, .. } = stmt {
+                if *name == data_tmp {
+                    if let HirExpr::FieldGet { base, index: 0, .. } = init {
+                        if let HirExpr::Variable(b) = base.as_ref() {
+                            base_src = Some(b.clone());
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(src) = base_src {
+            if !self.param_names.contains(&src) {
+                self.errors
+                    .push(BorrowError::dangling_reference(&sf_name));
+            }
         }
     }
 

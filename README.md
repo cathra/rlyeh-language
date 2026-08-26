@@ -189,7 +189,7 @@ rlyeh-language/
 | [docs/actor-model.md](docs/actor-model.md) | Actor 并发模型规范 |
 | [docs/module-system.md](docs/module-system.md) | 模块系统规范 |
 | [docs/std-lib.md](docs/std-lib.md) | 标准库 API 规范 |
-| [docs/mvp-gaps-plan.md](docs/mvp-gaps-plan.md) | 剩余任务消解计划 |
+| [docs/development-plan.md](docs/development-plan.md) | 开发计划（阶段 A–F + 剩余任务消解 G–L / M–T / U–Z） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 
 ---

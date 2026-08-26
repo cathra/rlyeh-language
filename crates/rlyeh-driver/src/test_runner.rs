@@ -27,10 +27,20 @@ use crate::{compile_file_to_llvm, run_source_file};
 /// 文件描述符耗尽（`os error 35`，EMFILE，见 CHANGELOG 集成测试注记）。此处
 /// 按可用核数封顶到一个保守上限，平衡提速与稳定性。
 fn parallel_workers() -> usize {
+    // 支持 `RLYEH_WORKERS` 环境变量显式覆盖并行度（如 `RLYEH_WORKERS=1` 规避
+    // 内存暴涨）。默认上限降为 2——每个 worker 线程独立 spawn 一次完整编译
+    // （lexer→codegen→LLVM IR→clang），在测试文件多时 N 路并行编译的内存峰值
+    // 会线性叠加；18 核机器上旧默认 6 路并行在 130+ 用例下触发系统内存耗尽
+    // （"Your system has run out of application memory"，2026-08-26 实测）。
+    if let Ok(s) = std::env::var("RLYEH_WORKERS") {
+        if let Ok(n) = s.trim().parse::<usize>() {
+            return n.max(1);
+        }
+    }
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    cores.min(6).max(1)
+    cores.min(2).max(1)
 }
 
 /// 用例类别。
@@ -86,6 +96,8 @@ pub struct TestSummary {
     pub passed: usize,
     /// 失败数。
     pub failed: usize,
+    /// 跳过数（文件头 `// skip: <原因>` 注释标记，避免触发已知问题如内存暴涨）。
+    pub skipped: usize,
     /// 逐用例结果（保持扫描顺序）。
     pub results: Vec<TestCaseResult>,
 }
@@ -104,6 +116,7 @@ struct PendingTask {
 /// 但汇总结果仍按扫描顺序输出。
 pub fn run_test_suite(root: &Path) -> TestSummary {
     let mut tasks: Vec<PendingTask> = Vec::new();
+    let mut skipped_marker = 0usize;
     for kind in [
         TestKind::CompilePass,
         TestKind::CompileFail,
@@ -126,6 +139,13 @@ pub fn run_test_suite(root: &Path) -> TestSummary {
                 .unwrap_or(&file)
                 .to_string_lossy()
                 .to_string();
+            // 文件头 `// skip: <原因>` 注释：跳过该用例（计入 summary.skipped）。
+            // 用于标记已知问题（如 async 运行时 poll 死循环导致内存暴涨，2026-08-26），
+            // 避免全量测试在触发处内存耗尽；修复后移除注释即可恢复。
+            if file_has_skip_marker(&file) {
+                skipped_marker += 1;
+                continue;
+            }
             tasks.push(PendingTask { kind, file, rel });
         }
     }
@@ -133,6 +153,7 @@ pub fn run_test_suite(root: &Path) -> TestSummary {
 
     let mut summary = TestSummary::default();
     summary.total = results.len();
+    summary.skipped = skipped_marker;
     for r in results {
         if r.passed {
             summary.passed += 1;
@@ -199,6 +220,17 @@ fn run_tasks_parallel(tasks: Vec<PendingTask>) -> Vec<TestCaseResult> {
 }
 
 /// 执行单个用例。
+/// 检查文件头是否含 `// skip:` 注释（已知问题标记，跳过该用例）。
+fn file_has_skip_marker(file: &Path) -> bool {
+    std::fs::read_to_string(file)
+        .map(|s| {
+            s.lines()
+                .take(20) // 只扫描文件头
+                .any(|l| l.trim_start().starts_with("// skip:"))
+        })
+        .unwrap_or(false)
+}
+
 fn run_one(task: &PendingTask) -> TestCaseResult {
     match task.kind {
         TestKind::CompilePass => run_compile_pass(&task.file, &task.rel),

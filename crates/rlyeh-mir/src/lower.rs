@@ -416,12 +416,17 @@ impl MirLowerer {
                 }
                 Some(r)
             }
-            HirExpr::Alloc { slots, by_value } => {
+            HirExpr::Alloc {
+                slots,
+                by_value,
+                is_strfat,
+            } => {
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::Alloc {
                     target: tmp.clone(),
                     slots: *slots,
                     by_value: *by_value,
+                    is_strfat: *is_strfat,
                 });
                 Some(MirValue::Place(tmp))
             }

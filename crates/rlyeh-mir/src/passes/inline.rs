@@ -139,10 +139,12 @@ fn inline_stmt(
             target,
             slots,
             by_value,
+            is_strfat,
         } => Some(MirStmt::Alloc {
             target: map_local(target, subst, counter),
             slots: *slots,
             by_value: *by_value,
+            is_strfat: *is_strfat,
         }),
         MirStmt::FieldGet {
             target,

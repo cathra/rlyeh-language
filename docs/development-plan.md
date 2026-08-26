@@ -1,8 +1,9 @@
-# 开发计划 — Rlyeh 0.1.0 第二版规划（2026-08）
+# 开发计划 — Rlyeh 0.1.0 第一版规划（2026-08）
 
-> **性质**：本文档为 2026-08 对原计划（M1/M2/M3）复盘后制定的新版开发计划的**权威副本**。
-> **总纲与进度速览**：见根目录 [`CODEBUDDY.md`](../CODEBUDDY.md)（§5.5 为执行记录，§6 为里程碑原表）。
-> **维护规则**：每完成一项任务，需同步更新本文档与 CODEBUDDY.md 的状态标识。
+> **性质**：本文档为 2026-08 对原计划（M1/M2/M3）复盘后制定的新版开发计划的**权威副本**，覆盖阶段 A–Z（§1–§3 阶段 A–F；§6 剩余任务消解 G–L / M–T / U–Z，由原 `mvp-gaps-plan.md` 并入）。
+> **总纲与进度速览**：见根目录 [`CODEBUDDY.md`](../CODEBUDDY.md)（§6 为里程碑原表）。
+> **任务执行记录**：见 [`tasks/`](./tasks/README.md)（stage-* 索引 §子任务叶子文档 + milestone-tasks/）——已按 §7.4 任务管理体系从本文档 §4 / §6.4 迁移。
+> **维护规则**：每完成一项任务，需同步更新本文档与任务树的状态标识。
 
 ---
 
@@ -25,136 +26,90 @@
 | 3 | `String` 拼接 `+` 为原地追加 + 共享缓冲，存在别名隐患（需评审改拷贝语义） | A3 | ✅ 已修复 |
 | 4 | 无通用 FFI，io/net 绑定层（NIO/sendfile 已有 Rust 侧但接不进 Rlyeh）无法接线 | A4 | ✅ 已修复 |
 | 5 | 标准库 time 模块缺失（`Duration`/`Instant`） | B1 | ✅ 已完成 |
-| 6 | 标准库 io 模块缺失（File 读写、stdin/stdout、`read_to_string` 等） | B2 | ✅ 已完成（stdio 方案） |
-| 7 | 标准库 net 模块缺失（TCP/UDP + NIO/sendfile 绑定层接线） | B3 | ✅ 已完成（hostname + htons + socketpair + sockaddr_in4 + tcp_connect；NIO/sendfile 接线随阶段 C/D 延后） |
-| 8 | 标准库 sync 模块缺失（Mutex/RwLock/Condvar 等） | B4 | ✅ 已完成（Mutex/RwLock；Condvar/Barrier 待线程支持） |
-| 9 | `Vec<T>`/`HashMap` 常用方法缺失（`first`/`last`/`reverse`/`swap`/`binary_search`；`len`/`is_empty` 重复定义与固化） | B5 | ✅ 已完成 |
-| 10 | `rlyeh test` 子命令未实现（测试目前经 `cargo test` 驱动） | D | ✅ 已完成（D1，13 用例 + cargo 矩阵） |
-| 11 | 语言级 `actor`/`spawn` 语法与标准库集成未接线（`rlyeh-actor-runtime` 已就绪） | C | ✅ 已完成 |
-| 12 | M2.4 LSP 服务器、M2.8 PGO 数据回灌编译流程 | F | ✅ 已完成（F1 `rlyeh lsp` + rlyeh-lsp crate；F2 `rlyeh profile` + `rlyeh build --profile`） |
-| 13 | M2.6 交叉编译、M2.7 WASM、工具链其余命令（fmt/check/doc/bench/publish）、M3 生态（数据库/HTTP/序列化/嵌入式/GPU/教程） | E 及后续 | 🔧 大部分完成（E1 macOS 双架构 + 平台内建、E2 WASM、E3 发布流程 + fmt/check/doc/bench/publish/new 命令已完成；Windows/ARM 工具链待环境；M3 生态未开始） |
-| 14 | `String::from` 暂仅支持字面量（非字面量 Str 长度表达未实现）、范围切片仅支持 String（数组/Vec 动态切片待实现） | A/B 遗留 | ✅ 已修复（local_inits 追踪字面量绑定；`Vec<T>` slice 方法 + 数组切片展开；`dynamic_slice_test.rs` 7 用例） |
+| 6 | 标准库 io 模块缺失（File 读写、stdin/stdout、`read_to_string` 等） | B2 | ✅ 已完成（执行情况见 [`b2-io-module.md`](tasks/leaf/b2-io-module.md)） |
+| 7 | 标准库 net 模块缺失（TCP/UDP + NIO/sendfile 绑定层接线） | B3 | ✅ 已完成（执行情况见 [`b3-net-module.md`](tasks/leaf/b3-net-module.md)、[`b3-bitwise.md`](tasks/leaf/b3-bitwise.md)） |
+| 8 | 标准库 sync 模块缺失（Mutex/RwLock/Condvar 等） | B4 | ✅ 已完成（执行情况见 [`b4-sync-module.md`](tasks/leaf/b4-sync-module.md)） |
+| 9 | `Vec<T>`/`HashMap` 常用方法缺失（`first`/`last`/`reverse`/`swap`/`binary_search`；`len`/`is_empty` 重复定义与固化） | B5 | ✅ 已完成（执行情况见 [`b5-vec-hashmap-methods.md`](tasks/leaf/b5-vec-hashmap-methods.md)） |
+| 10 | `rlyeh test` 子命令未实现（测试目前经 `cargo test` 驱动） | D | ✅ 已完成（执行情况见 [`d1-rlyeh-test.md`](tasks/leaf/d1-rlyeh-test.md)） |
+| 11 | 语言级 `actor`/`spawn` 语法与标准库集成未接线（`rlyeh-actor-runtime` 已就绪） | C | ✅ 已完成（执行情况见 [`c1-actor-desugar.md`](tasks/leaf/c1-actor-desugar.md)） |
+| 12 | M2.4 LSP 服务器、M2.8 PGO 数据回灌编译流程 | F | ✅ 已完成（执行情况见 [`f1-lsp.md`](tasks/leaf/f1-lsp.md)、[`f2-pgo.md`](tasks/leaf/f2-pgo.md)） |
+| 13 | M2.6 交叉编译、M2.7 WASM、工具链其余命令（fmt/check/doc/bench/publish）、M3 生态（数据库/HTTP/序列化/嵌入式/GPU/教程） | E 及后续 | 🔧 大部分完成（E1 双架构 + 平台内建、E2 WASM、E3 发布 + 工具链命令；Windows/ARM 待环境；M3 未开始；执行情况见 [`stage-a-f.md`](tasks/stage-a-f.md) E/F 叶子） |
+| 14 | `String::from` 暂仅支持字面量（非字面量 Str 长度表达未实现）、范围切片仅支持 String（数组/Vec 动态切片待实现） | A/B 遗留 | ✅ 已修复（执行情况见 [`legacy-misc.md`](tasks/leaf/legacy-misc.md)） |
 
 ---
 
-## 2. 新版计划总览（阶段 A–F）
+## 2. 计划总览（阶段 A–Z）
 
-| 阶段 | 主题 | 状态 |
-|------|------|------|
-| **A** | 编译器加固（泛型/Infer/FFI/字符串语义） | ✅ A1–A4 全部完成 |
-| **B** | 标准库完善（time/io/net/sync/collections） | ✅ 全部完成（B1–B5） |
-| **C** | Actor 语言级接线（`actor`/`spawn`/`.await`） | ✅ 全部完成（C1–C3） |
-| **D** | 工具链（`rlyeh test`/`fmt`/`check`/`doc`/`bench`） | ✅ D1–D3 全部完成 |
-| **E** | 多目标与发布（交叉编译/WASM/发布流程） | ✅ E1 大部分完成（macOS 双架构 + 平台内建；Windows/ARM 待环境）；E2 完成；E3 完成 |
-| **F** | 编译器深度（LSP、PGO 回灌） | ✅ F1–F2 全部完成 |
+> 每个阶段详情为独立文档（`docs/stages/`），含任务列表 + 各任务详情文档（任务树叶子）链接。
 
-> **执行优先级**：A（已全部完成）→ B → C → D → E → F（已完成）。
 
----
+| 阶段 | 主题 | 关键交付 / 子任务 | 状态 | 详情文档 |
+|------|------|---------|------|----------|
+| **A** | 编译器加固（泛型/Infer/FFI/字符串语义） | A1–A4 | ✅ 全部完成 | [`A.md`](stages/A.md) |
+| **B** | 标准库完善（time/io/net/sync/collections） | B1–B5 | ✅ 全部完成 | [`B.md`](stages/B.md) |
+| **C** | Actor 语言级接线（`actor`/`spawn`/`.await`） | C1–C3 | ✅ 全部完成 | [`C.md`](stages/C.md) |
+| **D** | 工具链（`rlyeh test`/`fmt`/`check`/`doc`/`bench`） | D1–D3 | ✅ 全部完成 | [`D.md`](stages/D.md) |
+| **E** | 多目标与发布（交叉编译/WASM/发布流程） | E1–E3 | ✅ E1 大部分完成（macOS 双架构 + 平台内建；Windows/ARM 待环境）；E2/E3 完成 | [`E.md`](stages/E.md) |
+| **F** | 编译器深度（LSP、PGO 回灌） | F1–F2 | ✅ 全部完成 | [`F.md`](stages/F.md) |
+| **G** | 引用与借用（L0 完整化） | `&T`/`&mut T`、`*` 解引用、`str` 切片、裸指针、生命周期 `'a` | ✅ G1–G4（G4 为语法接受 MVP，borrowck 生命周期检查规划中） | [`G.md`](stages/G.md) |
+| **H** | 一等函数 | `fn(A) -> B` 函数类型、闭包（捕获 + `move`）、`dyn Trait` | ✅ H1–H5（H3/H4/H5 为 MVP） | [`H.md`](stages/H.md) |
+| **I** | 宏系统与格式化 | `macro_rules!` 声明式宏、`Display`/`Debug`、`println!`/`format!` | ✅ 已完成 | [`I.md`](stages/I.md) |
+| **J** | 迭代器与集合协议 | 数组迭代、`Iterator` trait、`map`/`filter`/`fold`/`collect` | ✅ J1–J3 | [`J.md`](stages/J.md) |
+| **K** | 错误传播与所有权层级 | `?` 运算符、`Box<T>`、`Rc<T>`/`Arc<T>`、`Gc<T>` | ✅ K1–K4 | [`K.md`](stages/K.md) |
+| **L** | 生态模块与平台收尾 | `async fn`/`await`、`serde`、region `strategy (bump)`、WASI net / Actor 交叉编译 | ✅ L1–L4 | [`L.md`](stages/L.md) |
+| **M** | 错误处理基底 | IoErrorKind/IoError、Error/From/Into、std 错误约定 Result 化 | ✅ 已完成（7 子任务） | [`M.md`](stages/M.md) |
+| **N** | 文件系统与 IO 对象化 | File/OpenMode、stdin/stdout/stderr、Path/fs、eprintln | ✅ 已完成（9 子任务） | [`N.md`](stages/N.md) |
+| **O** | 网络对象化 | SocketAddr/TcpListener/TcpStream、字节读写、HTTP 同步 MVP | ✅ 已完成（6 子任务） | [`O.md`](stages/O.md) |
+| **P** | 并发通道与同步 | Channel、锁 guard 语义、Condvar/Barrier | ✅ 已完成（6 子任务） | [`P.md`](stages/P.md) |
+| **Q** | 序列化与格式化 trait | serde trait/derive、json 泛型 API、Display/Debug+Formatter、TOML | ✅ 已完成（8 子任务） | [`Q.md`](stages/Q.md) |
+| **R** | 高性能 IO | Interest/Event/Poller、非阻塞、sendfile | ✅ 已完成（4 子任务） | [`R.md`](stages/R.md) |
+| **S** | 异步运行时 | 线程、Future/Poll/block_on、join_all/timeout/sleep、async channel/http | ✅ 已完成（13 子任务） | [`S.md`](stages/S.md) |
+| **T** | 集合与迭代器收尾 | Vec/String/HashMap API、Iterator trait、智能指针收尾 | ✅ 已完成（6 子任务） | [`T.md`](stages/T.md) |
+| **U** | 编译器地基（std 完整化前置） | 作用域栈、关联类型、泛型约束、`-> Self`、AddrOf、Cast IR、方法级泛型、泛型结构体 | ✅ U1–U8 全部完成 | [`U.md`](stages/U.md) |
+| **V** | 集合与迭代器完整化 | 借用迭代器、String 码点迭代器、Iterator 默认方法+适配器、get_mut、新集合 | 🔧 进行中（V1/V4/V5 ✅；V3 默认方法基础 ✅；V2-B/V2-E、V3-A~D 待办） | [`V.md`](stages/V.md) |
+| **W** | 异步运行时完整化 | Future 泛型化、await 状态机、事件驱动 executor、join_all/timeout、recv_async、async 泛型/递归 | ✅ W1–W6 全部完成 | [`W.md`](stages/W.md) |
+| **X** | 序列化/格式化/时间完整化 | 时间 API、标准 TOML、Deserialize trait、Formatter 完整化 | 🔧 进行中（X1 ✅；X2/X3/X4 规划） | [`X.md`](stages/X.md) |
+| **Y** | IO/网络/并发/智能指针收尾 | File API、NIO 后端、HTTP 复用、锁/Channel 泛型化、Box::leak、Error::source、UDP、stack_size | 📋 规划（Y7/Y8 ✅） | [`Y.md`](stages/Y.md) |
 
-## 3. 阶段详情
-
-### 阶段 A — 编译器加固
-
-| 任务 | 内容 | 状态 |
-|------|------|------|
-| A1 | 用户级 match 解构具体实例化枚举聚合载荷：`check_pattern` Enum 分支合并「当前 generic_subst + `pat_ty` 类型参数 ↔ `enum_def.type_params` 新映射」，嵌套泛型 `Option<Vec<T>>` 等递归定型 | ✅ 完成 |
-| A2 | Infer 枚举自动定型：`check_method_call` 参数检查时对含 `_` 的期望类型用实参 unify 回填 subst（`unify` 新增 `Type::Infer` 分支），回填后重算签名再实例化 | ✅ 完成 |
-| A3 | `String` 拼接 `+` 语义评审：当前为原地追加 + 共享缓冲的别名隐患，评估改为拷贝语义（`let __s = a; __s.push_str(b)` 形态） | ✅ 完成（拷贝语义：`let __s = a.clone(); __s.push_str(b)`） |
-| A4 | 通用 FFI `extern fn` 声明：打通 parser→typecheck→HIR→MIR→LIR→LLVM→链接全链路，codegen 生成 `declare` 而非 `define`，符号由链接器解析 | ✅ 完成 |
-
-### 阶段 B — 标准库完善
-
-| 任务 | 内容 | 状态 |
-|------|------|------|
-| B1 | 时间模块：`Duration { micros: i64 }` + `Instant { start: i64 }`，底层 libc `clock()` extern（首例 extern 驱动标准库模块） | ✅ 完成 |
-| B2 | io 模块：libc stdio 文件 IO（`fopen`/`fread`/`fwrite`/`fclose`/`fseek`/`ftell`）+ `read_file`/`write_file`/`append_file`/`c_str`/`read_line`；编译器 extern `String` 参数取 data 指针 | ✅ 完成 |
-| B3 | net 模块：`hostname()` + `htons` + `socketpair_stream`/`fd_at`（AF_UNIX 全双工字节流 + int32 字节解释）+ `send_all`/`recv_some` + `sockaddr_in4`（macOS 布局字节打包）/`tcp_connect`（socket→sockaddr→connect，失败 close 返回 -1）；**依赖本轮位运算全链路**（`&`/`|`/`^`/`<<`/`>>`，含算术右移 ashr）；NIO/sendfile 绑定层接线随阶段 C/D 延后 | ✅ 完成 |
-| B4 | sync 模块：`Mutex`/`RwLock`（pthread extern + calloc 承载，try 系列依赖 extern `i32` 返回支持）；Condvar/Barrier 骨架留注释（待函数指针/线程创建） | ✅ 完成 |
-| B5 | collections 补全：`Vec` 的 `first`/`last`/`reverse`/`swap`/`binary_search`；`HashMap` `len`/`is_empty` 固化与去重 | ✅ 完成 |
-
-### 阶段 C — Actor 语言级接线
-
-| 任务 | 内容 | 状态 |
-|------|------|------|
-| C1 | `actor` 语法解析 + 语义化，桥接 `rlyeh-actor-runtime`（ActorRef/Runtime API 已就绪） | ✅ 完成 |
-| C2 | `spawn`/`.await` 调用语法与标准库集成（`Counter::new()` → `counter.increment(10).await` 形态） | ✅ 完成 |
-| C3 | Actor 示例（ping-pong、Supervisor 恢复）与集成测试固化 | ✅ 完成 |
-
-执行记录（2026-08，`crates/rlyeh-driver/tests/actor_test.rs` 8 用例全绿 + 全量回归通过）：
-
-- **C1 — actor desugar 全链路**：`actor` 语法经 `rlyeh-typecheck` `expand_actor` 展开为普通结构 + 4 个生成函数：`<Actor>::__state_new`（分配 N 槽 calloc 缓冲 + 字段初值）、`__m<i>`（第 i 个方法：`self` 槽数组 + 消息槽参数，返回 i64）、`__handle`（按 kind 分发到 `__m<i>`，槽 4/5 为 kind 与返回槽）、`__handle_message` 函数返回 `__handle(...)` 槽 5 结果；`rlyeh-actor-runtime` 侧 `CallbackActor` 承载（状态指针 + handler fn 指针，统一 u64 槽语义）；方法返回 `-1` 视为崩溃信号（`u64::MAX` → `ActorError::Panic`）；编译器为含 actor 程序自动生成 `rlyeh_actor_spawn`/`rlyeh_actor_spawn_supervised`/`rlyeh_actor_ask`/`rlyeh_actor_send` extern 声明（**检测用户显式声明则跳过生成**，避免 LLVM 重复 declare 冲突；`rlyeh_actor_stop`/`rlyeh_actor_shutdown` 需用户显式声明）
-- **C1 排障**：① 用户级 actor 方法返回 -1 误触崩溃协议（冒烟测试用手写 handle 未暴露）→ Panic 前先 `reply(0u64)` 让 ask 立即失败，否则 ask 干等满 ASK_TIMEOUT；`reply(0)` 裸字面量被推断为 i32 致 `WrongReplyType`，需显式 `0u64` ② supervisor 重启竞态：崩溃时旧 state 放回 handle 且 `running=false`，`reply(0)` 使 ask 提前返回、后续消息被其他 Worker 用旧 state 处理 → 修复为崩溃时不放回旧 state、保持 `running=true` 直到重启完成，重启后重置并重新调度 ③ staticlib 产物陈旧：改 runtime 后需显式 `cargo build -p rlyeh-actor-runtime`（`cargo run` 不重建 `.a`）
-- **C2 — 语言级受监督 spawn**：构造函数分支扩展 `Actor::new_supervised(strategy)`（strategy i64：0=OneForOne 1=AllForOne 2=RestartForOne）→ `rlyeh_actor_spawn_supervised("<__handle>", "<__state_new>", strategy)`（factory 传符号名字符串，runtime 内部 `dlsym` 解析）；`supervisor_restart` 测试不再依赖手工 extern 声明，验证编译器自动生成 extern 全链路
-- **C2 修复 — `String::from` NUL 终止 bug**：`String::from` 展开原为 `alloc_bytes(len)` + `copy_bytes(len)`，缓冲末尾无 NUL；runtime 侧 `CStr::from_ptr` 按 NUL 扫描读超界（16 字节的 `Wobbly::__handle` 恰在分配块边界读到相邻堆垃圾 `Wobbly::__handleP`，17 字节的 `Counter::__handle` 靠对齐运气幸存）→ 改为 `alloc_bytes(len+1)` + `copy_bytes(len+1)`（LLVM 字符串常量自带 `\00` 一并拷入），`cap` 字段保持 `len` 不扰动扩容路径
-- **C3 — 示例与测试固化**：`examples/actor-ping-pong.rl`（ask 往返 + send 异步 + FIFO，输出 11/12/2/4）、`examples/actor-supervisor.rl`（`new_supervised(0)` 崩溃恢复，输出 5/0/3）；集成测试补 `crash_without_supervisor_stops_actor`（无监督崩溃 → actor 停止 → 后续 ask 返回 0）、`send_fifo_order`（连续 send 后 ask 可见全部累积）
-
-### 阶段 D — 工具链
-
-| 任务 | 内容 | 状态 |
-|------|------|------|
-| D1 | `rlyeh test`：接入 `tests/` 目录（compile-pass/compile-fail/run-pass）与 cargo 测试矩阵 | ✅ 完成 |
-| D2 | `rlyeh fmt` + `rlyeh check`（`tools/` 下 crate 已有骨架） | ✅ 完成 |
-| D3 | `rlyeh doc`（`///` 注释提取）+ `rlyeh bench`（criterion 基准） | ✅ 完成 |
-
-执行记录（2026-08，`rlyeh test tests` 13/13 全绿 + `rlyeh fmt`/`rlyeh check` + 全量回归通过）：
-
-- **D2 — `rlyeh fmt` 格式化器**：新增 `tools/rlyeh-fmt`（`FmtOptions` 缩进默认 4；`format_source`/`format_program` 解析为 AST 后按统一规范重建：顶层项空一行、块类表达式多行展开、表达式按**优先级表**重排括号保证语义不变（Assign<Or<And<BitOr<BitXor<BitAnd<Compare<Shift<Add<Mul<Cast<Unary<Postfix，右侧同优先级补括号）、字符串/字符按 lexer 转义规则重编码（`\"`/`\\`/`\n`/`\xNN`）、浮点字面量强制保留小数点、时间字面量还原（`9am`/`6pm`/`12:00`/`1:05pm`）；`AstStmt::Expr`=带分号语句 / `AstStmt::Semi`=无分号块后语句（与 parser 语义一致）；self 接收者打印 `&self`/`&mut self` 特例（`self: &Self` 无法再解析）；注释暂不保留（MVP 基于 AST 重建，词法阶段即丢弃）；CLI `rlyeh fmt <file> [--check] [-w] [--indent N]`
-- **D2 — `rlyeh check` 静态分析器**：新增 `tools/rlyeh-check`，4 条 AST lint 规则 + parse-error：`unused-variable`（块/函数/闭包/for 作用域栈 + 遮蔽查找，`_` 通配与 self 接收者豁免）、`constant-condition`（if/while 条件为字面量或 `!字面量`）、`redundant-compare`（`==`/`!=` 两侧均为字面量）、`unreachable-code`（return/break/continue 后语句，含 `loop` 体内 break 后）；诊断格式 `line:col: level[rule]: message`；CLI `rlyeh check <file>`（有诊断 exit 1）
-- **D2 — driver 挂载**：`rlyeh-driver` 增加 `fmt`/`check` 子命令（复用 tools 库，`check_source_file` 仅静态分析不跑流水线）；两个 tools crate 各带独立 binary + 根 workspace 依赖表登记
-- **D2 测试固化**：`rlyeh-fmt` 9 单测（round-trip 再解析 / 幂等 / 顶层空行 / 优先级括号 / 浮点小数点 / 字符串转义 / 时间字面量 / parse-error / actor+region）、`rlyeh-check` 12 单测（每规则正反用例 + 遮蔽 + 参数 + self 豁免 + 干净代码零诊断）、`crates/rlyeh-driver/tests/fmt_check_test.rs` 5 集成（真实源码格式化 round-trip 幂等、格式化后**编译运行语义不变**、干净代码零诊断、规则报告与行号、parse-error）；`rlyeh test` 13/13 全绿 + 全量回归通过
-- **D3 — `rlyeh doc` 文档生成器**：新增 `tools/rlyeh-doc`（`DocOptions { title }`；`doc_source` 解析源码为 AST 后按源码位置提取 `///` 文档注释——连续行合并为一个文档块，允许以空行/普通注释间隔，紧邻在顶层项之前即关联；`//!` 行作为文件级文档渲染在标题下方；无注释的项仍以签名+位置出现在目录与正文，保证 API 目录完整）；输出 Markdown：标题 + 文件级文档 + 目录（分类标签 + 简短标题）+ 按类别分组正文（函数/结构体/枚举/Trait/impl/Actor/常量/模块/其他），每项渲染「标题、```rlyeh 签名代码块、`> 位置: line:col`、文档正文」；聚合类型附成员列表（trait/impl 方法签名、actor 字段与方法、mod 子项）；**签名重建**独立实现（`item_signature`/`fn_signature`/`fmt_type`/`fmt_param`，`pub`/`async`/`extern` 修饰符、泛型参数、self 接收者 `&self`/`&mut self` 特判——`self: &Self` 无法再解析）；CLI `rlyeh doc <file.rl> [--out <file.md>] [--title <标题>]`
-- **D3 — `rlyeh bench` 基准测试框架**：新增 `tools/rlyeh-bench`（纯 std，无外部依赖；`BenchOptions { warmup, runs, quiet }` 预热轮数不计统计 + 测量轮数；`bench_executable` 多次启动进程 `Instant` 计时，非零退出码报错；`bench_source` 接受编译回调先编译再计时）；`BenchReport` 统计平均/中位数/最小/最大/样本标准差/吞吐（ops/s），`Display` 输出类 criterion 摘要；CLI `rlyeh-bench <file.rl|exe> [--runs N] [--warmup N] [--out <路径>] [--quiet]`，源码模式自定位 `rlyeh build`（复用当前二进制或 PATH）编译到临时目录
-- **D3 — driver 挂载**：`rlyeh-driver` 增加 `doc`/`bench` 子命令（`doc_source_file` 仅做文档生成不跑编译流水线；`rlyeh bench <file.rl> [-o <out>] [--runs N] [--warmup N] [--cache-dir <dir>] [--force]` 复用 `build_file` 编译后交 `rlyeh_bench::bench_executable` 计时）；`DriverError` 新增 `Doc` 变体；两个 tools crate 各带独立 binary + 根 workspace 依赖表登记
-- **D3 测试固化**：`rlyeh-doc` 5 单测（相邻 `///` 合并 / `//!` 与 `///` 分离 / 空白与普通注释行可间隔关联 / 代码行阻断关联 / self 参数签名）、`rlyeh-bench` 3 单测（统计计算含中位数偶数样本 / 单样本与空样本 / 时长格式化）、`crates/rlyeh-driver/tests/doc_bench_test.rs` 9 集成（doc 注释+签名+位置提取、无注释目录、parse-error 报告、driver 文件 API 正反用例、bench 统计合理性、编译产物计时、`bench_source` 编译回调链路、缺失产物报错）；`rlyeh doc` 对真实标准库 `core.rl` 试运行输出完整目录（String/Option/Result/Vec/HashMap/Duration/Instant/io/FFI 符号）；全量回归通过
-- **E1 — `--target` 交叉编译（macOS 双架构基础）**：编译流水线保持目标无关（LLVM IR 文本 → clang 汇编/链接），交叉编译 = 在链接阶段注入目标 triple；`rlyeh-driver` 新增 `host_triple()`（本机 LLVM triple，macOS/Linux/Windows 三平台映射）/`target_arch()`（`arm64`/`aarch64` 归一）/`is_cross_target()`；`assemble` 接受 `Option<&str>` target——有 target 时 clang 加 `--target=<t>`；**Actor 运行时跨架构跳过**：本机 staticlib 无法链接到其他架构（`is_cross_target` 判断 + stderr 提示，actor 程序暂不支持交叉编译）；公共 API 新增 `build_executable_with_target`/`build_executable_file_with_target`（旧 API 委托 None 保持兼容）；`IncrementalDriver.with_target`；CLI `rlyeh build <file> --target <triple>`（`rlyeh run` 拒绝 `--target`——交叉产物无法本机运行）；验证：同一 `hello-world.rl` 编译出 `arm64-apple-macosx`/`x86_64-apple-macosx` 两个 Mach-O，arm64 本机运行 + x86_64 Rosetta 运行均输出 `Hello, Rlyeh!`，`file` 检查架构正确；Windows/ARM 目标（链接器与库路径）与 `sockaddr_in4` 平台布局（Linux 无 sin_len）留待后续
-- **E1 测试固化**：`crates/rlyeh-driver/tests/cross_compile_test.rs` 6 集成（`target_arch`/`host_triple`/`is_cross_target` 归一化正反用例、本机 target 编译+运行验证、无 target 兼容性、无效 target 编译失败、macOS 双架构产物 `file` 校验、带 std 特性程序（Vec）交叉编译+Rosetta 运行）；全量回归通过
-- **E1 平台内建（消除平台相关假设）**：Rlyeh 语言无 `#[cfg]` 属性机制（词法层无 `#` token），改用**驱动注入平台内建**：`rlyeh-driver` 新增 `target_os_code(target)`（triple→OS 码：0=未知 1=linux 2=macos 3=windows 4=freebsd，`None`=主机）+ `platform_builtin_ir` 在 assemble 写盘前注入 `define internal i32 @__rlyeh_target_os()`（ret 目标 OS 码）；**codegen 对 `__rlyeh_` 前缀 extern 跳过 declare 生成**（避免同符号 declare+define 冲突）；`core.rl` 声明 `extern fn __rlyeh_target_os() -> i32` 并把 `sockaddr_in4` 重构为 `sockaddr_in4_with_layout(has_sin_len, ...)` 双布局（macOS：0=sin_len(16)+1=AF_INET(2)；Linux：0-1=sin_family 小端 0x0002，无 sin_len），`sockaddr_in4` 按 `__rlyeh_target_os() == 2` 自适应——消除 CODEBUDDY.md 标注的「Linux 无 sin_len 待 cfg 支持」遗留；验证：双布局字节序列（16,2,31,144,... / 2,0,31,144,...）、平台内建 host 端到端调用返回主机 OS 码、现有 `net_socket_test` macOS 布局不变
-- **E1 测试固化**：`crates/rlyeh-driver/tests/platform_builtin_test.rs` 4 集成（target→OS 码映射含主机/主机 triple、平台内建端到端接线、`sockaddr_in4_with_layout` 双布局字节序列、双布局尾部字节一致性）；全量回归 104 套件通过
-
-- **D1 — `rlyeh test` 子命令**：新增 `rlyeh-driver::test_runner` 模块（`run_test_suite(root)` 扫描 `compile-pass/`/`compile-fail/`/`run-pass/` 三个子目录：compile-pass 编译到 LLVM IR 成功即过；compile-fail 要求编译失败，源内 `// expect: <片段>` 注释断言错误消息包含片段；run-pass 编译运行成功，同名 `.out` 文件作为期望 stdout 精确对比；用例目录可选缺失即跳过、文件按名排序保证结果确定性）；CLI `rlyeh test [<tests-dir>]`（默认 `./tests`）逐用例打印通过/失败 + 汇总 + 失败时非零退出码
-- **D1 用例**：`tests/compile-pass/`（hello / arith / struct-trait / modules / actor 共 5 个）、`tests/compile-fail/`（type-mismatch / undefined-var / unknown-field / undefined-fn / no-method 共 5 个，均带 `// expect:` 断言）、`tests/run-pass/`（hello / arith / actor-ping-pong 共 3 个 + `.out` 期望文件，字节精确写入）
-- **D1 cargo 测试矩阵**：`crates/rlyeh-driver/tests/suite_test.rs`（`rlyeh_test_suite_all_pass` 断言 `tests/` 全部通过；`rlyeh_test_suite_covers_all_kinds` 断言三类用例均有覆盖），`cargo test` 自动驱动目录用例
-- **D1 连带修复 ① — 模块项 pub 可见性**：`parse_item` 的 `Pub` 分支原仅识别 `pub mod`，其余一律按函数解析（`pub const PI` 报 `expected 'fn', found Const`）→ 改为按实际关键字分派到 mod / const / static / struct / enum / trait / impl / use / actor；`pub fn`（含 async/unsafe/extern 前缀）**不预消费 `pub`**、交回 `parse_fn` 自行处理以正确记录 `is_pub`（防止 `test_complete_function` 回归）
-- **D1 连带修复 ② — use 导入常量短名解析**：`lookup_constant` 原仅按裸名查表（`use math::PI; println(PI)` 报 `undefined variable `PI``）→ 支持短名 → 完整名解析（裸名失败后回退 `use_aliases`），`resolve_full_name` 增加 `constants` 直接命中分支（与 struct/actor 一致）
-
-### 阶段 E — 多目标与发布
-
-| 任务 | 内容 | 状态 |
-|------|------|------|
-| E1 | 交叉编译：macOS / Windows / ARM 目标（消除平台相关假设） | 🔧 大部分完成（`--target` 注入 clang + 双架构验证 + 平台内建消除 `sockaddr_in4` 布局假设；Windows/ARM 链接器与库路径待补） |
-| E2 | WASM 目标支持（M2.7） | ✅ 完成（`wasm_target_test.rs` 3 用例全绿：triple 判定 + hello world + std 特性数组/String/位运算；工具链 wasm-ld/wasmtime/wasi-libc 已装；`rlyeh build --target wasm32-wasi` → wasmtime 运行与主机目标输出一致） |
-| E3 | 发布流程：`dagon` 注册表版本信息、CI 多平台产物（`.github/workflows/release.yml`） | ✅ 完成（`dagon publish` 重复版本保护 + `rlyeh publish` CLI + release.yml 四平台矩阵 + `CHANGELOG.md` v0.1.0） |
-
-### 阶段 F — 编译器深度
-
-| 任务 | 内容 | 状态 |
-|------|------|------|
-| F1 | LSP 服务器（M2.4）：IDE 支持 | ✅ 完成（MVP：新 crate `rlyeh-lsp`，JSON-RPC over stdio + full 文档同步 + 诊断推送；`rlyeh lsp` 命令） |
-| F2 | PGO 数据回灌编译流程（M2.8 后半）：`.rl_profile` → 区域大小预测 | ✅ 完成（`rlyeh profile` 命令 + `rlyeh build --profile` 编译期注入：加载画像 → PgoAdvisor p95×1.1 建议 → CompilerInterface 报告；语言级 region 接线后可回灌 `region 'r adaptive` 初始容量） |
+> **总览说明**：阶段 A–L 为编译器与工具链 + 能力补齐（§3 阶段详情，G–L 依赖：G 无、H 依赖 G、I 弱依赖、J 依赖 H、K 依赖 G、L 依赖 I/G）；阶段 M–T 为标准库深度完善（§6.3b 阶段详情，推荐路线见下方）；阶段 U–Z 为目标 API 对齐与编译器能力补齐（§6.3c，推荐路线见 §6.3c.1）。
+>
+> **阶段 G–L 推荐执行路线**：
+> - **保守路线（依赖驱动）**：G → H → J → K → L，I 按需插入（宏展开器在 parse 后、typecheck 前，与 G/H 解耦，可随时并行）。
+> - **快赢路线（体验驱动）**：先做 I1/I2（宏 + `println!` 格式化，开发者日常收益最大、不依赖引用系统）与 G 同步推进；J1（数组迭代）独立且极小，可先行交付。
+> - **优先级建议**：G1–G2（引用地基 + str）> I1–I2（宏 + 格式化）> H1–H2（函数指针 + 无捕获闭包）> K1（`?` 运算符）> J 全阶段 > 其余。
+>
+> **阶段 M–T 推荐执行路线**（任务粒度：59 个子任务，字母后缀 a/b/c 子任务按序完成）：
+> - **快赢线**（绑定已就绪 / 独立性强，可先行交付）：M1a/M1b（错误类型）→ M2a（`Error` trait）→ Q1a（serde trait 定义）→ R1a/R1b（Poller 封装）→ P1a/P1b（Channel 绑定 + 对象化）。
+> - **主线（依赖驱动）**：M（M1a→M1b→M2a→M2b→M3a→M3b→M3c）→ N（N1a→N1b→N1c→N2a→N2b→N3a→N3b→N3c→N4）→ O（O1a→O1b→O1c→O2→O3a→O3b）→ R（R1a→R1b→R2→R3）→ S0（S0a→…→S0e）→ S1–S3（S1a/S1b → S2a/S2b/S2c → S3a/S3b，S1c 状态机独立排期）。P、Q 与主线并行（依赖交集小），T 随时插入。
+> - **优先级建议**：M1a/M1b（错误类型，全部 std 的地基）> N1a（`File` 绑定层，日常收益大）> P1a（Channel 绑定层）> Q1a（serde trait 定义）> R1a（Interest/Event 类型）> O1a（SocketAddr）> S0a（线程绑定层）> 其余。
 
 ---
+
+## 3. 阶段详情（A–L）
+
+> 每个阶段详情为独立文档（`docs/stages/`），含任务列表 + 各任务详情文档（任务树叶子）链接。
+
+| 阶段 | 阶段详情文档 | 任务详情文档 |
+|------|-------------|-------------|
+| **A** | [`A.md`](stages/A.md) | 见 [`A.md`](stages/A.md) 任务表「详情」列 |
+| **B** | [`B.md`](stages/B.md) | 见 [`B.md`](stages/B.md) 任务表「详情」列 |
+| **C** | [`C.md`](stages/C.md) | 见 [`C.md`](stages/C.md) 任务表「详情」列 |
+| **D** | [`D.md`](stages/D.md) | 见 [`D.md`](stages/D.md) 任务表「详情」列 |
+| **E** | [`E.md`](stages/E.md) | 见 [`E.md`](stages/E.md) 任务表「详情」列 |
+| **F** | [`F.md`](stages/F.md) | 见 [`F.md`](stages/F.md) 任务表「详情」列 |
+| **G** | [`G.md`](stages/G.md) | 见 [`G.md`](stages/G.md) 任务表「详情」列 |
+| **H** | [`H.md`](stages/H.md) | 见 [`H.md`](stages/H.md) 任务表「详情」列 |
+| **I** | [`I.md`](stages/I.md) | 见 [`I.md`](stages/I.md) 任务表「详情」列 |
+| **J** | [`J.md`](stages/J.md) | 见 [`J.md`](stages/J.md) 任务表「详情」列 |
+| **K** | [`K.md`](stages/K.md) | 见 [`K.md`](stages/K.md) 任务表「详情」列 |
+| **L** | [`L.md`](stages/L.md) | 见 [`L.md`](stages/L.md) 任务表「详情」列 |
 
 ## 4. 执行记录
 
-### 2026-08（阶段 A + B1/B5）
+> 阶段 A–F 的任务具体执行情况已归档至任务树：[`tasks/stage-a-f.md`](./tasks/stage-a-f.md)（§子任务叶子文档）。
+> 本文件保留计划主体（§3 阶段详情）与状态标识；详细实现流水见任务树 / git 历史。
 
-- [x] **A1** 用户级 match 泛型聚合载荷修复（`option_result_test.rs::user_level_match_string_payload` 8 断言）
-- [x] **A2** Infer 枚举自动定型（`option_result_test.rs::bare_enum_infer` 5 断言）
-- [x] **A4** 通用 FFI `extern fn`（`ffi_extern_test.rs` 3 用例）
-- [x] **B1** `Duration`/`Instant` 时间模块（`time_test.rs` 3 用例）
-- [x] **B5** `Vec` 补充方法 + `HashMap` `len`/`is_empty` 固化（`vec_more_ops_test.rs` 5 用例 + `hashmap_len_test.rs` 4 用例）
-- [x] **B2** io 模块：libc stdio 文件 IO + `read_file`/`write_file`/`append_file`/`c_str`/`read_line`；编译器 extern `String` 参数取 data 指针（`io_file_test.rs` 9 用例）
-- [x] **位运算全链路**（B3 前置依赖）：HIR `HirBinaryOp` 5 新变体 + typecheck 真正映射（原为 placeholder 显式 Unsupported）+ MIR const_fold 折叠 + LIR 类型推断统一 I64 + codegen `and`/`or`/`xor`/`shl`/`ashr`；`bitwise_test.rs` 6 用例
-- [x] **B3** net 模块：`hostname()` + `htons` + `socketpair_stream`/`fd_at`/`send_all`/`recv_some`/`sockaddr_in4`/`tcp_connect`（`send`/`recv` 为 actor 保留字，extern 用 `r#` 原始标识符）；`net_socket_test.rs` 6 用例
-- [x] **B4** sync 模块：`Mutex`/`RwLock`（pthread extern + `calloc` 承载，`trylock` 系列返回 `int` 依赖编译器 extern `i32` 返回支持）；顺带修复内联 pass 局部变量重命名 bug（`map_local` 对非参数名字一律重命名）；`sync_test.rs` 6 用例
-- [x] **E2** WASM 目标支持（M2.7）：工具链安装（Homebrew `lld` 22.1.8 含 `wasm-ld`、`wasmtime` 48.0.0、`wasi-libc` sysroot 于 `/opt/homebrew/opt/wasi-libc/share/wasi-sysroot`）；`rlyeh build --target wasm32-wasi` 全链路验证（hello-world / arith-print 与主机目标输出一致）；`wasm_target_test.rs` 3 用例（triple 判定 + hello world + std 特性数组/String/位运算）；关键适配：WASI 入口重命名 `main` → `__main_argc_argv(i32, i8**)`（crt1 链 `_start` → `__main_void` → `__main_argc_argv`）、`-nostdlib` 手动链接 `crt1.o` + `libc.a`、wasi-libc 33 多目标布局、`adapt_wide_int_args` malloc/memcmp 位宽适配（`i64` → `i32`，寄存器实参前插 `trunc i64→i32` 指令——LLVM 禁止 call 实参内嵌 trunc 表达式）
-- [x] **E3** 发布流程：`dagon publish` 重复版本保护（`PackageIndex::find` 命中即报错，阻止静默覆盖已发布版本；实测：0.1.0 发布 → 重复发布报错 → 提升 0.2.0 再发布成功）；`rlyeh publish` CLI（`rlyeh-driver` 依赖 dagon lib 委托 `cmd_publish`，`--registry`/`--verbose`，重复版本拦截 exit=1）；`.github/workflows/release.yml` Windows x86_64 平台（`x86_64-pc-windows-msvc` + `.exe` + `shell: bash`），矩阵 4 平台；`CHANGELOG.md` v0.1.0 首个版本记录
-- [x] **F1** LSP 服务器（M2.4）：新 crate `rlyeh-lsp` + `rlyeh lsp` CLI（JSON-RPC 2.0 over stdio，自研 `jsonrpc.rs` 无外部 LSP 依赖；full 文本同步 didOpen/didChange/didClose + 诊断推送复用 rlyeh-check；initialize 声明 capabilities，shutdown/exit 生命周期，未知请求 -32601）；`lsp_e2e_test.rs` 2 进程测试全协议往返
-- [x] **F2** PGO 数据回灌（M2.8 后半）：`rlyeh profile <file.rl_profile>`（加载画像 JSON → `PgoAdvisor::recommend_size` p95×1.1 下限 64KiB → `CompilerInterface` 报告）+ `rlyeh build --profile <file>` 编译期注入（失败仅告警不阻断）；`profile_cmd_test.rs` 6 用例
-- [x] **遗留修复**：`rlyeh new <name> [--lib]` 命令（委托 dagon `cmd_new`，Rlyeh.toml + src/main.rl|lib.rl）；`Vec<T>` 动态切片 `v[lo..<hi]`/`v[lo...hi]`/`v[lo<..hi]`（std 泛型方法 `Vec::slice` + check_slice 实例化，越界 clamp）；数组 `[T; N]` 动态切片（typecheck 展开为 Vec 拷贝循环 + push 实例化 + 边界 clamp）；`String::from(s)` 支持绑定字面量的变量（`TypeContext.local_inits` 追踪）；`dynamic_slice_test.rs` 7 用例 + 全量回归 111 套件全绿
-
-**验证基线**：`cargo test --workspace` 111 套件全绿；`cargo clippy --workspace --all-targets` 0 警告。
+**状态摘要**：阶段 A–F 全部完成（见 §2 总览）。
 
 ---
 
@@ -162,79 +117,145 @@
 
 1. 每个阶段/任务完成须满足：`cargo test --workspace` 全绿 + `cargo clippy --workspace --all-targets` 0 警告。
 2. 涉及运行时/并发类测试（Actor、通道、锁、`join`）须按 `design/00_项目总览.md` 硬性规则带超时保护，挂起即视为失败。
-3. 任务完成后同步更新：本文档状态标识 + `CODEBUDDY.md`（§5.5 执行记录 / §6 里程碑）。
+3. 任务完成后同步更新：本文档状态标识 + 任务树（`tasks/stage-*.md` 进度与 §子任务叶子文档）+ `CODEBUDDY.md`（§6 里程碑）。
 4. 优先交付顺序：B2/B3（io/net）→ C（Actor 接线）→ D（工具链）→ E/F（多目标/深度）。
 
 ---
 
 ## 附录 A：实现纪要（编译器后端与工具链）
 
-> **说明**：本节提炼自开发任务书（原 `prompts/P007`/`P008`/`P011`/`P013`，2026-08-24 归档至
-> [`design/prompts/`](design/prompts/)），记录编译器后端与工具链的落地状态、关键决策与遗留问题。
-> 相关模块设计稿见 [`design/08_编译器后端与代码生成.md`](design/08_编译器后端与代码生成.md) 与
-> [`design/09_工具链设计.md`](design/09_工具链设计.md)。
+> 本附录的历史实现纪要（MIR 中间表示 / 增量编译引擎 / 包管理器 Dagon / LLVM 后端与代码生成）已归档至任务树对应里程碑单任务文档：
+> - MIR 中间表示（P011 / M1.7）：[`milestone-tasks/m1-7.md`](milestone-tasks/m1-7.md)
+> - 增量编译引擎（P007 / M2.3）：[`milestone-tasks/m2-3.md`](milestone-tasks/m2-3.md)
+> - 包管理器 Dagon（P008 / M2.2）：[`milestone-tasks/m2-2.md`](milestone-tasks/m2-2.md)
+> - LLVM 后端与代码生成（P013 / M1.8、M1.9）：[`milestone-tasks/m1-8.md`](milestone-tasks/m1-8.md)、[`milestone-tasks/m1-9.md`](milestone-tasks/m1-9.md)
+> 
+> 详细实现（含 ADR 设计决策）见上述单任务文档；此处不再重复。
 
-### A.1 MIR 中间表示（对应 P011，2026-08-20 ✅）
+---
+---
 
-- **落地**：`rlyeh-mir` 从占位 crate 落地为真实实现——`lib.rs`（数据结构：`MirProgram`/`MirFunction`/
-  `BasicBlock`/`MirStmt` 三地址指令/`MirTerminator`）+ `lower.rs`（HIR → CFG）+ `passes/`（优化流水线
-  **常量折叠 → DCE → 小函数内联 → DCE**）。
-- **区域操作显式化**：`RegionEnter`/`RegionExit`/`AllocInRegion`/`Transfer` 为一等指令。
-- **关键 bug 修复**：`new_block()` 切换当前块导致分支块创建后终止符发射错位——修复为创建前记录 entry、
-  创建完毕切回再发射终止符；DCE 误删副作用 `Call`（`print`/`println`）——修复为 Call 永不删除、参数标记活跃。
-- **落地偏差 / 已知限制**：
-  - **简化 SSA**：未引入 φ 节点，各分支写同一结果变量、merge 块读取，模拟 φ 语义；
-  - `break`/`continue` 边界未校验（非循环上下文 `break` 会跳转到失效块 id，待 typecheck 补上下文校验）；
-  - `transfer` 后仍可使用变量（use-after-transfer 依赖借用/区域检查器，未接线）；
-  - 循环条件含 `?` 提前返回会使 entry 块未终止（边缘情况，MVP 接受）；
-  - **MIR 未接线到 driver 主流水线**（M1.8 代码生成阶段补齐，见 A.4）。
+## 6. 剩余任务消解（阶段 G–Z）
 
-### A.2 增量编译引擎（对应 P007，2026-08-20 ✅，务实版）
+> **本部分由原 `mvp-gaps-plan.md` 并入**（阶段 G–L：编译器能力补齐；阶段 M–T：标准库深度完善；阶段 U–Z：目标 API 对齐与编译器能力补齐）。
+> **任务执行记录**：见任务树 [`stage-g-l.md`](tasks/stage-g-l.md) / [`stage-m-t.md`](tasks/stage-m-t.md) / [`stage-u-z.md`](tasks/stage-u-z.md) 各子任务叶子文档。
+> **§6.2（阶段 G–L 计划总览）与 §6.3（阶段 G–L 详情）**已并入上文 §2 与 §3，故本节直接从 §6.3b（阶段 M–T）开始。
 
-按**当前编译器实际能力**（单文件编译模型）落地为"务实版增量编译"，与原始设计偏差如下：
+### 6.1. 背景：MVP 已知限制盘点
 
-| 本文档设计 | 实际落地 | 说明 |
-|-----------|---------|------|
-| 模块级缓存（`modules/`，HIR/MIR 序列化） | 单文件产物缓存（`artifacts/{hash}.ll`，缓存 LLVM IR 文本） | 序列化全 IR 类型成本高；缓存最终产物同样跳过全流水线 |
-| 缓存 HIR/MIR/LIR 各级 IR | 只缓存 LLVM IR 最终产物 | 命中时跳过 parse/typecheck/borrowck/regionck/MIR/LIR/codegen 全部环节 |
-| 并行编译（rayon） | 未引入 rayon | 单文件模型无并行对象；依赖图与受影响传播已实现并单测，待多模块接线 |
-| `use` 依赖提取 | `deps.json` 暂未生成 | 依赖图 API 已就绪（`add_edge`），依赖提取待模块系统落地 |
-| 可执行文件缓存 | 只缓存 LLVM IR | 命中后仍执行 clang（毫秒级）；exe 缓存为后续优化项 |
+#### 6.1.1 规划中 / 未实现特性（7 项）
 
-**实际能力**：源码 SHA-256 + 模块接口哈希（函数签名，忽略函数体变化）；多版本产物缓存（ccache 语义）；
-跨进程持久化（`index.json` + `artifacts/`）；损坏自动全量重建；`clean_stale` 过期清理；依赖图拓扑排序/
-受影响传递闭包/循环检测；CLI `rlyeh run|build <file> [--cache-dir|--force|--verbose]`。
-**实测**：`arith-print.rl` 全量 152ms → 增量命中 67ms（2.3x）。
-**实现文件**：`crates/rlyeh-driver/src/incremental/{hash,depgraph,cache}.rs`。
+| # | 限制（guide.md §13） | 编译器现状依据 | 归属阶段 |
+|---|---------------------|---------------|---------|
+| 1 | **宏系统**：✅ 已解决——I1 声明式宏 / I2 内置格式化宏 / I3 集合宏均已实现 | grammar.md §2.14 `macro_rules!` EBNF（新 crate `rlyeh-macro`）；std-lib.md §8 `Display`/`Debug` 仍为规划 API | **I**（I1/I2/I3 ✅） |
+| 2 | **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 | grammar.md Type 规则含 `'&' Lifetime? 'mut'? Type`、UnaryExpr 含 `'*' | '&' 'mut'?`、Pattern 含 `'ref'`（均已定义未实现）；typecheck `UnaryOp::Deref/AddrOf/AddrOfMut` → Unsupported（check_expr.rs）；borrowck crate 仅服务 `&self` 接收者 | **G**（G1–G4 ✅） |
+| 3 | **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported | parser 已产出 `AstExpr::Closure`；typecheck 报 Unsupported（check_expr.rs） | **H**（H1–H5 ✅） |
+| 4 | **运算符**：✅ 已解决——K1 `?` 错误传播、H1 函数指针、H4 `dyn Trait` 均已实现 | grammar.md 含 `'dyn' TraitBound` 与后缀 `'?'`；`Option`/`Result` + `expect`/`unwrap_or` 已实现 | ✅ |
+| 5 | **所有权层级**：✅ 已解决——K2 `Box<T>` / K3 `Rc<T>`/`Arc<T>`/`Weak<T>` / K4 `Gc<T>`（MVP）均已实现 | memory-model.md §4（Rc/Arc）/§5（Gc）规范完备；`Box<T>` 亦为 §3 目标 API | **K** |
+| 6 | **并发**：actor `async` 方法 + `.await`/`send` 已实现；普通函数 `async fn`/`await` 已支持（L1 ✅）；`json` 序列化已实现（L2 ✅） | std-lib.md §8（fmt）规划标注 / §9（serde）已部分实现（`json::stringify`/`json::parse::<T>` 内建）；§10（async 运行时）已部分实现 | fmt→**I**，serde→L2 ✅，async→L1 ✅ |
+| 7 | **迭代器协议**：数值区间、`for x in vec`/`for (k, v) in map`/`for x in arr`（数组迭代 J1）可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`（J2）；`map`/`filter`/`fold`/`collect`/`take`/`skip` 适配器可用（J3，返回 Vec） | typecheck for 循环分派（range/Vec/HashMap/数组/迭代器），适配器内建 desugar（check_expr.rs）；std-lib.md §2.3 Iterator 规划 | **J** |
 
-### A.3 包管理器 Dagon（对应 P008，2026-08-20 ✅）
+#### 6.1.2 实现约束（5 项）
 
-- **落地**：`dagon/` crate——`rlyeh new` 项目初始化（`Rlyeh.toml`：`[package]`/`[dependencies]`/`[dev-dependencies]`/
-  `[build-dependencies]`/`[profile.*]`/`[workspace]`，支持 `path` 本地依赖）+ **PubGrub 依赖解析** +
-  本地/HTTP 注册表 + 打包解包 + 构建驱动。
-- **配置要点**：版本约束 `serde = "1.0"`；feature 声明 `tokio = { version = "2.0", features = ["full"] }`。
-- **质量**：29 项测试全过。
-
-### A.4 LLVM 后端与代码生成（对应 P013，2026-08-20 ✅，M1.8/M1.9）
-
-- **设计决策（ADR）**：
-
-| ADR | 决策 | 理由 |
-|-----|------|------|
-| ADR-LLVM-001 | 非 SSA 槽式存储（`alloca` + `load`/`store`） | 天然支持分支合并，LLVM `-O1` 自动 mem2reg 提升 |
-| ADR-LLVM-002 | LLVM IR 文本直出（不经 inkwell C API） | 零额外依赖、编译期快、错误定位直接 |
-| ADR-LLVM-003 | 临时值一律命名寄存器 `%rN` | 规避裸数字与命名寄存器编号冲突 |
-| ADR-LLVM-004 | `main` 特化为 `define i32 @main()`，`ret i32 0` | C 风格入口需要；MVP 不支持退出码 |
-| ADR-LLVM-005 | 区域指令后端忽略 | MVP 分配语义由 `rlyeh-region-alloc` 运行时提供 |
-
-- **流水线**：`compile_to_llvm`（lexer→parser→typecheck→borrowck→regionck→MIR(优化)→LIR→LLVM IR）→
-  `build_executable`（IR 落盘 → clang `-O1` 汇编链接）→ `run_source`（执行并捕获输出）。
-- **内建打印**：`print`/`println` → `printf`，格式串按类型分派（`%s`/`%lld`/`%f`/`%c`）；
-  布尔经 `select` 选 `"true"`/`"false"`；字符 `zext i8 → i32`。
-- **遗留问题**：用户函数重定义检查（当前 `sigs` 后写覆盖）；全局变量/常量支持；`&` 借用 → LLVM 指针语义；
-  递归深度校验/栈溢出保护；WASM 目标（M2.7，部分已由 L4 平台加固覆盖）。
+| # | 约束（guide.md §13） | 现状 | 处置 |
+|---|---------------------|------|------|
+| 1 | std 模块化（core.rl + time/io/net/sync 子模块） | ✅ 已完成 | 说明性，不纳入计划 |
+| 2 | net：`tcp_connect` 依赖平台 `sockaddr_in4` 布局（已双布局化）；WASI 下网络不可用 | 平台约束 | ✅ 已解决（L4：WASI 下 net 明确禁用文档化；执行情况见 [`l4-platform.md`](tasks/leaf/l4-platform.md)） |
+| 3 | Actor 运行时：交叉编译 / WASM 目标下 actor 程序暂不支持 | 平台约束 | ✅ 已解决（L4：Actor 交叉编译 / WASM 支持；执行情况见 [`l4-platform.md`](tasks/leaf/l4-platform.md)） |
+| 4 | `String::from(s)`：非字面量 Str（运行期内容）长度表达未实现 | typecheck 报 Unsupported | **G**（str 切片一并补齐） |
+| 5 | region 选项：`adaptive`/`with_size (N)` 可用；`strategy (bump)` 等其余选项规划中 | `rlyeh-region-alloc` 已就绪（PGO 回灌 F2 已打通） | ✅ 已解决（L3：`strategy (bump)` 语法 + 运行时 C ABI 接线 + PGO 回灌） |
 
 ---
 
+### 6.3b. 标准库深度完善计划（阶段 M–T）
+
+> **需求来源**：[`std-lib.md`](./std-lib.md) 状态总览中标记为 📋 规划 / 🔧 部分的标准库章节（§2.3 Iterator、§4 File/标准输入输出/Path/fs/NIO/sendfile、§5 TCP 对象化/HTTP、§6.2 Channel、§8 `Display`/`Debug`、§9 `Serialize`/`Deserialize`、§10 异步运行时、§11 智能指针目标 API、§12 错误处理）。
+> **前置**：阶段 G–L 已全部完成，提供能力地基——G（引用/`&str`/裸指针/严格借用）、H（函数指针/闭包/`dyn Trait`）、I（宏/格式化宏/集合宏）、J（迭代器）、K（`?`/Box/Rc/Arc/Gc）、L（async 同步语义/json/region 指令/WASI）。
+> **Rust 绑定层策略**：延续 rlyeh-std「绑定层阶段」——每个新 std 模块先在 `crates/rlyeh-std/src/` 用 Rust 实现 C ABI 绑定（`#[no_mangle] extern "C"`），语言侧 `crates/rlyeh-std/rlyeh/*.rl` 经 FFI 调用封装；**NIO/sendfile 绑定层已就绪**（`rlyeh-std/src/nio/`：poller.rs/sendfile.rs/nonblocking.rs，三平台 epoll/kqueue/poll），阶段 R 为纯语言侧封装。
+> **现状修正（std-lib.md 过时标注，规划时以实际为准）**：§8 内置格式化宏已实现（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；§12 `?` 运算符已实现（K1）；§9 `json::stringify`/`json::parse::<T>` 已实现（L2，trait/derive 仍规划）。
+>
+> **任务粒度**：全部任务已拆分为「可独立实现 + 独立验收」的子任务（共 **59 个**），字母后缀（a/b/c）子任务须按序完成（后者依赖前者）；M–T 推荐执行路线见上文 §2。
+
+---
+
+| 阶段 | 阶段详情文档 | 任务详情文档 |
+|------|-------------|-------------|
+| **M** | [`M.md`](stages/M.md) | 见 [`M.md`](stages/M.md) 任务表「详情」列 |
+| **N** | [`N.md`](stages/N.md) | 见 [`N.md`](stages/N.md) 任务表「详情」列 |
+| **O** | [`O.md`](stages/O.md) | 见 [`O.md`](stages/O.md) 任务表「详情」列 |
+| **P** | [`P.md`](stages/P.md) | 见 [`P.md`](stages/P.md) 任务表「详情」列 |
+| **Q** | [`Q.md`](stages/Q.md) | 见 [`Q.md`](stages/Q.md) 任务表「详情」列 |
+| **R** | [`R.md`](stages/R.md) | 见 [`R.md`](stages/R.md) 任务表「详情」列 |
+| **S** | [`S.md`](stages/S.md) | 见 [`S.md`](stages/S.md) 任务表「详情」列 |
+| **T** | [`T.md`](stages/T.md) | 见 [`T.md`](stages/T.md) 任务表「详情」列 |
+
+### 6.3c. 标准库后续完善计划（阶段 U–Z：目标 API 对齐与编译器能力补齐）
+
+> **需求来源**：[`std-lib.md`](./std-lib.md) 各章节「目标 API（规划）」「MVP 退化」「规划中」标注，以及阶段 M–T 完成后遗留的**已知退化项**（M2b/Q1a/S1a/T1a/T1b/T1c/T2/T3a 的 MVP 降级实现）。
+> **前置**：阶段 G–T 已全部完成（2026-08-24），MVP 标准库完整可用（错误体系 / IO 对象化 / 网络 / 并发 / 序列化 / NIO / 线程 / 异步状态机 / 集合收尾）。
+> **定位**：本计划不做新语言特性，聚焦 ① 消除已实测验证的编译器能力缺口（阶段 U，全部为 std 完整化的硬前置），② 把 MVP 退化项升级为 std-lib.md 目标 API（阶段 V–Y）。
+>
+> **编译器能力缺口盘点（阶段 U 集中解决）**：
+>
+> | # | 缺口 | 实测依据 | 影响面 |
+> |---|------|---------|--------|
+> | 1 | typecheck 变量环境**按名全局索引、无作用域栈**，同名遮蔽互相覆盖（后续按类型分支输出异常） | T 阶段已知限制（§3b.9 / std-lib.md 顶部） | `get_mut` 引用语义、借用迭代器、引用返回值 |
+> | 2 | trait **关联类型** `type Item` / `type Output` 无载体 | S1a/T2 已验证（parser/typecheck 无 trait `type` 成员） | `Iterator` 泛型元素、`Future` 泛型 Output |
+> | 3 | **泛型 trait 约束** `T: Bound`（where 子句 / bound）不可用 | M2b 已验证（blanket impl 不可行） | `json::to_string<T: Serialize>`、`timeout<F: Future>` |
+> | 4 | trait 方法返回 **`-> Self`** 未支持（typecheck `undefined type Self`） | M2b/Q1a 已验证 | `Deserialize::from_json`、`From::from`、`Into::into` |
+> | 5 | **MIR `AddrOf` 仅支持变量取址** | T3a 已验证（`&*b` 堆地址取引用不可行） | `Box::leak` 目标签名 `&'static mut T` |
+
+#### 6.3c.1 计划总览（阶段 U–Z）
+
+| 阶段 | 主题 | 子任务（关键交付，按序） | 子任务数 | 依赖 | 状态 |
+|------|------|---------|:---:|------|------|
+| **U** | 编译器地基（std 完整化前置） | U1 作用域栈重构、U2 trait 关联类型、U3 泛型约束 where、U4 `-> Self` 返回、U5 MIR AddrOf 任意目标、U6 数值转换 Cast IR、**U7 方法级泛型参数**、**U8 泛型结构体构造 + 泛型 trait** | 8 | G、T 已知限制 | ✅ 已完成（U1–U8 全部落地；执行情况见 [`stage-u-z.md`](tasks/stage-u-z.md) 叶子文档） |
+| **V** | 集合与迭代器完整化 | V1 借用迭代器（`Iter`/`IterMut`/`Iter<'_, K, V>`）、V2 String 码点迭代器（`Chars`/`Lines`）、V3 Iterator 默认方法 + 适配器迁移、V4 `get_mut` 引用语义、V5 新集合（HashSet/BTreeMap/VecDeque） | 5 | U1/U2/U3 | 🔧 进行中（V1/V4/V5 ✅、V3 默认方法基础 ✅、V2 打印/参数 ✅；V2-B/V2-E、V3-A~D 待办，见 [`stage-u-z.md`](tasks/stage-u-z.md) 与 [`v2-str-view.md`](tasks/v2-str-view.md)/[`v3-iterator-adapters.md`](tasks/v3-iterator-adapters.md)） |
+| **W** | 异步运行时完整化 | W1 Future 泛型化（Output/Pin/Context）、W2 await 状态机扩展（控制流/表达式嵌套/引用跨 await）、W3 事件驱动 executor（epoll/kqueue/io_uring + Future 挂起）、W4 `join_all`/`timeout` Future 版 + `TimeoutError`、W5 `recv_async`/HTTP async 真异步、W6 async 泛型/递归 + 闭包跨线程捕获 | 6 | U、R（Poller）、S1c | ✅ **全部完成（W1–W6）**（执行情况见 [`stage-u-z.md`](tasks/stage-u-z.md) W 叶子文档） |
+| **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime 完整 API、X2 标准 TOML（空格形式/`[section]`/注释/多行字符串）+ 解析鲁棒性、X3 `Deserialize` trait + Serializer/Deserializer 框架 + `JsonError`/`TomlError`、X4 Formatter 完整化（`Result<(), FmtError>`） | 4 | U3/U4、Q | 🔧 进行中（X1 ✅；X2/X3/X4 规划，见 [`stage-u-z.md`](tasks/stage-u-z.md) X 叶子文档） |
+| **Y** | IO/网络/并发/智能指针收尾 | Y1 File `open_with`/`read(&mut [u8])`/`write(&[u8])`/Metadata、Y2 NIO 高性能后端（epoll/kqueue）、Y3 HTTP 连接复用 + sendfile Windows `TransmitFile`、Y4 Mutex/RwLock guard 完整 + Channel 泛型化/bounded、Y5 `Box::leak` 目标签名、Y6 `Error::source` + `Into::into` 自动转换、Y7 UDP（`net/udp.rl`）、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 📋 规划 |
+
+> **推荐执行路线**：
+> - **快赢线**（独立性强、不依赖 U 全量，可先行交付）：X1（Duration 构造器/读取器补齐，纯 std）→ Y8（stack_size，driver 注入扩展）→ Y1（`File::open_with`，libc extern 扩展）→ Y3（sendfile Windows 平台分支）。
+> - **主线（依赖驱动）**：U1（作用域栈，解锁引用语义）→ U2（关联类型）→ U3（泛型约束）→ U4（`Self` 返回）→ V（V1→V4→V3→V2→V5，随 U 逐项解锁）→ X3/X4（依赖 U3/U4）→ W（W1→W2→W4→W3→W5→W6，W3 事件驱动为最大单点）→ Y 收尾。
+> - **优先级建议**：U1（消除已知限制、风险最低收益最广）> V4（`get_mut` 引用语义，集合 API 高频）> X1（时间 API 补全，零依赖）> U2（解锁 Iterator/Future 泛型化）> W2（await 控制流块，日常编写收益大）> W3（事件驱动 executor，收益最大但风险最高）> 其余。
+
+
+| 阶段 | 阶段详情文档 | 任务详情文档 |
+|------|-------------|-------------|
+| **U** | [`U.md`](stages/U.md) | 见 [`U.md`](stages/U.md) 任务表「详情」列 |
+| **V** | [`V.md`](stages/V.md) | 见 [`V.md`](stages/V.md) 任务表「详情」列 |
+| **W** | [`W.md`](stages/W.md) | 见 [`W.md`](stages/W.md) 任务表「详情」列 |
+| **X** | [`X.md`](stages/X.md) | 见 [`X.md`](stages/X.md) 任务表「详情」列 |
+| **Y** | [`Y.md`](stages/Y.md) | 见 [`Y.md`](stages/Y.md) 任务表「详情」列 |
+
+### 6.4. 执行记录
+
+> 阶段 G–T / U–Z 的任务具体执行情况已归档至任务树：
+> - 阶段 G–L：[`tasks/stage-g-l.md`](./tasks/stage-g-l.md)（§执行记录）
+> - 阶段 M–T：[`tasks/stage-m-t.md`](./tasks/stage-m-t.md)（§执行记录）
+> - 阶段 U–Z：[`tasks/stage-u-z.md`](./tasks/stage-u-z.md)（§执行记录）
+>
+> 本文件保留计划主体（§2/§3/§3b/§3c 阶段详情）与状态标识；详细实现流水见任务树 / git 历史。
+
+**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 进行中、W 全部完成、X 进行中（X1 ✅）、Y 规划（见 §2/§3c.1）。
+
+---
+
+### 6.5. 跟踪与验收约定
+
+1. 每个阶段/任务完成须满足：`cargo test --workspace` 全绿 + `cargo clippy --workspace --all-targets` 0 警告。
+2. 涉及运行时/并发类测试（Actor、通道、锁、join、GC 周期）须按 `design/00_项目总览.md` 硬性规则带超时保护，挂起即视为失败。
+3. 任务完成后同步更新：本文档状态标识 + 任务树（`tasks/` 阶段索引进度与叶子文档）+ `guide.md` §13（勾销对应限制条目，并更新 `grammar.md` 顶部实现状态标注）。
+4. 每个阶段产出对应的集成测试（仿 development-plan.md 各阶段 `*_test.rs` 用例并全量回归）。
+5. 优先交付顺序建议：G1/G2（引用地基 + str）→ I1/I2（宏 + 格式化）→ H1/H2（函数指针 + 无捕获闭包）→ K1（`?`）→ J 全阶段 → 其余。
+
+---
+
+- [x] **T 阶段：集合与迭代器收尾**（2026-08-24）：T1a Vec / T1b String / T1c HashMap API 补齐 + T2 `Iterator` trait（元素固定 i64）+ T3a `Box::leak`（裸指针退化）/ T3b Rc/Arc/Weak 核对。各任务执行情况与技术细节见任务树 [`stage-m-t.md`](tasks/stage-m-t.md) T 阶段叶子文档（`t1a`–`t3b`）。
+
 > **维护者**：Rlyeh Language Team
-> **最后更新**：2026-08-22
+> **最后更新**：2026-08-25
+
+> **维护者**：Rlyeh Language Team
+> **最后更新**：2026-08-26

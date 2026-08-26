@@ -128,6 +128,9 @@ pub enum MirStmt {
         slots: usize,
         /// 标量聚合按值分配（栈槽，免 calloc）
         by_value: bool,
+        /// 是否为 `&str`（StrFat `{data,len}`）双槽值（仅 `as_str`/`as_str_range`
+        /// 构造置 `true`）。供 LIR 精确推断 StrFat，区分普通双槽 by_value 结构体。
+        is_strfat: bool,
     },
     /// `target = field_get(base, index)`：读取聚合对象槽位
     /// （槽 0 为枚举判别值 tag）。

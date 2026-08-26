@@ -506,6 +506,26 @@ impl TypeContext {
             .find(|d| type_matches(d, self_type) && d.methods.iter().any(|m| m.sig.name == method))
     }
 
+    /// V3 trait 默认方法回退（2026-08-26）：`find_impl_for_method` 找不到"实现了
+    /// 该方法的 impl"时，寻找类型匹配且是 trait impl、且该 trait 声明了 `method`
+    /// 默认实现的 impl。返回的 impl 用于确定 self 类型与泛型统一，方法定义
+    /// （trait 默认 body）由 `check_method_call` 的 `trait_default_method` 构造。
+    pub fn find_trait_default_impl(&self, self_type: &Type, method: &str) -> Option<&ImplDef> {
+        self.impl_defs.iter().find(|d| {
+            if !type_matches(d, self_type) {
+                return false;
+            }
+            let Some(tname) = d.trait_name.as_deref() else {
+                return false;
+            };
+            self.trait_defs.get(tname).is_some_and(|t| {
+                t.methods
+                    .iter()
+                    .any(|m| m.name == method && m.default_body.is_some())
+            })
+        })
+    }
+
     /// 当前作用域是否为泛型参数。
     #[allow(dead_code)]
     pub fn is_type_param(&self, name: &str) -> bool {

@@ -104,8 +104,11 @@ fn main() -> ExitCode {
                 }
             }
             println!(
-                "测试汇总: 共 {} 用例, 通过 {}, 失败 {}",
-                summary.total, summary.passed, summary.failed
+                "测试汇总: 共 {} 用例, 通过 {}, 失败 {}, 跳过 {}",
+                summary.total,
+                summary.passed,
+                summary.failed,
+                summary.skipped
             );
             if summary.failed > 0 {
                 ExitCode::FAILURE

@@ -987,7 +987,7 @@ print(x);                  // 同 println 但不换行
 
 > **实参自动升级**：`String` 形参位置传入字符串字面量（或绑定字面量的变量）自动构造 String 对象——`f("..")` / `m.push_str("!")` / `m.contains("z")` / `map.insert("k", 1)` 直接可用，无需 `String::from`。升级覆盖实例 / 静态方法、普通函数、函数指针、泛型调用与 `dyn Trait` 方法（与 IIFE / 闭包值实参的升级语义一致）；`str` 形参保持裸字面量指针直传；运行期 `str` 值实参报 Unsupported。
 >
-> **`&str` 只读借用视图（G2）**：`s.as_str()` 返回对 String 内容的只读借用（零拷贝，运行时为指向 String 对象的瘦指针）；`&str` 支持 `len()` / 字节索引 `r[i]` / `substring`（拷贝）/ 内容比较，也可作为函数参数（`&String` 与 `&str` 均可传入）与返回值。`String::from` 三类参数：字面量（编译期长度）、运行期 `String` 变量（`≡ s.clone()` 深拷贝）、`&str` 视图（读 data/len 槽深拷贝）。
+> **`&str` 只读借用视图（G2，V2-A 审计 2026-08-26）**：`s.as_str()` 返回对 String 内容的只读借用（零拷贝）。**语义**：`&str` 为 StrFat **双槽胖指针 `{ data, len }`**（by_value 双字，data = 内容指针，len = 字节长度）；`as_str_range(start,end)`/`trim` 构造 data 子区间视图（`{ data+start, end-start }`），非"瘦指针指向整个 String 对象"。`&str` 支持 `len()` / 字节索引 `r[i]` / `substring`（拷贝）/ 内容比较，也可作为函数参数（`&String` 与 `&str` 均可传入）与返回值。`String::from` 三类参数：字面量（编译期长度）、运行期 `String` 变量（`≡ s.clone()` 深拷贝）、`&str` 视图（读 data/len 槽深拷贝）。**注意**：`&str` 打印（`println(&str)`）的 StrFat 长度限定运行时修复规划中（V2-C）——当前走瘦指针路径。瘦指针 `i8*` 仅适用于字符串字面量 `str` 值，不适用于 `&str` 视图。
 >
 > **`str` 值一等类型**：`let s = "hi"` 绑定的 `s`（运行时为指向静态字面量数据的 `i8*` 指针，无 String 的 len/cap 槽）参与字符串操作时自动**升级为 String 对象**（编译期长度展开，与 `String::from(s)` 一致）：
 > - 方法调用：`s.len()` / `s.substring(0, 1)` / `s.contains(...)` / `s.as_str()` 等按 String impl 解析；
@@ -1211,8 +1211,7 @@ extern fn gethostname(name: String, len: i64) -> i64;
 | [memory-model.md](./memory-model.md) | 分层内存管理规范 |
 | [actor-model.md](./actor-model.md) | Actor 并发模型规范 |
 | [std-lib.md](./std-lib.md) | 标准库 API 规范（含规划中模块） |
-| [development-plan.md](./development-plan.md) | 开发计划（阶段 A–F，权威执行记录） |
-| [mvp-gaps-plan.md](./mvp-gaps-plan.md) | 已知限制消解计划（阶段 G–L，承接 A–F 后） |
+| [development-plan.md](./development-plan.md) | 开发计划（阶段 A–F 已完成；§6 剩余任务消解 G–L / M–T / U–Z） |
 
 ### 已知限制（MVP）
 

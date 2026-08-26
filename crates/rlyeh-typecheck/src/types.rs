@@ -351,6 +351,10 @@ pub struct MethodSig {
     pub params: Vec<Type>,
     /// 返回类型
     pub return_type: Type,
+    /// trait 方法的默认实现 body（V3，2026-08-26：仅 trait 方法带 body 时填充；
+    /// 抽象方法 / impl 方法为 `None`）。`impl Trait for X` 未实现该方法时，
+    /// 方法调用回退到该默认实现（见 `check_method_call` 的 trait 默认方法回退）。
+    pub default_body: Option<rlyeh_ast::AstFnDecl>,
 }
 
 /// trait 定义。
