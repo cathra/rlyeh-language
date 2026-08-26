@@ -603,7 +603,13 @@ fn fmt_expr(e: &AstExpr) -> String {
                 field
             )
         }
-        ExprKind::StructCtor { type_name, fields } => {
+        ExprKind::StructCtor {
+            type_name,
+            type_args,
+            fields,
+        } => {
+            // 泛型实参 MVP 不美化输出（`Foo<T> { .. }` 原样保留路径，实参暂略）
+            let _ = type_args;
             let fields = fields
                 .iter()
                 .map(|(n, v)| format!("{}: {}", n, fmt_expr(v)))

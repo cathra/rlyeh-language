@@ -32,7 +32,8 @@ async fn early(x: i64) -> i64 {
 struct H { state: i64, x: i64 }
 
 impl Future for H {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {
             self.state = 1;
             Poll::Pending

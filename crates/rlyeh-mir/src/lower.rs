@@ -8,7 +8,9 @@
 //! - 区域操作（`RegionEnter` / `RegionExit` / `AllocInRegion` / `Transfer`）显式化。
 
 use crate::{BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
-use rlyeh_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp};
+use rlyeh_hir::{
+    FieldScalar, HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp,
+};
 
 /// 循环上下文：`break` / `continue` 的跳转目标。
 struct LoopCtx {
@@ -482,6 +484,34 @@ impl MirLowerer {
                 if let HirExpr::Deref { expr: inner, .. } = expr.as_ref() {
                     return self.lower_expr(inner).map(MirValue::Place);
                 }
+                // `&obj.field`（V1）：取字段槽真实地址（GEP）——写回经
+                // DerefWrite(base=target) 直达原字段，`&mut` 写回生效
+                if let HirExpr::FieldGet { base, index, ty } = expr.as_ref() {
+                    let b = self.lower_expr(base)?;
+                    let tmp = self.fresh_temp();
+                    self.emit(MirStmt::AddrOfField {
+                        target: tmp.clone(),
+                        base: b,
+                        index: *index,
+                        ty: *ty,
+                    });
+                    return Some(MirValue::Place(tmp));
+                }
+                // `&arr[i]` / `&s[i]`（V1）：base 地址化 + 指针偏移（GEP）——
+                // 真实元素地址（非拷贝临时地址），`&mut` 写回原元素
+                if let HirExpr::Index { base, index, elem, is_str } = expr.as_ref() {
+                    let b = self.addr_of(base)?;
+                    let i = self.lower_expr(index)?;
+                    let tmp = self.fresh_temp();
+                    self.emit(MirStmt::PtrAdd {
+                        target: tmp.clone(),
+                        base: b,
+                        offset: i,
+                        elem: *elem,
+                        is_str: *is_str,
+                    });
+                    return Some(MirValue::Place(tmp));
+                }
                 // `&x` / `&mut x`：取引用（lower_expr 递归降任意目标表达式
                 // 到临时槽再取址——非变量目标亦支持，U5）
                 let o = self.lower_expr(expr)?;
@@ -514,6 +544,87 @@ impl MirLowerer {
                     ty: *ty,
                 });
                 Some(MirValue::Unit)
+            }
+            HirExpr::PtrAdd { base, offset, elem } => {
+                // `ptr + n`（V1）：裸指针算术——指针推进（迭代器瘦指针）。
+                // `elem: Str`（V2 字符串字节偏移）→ 1 字节步长（is_str），
+                // 供 `as_str_range` 子区间视图做 data 指针字节偏移。
+                let b = self.lower_expr(base)?;
+                let o = self.lower_expr(offset)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::PtrAdd {
+                    target: tmp.clone(),
+                    base: b,
+                    offset: o,
+                    elem: *elem,
+                    is_str: matches!(elem, FieldScalar::Str),
+                });
+                Some(MirValue::Place(tmp))
+            }
+            HirExpr::Cast { expr, to } => {
+                // `expr as target`（U6 Cast IR）：数值→数值类型转换
+                let v = self.lower_expr(expr)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::Cast {
+                    target: tmp.clone(),
+                    value: v,
+                    to: to.clone(),
+                });
+                Some(MirValue::Place(tmp))
+            }
+        }
+    }
+
+    /// `addr_of(expr)`：对表达式地址化（V1）——返回指向 `expr` 的指针槽。
+    /// 用于 `&arr[i]` 等取址场景的 base 求值：
+    /// - 变量 → `AddrOf`（变量槽地址）
+    /// - 解引用 `&*p` → 透传指针值（U5 折叠语义）
+    /// - 字段链 `obj.field` → 对象求值 + `AddrOfField`（GEP 到字段槽）
+    /// - 其他表达式 → 求值到临时再取址（拷贝语义，读可用）
+    fn addr_of(&mut self, expr: &HirExpr) -> Option<Local> {
+        match expr {
+            // `&*p`：解引用再取址 → 透传指针值
+            HirExpr::Deref { expr: inner, .. } => self.lower_expr(inner),
+            // `&x`：变量槽地址（数组/聚合为 8 字节槽区，Ptr 标量）
+            HirExpr::Variable(v) => {
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::AddrOf {
+                    target: tmp.clone(),
+                    operand: v.clone(),
+                    pointee: FieldScalar::Ptr,
+                });
+                Some(tmp)
+            }
+            // `&obj.field`：base 求值为对象值（字段链剥层）
+            HirExpr::FieldGet { base, index, ty } => {
+                if *ty == FieldScalar::Ptr {
+                    // 聚合字段（数组/对象）：字段槽存对象指针（聚合拷贝指针
+                    // 语义）——「地址」即字段值本身（FieldGet 拷贝指针），
+                    // 如 `&v.data[0]` 中 `v.data`（[T; 0] 堆缓冲字段）
+                    self.lower_expr(expr)
+                } else {
+                    // 标量字段：GEP 到字段槽（真实槽地址，写回生效）
+                    let b = self.lower_expr(base)?;
+                    let tmp = self.fresh_temp();
+                    self.emit(MirStmt::AddrOfField {
+                        target: tmp.clone(),
+                        base: b,
+                        index: *index,
+                        ty: *ty,
+                    });
+                    Some(tmp)
+                }
+            }
+            // 其他：求值到临时再取址（拷贝语义）
+            other => {
+                let o = self.lower_expr(other)?;
+                let tmp = self.fresh_temp();
+                self.emit(MirStmt::AddrOf {
+                    target: tmp.clone(),
+                    operand: o,
+                    pointee: FieldScalar::Ptr,
+                });
+                Some(tmp)
             }
         }
     }

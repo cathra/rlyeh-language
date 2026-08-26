@@ -15,7 +15,8 @@ fn main() {
     println(m2.iter().len()); // 3
     println(m2.keys().len()); // 3
 
-    // 3. get_mut：值拷贝（与 get 一致，MVP 无 &mut 引用返回）
+    // 3. get_mut：`Option<&mut V>` 引用语义——命中返回对原槽的可变引用
+    //    （println 自动剥层打印解引用值）；缺失键返回 None。
     let mut m3: HashMap<i64, i64> = map![1 => 100, 2 => 200];
     match m3.get_mut(2) {
         Option::Some(v) => println(v), // 200
@@ -26,13 +27,17 @@ fn main() {
         Option::None => println(-1), // -1（缺失键）
     }
 
-    // 4. get_mut 后原表不受影响（值拷贝语义）
+    // 4. get_mut 写回真实槽：`*r = x` 后 get 读回新值；插回/删除后引用失效（宽松）
     // 注：避免与第 3 段 match 臂同名变量（MVP variables 按名全局索引、
     // 无作用域隔离——同名遮蔽类型互相覆盖，已知限制）
     let mut m4: HashMap<i64, i64> = map![3 => 300];
     let mut vv = m4.get_mut(3);
     match vv {
-        Option::Some(x) => println(x), // 300
+        Option::Some(r) => *r = 333, // 写回真实槽
+        Option::None => println(-1),
+    }
+    match m4.get(3) {
+        Option::Some(x) => println(x), // 333
         Option::None => println(-1),
     }
     m4.insert(3, 999);

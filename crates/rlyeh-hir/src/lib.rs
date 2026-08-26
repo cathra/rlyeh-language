@@ -152,6 +152,27 @@ pub enum HirExpr {
         /// 被指向值的标量种类
         ty: FieldScalar,
     },
+    /// 裸指针算术（`ptr + n`，V1 迭代器瘦指针推进）：
+    /// 结果 = `base + n * elem_size`（元素步长由 `elem` 标量种类决定：
+    /// U8→1 字节，其余→8 字节，与数组 IndexGet 步长规则一致）
+    PtrAdd {
+        /// 指针表达式（`*const T` / `*mut T`）
+        base: Box<HirExpr>,
+        /// 偏移量（i64）
+        offset: Box<HirExpr>,
+        /// 元素标量种类（决定步长）
+        elem: FieldScalar,
+    },
+    /// 数值转换（U6 Cast IR）：`expr as target`。
+    /// typecheck 仅对「数值→数值」转换产出本节点（其余保持擦除，
+    /// 如指针 / 引用转换）；`to` 为目标类型名（`Type::name()` 输出，
+    /// 如 `i8`/`u8`/`i32`/`i64`/`f32`/`f64`/`bool`/`char`）。
+    Cast {
+        /// 被转换的表达式
+        expr: Box<HirExpr>,
+        /// 目标类型名
+        to: String,
+    },
     /// 集合成员查找（`x in (0..<10)` 展开结果，
     /// 元素较多时编译器生成查找表 / 二分，HIR 层面保留成员列表）
     SetLookup {
@@ -332,6 +353,8 @@ pub enum FieldScalar {
     Char,
     /// 字符串指针
     Str,
+    /// &str 胖指针（data 指针 + 长度双槽；V2 子区间视图，对齐 Rust fat pointer）
+    StrFat,
     /// 聚合对象 / 引用指针
     Ptr,
 }

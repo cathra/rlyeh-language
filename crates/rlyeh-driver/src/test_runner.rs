@@ -9,10 +9,29 @@
 //! | `tests/run-pass/` | 每个 `.rl` 必须编译运行成功；同名 `.out` 文件（若有）作为期望 stdout 精确对比 |
 //!
 //! 用例文件均可选：目录不存在或为空时该类别自动跳过。
+//!
+//! 用例默认**并行执行**（worker 数 = `min(可用核, 8)`，见 `parallel_workers`）：每个用例
+//! 使用独立临时目录与独立 `clang` 子进程/运行进程，路径相互隔离，故线程安全；汇总结果
+//! 按扫描顺序（文件名排序）回填，输出确定性可复现。worker 封顶 8 是为规避无界并行 spawn
+//! `clang` 触发文件描述符耗尽（`os error 35` / EMFILE，见 CHANGELOG 集成测试注记）。
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use crate::{compile_file_to_llvm, run_source_file};
+
+/// 并行执行用例时启用的最大 worker 线程数。
+///
+/// 每个 run-pass 用例会调用 `clang` 子进程（汇编 + 链接），无界并行可能触发
+/// 文件描述符耗尽（`os error 35`，EMFILE，见 CHANGELOG 集成测试注记）。此处
+/// 按可用核数封顶到一个保守上限，平衡提速与稳定性。
+fn parallel_workers() -> usize {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    cores.min(6).max(1)
+}
 
 /// 用例类别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,12 +90,20 @@ pub struct TestSummary {
     pub results: Vec<TestCaseResult>,
 }
 
+/// 单个待运行用例。
+struct PendingTask {
+    kind: TestKind,
+    file: PathBuf,
+    rel: String,
+}
+
 /// 运行指定根目录下的测试套件（`compile-pass` / `compile-fail` / `run-pass` 三个子目录）。
 ///
 /// 根目录或子目录不存在时静默跳过（空套件返回全零汇总）。
-/// 用例文件按文件名排序，结果确定性可复现。
+/// 用例文件按文件名排序，结果确定性可复现；用例并行执行（独立临时目录/进程），
+/// 但汇总结果仍按扫描顺序输出。
 pub fn run_test_suite(root: &Path) -> TestSummary {
-    let mut summary = TestSummary::default();
+    let mut tasks: Vec<PendingTask> = Vec::new();
     for kind in [
         TestKind::CompilePass,
         TestKind::CompileFail,
@@ -99,21 +126,85 @@ pub fn run_test_suite(root: &Path) -> TestSummary {
                 .unwrap_or(&file)
                 .to_string_lossy()
                 .to_string();
-            let result = match kind {
-                TestKind::CompilePass => run_compile_pass(&file, &rel),
-                TestKind::CompileFail => run_compile_fail(&file, &rel),
-                TestKind::RunPass => run_run_pass(&file, &rel),
-            };
-            summary.total += 1;
-            if result.passed {
-                summary.passed += 1;
-            } else {
-                summary.failed += 1;
-            }
-            summary.results.push(result);
+            tasks.push(PendingTask { kind, file, rel });
         }
     }
+    let results = run_tasks_parallel(tasks);
+
+    let mut summary = TestSummary::default();
+    summary.total = results.len();
+    for r in results {
+        if r.passed {
+            summary.passed += 1;
+        } else {
+            summary.failed += 1;
+        }
+        summary.results.push(r);
+    }
     summary
+}
+
+/// 并行执行用例：按索引分配任务到 worker 线程，结果按索引排序回填。
+fn run_tasks_parallel(tasks: Vec<PendingTask>) -> Vec<TestCaseResult> {
+    let n = tasks.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let workers = parallel_workers().min(n);
+    if workers <= 1 {
+        return tasks.iter().map(run_one).collect();
+    }
+
+    let next = AtomicUsize::new(0);
+    let tasks = std::sync::Arc::new(tasks);
+    let (tx, rx) = mpsc::channel::<(usize, TestCaseResult)>();
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            let next = &next;
+            let tasks = tasks.clone();
+            let tx = tx.clone();
+            scope.spawn(move || {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(task) = tasks.get(i) else {
+                        break; // 任务取尽
+                    };
+                    let result = run_one(task);
+                    // 发送失败（接收端已 drop）即退出
+                    if tx.send((i, result)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(tx); // 关闭发送端，使主线程循环终止
+        let mut results: Vec<Option<TestCaseResult>> = (0..n).map(|_| None).collect();
+        for (i, r) in rx {
+            results[i] = Some(r);
+        }
+        // 理论上全部回填；防御性取未回填项为失败占位
+        results
+            .into_iter()
+            .map(|r| {
+                r.unwrap_or_else(|| TestCaseResult {
+                    kind: TestKind::CompilePass,
+                    name: "<unknown>".to_string(),
+                    passed: false,
+                    detail: "用例执行未返回结果".to_string(),
+                })
+            })
+            .collect()
+    })
+}
+
+/// 执行单个用例。
+fn run_one(task: &PendingTask) -> TestCaseResult {
+    match task.kind {
+        TestKind::CompilePass => run_compile_pass(&task.file, &task.rel),
+        TestKind::CompileFail => run_compile_fail(&task.file, &task.rel),
+        TestKind::RunPass => run_run_pass(&task.file, &task.rel),
+    }
 }
 
 /// compile-pass：编译到 LLVM IR 必须成功（不链接、不运行）。

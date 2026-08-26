@@ -504,10 +504,12 @@ pub enum ExprKind {
         field: String,
     },
 
-    /// 结构体字面量构造（`Point { x: 3, y: 4 }`）
+    /// 结构体字面量构造（`Point { x: 3, y: 4 }` 或泛型 `Pair<i64> { x: 3, y: 4 }`）
     StructCtor {
         /// 结构体路径（`a::b::Point`）
         type_name: Vec<String>,
+        /// 泛型类型实参（`Pair<i64>` 的 `[i64]`；U8 泛型结构体构造）
+        type_args: Vec<AstType>,
         /// 命名字段初始化列表
         fields: Vec<(String, AstExpr)>,
     },

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use rlyeh_ast::{
     AstBlock, AstExpr, AstFnDecl, AstImplBlock, AstItem, AstParam, AstPattern, AstStmt,
-    AstStructDecl, AstStructField, AstType, CompareOp, ExprKind, MatchArm,
+    AstStructDecl, AstStructField, AstType, CompareOp, ExprKind, MatchArm, UnaryOp,
 };
 use rlyeh_lexer::Span;
 
@@ -55,6 +55,18 @@ fn path(names: &[&str], span: Span) -> AstExpr {
     )
 }
 
+/// `Box::new(x)` 表达式（堆分配包装子 future，打破递归无限大小）。
+fn box_expr(x: AstExpr, span: Span) -> AstExpr {
+    AstExpr::new(
+        ExprKind::Call {
+            callee: path(&["Box", "new"], span),
+            args: vec![x],
+            type_args: Vec::new(),
+        },
+        span,
+    )
+}
+
 fn poll_ready(arg: AstExpr, span: Span) -> AstExpr {
     AstExpr::new(
         ExprKind::Call {
@@ -96,23 +108,43 @@ fn assign(target: AstExpr, value: AstExpr, span: Span) -> AstStmt {
 }
 
 fn poll_call(receiver: AstExpr, span: Span) -> AstExpr {
+    // W1：poll 签名带 `cx: &mut Context`，调用点透传 `&mut *cx`——
+    // cx 参数本身是 `&mut Context`，直接 `&mut cx` 是引用再取引用（被禁），
+    // 解引用再取址 `&mut *cx` 产生新的 `&mut Context`（U5 解引用目标路径）。
+    let cx_ref = AstExpr::new(
+        ExprKind::Unary {
+            op: UnaryOp::AddrOfMut,
+            operand: AstExpr::new(
+                ExprKind::Unary {
+                    op: UnaryOp::Deref,
+                    operand: ident("cx", span),
+                },
+                span,
+            ),
+        },
+        span,
+    );
     AstExpr::new(
         ExprKind::MethodCall {
             receiver,
             method: "poll".to_string(),
-            args: Vec::new(),
+            args: vec![cx_ref],
         },
         span,
     )
 }
 
 /// 生成状态机结构体定义，并返回字段规格（供构造器/零值构造复用）。
+///
+/// `cyclic`：递归环内的 async fn 名集合。对其子 future 槽用 `Box<__Fut_>` 打破
+/// 无限大小（`struct __Fut_f { sub: Box<__Fut_f> }`），由类型层两遍收集地基支持。
 pub fn gen_struct(
     a: &AnalyzedAsync,
     layout: &HashMap<String, Vec<FieldSpec>>,
+    cyclic: &HashSet<String>,
 ) -> (AstItem, Vec<FieldSpec>) {
     let span = span_of(a);
-    let spec = gen_fields(a, layout);
+    let spec = gen_fields(a, layout, cyclic);
     let fields: Vec<AstStructField> = spec
         .iter()
         .map(|f| AstStructField {
@@ -124,7 +156,8 @@ pub fn gen_struct(
         .collect();
     let item = AstItem::StructDecl(Box::new(AstStructDecl {
         name: fut_ty_name(&a.decl.name),
-        generics: Vec::new(),
+        // W6：透传泛型参数到 Future 结构体（`struct __Fut_foo<T>`）。
+        generics: a.decl.generics.clone(),
         fields,
         derive: Vec::new(),
         span,
@@ -133,26 +166,39 @@ pub fn gen_struct(
 }
 
 /// 生成 `impl Future for __Fut_<f>`（poll 状态分派）。
-pub fn gen_impl(a: &AnalyzedAsync) -> AstItem {
+pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
     let span = span_of(a);
-    let poll_body = gen_poll_body(a);
+    let poll_body = gen_poll_body(a, cyclic);
     let poll_fn = AstFnDecl {
         name: "poll".to_string(),
         generics: Vec::new(),
-        params: vec![AstParam {
-            name: "self".to_string(),
-            // `&mut self`：与 parser 对 `fn poll(&mut self)` 的解析保持一致
-            // （Ref(Path("Self"), true)），typecheck 对 `Self` 路径按 impl 目标
-            // 类型解析接收者，显式 `__Fut_X` 路径会导致接收者字段访问/类型
-            // 解析不一致。
-            type_: AstType::Ref(Box::new(AstType::Path("Self".to_string(), Vec::new())), true),
-            default: None,
-            is_mut: false,
-            span,
-        }],
+        params: vec![
+            AstParam {
+                name: "self".to_string(),
+                // `&mut self`：与 parser 对 `fn poll(&mut self)` 的解析保持一致
+                // （Ref(Path("Self"), true)），typecheck 对 `Self` 路径按 impl 目标
+                // 类型解析接收者，显式 `__Fut_X` 路径会导致接收者字段访问/类型
+                // 解析不一致。
+                type_: AstType::Ref(Box::new(AstType::Path("Self".to_string(), Vec::new())), true),
+                default: None,
+                is_mut: false,
+                span,
+            },
+            // W1：poll 签名对齐规划 `fn poll(&mut self, cx: &mut Context)`——
+            // `Context` 占位类型（std future.rl），保留参数位、body 不使用。
+            AstParam {
+                name: "cx".to_string(),
+                type_: AstType::Ref(Box::new(AstType::Path("Context".to_string(), Vec::new())), true),
+                default: None,
+                is_mut: false,
+                span,
+            },
+        ],
+        // W1：返回类型 `Poll<Self::Output>`（关联类型，U2）——typecheck 经 impl
+        // 的 assoc_types 映射（`type Output = i64`）替换为 `Poll<i64>`。
         return_type: Some(AstType::Path(
             "Poll".to_string(),
-            vec![i64_ty()],
+            vec![AstType::Path("Self::Output".to_string(), Vec::new())],
         )),
         body: Some(poll_body),
         is_pub: false,
@@ -163,8 +209,14 @@ pub fn gen_impl(a: &AnalyzedAsync) -> AstItem {
     AstItem::ImplBlock(Box::new(AstImplBlock {
         trait_name: Some("Future".to_string()),
         type_name: fut_ty_name(&a.decl.name),
-        generics: Vec::new(),
-        types: Vec::new(),
+        // W6：透传泛型参数到 impl（`impl<T> Future for __Fut_foo<T>`）。
+        generics: a.decl.generics.clone(),
+        // W6：关联类型定义 `type Output = <ret_ty or i64>;`（U2）。
+        // `()` 返回沿用 i64（尾值 Ready(0)）；泛型返回 `T` 经单态化替换。
+        types: vec![(
+            "Output".to_string(),
+            a.ret_ty.clone().unwrap_or_else(i64_ty),
+        )],
         methods: vec![poll_fn],
         span,
     }))
@@ -174,25 +226,40 @@ pub fn gen_impl(a: &AnalyzedAsync) -> AstItem {
 pub fn gen_ctor(
     a: &AnalyzedAsync,
     layout: &HashMap<String, Vec<FieldSpec>>,
+    cyclic: &HashSet<String>,
 ) -> AstItem {
     let span = span_of(a);
-    let spec = gen_fields(a, layout);
+    let spec = gen_fields(a, layout, cyclic);
     let fields: Vec<(String, AstExpr)> = spec
         .iter()
         .map(|f| (f.name.clone(), f.ctor_init.clone()))
         .collect();
+    // W6：泛型参数名 → AstType（`__Fut_foo<T>` 的 `T`）。
+    let gen_args: Vec<AstType> = a
+        .decl
+        .generics
+        .iter()
+        .map(|g| AstType::Path(g.name.clone(), Vec::new()))
+        .collect();
     let ctor_expr = AstExpr::new(
         ExprKind::StructCtor {
             type_name: vec![fut_ty_name(&a.decl.name)],
+            type_args: gen_args.clone(),
             fields,
         },
         span,
     );
+    let ret_ty = if gen_args.is_empty() {
+        AstType::Path(fut_ty_name(&a.decl.name), Vec::new())
+    } else {
+        AstType::Path(fut_ty_name(&a.decl.name), gen_args)
+    };
     AstItem::FnDecl(Box::new(AstFnDecl {
         name: a.decl.name.clone(),
-        generics: Vec::new(),
+        // W6：透传泛型参数到构造器（`fn foo<T>(...) -> __Fut_foo<T>`）。
+        generics: a.decl.generics.clone(),
         params: a.lifted_params.clone(),
-        return_type: Some(AstType::Path(fut_ty_name(&a.decl.name), Vec::new())),
+        return_type: Some(ret_ty),
         body: Some(AstBlock {
             stmts: Vec::new(),
             final_expr: Some(ctor_expr),
@@ -210,7 +277,10 @@ fn fut_ty_name(fname: &str) -> String {
 }
 
 /// 生成状态机结构体字段规格。
-fn gen_fields(a: &AnalyzedAsync, layout: &HashMap<String, Vec<FieldSpec>>) -> Vec<FieldSpec> {
+///
+/// `cyclic`：递归环内 async fn 名。其子 future 槽类型改为 `Box<__Fut_<name>>`
+/// （Box 打破无限大小），poll 访问经方法自动剥层，构造/零值用 `Box::new` 包装。
+fn gen_fields(a: &AnalyzedAsync, layout: &HashMap<String, Vec<FieldSpec>>, cyclic: &HashSet<String>) -> Vec<FieldSpec> {
     let span = span_of(a);
     let mut spec = Vec::new();
 
@@ -221,17 +291,6 @@ fn gen_fields(a: &AnalyzedAsync, layout: &HashMap<String, Vec<FieldSpec>>) -> Ve
         ctor_init: int_expr(0, span),
         zero_init: int_expr(0, span),
     });
-
-    // 子 future 槽
-    for (slot, ty_name) in &a.slots {
-        let zero = zero_ctor(ty_name, layout, span);
-        spec.push(FieldSpec {
-            name: slot.clone(),
-            ty: AstType::Path(ty_name.clone(), Vec::new()),
-            ctor_init: zero.clone(),
-            zero_init: zero,
-        });
-    }
 
     // 参数（构造器传参；零值为 0）
     for p in &a.lifted_params {
@@ -253,8 +312,19 @@ fn gen_fields(a: &AnalyzedAsync, layout: &HashMap<String, Vec<FieldSpec>>) -> Ve
         });
     }
 
-    // 跨段 i64 变量（段内初始化；构造器 0）
+    // 跨段变量（段内初始化；构造器零值按类型）
     for (v, ty, _) in &a.lifted_cross {
+        let zero = zero_for_type(ty, span);
+        spec.push(FieldSpec {
+            name: v.clone(),
+            ty: ty.clone(),
+            ctor_init: zero.clone(),
+            zero_init: zero,
+        });
+    }
+
+    // 内部提升字段（迭代游标等，i64）
+    for (v, ty) in &a.lifted_internal {
         spec.push(FieldSpec {
             name: v.clone(),
             ty: ty.clone(),
@@ -273,7 +343,74 @@ fn gen_fields(a: &AnalyzedAsync, layout: &HashMap<String, Vec<FieldSpec>>) -> Ve
         });
     }
 
+    // 子 future 槽。分两遍：先非递归槽（其零值经 `zero_ctor` 按依赖布局构造，
+    // 进入 `spec` 供递归槽零值构造复用），再递归环内槽（`Box<__Fut_>` 打破
+    // 无限大小，零值 = `Box::new(__Fut_X { <除自身外所有其他字段零值> })`——
+    // 含其他非递归子 future 槽；自身递归 Box 槽由 typecheck 对缺失 Box 字段
+    // 放行=空指针占位，首次 poll 求值前不 deref）。
+    let mut cyclic_slots: Vec<(String, String)> = Vec::new();
+    for (slot, ty_name) in &a.slots {
+        let target = ty_name.strip_prefix("__Fut_").unwrap_or(ty_name);
+        if cyclic.contains(target) {
+            cyclic_slots.push((slot.clone(), ty_name.clone()));
+            continue;
+        }
+        let zero = zero_ctor(ty_name, layout, span);
+        spec.push(FieldSpec {
+            name: slot.clone(),
+            ty: AstType::Path(ty_name.clone(), Vec::new()),
+            ctor_init: zero.clone(),
+            zero_init: zero,
+        });
+    }
+    // 递归槽零值构造复用的"除自身外所有字段零值"（含非递归子 future 槽）
+    let base_zero_fields: Vec<(String, AstExpr)> = spec
+        .iter()
+        .map(|f| (f.name.clone(), f.zero_init.clone()))
+        .collect();
+    for (slot, ty_name) in cyclic_slots {
+        let inner = AstExpr::new(
+            ExprKind::StructCtor {
+                type_name: vec![ty_name.clone()],
+                type_args: Vec::new(),
+                fields: base_zero_fields.clone(),
+            },
+            span,
+        );
+        let init = box_expr(inner, span);
+        spec.push(FieldSpec {
+            name: slot,
+            ty: AstType::Path("Box".to_string(), vec![AstType::Path(ty_name, Vec::new())]),
+            ctor_init: init.clone(),
+            zero_init: init,
+        });
+    }
+
     spec
+}
+
+/// W2：跨段变量零值按类型（i64 → 0，f64 → 0.0，bool → false，char → '\0'，String → ""）。
+fn zero_for_type(ty: &AstType, span: Span) -> AstExpr {
+    match ty {
+        AstType::Path(n, _) if n == "f64" => AstExpr::new(ExprKind::FloatLiteral(0.0), span),
+        AstType::Path(n, _) if n == "bool" => AstExpr::new(ExprKind::BoolLiteral(false), span),
+        AstType::Path(n, _) if n == "char" => AstExpr::new(ExprKind::CharLiteral('\0'), span),
+        AstType::Path(n, _) if n == "String" => {
+            // `String::from("")`（返回 `String`，与字段类型匹配；裸字面量类型为 `string`）
+            AstExpr::new(
+                ExprKind::Call {
+                    callee: AstExpr::new(
+                        ExprKind::Path(vec!["String".to_string(), "from".to_string()]),
+                        span,
+                    ),
+                    args: vec![AstExpr::new(ExprKind::StringLiteral(String::new()), span)],
+                    type_args: Vec::new(),
+                },
+                span,
+            )
+        }
+        _ => int_expr(0, span),
+    }
 }
 
 /// 零值构造：`__Fut_X { <字段零值> }`（字段零值来自目标布局的 `zero_init`）。
@@ -287,6 +424,7 @@ fn zero_ctor(type_name: &str, layout: &HashMap<String, Vec<FieldSpec>>, span: Sp
         Some(spec) => AstExpr::new(
             ExprKind::StructCtor {
                 type_name: vec![type_name.to_string()],
+                type_args: Vec::new(),
                 fields: spec.iter().map(|f| (f.name.clone(), f.zero_init.clone())).collect(),
             },
             span,
@@ -296,6 +434,7 @@ fn zero_ctor(type_name: &str, layout: &HashMap<String, Vec<FieldSpec>>, span: Sp
             AstExpr::new(
                 ExprKind::StructCtor {
                     type_name: vec![type_name.to_string()],
+                    type_args: Vec::new(),
                     fields: vec![("state".to_string(), int_expr(0, span))],
                 },
                 span,
@@ -305,25 +444,102 @@ fn zero_ctor(type_name: &str, layout: &HashMap<String, Vec<FieldSpec>>, span: Sp
 }
 
 /// 生成 poll 函数体（状态 if 链 + 兜底 Ready(0)）。
-fn gen_poll_body(a: &AnalyzedAsync) -> AstBlock {
+///
+/// W2：段类型分派——
+/// - await 段：状态 2i（首轮询）+ 2i+1（恢复轮询）
+/// - 收尾段（`final_expr`/隐式）：状态 2i，return Poll::Ready(尾值 or 0)
+/// - 跳转段（`next`）：状态 2i，段尾 `state = 2*next`
+/// - 控制流入口段（`inline_jump`）：状态 2i，stmts 内含 state 跳转
+fn gen_poll_body(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstBlock {
     let span = span_of(a);
+    // 递归环内子 future 槽（Box 打破无限大小）——首次求值需 `Box::new` 包装。
+    let boxed_slots: HashSet<String> = a
+        .slots
+        .iter()
+        .filter(|(_, ty_name)| {
+            let target = ty_name.strip_prefix("__Fut_").unwrap_or(ty_name);
+            cyclic.contains(target)
+        })
+        .map(|(slot, _)| slot.clone())
+        .collect();
     let mut stmts = Vec::new();
-    let n = a.segments.len();
     for (i, seg) in a.segments.iter().enumerate() {
-        if i + 1 == n {
-            // 收尾段：状态 2i，return Poll::Ready(尾值)
-            stmts.push(state_if_last(a, seg, i as i64));
+        let k = i as i64;
+        if seg.await_info.is_some() {
+            stmts.push(state_if_await(a, seg, k, &boxed_slots));
+            stmts.push(resume_if(a, seg, k));
+        } else if seg.final_expr.is_some() || seg.is_tail() {
+            stmts.push(state_if_last(a, seg, k));
+        } else if seg.inline_jump {
+            stmts.push(state_if_inline(a, seg, k));
         } else {
-            // await 段：状态 2i（首轮询）+ 状态 2i+1（恢复轮询）
-            stmts.push(state_if_await(a, seg, i as i64));
-            stmts.push(resume_if(a, seg, i as i64));
+            stmts.push(state_if_jump(a, seg, k));
         }
     }
+    // poll 末尾兜底：状态未到收尾段（控制流回跳的中间态）时返回 Pending，
+    // 由 block_on 循环继续 poll（而非 Ready(0) 提前完成）。
     AstBlock {
         stmts,
-        final_expr: Some(poll_ready(int_expr(0, span), span)),
+        final_expr: Some(poll_pending(span)),
         span,
     }
+}
+
+/// `self.state = 2 * target_seg;`
+fn state_assign_stmt(target_seg: usize, span: Span) -> AstStmt {
+    assign(
+        self_field("state", span),
+        int_expr((2 * target_seg) as i128, span),
+        span,
+    )
+}
+
+/// 跳转段状态：段语句 + `self.state = 2 * next;`。
+fn state_if_jump(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
+    let span = span_of(a);
+    let fs = future_sources(a);
+    let next = seg.next.expect("jump segment next (展开后应已回填)");
+    let mut block_stmts: Vec<AstStmt> = seg
+        .stmts
+        .iter()
+        .filter_map(|s| rewrite_stmt(s, &a.lifted, &fs, span))
+        .collect();
+    block_stmts.push(state_assign_stmt(next, span));
+    AstStmt::Semi(AstExpr::new(
+        ExprKind::If {
+            cond: state_eq(2 * k, span),
+            then_block: AstBlock {
+                stmts: block_stmts,
+                final_expr: None,
+                span,
+            },
+            else_block: None,
+        },
+        span,
+    ))
+}
+
+/// 控制流入口段状态：段语句（内含 state 跳转，不追加）。
+fn state_if_inline(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
+    let span = span_of(a);
+    let fs = future_sources(a);
+    let block_stmts: Vec<AstStmt> = seg
+        .stmts
+        .iter()
+        .filter_map(|s| rewrite_stmt(s, &a.lifted, &fs, span))
+        .collect();
+    AstStmt::Semi(AstExpr::new(
+        ExprKind::If {
+            cond: state_eq(2 * k, span),
+            then_block: AstBlock {
+                stmts: block_stmts,
+                final_expr: None,
+                span,
+            },
+            else_block: None,
+        },
+        span,
+    ))
 }
 
 /// 收尾段状态：段语句 + `return Poll::Ready(尾值 or 0)`。
@@ -359,7 +575,7 @@ fn state_if_last(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
 }
 
 /// await 段状态（首次）：段语句 + 子 future 求值 + 首轮询。
-fn state_if_await(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
+fn state_if_await(a: &AnalyzedAsync, seg: &Segment, k: i64, boxed_slots: &HashSet<String>) -> AstStmt {
     let span = span_of(a);
     let ai = seg.await_info.as_ref().expect("await segment");
     let fs = future_sources(a);
@@ -384,14 +600,20 @@ fn state_if_await(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
                 },
                 span,
             );
-            block_stmts.push(assign(self_field(slot, span), call, span));
+            // 递归环内的槽是 `Box<__Fut_>`：首次求值需 `Box::new(...)` 包装。
+            let stored = if boxed_slots.contains(slot) {
+                box_expr(call, span)
+            } else {
+                call
+            };
+            block_stmts.push(assign(self_field(slot, span), stored, span));
             self_field(slot, span)
         }
         AwaitTarget::IdentVar { var } => self_field(var, span),
     };
 
     // 首轮询
-    block_stmts.push(poll_match(a, ai, receiver, k, false));
+    block_stmts.push(poll_match(a, seg, ai, receiver, k, false));
 
     AstStmt::Semi(AstExpr::new(
         ExprKind::If {
@@ -418,7 +640,7 @@ fn resume_if(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
         }
         AwaitTarget::IdentVar { var } => self_field(var, span),
     };
-    let block_stmts = vec![poll_match(a, ai, receiver, k, true)];
+    let block_stmts = vec![poll_match(a, seg, ai, receiver, k, true)];
     AstStmt::Semi(AstExpr::new(
         ExprKind::If {
             // await 段 k 的恢复轮询状态为 2k+1
@@ -437,6 +659,7 @@ fn resume_if(a: &AnalyzedAsync, seg: &Segment, k: i64) -> AstStmt {
 /// 生成轮询 match（Ready/Pending 两臂）。
 fn poll_match(
     a: &AnalyzedAsync,
+    seg: &Segment,
     ai: &AwaitInfo,
     receiver: AstExpr,
     k: i64,
@@ -450,7 +673,7 @@ fn poll_match(
                 vec![AstPattern::Ident("__v".to_string())],
             ),
             guard: None,
-            body: AstExpr::new(ExprKind::Block(ready_block(a, ai, k)), span),
+            body: AstExpr::new(ExprKind::Block(ready_block(a, seg, ai, span)), span),
             span,
         },
         MatchArm {
@@ -472,31 +695,28 @@ fn poll_match(
     ))
 }
 
-/// Ready 分支处理块。
-fn ready_block(a: &AnalyzedAsync, ai: &AwaitInfo, k: i64) -> AstBlock {
-    let span = span_of(a);
+/// Ready 分支处理块。W2：非终止 await 段跳转 `state = 2 * seg.next`（段显式后继）。
+fn ready_block(_a: &AnalyzedAsync, seg: &Segment, ai: &AwaitInfo, span: Span) -> AstBlock {
     match ai {
-        AwaitInfo::LetBind { var, .. } => AstBlock {
-            stmts: vec![
-                assign(self_field(var, span), ident("__v", span), span),
-                assign(
-                    self_field("state", span),
-                    int_expr((2 * k + 2) as i128, span),
-                    span,
-                ),
-            ],
-            final_expr: None,
-            span,
-        },
-        AwaitInfo::ExprStmt { .. } => AstBlock {
-            stmts: vec![assign(
-                self_field("state", span),
-                int_expr((2 * k + 2) as i128, span),
+        AwaitInfo::LetBind { var, .. } => {
+            let next = seg.next.expect("LetBind await 段后继（展开后应已回填）");
+            AstBlock {
+                stmts: vec![
+                    assign(self_field(var, span), ident("__v", span), span),
+                    state_assign_stmt(next, span),
+                ],
+                final_expr: None,
                 span,
-            )],
-            final_expr: None,
-            span,
-        },
+            }
+        }
+        AwaitInfo::ExprStmt { .. } => {
+            let next = seg.next.expect("ExprStmt await 段后继（展开后应已回填）");
+            AstBlock {
+                stmts: vec![state_assign_stmt(next, span)],
+                final_expr: None,
+                span,
+            }
+        }
         AwaitInfo::ReturnVal { .. } | AwaitInfo::TailValue { .. } => AstBlock {
             stmts: vec![AstStmt::Semi(ret_expr(
                 poll_ready(ident("__v", span), span),
@@ -741,7 +961,7 @@ fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) -> AstExpr {
         } => AstExpr::new(
             ExprKind::Region {
                 name: name.clone(),
-                options: options.clone(),
+                options: *options,
                 body: rewrite_block(body, lifted, span),
             },
             span,
@@ -810,9 +1030,14 @@ fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) -> AstExpr {
             },
             span,
         ),
-        ExprKind::StructCtor { type_name, fields } => AstExpr::new(
+        ExprKind::StructCtor {
+            type_name,
+            type_args,
+            fields,
+        } => AstExpr::new(
             ExprKind::StructCtor {
                 type_name: type_name.clone(),
+                type_args: type_args.clone(),
                 fields: fields
                     .iter()
                     .map(|(k, v)| (k.clone(), rewrite_expr(v, lifted, span)))
@@ -1018,7 +1243,7 @@ fn devar(e: &AstExpr) -> AstExpr {
                     .iter()
                     .map(|arm| MatchArm {
                         pattern: arm.pattern.clone(),
-                        guard: arm.guard.as_ref().map(|g| devar(g)),
+                        guard: arm.guard.as_ref().map(devar),
                         body: devar(&arm.body),
                         span: arm.span,
                     })
@@ -1058,7 +1283,7 @@ fn devar(e: &AstExpr) -> AstExpr {
         } => AstExpr::new(
             ExprKind::Region {
                 name: name.clone(),
-                options: options.clone(),
+                options: *options,
                 body: devar_block(body),
             },
             e.span,
@@ -1117,9 +1342,14 @@ fn devar(e: &AstExpr) -> AstExpr {
             },
             e.span,
         ),
-        ExprKind::StructCtor { type_name, fields } => AstExpr::new(
+        ExprKind::StructCtor {
+            type_name,
+            type_args,
+            fields,
+        } => AstExpr::new(
             ExprKind::StructCtor {
                 type_name: type_name.clone(),
+                type_args: type_args.clone(),
                 fields: fields.iter().map(|(k, v)| (k.clone(), devar(v))).collect(),
             },
             e.span,
@@ -1195,7 +1425,7 @@ fn devar(e: &AstExpr) -> AstExpr {
 fn devar_block(block: &AstBlock) -> AstBlock {
     AstBlock {
         stmts: block.stmts.iter().map(devar_stmt).collect(),
-        final_expr: block.final_expr.as_ref().map(|fe| devar(fe)),
+        final_expr: block.final_expr.as_ref().map(devar),
         span: block.span,
     }
 }

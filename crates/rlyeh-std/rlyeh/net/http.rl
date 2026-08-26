@@ -182,6 +182,24 @@ fn request_one(fd: i64, host: String, path: String, body: String) -> Result<net:
     }
 }
 
+// W5：从完整响应文本提取 body——去掉头部（至 `\r\n\r\n`），按 Content-Length
+// 截断（keep-alive 必需）；无 Content-Length 返回头部后的全部。
+fn extract_body(buf: String) -> String {
+    let sep = net::http::find_header_end(buf);
+    if sep < 0 {
+        return String::new();
+    }
+    let head = buf[0..<sep];
+    let mut body = buf[(sep + 4)..<buf.len];
+    let cl = net::http::parse_content_length(head);
+    if cl >= 0 {
+        if body.len > cl {
+            body = body[0..<cl];
+        }
+    }
+    body
+}
+
 // 从响应头部首行提取状态码（"HTTP/1.1 200 OK" → 200）。
 fn parse_status(head: String) -> i64 {
     let mut i = 0;
@@ -331,14 +349,8 @@ impl HttpClient {
             Result::Err(e) => return Result::Err(e),
         }
     }
-    // S3b：异步 GET / POST（MVP 退化——同步语义，等价 get/post；事件驱动版规划随
-    // S3 事件循环 + §4.4 NIO：io_uring/epoll 注册 + Future 挂起，R1 Poller 先行）。
-    fn get_async(&mut self, url: String) -> Result<net::http::Response, io::error::IoError> {
-        self.get(url)
-    }
-    fn post_async(&mut self, url: String, body: String) -> Result<net::http::Response, io::error::IoError> {
-        self.post(url, body)
-    }
+    // W5：get_async/post_async 真异步 future 定义于 HttpClient 补充 impl
+    // （见下方 `impl HttpClient`）。原同步退化移除。
 }
 
 impl Response {
@@ -347,5 +359,105 @@ impl Response {
     }
     fn text(&self) -> String {
         self.body
+    }
+}
+
+// W5（2026-08-25）：异步 GET future（`HttpClient::get_async` 返回值）。
+// 简化真异步：首次 poll 同步 connect + 写请求（连接建立/写通常快），随后
+// 非阻塞读响应——EAGAIN 时写 `cx.fd`（POLLIN）挂起（W3 事件驱动），数据到达
+// 累积至头部终止符 `\r\n\r\n` 后 `Ready`（状态码 + body，MVP 不精确按
+// Content-Length，读至头部完成即返回）。`block_on` 驱动为主路径。
+struct GetAsync {
+    fd: i64,
+    host: String,
+    port: i64,
+    path: String,
+    req: String,
+    buf: String,
+    state: i64,
+}
+
+impl Future for GetAsync {
+    type Output = net::http::Response;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
+        if self.state == 0 {
+            let oct = match ipv4_octets(self.host) {
+                Result::Ok(x) => x,
+                Result::Err(_) => return Poll::Ready(net::http::Response { status: 0, body: String::new() }),
+            };
+            match tcp_connect(self.port, oct.a, oct.b, oct.c, oct.d) {
+                Result::Ok(f) => self.fd = f,
+                Result::Err(_) => return Poll::Ready(net::http::Response { status: 0, body: String::new() }),
+            };
+            let _ = io::nio::set_nonblocking(self.fd, true);
+            let stream = net::tcp::TcpStream { fd: self.fd, addr: net::addr::SocketAddr { ip: self.host, port: 0 } };
+            let _ = stream.write(self.req);
+            self.state = 1;
+        }
+        if self.state == 1 {
+            match net::recv_some(self.fd, 1024) {
+                Result::Ok(s) => {
+                    if s.len == 0 {
+                        self.state = 2;
+                        return Poll::Ready(net::http::Response { status: net::http::parse_status(self.buf), body: net::http::extract_body(self.buf) });
+                    }
+                    self.buf = self.buf + s;
+                    let sep = net::http::find_header_end(self.buf);
+                    if sep >= 0 {
+                        let status = net::http::parse_status(self.buf);
+                        let body = net::http::extract_body(self.buf);
+                        self.state = 2;
+                        return Poll::Ready(net::http::Response { status: status, body: body });
+                    }
+                }
+                Result::Err(_) => {
+                    // EAGAIN / 未就绪 → 挂起等读就绪
+                    cx.fd = self.fd;
+                    cx.interest = 1;
+                    return Poll::Pending;
+                }
+            }
+        }
+        Poll::Pending
+    }
+}
+
+impl HttpClient {
+    // W5：异步 GET——返回 `GetAsync` future（`block_on(&mut f)` 驱动或 async fn await）。
+    // 简化真异步：connect/写同步，读响应经 wait_fd 挂起（不阻塞线程）。
+    fn get_async(&mut self, url: String) -> net::http::GetAsync {
+        let u = match net::http::parse_url(url) {
+            Result::Ok(x) => x,
+            Result::Err(_) => return net::http::GetAsync { fd: -1, host: String::new(), port: 0, path: String::new(), req: String::new(), buf: String::new(), state: 2 },
+        };
+        let req = String::from("GET ") + u.path + String::from(" HTTP/1.1\r\nHost: ") + u.host + String::from("\r\nConnection: close\r\n\r\n");
+        net::http::GetAsync {
+            fd: -1,
+            host: u.host,
+            port: u.port,
+            path: u.path,
+            req: req,
+            buf: String::new(),
+            state: 0,
+        }
+    }
+    // W5：异步 POST——返回 `GetAsync` future（复用读响应异步逻辑，请求文本带
+    // body + Content-Length），`block_on` 驱动得 `Response`。连接/写同步，读经
+    // wait_fd 挂起。
+    fn post_async(&mut self, url: String, body: String) -> net::http::GetAsync {
+        let u = match net::http::parse_url(url) {
+            Result::Ok(x) => x,
+            Result::Err(_) => return net::http::GetAsync { fd: -1, host: String::new(), port: 0, path: String::new(), req: String::new(), buf: String::new(), state: 2 },
+        };
+        let req = String::from("POST ") + u.path + String::from(" HTTP/1.1\r\nHost: ") + u.host + String::from("\r\nContent-Length: ") + int_to_string(body.len) + String::from("\r\nConnection: close\r\n\r\n") + body;
+        net::http::GetAsync {
+            fd: -1,
+            host: u.host,
+            port: u.port,
+            path: u.path,
+            req: req,
+            buf: String::new(),
+            state: 0,
+        }
     }
 }

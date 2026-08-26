@@ -10,7 +10,8 @@ fn mk_g(x: i64) -> G {
 }
 
 impl Future for G {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {
             return Poll::Ready(self.x + 1);
         }
@@ -29,10 +30,11 @@ fn mk_f() -> F {
 }
 
 impl Future for F {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {
             self.__fut_0 = mk_g(41);
-            match self.__fut_0.poll() {
+            match self.__fut_0.poll(&mut *cx) {
                 Poll::Ready(__v) => {
                     self.v = __v;
                     self.state = 2;
@@ -44,7 +46,7 @@ impl Future for F {
             }
         }
         if self.state == 1 {
-            match self.__fut_0.poll() {
+            match self.__fut_0.poll(&mut *cx) {
                 Poll::Ready(__v) => {
                     self.v = __v;
                     self.state = 2;

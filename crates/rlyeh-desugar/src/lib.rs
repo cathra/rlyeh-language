@@ -61,6 +61,23 @@ impl DesugarError {
     }
 }
 
+/// `scan_expr` 的 await 检测错误（`Err(())`）统一转为 Unsupported。
+///
+/// 该占位错误仅作为兜底；调用点通常会在 `?` 前已构造更精确、带位置的错误。
+impl From<()> for DesugarError {
+    fn from(_: ()) -> Self {
+        DesugarError::Unsupported {
+            what: "表达式内含 await（扫描失败）".to_string(),
+            span: Span {
+                start: 0,
+                end: 0,
+                line: 1,
+                col: 1,
+            },
+        }
+    }
+}
+
 /// 对程序执行 async/await 状态机 desugar（原地修改 items）。
 ///
 /// 无 async fn 时原样返回；有则按依赖拓扑序分析并生成
@@ -83,10 +100,15 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
     }
 
     let mut decls: HashMap<String, AstFnDecl> = HashMap::new();
+    // W6：泛型 async fn 名集合（作为子 future await 暂不支持）。
+    let mut generic_async: HashSet<String> = HashSet::new();
     for item in &program.items {
         if let AstItem::FnDecl(f) = item {
             if f.is_async && !f.is_extern {
                 decls.insert(f.name.clone(), f.as_ref().clone());
+                if !f.generics.is_empty() {
+                    generic_async.insert(f.name.clone());
+                }
             }
         }
     }
@@ -94,16 +116,17 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
     // 2. 逐个分析（拿到依赖 + 完整状态机规划）
     let mut analyzed: Vec<AnalyzedAsync> = Vec::new();
     for (name, decl) in &decls {
-        let a = analyze::analyze_async_fn(decl, &async_names)?;
+        let a = analyze::analyze_async_fn(decl, &async_names, &generic_async)?;
         debug_assert_eq!(&a.decl.name, name);
         analyzed.push(a);
     }
 
-    // 3. 依赖拓扑排序（被依赖者在前），检测环 = 递归 async fn
+    // 3. 依赖拓扑排序（被依赖者在前）；W6 支持递归环，`cyclic` 记录环内 async fn 名
     let mut visited: HashSet<String> = HashSet::new();
     let mut ordering: Vec<String> = Vec::new();
+    let mut cyclic: HashSet<String> = HashSet::new();
     for a in &analyzed {
-        topo_sort(&a.decl.name, &analyzed, &mut visited, &mut ordering)?;
+        topo_sort(&a.decl.name, &analyzed, &mut visited, &mut ordering, &mut cyclic)?;
     }
 
     // 4. 按拓扑序生成（结构体字段布局先记录，供槽零值构造引用）
@@ -114,7 +137,7 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
             .iter()
             .find(|a| &a.decl.name == name)
             .expect("analyzed async fn");
-        let (struct_item, spec) = generate::gen_struct(a, &layout);
+        let (struct_item, spec) = generate::gen_struct(a, &layout, &cyclic);
         layout.insert(name.clone(), spec);
         generated.insert(name.clone(), vec![struct_item]);
     }
@@ -126,11 +149,11 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
         generated
             .get_mut(name)
             .expect("generated")
-            .push(generate::gen_impl(a));
+            .push(generate::gen_impl(a, &cyclic));
         generated
             .get_mut(name)
             .expect("generated")
-            .push(generate::gen_ctor(a, &layout));
+            .push(generate::gen_ctor(a, &layout, &cyclic));
     }
 
     // 5. 替换原 async fn 项（保持原位置，展开为 3 项）
@@ -148,29 +171,30 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
 }
 
 /// DFS 拓扑排序：`name` 及其依赖（被依赖者先入 `ordering`）。
+///
+/// W6 递归 async fn 支持：依赖环不再报错。当 DFS 回溯遇到仍在访问栈中的
+/// 节点（`visited` 已含但 `ordering` 未含）即构成环，将其全部成员记入
+/// `cyclic`（供生成层对递归子 future 槽用 `Box<__Fut_>` 打破无限大小）。
+/// 环内节点因 `visited` 去重仍会全部进入 `ordering`（类型层两遍收集地基
+/// 保证 `struct __Fut_f` 可前向自引用）。
 fn topo_sort(
     name: &str,
     analyzed: &[AnalyzedAsync],
     visited: &mut HashSet<String>,
     ordering: &mut Vec<String>,
+    cyclic: &mut HashSet<String>,
 ) -> Result<(), DesugarError> {
     if ordering.contains(&name.to_string()) {
         return Ok(());
     }
     if visited.contains(name) {
-        return Err(DesugarError::Unsupported {
-            what: format!("递归 async fn 不支持（检测到依赖环，涉及 `{name}`）"),
-            span: analyzed
-                .iter()
-                .find(|a| a.decl.name == name)
-                .map(|a| a.decl.span)
-                .unwrap_or(Span {
-                    start: 0,
-                    end: 0,
-                    line: 0,
-                    col: 0,
-                }),
-        });
+        // 环：所有当前访问栈中尚未完成排序的成员均属递归环。
+        for a in analyzed {
+            if visited.contains(&a.decl.name) && !ordering.contains(&a.decl.name) {
+                cyclic.insert(a.decl.name.clone());
+            }
+        }
+        return Ok(());
     }
     visited.insert(name.to_string());
     let a = analyzed
@@ -178,7 +202,7 @@ fn topo_sort(
         .find(|a| a.decl.name == name)
         .expect("analyzed async fn");
     for dep in &a.deps {
-        topo_sort(dep, analyzed, visited, ordering)?;
+        topo_sort(dep, analyzed, visited, ordering, cyclic)?;
     }
     ordering.push(name.to_string());
     Ok(())

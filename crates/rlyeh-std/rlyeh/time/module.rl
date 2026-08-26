@@ -9,8 +9,9 @@
 // 语言层无常量定义，1e6 以字面量 1000000 使用。
 // 目录化（2026-08）：time/module.rl = 原 time.rl；SystemTime 见 time/system.rl。
 // X1（2026-08-25）：补目标 API 构造器 microseconds/nanoseconds 与读方法
-// as_secs/as_millis/as_nanos（u64/u128 → i64 实现，溢出未检查）+ Instant::duration_since；
-// `from_secs_f64` 依赖 as 转换 IR（U6，规划）。
+// as_secs/as_millis/as_nanos（u64/u128 → i64 实现，溢出未检查）+ Instant::duration_since。
+// U6（2026-08-25）：`as` 转换 IR 落地，`Duration::from_secs_f64` 解锁
+// （`(secs * 1e6) as i64`，fptosi 向零截断）。
 // module 声明（system）置于文件末尾——收集期注册顺序为 module.rl 顶层 item
 // （Duration/Instant）在前、time/system.rl（SystemTime）在后（io 惯例）。
 
@@ -65,6 +66,10 @@ impl Duration {
     // `nanos` 保留兼容别名）
     fn as_nanos(self) -> i64 {
         self.micros * 1000
+    }
+    // 秒（浮点，U6 Cast IR 解锁：`secs * 1e6 as i64`，fptosi 向零截断）
+    fn from_secs_f64(secs: f64) -> time::Duration {
+        time::Duration { micros: (secs * 1000000.0) as i64 }
     }
 }
 

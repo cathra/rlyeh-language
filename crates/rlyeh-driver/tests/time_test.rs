@@ -112,7 +112,8 @@ fn timeout_ok_returns_value() {
         r#"
 struct MyFut { state: i64 }
 impl Future for MyFut {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.state += 1;
         if self.state >= 3 {
             Poll::Ready(self.state)
@@ -133,14 +134,15 @@ fn main() {
     assert_eq!(out, "3\n");
 }
 
-/// S2c `future::timeout` 超时路径：时限内未 `Ready` 返回 `Err(-1)`。
+/// S2c/W4 `future::timeout` 超时路径：时限内未 `Ready` 返回 `Err(TimeoutError)`。
 #[test]
 fn timeout_expired_returns_err() {
     let out = run(
         r#"
 struct NeverFut { dummy: i64 }
 impl Future for NeverFut {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         Poll::Pending
     }
 }
@@ -148,10 +150,10 @@ fn main() {
     let mut f = NeverFut { dummy: 0 };
     match timeout(Duration::milliseconds(50), &mut f) {
         Result::Ok(v) => println(v),
-        Result::Err(e) => println(e),   // -1
+        Result::Err(e) => println(e.message()),
     }
 }
 "#,
     );
-    assert_eq!(out, "-1\n");
+    assert_eq!(out, "future timed out\n");
 }

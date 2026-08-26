@@ -58,7 +58,18 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
         .functions
         .iter()
         .zip(&infer_results)
-        .map(|(f, (_, ret))| (f.name.clone(), *ret))
+        .map(|(f, (_, ret))| {
+            // V2 StrFat 胖指针：`as_str_range` / `trim`（返回 `&str`）的返回类型
+            // 显式标注为 `StrFat`（双槽 {data, len}）。其返回值为 by_value StrFat
+            // 对象（LIR 推断为 `Ptr`），若不纠正，调用点 target 被标注为 `Ptr`，
+            // `println(&str)` 无法走 `%.*s` 长度限定打印（退化为 `%s` 读到 \0 才停）。
+            let ty = if f.name.contains("as_str_range") || f.name.contains("String::trim") {
+                LirType::StrFat
+            } else {
+                *ret
+            };
+            (f.name.clone(), ty)
+        })
         .collect();
 
     // 跨函数返回类型重算：第一遍推断在函数内独立进行，用户函数调用的 target
@@ -84,7 +95,14 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
             .functions
             .iter()
             .zip(&infer_results)
-            .map(|(f, (_, ret))| (f.name.clone(), *ret))
+            .map(|(f, (_, ret))| {
+                let ty = if f.name.contains("as_str_range") || f.name.contains("String::trim") {
+                    LirType::StrFat
+                } else {
+                    *ret
+                };
+                (f.name.clone(), ty)
+            })
             .collect();
         if rebuilt != ret_types {
             ret_types = rebuilt;
@@ -187,6 +205,23 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                         // 同 DerefRead：解引用写入的基址为引用 / 指针槽
                         changed |= set_type(&mut ty, base, LirType::Ptr)?;
                     }
+                    MirStmt::AddrOfField { target, base, .. } => {
+                        // 取字段地址：对象为指针槽，目标为指针槽
+                        changed |= set_type(&mut ty, base, LirType::Ptr)?;
+                        changed |= set_type(&mut ty, target, LirType::Ptr)?;
+                    }
+                    MirStmt::PtrAdd { target, base, offset, .. } => {
+                        // 指针算术：基址/目标为指针槽，偏移为 i64
+                        changed |= set_type(&mut ty, base, LirType::Ptr)?;
+                        changed |= set_type(&mut ty, offset, LirType::I64)?;
+                        changed |= set_type(&mut ty, target, LirType::Ptr)?;
+                    }
+                    MirStmt::Cast { target, value, to } => {
+                        // U6 Cast IR：目标类型按 `to` 名解析（整族→I64 槽、
+                        // 浮点→F64 槽、bool→Bool、char→Char）；源值类型由源定义处推断
+                        changed |= set_type(&mut ty, target, cast_target_lir_type(to))?;
+                        let _ = value;
+                    }
                     // 区域指令不产生类型信息
                     MirStmt::RegionEnter { .. }
                     | MirStmt::RegionExit { .. }
@@ -274,6 +309,19 @@ fn collect_locals(f: &MirFunction) -> Vec<Local> {
                     names.push(base.clone());
                     names.push(value.clone());
                 }
+                MirStmt::AddrOfField { target, base, .. } => {
+                    names.push(target.clone());
+                    names.push(base.clone());
+                }
+                MirStmt::PtrAdd { target, base, offset, .. } => {
+                    names.push(target.clone());
+                    names.push(base.clone());
+                    names.push(offset.clone());
+                }
+                MirStmt::Cast { target, value, .. } => {
+                    names.push(target.clone());
+                    names.push(value.clone());
+                }
                 _ => {}
             }
         }
@@ -357,6 +405,19 @@ fn infer_value_type(v: &MirValue, ty: &HashMap<Local, LirType>) -> Option<LirTyp
 }
 
 /// 槽值标量种类 → LIR 类型。
+/// U6 Cast IR 目标类型解析：`to` 类型名 → LIR 存储类型。
+/// 整族（≤64 位）存储统一 64 位槽（I64）；`f32`/`f64` 存储 F64 槽；
+/// `bool`→Bool（i1）；`char`→Char（i8）。
+fn cast_target_lir_type(to: &str) -> LirType {
+    match to {
+        "bool" => LirType::Bool,
+        "char" => LirType::Char,
+        "f32" | "f64" => LirType::F64,
+        // i8/u8/i16/u16/i32/u32/i64/u64/isize/usize
+        _ => LirType::I64,
+    }
+}
+
 fn field_scalar_to_lir(ty: FieldScalar) -> LirType {
     match ty {
         FieldScalar::Int => LirType::I64,
@@ -364,6 +425,7 @@ fn field_scalar_to_lir(ty: FieldScalar) -> LirType {
         FieldScalar::Bool => LirType::Bool,
         FieldScalar::Char => LirType::Char,
         FieldScalar::Str => LirType::Str,
+        FieldScalar::StrFat => LirType::StrFat,
         FieldScalar::Ptr => LirType::Ptr,
     }
 }
@@ -777,6 +839,31 @@ impl FunctionLowerer {
                     base: base.clone(),
                     value: value.clone(),
                     ty: *ty,
+                });
+            }
+            MirStmt::AddrOfField { target, base, index, ty } => {
+                out.push(LirStmt::FieldAddr {
+                    target: target.clone(),
+                    base: base.clone(),
+                    index: *index,
+                    ty: *ty,
+                });
+            }
+            MirStmt::PtrAdd { target, base, offset, elem, is_str } => {
+                out.push(LirStmt::PtrAdd {
+                    target: target.clone(),
+                    base: base.clone(),
+                    offset: offset.clone(),
+                    elem: *elem,
+                    is_str: *is_str,
+                });
+            }
+            MirStmt::Cast { target, value, to } => {
+                // U6 Cast IR：数值→数值类型转换透传（目标类型名）
+                out.push(LirStmt::Cast {
+                    target: target.clone(),
+                    value: LirOperand::Local(value.clone()),
+                    to: to.clone(),
                 });
             }
         }

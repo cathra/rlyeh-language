@@ -325,6 +325,13 @@ impl BorrowChecker {
                     self.errors.push(BorrowError::use_after_transfer(name));
                 }
             }
+            HirExpr::PtrAdd { base, offset, .. } => {
+                // 裸指针算术：仅读取 base/offset 指针与偏移值，不产生借用
+                self.check_expr(base);
+                self.check_expr(offset);
+            }
+            // U6 Cast IR：`expr as T` 仅读取被转换表达式
+            HirExpr::Cast { expr, .. } => self.check_expr(expr),
             HirExpr::Assign { target, value, .. } => {
                 // 借用互斥：不能赋值（写）被借用中的变量
                 if !self.active_borrows(target).is_empty() {
@@ -526,6 +533,10 @@ impl BorrowChecker {
                 self.collect_expr_uses(l);
                 self.collect_expr_uses(r);
             }
+            HirExpr::PtrAdd { base, offset, .. } => {
+                self.collect_expr_uses(base);
+                self.collect_expr_uses(offset);
+            }
             HirExpr::Unary(_, e) => self.collect_expr_uses(e),
             HirExpr::SetLookup { value, members, .. } => {
                 self.collect_expr_uses(value);
@@ -617,6 +628,8 @@ impl BorrowChecker {
                 self.collect_expr_uses(base);
                 self.collect_expr_uses(value);
             }
+            // U6 Cast IR：`expr as T` 读取被转换表达式
+            HirExpr::Cast { expr, .. } => self.collect_expr_uses(expr),
         }
     }
 }

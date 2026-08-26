@@ -40,6 +40,8 @@ pub enum LirType {
     Char,
     /// 字符串（i8*）
     Str,
+    /// &str 胖指针（data 指针 + 长度双槽；V2 子区间视图）
+    StrFat,
     /// 聚合对象指针（i8*；枚举 / 结构体等堆对象）
     Ptr,
     /// 单元类型（void）
@@ -66,6 +68,7 @@ impl std::fmt::Display for LirType {
             LirType::Bool => write!(f, "bool"),
             LirType::Char => write!(f, "char"),
             LirType::Str => write!(f, "string"),
+            LirType::StrFat => write!(f, "strfat"),
             LirType::Ptr => write!(f, "ptr"),
             LirType::Unit => write!(f, "()"),
         }
@@ -299,6 +302,43 @@ pub enum LirStmt {
         value: Local,
         /// 被指向值的标量种类
         ty: FieldScalar,
+    },
+    /// `target = &base.field`（V1）：取聚合对象字段槽地址（GEP 到字段槽，
+    /// 结果存 target 指针槽）——真实字段地址，写回经 DerefWrite 生效。
+    FieldAddr {
+        /// 目标变量（指针值）
+        target: Local,
+        /// 对象指针变量
+        base: Local,
+        /// 槽位索引
+        index: usize,
+        /// 字段标量种类
+        ty: FieldScalar,
+    },
+    /// `target = base + offset * elem_size`（V1）：裸指针算术
+    /// （元素步长：is_str→1 字节，其余→8 字节，与 IndexGet 步长规则一致）。
+    PtrAdd {
+        /// 目标变量（指针值）
+        target: Local,
+        /// 指针变量
+        base: Local,
+        /// 偏移变量（i64）
+        offset: Local,
+        /// 元素标量种类
+        elem: FieldScalar,
+        /// 是否为字符串字符区（步长 1 字节）
+        is_str: bool,
+    },
+    /// `target = cast(value as to)`（U6 Cast IR）：
+    /// 数值→数值类型转换，codegen 按源操作数 LIR 存储类型
+    /// 与目标语义位宽发射 `fptosi`/`sitofp`/`trunc`/`sext`/`zext`。
+    Cast {
+        /// 目标变量（转换结果）
+        target: Local,
+        /// 源值操作数
+        value: LirOperand,
+        /// 目标类型名（`Type::name()` 输出）
+        to: String,
     },
 }
 

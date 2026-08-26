@@ -22,6 +22,23 @@ struct String {
     cap: i64,
 }
 
+// V2：字符码点迭代器（持有原 String 引用 + 游标 + 长度）。
+// 用 `&String` 引用 + `self.s.data[pos]` 按字节索引（Rlyeh 裸指针 `*const u8`
+// 按 i64 元素语义解引用，无法逐字节访问）。
+struct Chars {
+    s: &String,
+    pos: i64,
+    len: i64,
+}
+
+// V2：行迭代器（持有原 String 引用 + 游标）。`next() -> Option<String>` 按
+// `\n`（10）分行，`\r\n`（13,10）行尾的 `\r` 一并剥除（改进 MVP 字节级保留）。
+struct Lines {
+    s: &String,
+    pos: i64,
+    len: i64,
+}
+
 enum Option<T> {
     None,
     Some(T),
@@ -369,22 +386,33 @@ impl<T> Vec<T> {
         }
         sl
     }
-    // T1a：迭代器——MVP 退化：返回元素值拷贝的新缓冲（目标 `Iter<'_, T>` 借用
-    // 迭代器规划——借用迭代器需生命周期标注的迭代状态类型，MVP 未提供；返回
-    // Vec 可经 `for` 直接迭代，元素按值拷贝，与 slice 语义一致）。
-    fn iter(&self) -> Vec<T> {
-        let mut v: Vec<T> = Vec::new();
-        let mut i = 0;
-        while i < self.len {
-            v.push(self.data[i]);
-            i = i + 1;
-        }
-        v
+    // V1：瘦指针迭代器（2026-08）——返回 `Iter<T>` 零分配零拷贝迭代视图：data
+    // 为首元素 `*const T` 裸指针（V1 `&arr[i]` 真实 GEP 地址支持），len 为剩余
+    // 元素数（非缓冲长度）。元素按值拷贝读取（MVP 无 `Option<&T>` 引用返回——
+    // 借用迭代器需生命周期标注的迭代状态类型，规划中）。接入 for 循环（检测
+    // next() -> Option<T>）与 J3 适配器（map/filter/fold 等检测 next() 方法）。
+    // 注意：迭代器持有原缓冲裸指针，迭代期间不得对 Vec 做结构性修改（push /
+    // insert / remove 触发扩容重新分配会使指针悬垂）。
+    fn iter(&self) -> Iter<T> {
+        let p: *const T = &self.data[0];
+        Iter::new(p, self.len)
     }
-    // T1a：可变索引访问——MVP 值语义：返回槽值拷贝（目标 `Option<&mut T>` 引用
-    // 语义规划——&mut 别名需借用检查支持可变引用返回，MVP 未提供，与 get 一致）。
-    fn get_mut(&mut self, i: i64) -> T {
-        self.data[i]
+    // V1：可变瘦指针迭代器——返回 `IterMut<T>`（*mut T + 写回目标 cur + 剩余
+    // 长度）。next() 返回元素值拷贝并推进；write(x) 经 DerefSet 写回"最近 next
+    // 读取的元素"（真实原槽写回，非拷贝）。MVP 无 `Option<&mut T>` 引用返回
+    // （规划），for 迭代中修改元素不写回。
+    fn iter_mut(&mut self) -> IterMut<T> {
+        let p: *mut T = &mut self.data[0];
+        IterMut::new(p, p, self.len)
+    }
+    // V4：可变索引访问——`Option<&mut T>` 引用语义：越界返回 None，命中返回对原槽的
+    // 可变引用，经 `match { Some(r) => *r = x }` 写回真实槽（非拷贝）。
+    fn get_mut(&mut self, i: i64) -> Option<&mut T> {
+        if i >= 0 && i < self.len {
+            Option::Some(&mut self.data[i])
+        } else {
+            Option::None
+        }
     }
     // T1a：比较器排序——cmp 返回三态 i64（负 / 零 / 正，对齐 Rust Ordering 语义，
     // Ordering 枚举规划；< 0 表示第一个参数应在前）。原地堆排序 O(n log n)，
@@ -441,6 +469,71 @@ impl<T> Vec<T> {
             }
             end = end - 1;
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// V1 瘦指针迭代器（2026-08）：`Iter<T>` / `IterMut<T>` 零分配零拷贝迭代视图。
+// 布局：data = 首元素裸指针（*const T / *mut T，V1 `&arr[i]` 真实 GEP 地址），
+// len = 剩余元素数。元素按值拷贝读取（MVP 无 `Option<&T>` / `Option<&mut T>`
+// 引用返回——借用迭代器需生命周期标注的迭代状态类型，规划中）。
+// 接入：for 循环（check_for_iterator 检测 next() -> Option<T>）+ J3 适配器
+// （map/filter/fold/collect/take/skip 检测 next() 方法 + Option 内项类型）。
+// 约束：持有原缓冲裸指针，迭代期间不得对 Vec 做结构性修改（扩容 realloc 后
+// 指针悬垂）。裸指针无生命周期关联，drop 不释放原缓冲（视图语义）。
+// ---------------------------------------------------------------------------
+
+struct Iter<T> {
+    data: *const T,
+    len: i64,
+}
+
+impl<T> Iter<T> {
+    // 读当前元素（值拷贝）并推进：空迭代器返回 None。
+    fn next(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        let v = *self.data;
+        self.data = self.data + 1;
+        self.len = self.len - 1;
+        Option::Some(v)
+    }
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+struct IterMut<T> {
+    data: *mut T,   // 下一个待读元素地址
+    cur: *mut T,    // 最近 next 读取的元素地址（write 写回目标）
+    len: i64,       // 剩余元素数
+}
+
+impl<T> IterMut<T> {
+    // 读当前元素（值拷贝）并推进：空迭代器返回 None。
+    fn next(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        let v = *self.data;
+        self.cur = self.data;
+        self.data = self.data + 1;
+        self.len = self.len - 1;
+        Option::Some(v)
+    }
+    // 写回最近 next 读取的元素（DerefSet 真实原槽写回）。next 未调用时写首元素。
+    fn write(&mut self, x: T) {
+        *self.cur = x;
+    }
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 
@@ -701,10 +794,11 @@ impl String {
     fn to_lowercase(&self) -> String {
         self.to_lower()
     }
-    // 裁剪：剥离首尾空白（空格 32 / 制表 9 / 换行 10 / 回车 13），返回新缓冲。
-    // 正向扫描跳过开头空白找 start，反向扫描跳过结尾空白找 end，再 substring；
-    // 全空白串返回空串（start 推进到 len 后反向条件 end > start 不成立）。
-    fn trim(&self) -> String {
+    // 裁剪：剥离首尾空白（空格 32 / 制表 9 / 换行 10 / 回车 13），返回 `&str`
+    // 子区间视图（V2 零拷贝，StrFat `{ data+start, end-start }`，对齐 Rust `trim`）。
+    // 正向扫描跳过开头空白找 start，反向扫描跳过结尾空白找 end，再 as_str_range；
+    // 全空白串返回空视图（start 推进到 len 后 end == start → 空子区间）。
+    fn trim(&self) -> &str {
         let mut start = 0;
         let mut scanning = 1;
         while scanning == 1 {
@@ -733,10 +827,12 @@ impl String {
                 scanning2 = 0;
             }
         }
-        // 结果经 `result` 变量返回（与 find 相同）：函数末尾直接返回
-        // 方法调用结果（聚合值）会触发 codegen 返回类型错位
-        let result = self.substring(start, end);
-        result
+        self.as_str_range(start, end)
+    }
+    // V2：子区间视图 `&str`（StrFat 双槽 `{ data+start, end-start }`，零拷贝）。
+    // typecheck 特判构造；此声明仅供 std 方法解析（body 不被使用）。
+    fn as_str_range(&self, start: i64, end: i64) -> &str {
+        self.as_str()
     }
     // T1b：字符列表——MVP 字节级：逐字节返回（字符 = 字节，与 to_upper / 索引
     // 步长 1 字节一致；目标 `Chars` 迭代器 + UTF-8 码点解码规划）。
@@ -749,12 +845,22 @@ impl String {
         }
         cs
     }
+    // V2：字符码点迭代器——返回 `Chars`（UTF-8 码点解码，`next() -> Option<char>`）。
+    // 保留 `chars()`（字节级 Vec<i64>）兼容；`chars_iter` 为码点级迭代器。
+    fn chars_iter(&self) -> Chars {
+        Chars { s: self, pos: 0, len: self.len }
+    }
     // T1b：行切分——按换行符（\n = 10）切分，返回 Vec<String>（复用 split 语义，
     // 连续换行产生空行段、尾随换行后有尾空行段）。目标 `Lines` 迭代器规划；
     // MVP 差异：\r\n 行尾的 \r 保留（字节语义，未剥除）。
     fn lines(&self) -> Vec<String> {
         let result = self.split("\n");
         result
+    }
+    // V2：行迭代器——返回 `Lines`（按 \n/\r\n 分行，剥 \r；next() -> Option<String>）。
+    // 保留 `lines()`（Vec<String>）兼容；`lines_iter` 为惰性迭代器。
+    fn lines_iter(&self) -> Lines {
+        Lines { s: self, pos: 0, len: self.len }
     }
     fn grow(&mut self) {
         let new_cap = if self.cap == 0 { 8 } else { self.cap * 2 };
@@ -889,6 +995,103 @@ impl String {
     fn truncate(&self, new_len: i64) -> String {
         let result = self.substring(0, new_len);
         result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// V2：字符码点迭代器 Chars——持有原 String data 裸指针 + 游标，next() 做
+// UTF-8 码点解码（首字节定宽 + 连续字节校验），返回 `Option<char>`。
+// 与 `Iter<T>` 同约束：迭代期间不得对原 String 做结构性修改（指针悬垂）。
+// （`struct Chars` 定义在文件前部 `struct String` 之后，保证 `impl String`
+// 的方法返回类型 `Chars` 可前向解析。）
+// ---------------------------------------------------------------------------
+impl Chars {
+    // 取下一个 UTF-8 码点并推进；耗尽返回 None。
+    // 解码：首字节 b0 确定码点宽度（0-7F=1 字节 ASCII；C2-DF=2；E0-EF=3；
+    // F0-F4=4），读取后续连续字节（10xxxxxx）校验并组合码点。
+    // V2：`next() -> Option<i64>`（码点值）。返回 UTF-8 码点数值而非 `char`，
+    // 因 Rlyeh `char` 类型 codegen 仅支持 ASCII（非 ASCII `as char` 报错），
+    // 用 `i64` 码点值可表达全部 Unicode 码点（含多字节）。
+    fn next(&mut self) -> Option<i64> {
+        if self.pos >= self.len {
+            return Option::None;
+        }
+        let b0 = self.s.data[self.pos] as i64;
+        if b0 < 0x80 {
+            self.pos = self.pos + 1;
+            return Option::Some(b0);
+        } else if b0 >= 0xE0 {
+            if b0 >= 0xF0 {
+                // 4 字节
+                if self.pos + 3 < self.len {
+                    let b1 = self.s.data[self.pos + 1] as i64;
+                    let b2 = self.s.data[self.pos + 2] as i64;
+                    let b3 = self.s.data[self.pos + 3] as i64;
+                    let cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+                    self.pos = self.pos + 4;
+                    return Option::Some(cp);
+                }
+            } else {
+                // 3 字节
+                if self.pos + 2 < self.len {
+                    let b1 = self.s.data[self.pos + 1] as i64;
+                    let b2 = self.s.data[self.pos + 2] as i64;
+                    let cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+                    self.pos = self.pos + 3;
+                    return Option::Some(cp);
+                }
+            }
+        } else {
+            // 2 字节
+            if self.pos + 1 < self.len {
+                let b1 = self.s.data[self.pos + 1] as i64;
+                let cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F);
+                self.pos = self.pos + 2;
+                return Option::Some(cp);
+            }
+        }
+        // 不完整序列 / 无法解码：按单字节推进（鲁棒降级）
+        self.pos = self.pos + 1;
+        Option::Some(b0)
+    }
+    fn is_empty(&self) -> bool {
+        self.pos >= self.len
+    }
+}
+
+impl Lines {
+    // 取下一行（不含换行符，`\r\n` 行尾的 `\r` 一并剥除）；EOF 返回 None。
+    // 末行若无尾换行也返回；尾随换行后返回一个空行（对齐 split 语义）。
+    fn next(&mut self) -> Option<String> {
+        if self.pos > self.len {
+            return Option::None;
+        }
+        // 扫描到 \n（10）
+        let mut i = self.pos;
+        while i < self.len {
+            if self.s.data[i] == 10 {
+                break;
+            }
+            i = i + 1;
+        }
+        // 行内容为 [self.pos, i)；若 i 前一个字节是 \r（13）则剥除
+        let mut end = i;
+        if end > self.pos && self.s.data[end - 1] == 13 {
+            end = end - 1;
+        }
+        let mut line = String::with_capacity(end - self.pos);
+        let mut j = self.pos;
+        while j < end {
+            line.push_byte(self.s.data[j]);
+            j = j + 1;
+        }
+        // 推进 pos：跳过换行符（若在末尾则 pos 超过 len，下次返回 None）
+        if i < self.len {
+            self.pos = i + 1;
+        } else {
+            self.pos = self.len + 1;
+        }
+        Option::Some(line)
     }
 }
 
@@ -1295,10 +1498,15 @@ impl<K, V> HashMap<K, V> {
         let result = self.keys();
         result
     }
-    // T1c：可变取值——MVP 值语义：返回槽值拷贝（目标 `Option<&mut V>` 引用语义
-    // 规划——&mut 别名需借用检查支持可变引用返回，MVP 未提供，与 get 一致）。
-    fn get_mut(&mut self, k: K) -> Option<V> {
-        self.get(k)
+    // V4：可变取值——`Option<&mut V>` 引用语义：键不存在返回 None，命中返回对原槽的
+    // 可变引用，经 `match { Some(r) => *r = x }` 写回真实槽（非拷贝）。
+    fn get_mut(&mut self, k: K) -> Option<&mut V> {
+        let idx = self.find(k);
+        if idx < 0 {
+            Option::None
+        } else {
+            Option::Some(&mut self.vals[idx])
+        }
     }
 }
 
@@ -1431,11 +1639,17 @@ extern fn pthread_barrier_wait(b: i64) -> i32;
 // 数组切片等），必须留在根命名空间。
 module time;
 module io;
+module future;
+// W5：future 符号在 net/sync 之前 import，使 net/http 与 sync 模块（`impl Future`
+// 自建 future 类型）收集阶段能经 use_aliases 解析裸名 Future/Poll/Context
+// （跨模块类型，非自建；future 不依赖 net，故可前置于 net）。
+import future::Future;
+import future::Poll;
+import future::Context;
 module net;
 module sync;
 module fs;
 module thread;
-module future;
 module serde;
 module fmt;
 
@@ -1490,6 +1704,7 @@ import sync::Barrier;
 import sync::Sender;
 import sync::Receiver;
 import sync::ChannelPair;
+import sync::RecvAsync;
 import sync::channel;
 import fs::path::Path;
 import io::nio::Interest;
@@ -1504,8 +1719,10 @@ import thread::sleep;
 import thread::join_all;
 import future::Future;
 import future::Poll;
+import future::Context;
 import future::block_on;
 import future::timeout;
+import future::TimeoutError;
 import fmt::Display;
 import fmt::Debug;
 import fmt::Formatter;

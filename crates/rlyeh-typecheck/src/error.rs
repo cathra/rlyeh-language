@@ -201,6 +201,17 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 泛型实参数量与类型参数数量不符（U8 泛型结构体构造）
+    GenericArityMismatch {
+        /// 泛型结构体名
+        name: String,
+        /// 类型参数数量
+        expected: usize,
+        /// 提供的实参数量
+        found: usize,
+        /// 源码位置
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -240,7 +251,8 @@ impl TypeError {
             | TypeError::InSetTypeMismatch { span, .. }
             | TypeError::NonConstantBound { span }
             | TypeError::Unsupported { span, .. }
-            | TypeError::GenericBoundMismatch { span, .. } => *span,
+            | TypeError::GenericBoundMismatch { span, .. }
+            | TypeError::GenericArityMismatch { span, .. } => *span,
         }
     }
 }
@@ -358,6 +370,15 @@ impl fmt::Display for TypeError {
             } => write!(
                 f,
                 "{loc}: error: type `{ty}` does not implement trait `{bound}` (bound on generic parameter `{param}`)"
+            ),
+            TypeError::GenericArityMismatch {
+                name,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "{loc}: error: generic type `{name}` expects {expected} type argument(s), but {found} were provided"
             ),
         }
     }

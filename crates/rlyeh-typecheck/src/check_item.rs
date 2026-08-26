@@ -44,6 +44,8 @@ pub fn typecheck_with_region_hints(
     let mut ctx = TypeContext::new();
     ctx.region_hints = region_hints.clone();
     collect_declarations(&mut ctx, program)?;
+    // 第二遍：所有 struct 名注册后解析字段（支持自引用/前向引用递归类型）。
+    resolve_all_struct_fields(&mut ctx, program)?;
 
     let mut items = Vec::new();
     for item in &program.items {
@@ -290,7 +292,54 @@ pub(crate) fn check_item(
 ///
 /// 泛型结构体（`struct Vec<T>`）在解析字段类型时，`T` 应处于类型参数作用域内
 /// （与 `collect_enum` / `collect_impl` 保持一致）。
+/// 收集 struct 声明（第一遍：仅注册名与泛型参数，字段类型延迟到
+/// `resolve_all_struct_fields` 第二遍解析——支持 struct 自引用 / 前向引用
+/// （如 `struct Node { next: Box<Node> }` 递归类型，为 W6 递归 async fn
+/// 提供类型层地基）。
 fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Result<(), TypeError> {
+    ctx.insert_struct(
+        full_name(prefix, &s.name),
+        StructDef {
+            fields: Vec::new(),
+            type_params: s.generics.iter().map(|p| p.name.clone()).collect(),
+        },
+    );
+    Ok(())
+}
+
+/// 第二遍：解析所有 struct 字段类型（所有 struct 名已注册，支持自引用/前向引用）。
+///
+/// 在 `collect_declarations` 完成后、`check_item` 之前调用。遍历顶层与嵌套
+/// 模块的 struct 声明，重建 `type_params`/`module_prefix` 上下文后解析字段。
+fn resolve_all_struct_fields(ctx: &mut TypeContext, program: &AstProgram) -> Result<(), TypeError> {
+    resolve_struct_fields_items(ctx, &program.items, "")
+}
+
+fn resolve_struct_fields_items(
+    ctx: &mut TypeContext,
+    items: &[AstItem],
+    prefix: &str,
+) -> Result<(), TypeError> {
+    for item in items {
+        match item {
+            AstItem::StructDecl(s) => resolve_struct_fields(ctx, s, prefix)?,
+            AstItem::ModDecl(m) => {
+                let new_prefix = full_name(prefix, &m.name);
+                let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
+                resolve_struct_fields_items(ctx, &m.items, &new_prefix)?;
+                ctx.module_prefix = old_prefix;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn resolve_struct_fields(
+    ctx: &mut TypeContext,
+    s: &AstStructDecl,
+    prefix: &str,
+) -> Result<(), TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
     ctx.type_params = s.generics.iter().map(|p| p.name.clone()).collect();
@@ -301,9 +350,7 @@ fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Res
         // H4 MVP 限制：`dyn Trait` 暂不支持作为 struct 字段（2 槽胖指针字段布局规划中）
         if matches!(&ty, Type::Dyn(_)) {
             return Err(TypeError::Unsupported {
-                what: format!(
-                    "`{ty}` 作为 struct 字段（H4 MVP 仅支持局部变量绑定）"
-                ),
+                what: format!("`{ty}` 作为 struct 字段（H4 MVP 仅支持局部变量绑定）"),
                 span: field.span,
             });
         }
@@ -311,7 +358,10 @@ fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Res
     }
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
-    ctx.insert_struct(full_name(prefix, &s.name), StructDef { fields });
+    let full = full_name(prefix, &s.name);
+    if let Some(def) = ctx.structs.get_mut(&full) {
+        def.fields = fields;
+    }
     Ok(())
 }
 
@@ -833,6 +883,14 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
 
     let mut methods = Vec::new();
     for m in &imp.methods {
+        // U7：方法泛型参数并入类型参数作用域（`fn map<U>(..)` 的 U 可解析），
+        // 解析签名后恢复 impl 泛型上下文。
+        let saved_mparams = std::mem::take(&mut ctx.type_params);
+        let mut tparams = imp.generics.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+        for gp in &m.generics {
+            tparams.push(gp.name.clone());
+        }
+        ctx.type_params = tparams;
         let mut params = Vec::with_capacity(m.params.len());
         for p in &m.params {
             if p.name == "self" {
@@ -858,6 +916,7 @@ fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &str) -> Resu
             Some(rt) => resolve_ast_type(ctx, rt, m.span)?,
             None => Type::Unit,
         };
+        ctx.type_params = saved_mparams;
         methods.push(ImplMethod {
             sig: MethodSig {
                 name: m.name.clone(),

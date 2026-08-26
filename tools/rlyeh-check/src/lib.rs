@@ -502,7 +502,11 @@ impl Checker {
                 }
             }
             ExprKind::FieldAccess { expr, .. } => self.walk_expr(expr),
-            ExprKind::StructCtor { type_name: _, fields } => {
+            ExprKind::StructCtor {
+                type_name: _,
+                type_args: _,
+                fields,
+            } => {
                 for (_, v) in fields {
                     self.walk_expr(v);
                 }

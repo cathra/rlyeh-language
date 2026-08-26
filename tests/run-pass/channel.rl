@@ -75,18 +75,16 @@ fn main() {
         Option::None => println(-1),
     }
 
-    // 7. recv_async（S3a，MVP 同步语义）：非空立即返回 / close 后空返回 None
+    // 7. recv_async（W5 真异步 future，block_on 驱动）：有数据立即 Ready / close 后空 -1
     let mut pair4 = channel();
     let mut tx4 = pair4.tx;
     let mut rx4 = pair4.rx;
     tx4.send(7);
-    match rx4.recv_async() {
-        Option::Some(v) => println(v),   // 7
-        Option::None => println(-1),
-    }
+    let mut r: sync::RecvAsync = rx4.recv_async();
+    let v1 = block_on(&mut r);           // 7
+    println(v1);
     tx4.close();
-    match rx4.recv_async() {
-        Option::Some(v) => println(v),
-        Option::None => println(-1),     // -1
-    }
+    let mut r2: sync::RecvAsync = rx4.recv_async();
+    let v2 = block_on(&mut r2);          // -1（close 且空）
+    println(v2);
 }

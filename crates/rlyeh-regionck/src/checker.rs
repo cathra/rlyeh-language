@@ -237,6 +237,12 @@ impl RegionChecker {
             }
             // 引用 / 解引用：递归检查被引用 / 被解引用表达式
             HirExpr::Ref { expr, .. } => self.check_expr(expr),
+            HirExpr::PtrAdd { base, offset, .. } => {
+                self.check_expr(base);
+                self.check_expr(offset);
+            }
+            // U6 Cast IR：`expr as T` 仅检查被转换表达式
+            HirExpr::Cast { expr, .. } => self.check_expr(expr),
             HirExpr::Deref { expr, .. } => self.check_expr(expr),
             HirExpr::DerefSet { base, value, .. } => {
                 self.check_expr(base);

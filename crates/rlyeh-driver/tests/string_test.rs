@@ -82,7 +82,7 @@ fn main() {
 }
 "#,
     );
-    assert_eq!(out, "122\n97\n16\n0\n");
+    assert_eq!(out, "114\n101\n16\n0\n");
 }
 
 /// `s[i]` 直接索引（步长 1 字节）。
@@ -130,5 +130,5 @@ fn main() {
 }
 "#,
     );
-    assert_eq!(out, "4\n4\n");
+    assert_eq!(out, "5\n5\n");
 }

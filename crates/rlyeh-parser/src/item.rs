@@ -364,8 +364,30 @@ impl<'src> Parser<'src> {
         let start = self.expect(&Token::Impl, "'impl'")?.span;
         let mut generics = self.parse_generics()?;
         let first = self.expect_ident()?;
-        let (trait_name, type_name) = if self.eat(&Token::For) {
-            (Some(first), self.expect_ident()?)
+        // U8：区分 trait impl 与 inherent impl——
+        // - `impl Trait for X`：`first` 后紧跟 `for`；
+        // - `impl<T> Trait<T> for X`：`first` 后 `<...>`（trait 泛型实参）再 `for`；
+        // - `impl<T> Foo<T>`：`first` 后 `<...>` 但 `>` 后非 `for`（inherent，目标类型泛型实参）。
+        // 用 lookahead（`<...>for` 模式）区分，避免无回溯误判。
+        let is_trait_impl = self.check(&Token::For) || self.looks_like_generic_trait_impl();
+        let (trait_name, type_name) = if is_trait_impl {
+            // `first` 可能带 trait 泛型实参 `<T>`（`Trait<T>`），消费后遇 `for`
+            if self.check(&Token::Lt) {
+                self.bump();
+                while !self.check(&Token::Gt) {
+                    if self.at_eof() {
+                        return Err(self.unexpected("'>'"));
+                    }
+                    self.expect_ident()?;
+                    if !self.eat(&Token::Comma) {
+                        break;
+                    }
+                }
+                self.expect(&Token::Gt, "'>'")?;
+            }
+            self.expect(&Token::For, "'for'")?;
+            let type_name = self.expect_ident()?;
+            (Some(first), type_name)
         } else {
             (None, first)
         };
@@ -415,6 +437,38 @@ impl<'src> Parser<'src> {
             methods,
             span: self.merge_span(start, end),
         })
+    }
+
+    /// U8：泛型 trait impl lookahead——`impl<T> Trait<T> for X`。
+    ///
+    /// 当前 token 为 `<`（`first` 后的 trait 泛型实参），向前扫描到匹配的 `>`，
+    /// 若其后紧跟 `for` 则判定为 trait impl（区别于 inherent `impl<T> Foo<T>`）。
+    /// 不消费 token，仅前瞻，避免无回溯误判。
+    fn looks_like_generic_trait_impl(&self) -> bool {
+        if !self.check(&Token::Lt) {
+            return false;
+        }
+        let mut depth = 0;
+        let mut i = 0;
+        loop {
+            let Some(tok) = self.peek_n(i) else {
+                return false;
+            };
+            match tok.token {
+                Token::Lt => depth += 1,
+                Token::Gt => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return self
+                            .peek_n(i + 1)
+                            .is_some_and(|t| t.token == Token::For);
+                    }
+                }
+                Token::RBrace | Token::Eof => return false,
+                _ => {}
+            }
+            i += 1;
+        }
     }
 
     /// 模块声明：`mod name { ... }` 或 `mod name;`

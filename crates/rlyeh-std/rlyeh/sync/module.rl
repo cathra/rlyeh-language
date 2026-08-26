@@ -140,12 +140,17 @@ impl Barrier {
 // recv 空队列挂起（Condvar wait），send 后 notify_one 唤醒；
 // close 后队列耗尽 recv 返回 None（try_recv 空返回 None，不阻塞）。
 // 注意：queue 只增（head 单调推进，无元素移除的 MVP 简化）。
+// W5（2026-08-25）：`wake_r`/`wake_w` 为 socketpair 唤醒 fd——`send`/`close`
+// 向 `wake_w` 写字节，`recv_async` 的 future 经 `wake_r` 读就绪挂起（W3
+// `wait_fd`/`Context.fd` 事件驱动，非阻塞线程），实现「挂起直到数据/close」。
 struct Channel {
     m: sync::Mutex,
     cv: sync::Condvar,
     closed: i64,
     head: i64,
     queue: Vec<i64>,
+    wake_r: i64,
+    wake_w: i64,
 }
 
 struct Sender { ch: Rc<sync::Channel> }
@@ -153,15 +158,52 @@ struct Receiver { ch: Rc<sync::Channel> }
 // 元组返回类型 MVP 未实现（(1, 2) 被解析为集合），channel() 返回结构体对。
 struct ChannelPair { tx: sync::Sender, rx: sync::Receiver }
 
+// W5（2026-08-25）：异步接收 future（`Receiver::recv_async` 返回值）。
+// poll：先消费唤醒字节（避免 fd 永久就绪忙等），try_recv 非阻塞取消息——
+// 有则 `Ready(v)`；空且未关闭则向 `cx.fd`（`wake_r` 读）注册挂起，由事件驱动
+// executor（W3 `block_on`）经 poll(2) 等 `send`/`close` 写的唤醒字节就绪再轮询；
+// close 且空返回哨兵 `-1`（`Option::None` 语义，MVP `Output` 限 i64）。
+struct RecvAsync {
+    ch: Rc<sync::Channel>,
+}
+
+impl Future for RecvAsync {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
+        // 消费唤醒字节（send/close 写入），避免 fd 永久就绪导致忙等
+        let _ = net::recv_some(self.ch.wake_r, 64);
+        // 非阻塞取消息
+        let mut r = sync::Receiver { ch: self.ch.clone() };
+        match r.try_recv() {
+            Option::Some(v) => Poll::Ready(v),
+            Option::None => {
+                if self.ch.closed != 0 {
+                    Poll::Ready(-1)
+                } else {
+                    cx.fd = self.ch.wake_r;
+                    cx.interest = 1;
+                    Poll::Pending
+                }
+            }
+        }
+    }
+}
+
 fn channel() -> sync::ChannelPair {
     // 构造调用用裸名（`sync::Mutex::new()` 路径 typecheck 不支持；
     // 裸名经 core.rl `import sync::Mutex` 别名解析为 sync::Mutex）
+    // W5：创建 socketpair 唤醒 fd（`send`/`close` 写 `wake_w` 触发 `wake_r` 读就绪）
+    let sp = net::socketpair_stream();
+    let wake_r = net::fd_at(sp, 0);
+    let wake_w = net::fd_at(sp, 1);
     let ch = Rc::new(sync::Channel {
         m: Mutex::new(),
         cv: Condvar::new(),
         closed: 0,
         head: 0,
         queue: Vec::with_capacity(8),
+        wake_r: wake_r,
+        wake_w: wake_w,
     });
     sync::ChannelPair {
         tx: sync::Sender { ch: ch.clone() },
@@ -172,10 +214,12 @@ fn channel() -> sync::ChannelPair {
 impl Sender {
     // 发送（无界队列永不阻塞；唤醒一个等待中的接收者）。
     // `r#` 转义：`send` 为 actor 保留字（定义名归一化为 send，调用处 `.send(...)` 可用）
+    // W5：向 `wake_w` 写唤醒字节，使 `recv_async` 挂起的 fd 读就绪（事件驱动）。
     fn r#send(&mut self, val: i64) {
         self.ch.m.lock();
         self.ch.queue.push(val);
         self.ch.cv.notify_one();
+        let _ = net::send_all(self.ch.wake_w, String::from("x"));
         self.ch.m.unlock();
     }
     // 尝试发送：无界队列恒成功，返回 true
@@ -184,10 +228,12 @@ impl Sender {
         true
     }
     // 关闭通道：广播唤醒等待者，队列耗尽后所有 Receiver recv 返回 None
+    // W5：写唤醒字节，使 recv_async 挂起被唤醒（读到 close 标记）。
     fn close(&mut self) {
         self.ch.m.lock();
         self.ch.closed = 1;
         self.ch.cv.notify_all();
+        let _ = net::send_all(self.ch.wake_w, String::from("x"));
         self.ch.m.unlock();
     }
     // 多 Sender 共享同一队列（Rc clone）
@@ -227,10 +273,14 @@ impl Receiver {
         self.ch.m.unlock();
         Option::None
     }
-    // S3a：异步接收（MVP 退化——阻塞语义，等价 recv；事件驱动版规划随 R1 Poller +
-    // 事件循环：recv_async 挂起 Future 至可读，依赖 §4.4 NIO 接入）
-    fn recv_async(&mut self) -> Option<i64> {
-        self.r#recv()
+    // S3a/W5：异步接收——返回 `RecvAsync` future，`async fn` 内经
+    // `let r: sync::RecvAsync = rx.recv_async(); r.await` 挂起（不阻塞线程）。
+    // future 的 poll：try_recv 非阻塞取消息（有则 Ready），空且未关闭则向
+    // `cx.fd`（wake_r）注册读就绪挂起；`send`/`close` 写唤醒字节触发 poll 重查。
+    // MVP 退化：`Output` 限 `i64`（收到值 / `-1` = close 且空），`Option<i64>`
+    // 语义经哨兵值表达。
+    fn recv_async(&mut self) -> sync::RecvAsync {
+        sync::RecvAsync { ch: self.ch.clone() }
     }
     // J2 迭代器接入：for v in rx { ... }（内部 try_recv 语义，不阻塞）
     fn next(&mut self) -> Option<i64> {

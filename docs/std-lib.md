@@ -18,7 +18,7 @@
 |------|------|--------------|---------|
 | §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 | — |
 | §2.3 Iterator | ✅ 已实现（MVP 退化） | `trait Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core.rl 顶部；关联类型 `type Item` 规划——parser/typecheck 无 trait `type` 成员载体，归属 **U2/V3**）；自定义迭代器 `impl Iterator for T` 经 for 接入（J2）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar（**V3** 迁移为 trait 默认方法） | U2/V3 |
-| §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`（退化元素拷贝缓冲）/`get_mut`（值拷贝）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（值拷贝）；详见 §3.1/§3.2/§3.3 差异注记（借用迭代器 **V1**、码点迭代器 **V2**、`get_mut` 引用语义 **V4**） | V1/V2/V4 |
+| §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`/`iter_mut`（**V1 瘦指针迭代器**，2026-08：`Iter<T>`/`IterMut<T>` 裸指针 + 剩余长度，`next()` 值拷贝 + `IterMut::write` 真实写回）/`get_mut`（**V4 引用语义**，2026-08-25：`Option<&mut T>` 命中原槽可变引用 + 越界 None）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（**V4 引用语义**，`Option<&mut V>` 写回真实槽）；详见 §3.1/§3.2/§3.3 差异注记（借用迭代器（引用元素）**V1**、码点迭代器 **V2**、`get_mut` 引用语义 **V4**） | V1/V2/V4 |
 | §4.1 File | ✅ 已实现 | `File::open/create/close` + `read_to_string/read/write/write_all/flush/metadata/size`（N1 ✅）+ 自由函数 `read_file/write_file/append_file`（`Result<T, IoError>`）；目标 API `open_with`/`read(&mut [u8])`/`write(&[u8])`/完整 `Metadata` 归属 **Y1** | Y1 |
 | §4.2 标准输入输出 | ✅ 已实现 | `stdout`/`stderr` 模块（`write`/`writeln`/`flush`）+ stdin `read_to_string`/`lines` + `eprintln!`/`eprint!` 宏（N4 ✅） | — |
 | §4.3 路径与文件系统 | ✅ 已实现 | `Path::new/join/parent/file_name/extension/exists/is_file/is_dir`（N3a ✅，`fs.rl`）+ `fs::read_to_string/write/copy/remove_file/remove_dir_all/rename/create_dir/create_dir_all/read_dir`（N3 ✅） | — |
@@ -29,10 +29,10 @@
 | §5.2 HTTP | ✅ 已实现（同步 MVP + async 形状 + 连接复用） | `HttpClient::get/post` + `Response::status/text` + `json::parse::<T>` 反序列化（O3 ✅）；**Y3 ✅（2026-08）**连接复用：`get/post` 改实例方法（`&mut self`）+ keep-alive 空闲连接池 + `Content-Length` 精确读（无则回退 EOF）+ 复用失效自动重试（`http_keepalive_test.rs` 5 用例）；**async 版已实现**（S3b ✅：`HttpClient::get_async/post_async`，MVP 退化同步语义，等价 get/post；事件驱动归属 **W5**） | W5/Y3 ✅ |
 | §6.1 Mutex | ✅ 已实现 | `Mutex`/`RwLock` 裸 `lock/unlock/try_*` + `lock_guard()` guard 语义（作用域尾自动解锁注入）；`Condvar::wait/notify_one/notify_all` + `Barrier`（P1–P3 ✅，`sync/module.rl` pthread extern FFI）；泛型化 + `Deref` guard + `RwLock{Read,Write}Guard` 归属 **Y4** | Y4 |
 | §6.2 Channel | ✅ 已实现 | `channel()` → `ChannelPair { tx, rx }` + `Sender::send/try_send` + `Receiver::recv/try_recv/close/iter` + **`recv_async`**（P1 ✅ + S3a ✅，`Rc<Channel>` 共享；MVP 非泛型、元素 `i64`、无界；recv_async MVP 退化阻塞语义，事件驱动归属 **W5**；泛型化/bounded/`Arc` 无锁队列归属 **Y4**） | W5/Y4 |
-| §7 时间 | ✅ 已实现（X1 补齐） | `Duration`/`Instant`（libc `clock()` extern；S2a/S2b ✅ 构造器 `seconds`/`milliseconds` + 墙钟 `Instant::now/elapsed`）；**X1 ✅（2026-08-25）**补齐 `microseconds`/`nanoseconds` 构造器 + `as_secs`/`as_millis`/`as_nanos` 读方法（u64/u128 → i64 实现，溢出未检查）+ `Instant::duration_since` + 新增 `time/system.rl` `SystemTime`（`now`/`unix_epoch`/`duration_since`，driver 注入 `__rlyeh_clock_realtime` CLOCK_REALTIME）；`from_secs_f64` 依赖 as 转换 IR（U6 规划） | X1 ✅ / U6 |
+| §7 时间 | ✅ 已实现（X1 补齐） | `Duration`/`Instant`（libc `clock()` extern；S2a/S2b ✅ 构造器 `seconds`/`milliseconds` + 墙钟 `Instant::now/elapsed`）；**X1 ✅（2026-08-25）**补齐 `microseconds`/`nanoseconds` 构造器 + `as_secs`/`as_millis`/`as_nanos` 读方法（u64/u128 → i64 实现，溢出未检查）+ `Instant::duration_since` + 新增 `time/system.rl` `SystemTime`（`now`/`unix_epoch`/`duration_since`，driver 注入 `__rlyeh_clock_realtime` CLOCK_REALTIME）；`from_secs_f64` **U6 ✅（2026-08-25）**已实现（`as` 转换 IR 落地，`(secs * 1e6) as i64` fptosi 向零截断） | X1 ✅ / U6 ✅ |
 | §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` trait + `Formatter` 已实现**（Q3 ✅，`fmt/module.rl`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`）；目标签名 `fmt(&self, f) -> Result<(), FmtError>` + Formatter 完整化归属 **X4** | X4 |
 | §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/module.rl`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）归属 **U4/X3**、标准 TOML + 解析鲁棒性归属 **X2** | U4/X2/X3 |
-| §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；目标 API（泛型 Future/事件驱动 executor/await 控制流/async 泛型递归/跨线程闭包）归属 **W1–W6**（依赖 R1 Poller） | W1–W6 |
+| §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、**W1 ✅（2026-08-25）`Future::poll` 泛型化**（关联类型 `type Output` + `cx: &mut Context` 参数，`fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>`，desugar 与手写 impl 均支持）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；**W2 ✅（2026-08-25）await 控制流图展开**（if/while/for/loop/match 内 await + 嵌套 await 提取）；**W4 ✅（2026-08-25）`future::join_all<F: Future>(Vec<F>) -> Vec<F::Output>` + `timeout<F: Future> -> Result<F::Output, TimeoutError>`**（`F::Output` 关联类型投影落地，输出泛型化不再限 i64）；**W3 ✅（2026-08-25）事件驱动 executor 两步完成**——定时器唤醒：`Context` 携带 `deadline` 槽，`block_on`/`timeout` 据此 `thread::sleep` 到唤醒时刻再轮询（非忙等）+ `future::sleep` 定时器 future；fd 事件唤醒：`Context` 携带 `fd`/`interest` 槽，`block_on` `Pending` 且 `fd>0` 时构造 `Poller`（poll(2)）注册并等待就绪（非忙等）+ `future::wait_fd(fd, interest)`**；**W5 ✅（2026-08-25）`recv_async` + `get_async` + `post_async` 真异步——`Channel` socketpair 唤醒 fd + `RecvAsync` future（`try_recv` + `cx.fd` 挂起）；`GetAsync` future（connect/写同步 + 非阻塞读响应 wait_fd 挂起，POST 带 body + Content-Length），`block_on` 泛型化返回 `F::Output`**；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；**W6 🔧（2026-08-26）泛型 async fn ✅（Part 1a）**——`async fn echo<T>(x: T) -> T` 泛型参数/返回透传到 Future 结构体 `__Fut_echo<T>`/impl `impl<T> Future`（`type Output = T`）/构造器 `fn echo<T>(...) -> __Fut_echo<T>`，独立 `block_on` 多类型实例化（i64/f64/String）；泛型 async fn 作为子 future await 暂不支持（清晰报错）；跨 await 泛型变量限具体类型（泛型参数不跨 await）；async 递归 + 跨线程闭包捕获归属 W6 Part 1b/2（依赖 R1 Poller） | W6 |
 | §11 智能指针 | ✅ 已实现 | `Box<T>`（K2，含 **`Box::leak`**（T3a ✅，返回 `*mut T` 裸指针，目标 `&'static mut T` 归属 **U5/Y5**））/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3 全覆盖：`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade`，T3b ✅ 核对）/ `Gc<T>`（K4）✅ 已实现（MVP，见 §11） | U5/Y5 |
 | §12 错误处理 | ✅ 已实现（MVP 退化） | `Option`/`Result` + `expect/unwrap_or`；**`?` 运算符**（K1 ✅）；**`IoError`/`IoErrorKind`**（M1 ✅，`io/error.rl`）+ **`Error` trait**（M2a ✅：`fn message(&self) -> String`）；`From`/`Into` 泛型 trait 声明可解析、`-> Self` 返回未支持（M2b ✅，归属 **U4**）；`Into::into()` 自动转换 + `Error::source` 归属 **Y6** | U4/Y6 |
 
@@ -273,7 +273,7 @@ impl<T> Vec<T> {
 }
 ```
 
-> **MVP 已实现（T1a ✅，`core.rl`）**：目标 API 中 `push`/`pop`/`get`/`len`/`is_empty`/`sort`/`binary_search`/`contains`/`find`/`first`/`last`/`reverse`/`swap`/`remove`/`slice` 已有 ✅。**T1a 新增**：`iter`（MVP 退化——返回元素值拷贝缓冲（快照），目标 `Iter<'_, T>` 借用迭代器规划）、`get_mut`（值拷贝，目标 `Option<&mut T>` 引用语义规划）、`sort_by`（比较器 `fn(T, T) -> i64` 三态（负/零/正），目标 `Fn(&T, &T) -> Ordering` 规划；选择排序 O(n²) 非稳定）。`iter_mut` 规划。
+> **MVP 已实现（T1a ✅，`core.rl`）**：目标 API 中 `push`/`pop`/`get`/`len`/`is_empty`/`sort`/`binary_search`/`contains`/`find`/`first`/`last`/`reverse`/`swap`/`remove`/`slice` 已有 ✅。**T1a 新增**：`iter`/`iter_mut`（**2026-08 V1 瘦指针迭代器**——`Iter<T> { data: *const T, len }` / `IterMut<T> { data: *mut T, cur, len }`：data/cur 为裸指针（V1 真实 GEP 取址 `&self.data[0]` 支持），零分配零拷贝视图；`next() -> Option<T>` 值拷贝读取并推进，`IterMut::write(x)` 经 DerefSet 写回最近 next 读取的元素（真实原槽）；编译器特判构造 `Iter::new`/`IterMut::new`；接入 for（next() 检测）与 J3 适配器；约束——迭代器持有原缓冲裸指针，迭代期间不得结构性修改 Vec（扩容 realloc 悬垂）。目标 `Iter<'_, T>` 借用迭代器（引用元素 `Option<&T>`，需 U1 引用返回 + 生命周期）仍规划）、`get_mut`（**V4 ✅ 引用语义**，2026-08-25：`Option<&mut T>`——越界检查 `i >= 0 && i < self.len` 命中 `Some(&mut self.data[i])` 原槽可变引用（V1 GEP 取址复用），调用方 `match { Some(r) => *r = x }` 写回真实槽；越界/负索引 None；二次 `get_mut` 连续写回 `*r = *r + 5`）、`sort_by`（比较器 `fn(T, T) -> i64` 三态（负/零/正），目标 `Fn(&T, &T) -> Ordering` 规划；选择排序 O(n²) 非稳定）。
 
 ### 3.2 HashMap<K, V>
 
@@ -295,7 +295,7 @@ impl<K, V> HashMap<K, V> where K: Hash + Eq {
 }
 ```
 
-> **MVP 已实现（T1c ✅，`core.rl`）**：`new`/`with_capacity`/`insert`/`get`/`remove`/`contains_key`/`len`/`is_empty`/`keys`/`values`/`clear`/`cap` 已有 ✅。**T1c 新增**：`iter`（MVP 退化——返回键缓冲，与 `keys` 同构（可配 `values()` 配对），目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（值拷贝，目标 `Option<&mut V>` 引用语义规划）。
+> **MVP 已实现（T1c ✅，`core.rl`）**：`new`/`with_capacity`/`insert`/`get`/`remove`/`contains_key`/`len`/`is_empty`/`keys`/`values`/`clear`/`cap` 已有 ✅。**T1c 新增**：`iter`（MVP 退化——返回键缓冲，与 `keys` 同构（可配 `values()` 配对），目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（**V4 ✅ 引用语义**，2026-08-25：`Option<&mut V>`——`find` 键缺失 `idx < 0` 返 None，命中 `Some(&mut self.vals[idx])` 原槽可变引用，调用方 `match { Some(r) => *r = x }` 写回真实槽（`get(2)` 读回新值 + `len()` 不变 + 他键不受影响））。
 >
 > **实现注记（Robin Hood 线性探测）**：内部为 7 槽结构——`keys`/`vals`/`states`（0=空 1=占用 2=墓碑）/`len`/`used`/`cap`（2 的幂，位掩码定位）/`dist`（每槽键探测距离数组）。`insert` 与 `grow` 重插均执行「探测 + 交换」（穷者让位），链上键距离非减；`find` 以 `dist[idx] < d` 提前终止（O(1) 判不存在，无需再哈希）。负载因子 `used/cap >= 7/8` 时翻倍扩容（较 1/2 表小一半、扩容总量减半；早退控住高负载探测）。键限 `i64`（Knuth 乘法散列）/`String`（typecheck 特判展开 djb2 内容哈希）。`grow` 重插必须交换式——纯线性重插会破坏距离不变量导致 `find` 早退假阴性。
 
@@ -322,7 +322,9 @@ impl String {
 }
 ```
 
-> **MVP 已实现（T1b ✅，`core.rl`）**：`new`/`from`/`push`/`push_str`/`len`/`split`（返回 `Vec<String>`）/`replace`/`trim`/`contains`/`starts_with`/`ends_with`/`find`/`substring`/`to_upper`/`to_lower` 已有 ✅。**T1b 新增**：`chars`（MVP 字节级——逐字节 i64 列表（字符 = 字节，与 to_upper / 索引步长 1 字节一致），目标 `Chars` 迭代器 + UTF-8 码点解码规划）、`lines`（委托 `split("\n")` 返回 `Vec<String>`，`\r\n` 行尾 `\r` 保留，目标 `Lines` 迭代器规划）、`to_uppercase`/`to_lowercase`（`to_upper`/`to_lower` 的 API 别名，ASCII 语义，Unicode 全角转换规划）。
+> **MVP 已实现（T1b ✅，`core.rl`）**：`new`/`from`/`push`/`push_str`/`len`/`split`（返回 `Vec<String>`）/`replace`/`trim`/`contains`/`starts_with`/`ends_with`/`find`/`substring`/`to_upper`/`to_lower` 已有 ✅。**T1b 新增**：`chars`（MVP 字节级——逐字节 i64 列表）、`lines`（委托 `split("\n")` 返回 `Vec<String>`）、`to_uppercase`/`to_lowercase`（API 别名，ASCII 语义）。
+>
+> **V2 ✅（2026-08-26）码点/行迭代器**：新增 `chars_iter() -> Chars`（UTF-8 码点解码——首字节定宽 1-4 + 连续字节校验，`next() -> Option<i64>` 返回**码点数值**（Rlyeh `char` 类型 codegen 仅 ASCII，用 i64 表达全 Unicode 码点）；持有 `&String` 引用 + 游标，`self.s.data[pos]` 按字节索引；实证 `"A中!"` → 65/20013/33）与 `lines_iter() -> Lines`（按 `\n`/`\r\n` 分行并剥 `\r`，`next() -> Option<String>`，尾随换行空行段对齐 split 语义；实证 `"a\nbb\r\nccc"` → 行长 1/2/3）。保留旧 `chars()->Vec<i64>`/`lines()->Vec<String>` 兼容。`trim -> &str` 目标签名需 `&str` 胖指针跨层改造（V2 规划）。
 
 ---
 
@@ -757,10 +759,11 @@ impl Duration {
     fn as_nanos(&self) -> u128;
 }
 // 实现现状（2026-08-25）：存储 micros: i64（微秒基准）；构造器 `seconds(n: i64)`/
-// `milliseconds(n: i64)` 已实现（S2a 依赖）；读方法 `secs`/`millis`/`micros`/`nanos`
-// （self，下取整）。`Instant::now`/`elapsed` 基于**墙钟**（`__rlyeh_clock_monotonic`
-// = clock_gettime CLOCK_MONOTONIC，S2b ✅，睡眠期间推进；不支持平台返回 -1 时
-// 退回 clock() CPU 时钟，恒可用）；`nanos: u64` 布局 / `from_secs_f64` / `as_*` 规划中。
+// `milliseconds(n: i64)` 已实现（S2a 依赖）；`from_secs_f64` **U6 ✅**（`(secs * 1e6) as i64`
+// fptosi 向零截断）；读方法 `secs`/`millis`/`micros`/`nanos`（self，下取整）+ X1 目标 API
+// `as_secs`/`as_millis`/`as_nanos` 别名。`Instant::now`/`elapsed` 基于**墙钟**
+// （`__rlyeh_clock_monotonic` = clock_gettime CLOCK_MONOTONIC，S2b ✅，睡眠期间推进；
+// 不支持平台返回 -1 时退回 clock() CPU 时钟，恒可用）；`nanos: u64` 布局规划中。
 
 impl Instant {
     fn now() -> Instant;
@@ -951,14 +954,22 @@ let m = toml::from_str::<HashMap<String, i64>>("{\"a\"=1,\"b\"=2}");  // 内联�
 
 ## 10. 异步运行时
 
-> **实现状态（2026-08-25）**：🔧 部分。普通函数 `async fn` / `.await` 已支持（**S1c ✅，2026-08，§10.3 状态机 desugar**：`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，支持挂起 `Poll::Pending` 与恢复，替代 L1 同步语义）；actor `async` 方法 + `.await` / `send` 为独立机制（§9，ask 同步往返）。**线程支持（S0 ✅，2026-08，§10.1）**：`Thread::start`/`join`/`current` 已实现。**睡眠（S2a ✅，2026-08，§10.1）**：`thread::sleep(Duration)`（usleep 绑定）。**并发收尾（S2b ✅，2026-08，§10.1）**：`join_all`（线程版）+ **墙钟**（clock_gettime MONOTONIC，`Instant::now/elapsed` 睡眠期间推进）。**异步基础（S1a/S1b/S2c ✅，2026-08，§10.2）**：`Poll` 枚举 + `Future` trait + `block_on` 手动轮询 + `timeout` 超时轮询已实现（MVP 退化：Output 固定 i64；timeout 返回 `Result<i64, i64>`）。下方泛型 `join_all`（Future 版）/ `timeout`（Result 版）/ `sync` 并发原语仍为规划 API。
+> **实现状态（2026-08-25）**：🔧 部分。普通函数 `async fn` / `.await` 已支持（**S1c ✅，2026-08，§10.3 状态机 desugar**：`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，支持挂起 `Poll::Pending` 与恢复，替代 L1 同步语义；**W2 ✅ 控制流图展开——if/while/for/loop/match 子块内 await + 嵌套 await 提取**）；actor `async` 方法 + `.await` / `send` 为独立机制（§9，ask 同步往返）。**线程支持（S0 ✅，2026-08，§10.1）**：`Thread::start`/`join`/`current` 已实现。**睡眠（S2a ✅，2026-08，§10.1）**：`thread::sleep(Duration)`（usleep 绑定）。**并发收尾（S2b ✅，2026-08，§10.1）**：`join_all`（线程版）+ **墙钟**（clock_gettime MONOTONIC，`Instant::now/elapsed` 睡眠期间推进）。**异步基础（S1a/S1b/S2c ✅，2026-08，§10.2）+ W1 泛型化（2026-08-25）**：`Poll` 枚举 + `Future` trait + `block_on` 手动轮询 + `timeout` 超时轮询已实现；**W1 ✅ `Future::poll` 签名对齐规划 API——关联类型 `type Output`（U2）+ `cx: &mut Context` 参数**，`async fn` desugar 与手写 `impl Future` 均经 `&mut *cx` 透传（MVP 限制：`Context` 为占位类型无唤醒方法、`Pin` 语义退化 `&mut self`）。**W4 ✅（2026-08-25）**：泛型约束 `F: Future` 已可用（`check_generic_bounds` 裸名解析修复）；**`F::Output` 关联类型投影落地**（`Type::AssocProjection` + `resolve_ast_type` 识别 `F::Output` + 实例化求值查 trait impl 关联类型）；`future::join_all<F: Future>(Vec<F>) -> Vec<F::Output>`（并发轮询直至全部 Ready，结果经 `HashMap<i64, F::Output>` 按序收集，支持 String/bool 等任意 Output）+ `timeout<F: Future>(d, &mut F) -> Result<F::Output, TimeoutError>`（替代 `Err(-1)` 退化）+ `TimeoutError` 类型（§12）。**W3 ✅ 两步（2026-08-25）事件驱动 executor**：**① 定时器唤醒**——`Context` 升级携带 `deadline` 槽（future `Pending` 时经 `&mut *cx` 写入下次唤醒截止，0 = 未设置退回忙等）；`block_on`/`timeout` 据此 `thread::sleep` 到唤醒时刻（timeout 取「future 唤醒 / 超时截止」更早者）再轮询，进程真正休眠非忙等；`future::sleep(d)` 定时器 future（`Sleep`，`let s: future::Sleep = future::sleep(d); s.await`，直接 `future::sleep(...).await` 调用 await 规划中）。**② fd 事件唤醒**——`Context` 升级携带 `fd`/`interest` 槽（future `Pending` 时可请求监听某 fd 读/写就绪，掩码 POLLIN=1/POLLOUT=4/读写=5）；`block_on` 在 `Pending` 且 `fd > 0` 时构造 `Poller`（R1 poll(2)）注册并 `poll` 等待就绪（timeout = `deadline` 剩余 ms 或 -1 无限），进程休眠等 fd 事件；`future::wait_fd(fd, interest)`（`WaitFd` future，poll(0) 检查就绪，未就绪写 `cx.fd` 并 Pending）；`timeout` 保持定时器语义（忽略 fd 请求，向后兼容）。`sync` 并发原语 / W5 真异步 `recv_async`/HTTP async 仍为规划 API。
 
 ```rlyeh
-// S1a/S1b ✅（2026-08，§10.2）：MVP 退化——关联类型 `type Output` / `Pin` / `Context`
-// 规划中（随 S1c async/await 状态机），Output 固定为 i64；`block_on` 为泛型函数
-// `block_on<T>(f: &mut T)`（实例化时按具体类型解析 poll，无约束宽松语义）。
+// S1a/S1b ✅（2026-08，§10.2）+ W1 ✅（2026-08-25）：关联类型 `type Output`（U2）与
+// `Context` 占位类型已可用；`poll` 签名对齐规划 API——`cx: &mut Context` 保留参数位
+// （`Pin<&mut Self>` 语义 MVP 退化 `&mut self`，`Context` 无唤醒方法）；
+// `block_on` 为泛型函数 `block_on<T>(f: &mut T)`（实例化时按具体类型解析 poll，
+// 无 `F: Future` 约束宽松语义）。
 trait Future {
-    fn poll(&mut self) -> Poll<i64>;
+    type Output;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>;
+}
+
+// W1：Context 占位类型（结构体须非空——`_unit` 哨兵字段）
+struct Context {
+    _unit: i64,
 }
 
 enum Poll<T> {
@@ -1049,7 +1060,7 @@ impl Builder {
 ```
 
 约束：
-- 线程函数须为顶层/模块级 `fn() -> i64`（H1 函数指针，按地址整数经 extern i64 形参传递，codegen `ptrtoint`）；闭包值跨线程捕获规划中（S3）。
+- 线程函数须为顶层/模块级 `fn() -> i64`（H1 函数指针，按地址整数经 extern i64 形参传递，codegen `ptrtoint`）；**闭包值跨线程捕获 ✅（W6，2026-08-26）**：`Thread::start(f, arg)` 接收带参闭包值对象 + 线程输入参数，跨线程按值捕获并运行（见下注）。
 - `pthread_join` 返回值槽读取 i64；Rlyeh 线程函数返回 i64 与 pthread 期望的 `void*` 同寄存器（ABI 安全）。
 - `sleep` 经 `usleep(3)`（POSIX 微秒）；`Duration` 构造器 `seconds`/`milliseconds` 见 §8。
 - **`Instant::now`/`elapsed` 基于墙钟**（S2b ✅：`__rlyeh_clock_monotonic` = clock_gettime CLOCK_MONOTONIC，睡眠期间推进——`join_all.rl` 用例断言 sleep 20ms×3 后 elapsed ≥ 20ms）；不支持平台（freebsd/windows/wasi）返回 -1 时退回 `clock()`（CPU 时钟，CLOCKS_PER_SEC=1e6，睡眠期间不推进）。
@@ -1058,20 +1069,29 @@ impl Builder {
 - **默认栈大小（S0e ✅）**：`pthread_create` 传 `attr = NULL` 使用系统默认栈——Linux（glibc）新线程默认约 8MB（受 `ulimit -s` 约束）；macOS 新线程默认约 512KB。**`thread::Builder::stack_size` 定制已实现（Y8 ✅，pthread_attr_setstacksize）**——深递归场景可显式扩栈（如 64MB），不再依赖 `ulimit -s`。
 - 线程内存模型（S0e ✅）：每线程独立栈 + 独立寄存器上下文，堆共享；共享数据须经同步原语（Mutex/Condvar/Channel）保证可见性，MVP 无内存模型排序保证，数据竞争 UB 由调用方负责（与 C 并发内存模型一致）。
 
-### 10.2 Future / Poll / block_on / timeout（S1a/S1b/S2c，2026-08 ✅）
+### 10.2 Future / Poll / block_on / timeout（S1a/S1b/S2c，2026-08 ✅；W1 泛型化 2026-08-25 ✅）
 
-异步运行时基础件（`crates/rlyeh-std/rlyeh/future.rl`，core.rl 重导出 `Future`/`Poll`/`block_on`/`timeout`）。
+异步运行时基础件（`crates/rlyeh-std/rlyeh/future.rl`，core.rl 重导出 `Future`/`Poll`/`block_on`/`timeout`/`Context`）。
 
 ```rlyeh
 // 轮询结果：Ready(值) / Pending（泛型枚举，与 Option 同构）
 enum Poll<T> { Ready(T), Pending }
 
-// Future trait：poll 推进状态机。MVP 退化——关联类型 `type Output` 不支持
-// （std-lib.md §10 标注"不可行则退化"），Output 固定为 i64；
-// `&mut self` 聚合指针传递（与 M1b 的 nio 一致）。
-trait Future { fn poll(&mut self) -> Poll<i64>; }
+// W1 ✅ / W3 ✅（2026-08-25）：Context——规划 `Context<'a>` Waker；MVP 以唤醒
+// 请求槽实现事件驱动：`deadline`（定时器唤醒截止，executor 据此休眠再轮询）+
+// `fd`/`interest`（fd 事件唤醒，executor 据此 poll(2) 等待就绪）；全 0 退回
+// 忙等（向后兼容）；`_unit` 哨兵字段（空 struct 不支持）。
+struct Context { _unit: i64, deadline: i64, fd: i64, interest: i64 }
 
-// 手动轮询：loop { match f.poll() { Ready(v) => return v, Pending => .. } }
+// Future trait：poll 推进状态机。W1 ✅（2026-08-25）签名对齐规划 API——
+// 关联类型 `type Output`（U2）声明输出类型 + `cx: &mut Context` 参数；
+// `Pin<&mut Self>` 语义 MVP 退化 `&mut self`（聚合指针传递，与 M1b 的 nio 一致）。
+trait Future {
+    type Output;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>;
+}
+
+// 手动轮询：loop { match f.poll(&mut cx) { Ready(v) => return v, Pending => .. } }
 // 泛型形态 `block_on<T>(f: &mut T)`——MVP 泛型函数调用点实例化，body 以具体
 // 类型重查，`f.poll()` 解析到用户 impl（无 `F: Future` 约束，宽松语义）；
 // 调用 `block_on(&mut fut)`，泛型实参由实参类型推断。
@@ -1088,8 +1108,8 @@ fn timeout<T>(duration: Duration, f: &mut T) -> Result<i64, i64>;
 ```
 
 约束：
-- Output 固定 i64（关联类型 / `Pin<&mut Self>` / `Context` 规划中）；`block_on`/`timeout` 无 `F: Future` 约束检查（宽松）；dyn 不可作函数参数（H4 MVP 限制），Future 对象须经 `&mut` 传泛型。
-- 用户侧：`impl Future for MyFut { fn poll(&mut self) -> Poll<i64> { ... } }` + `block_on(&mut fut)`；三轮轮询示例见 `tests/run-pass/block_on.rl`（输出 `42` / `3`）；`timeout` 成功/超时示例见 `tests/run-pass/timeout.rl`（输出 `3` / `-1`）。
+- W1 已消除 Output 固定限制（关联类型 `type Output` ✅）；`Pin<&mut Self>` 语义与 `Context` 唤醒器规划中；`block_on`/`timeout` 无 `F: Future` 约束检查（宽松）；dyn 不可作函数参数（H4 MVP 限制），Future 对象须经 `&mut` 传泛型。
+- 用户侧：`impl Future for MyFut { type Output = i64; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> { ... } }` + `block_on(&mut fut)`；三轮轮询示例见 `tests/run-pass/block_on.rl`（输出 `42` / `3`）；`timeout` 成功/超时示例见 `tests/run-pass/timeout.rl`（输出 `3` / `-1`）。
 
 ### 10.3 async fn 状态机（S1c，2026-08 ✅）
 
@@ -1119,14 +1139,15 @@ fn main() {
 状态机编号：await 段 `k` 占两个状态——`2k`（首轮询：初始化子 future 并 poll）、`2k+1`（恢复轮询：仅 poll 已存槽）；Ready 推进 `2k+2`，Pending 保存 `2k+1` 并返回 `Poll::Pending`；尾段（无 await 的最后一段）状态 `2k`，`return Poll::Ready(尾值)`；兜底 `Poll::Ready(0)` 不可达。
 
 支持范围：
-- async fn 参数限 `i64`，返回限 `i64` / `()`；顶层、非泛型、无递归。
+- async fn 返回限 `i64` / `()`；顶层、非泛型、非递归（2026-08-26 W6：**泛型 async fn ✅**（参数/返回类型透传到 Future 结构体/impl/构造器，`type Output = T`，独立 `block_on` 多类型实例化）+ **递归 async fn ✅**（struct 前向声明/两遍收集地基 + desugar 拓扑排序打破依赖环 + 递归子 future 槽 `Box<__Fut_>` 打破无限大小，自递归/多函数依赖环均支持，见 `tests/run-pass/async_rec_probe.rl`））。
 - `.await` 目标：async fn 直接调用（`g(x).await`，经子 future 槽 + `self.__fut_k = g(x)`）或带类型注解的变量（`let fut: G = mk_g(41); fut.await`，G 为 `impl Future` 的类型）。
 - await 位置：`let v = e.await;` / `e.await;`（语句）/ `return e.await;` / 块尾表达式 `e.await`。
-- 跨 await 的 `i64` 局部变量（含 await 结果）提升为结构体字段，按数据依赖拓扑排序。
+- **控制流块内 await ✅（W2）**：if/match/loop/for/while 体内 await 支持（状态机段切分按控制流图展开，段带显式后继 `next` 实现跳转/回跳，`CONT_PENDING` 汇合占位回填；表达式中间嵌套 await 经临时变量提取为独立段）。
+- 跨 await 局部变量提升为结构体字段，类型扩展到 `i64`/`f64`/`bool`/`char`/`String`（非 `i64` 需类型注解），按数据依赖拓扑排序。
 
 限制（显式报错）：
-- 控制流块内（if/match/loop 体）await 不支持（await 仅限直线代码）；表达式中间嵌套 await（如 `a.await + b.await`）不支持。
-- 递归 async fn 不支持；await 目标变量的初始化表达式仅可引用参数（不可引用跨 await 提升变量）。
+- 表达式中间嵌套 await 限可拆分形态（`a.await + b.await` 经 `extract_expr_awaits` 提取，块尾表达式含 await 需 `return`/语句形态）；控制流块尾表达式含 await 暂不支持（await 须为语句形态）。
+- 泛型 async fn 作为子 future await 暂不支持（独立 `block_on` 支持）；await 目标变量的初始化表达式仅可引用参数（不可引用跨 await 提升变量）。
 
 验收：`tests/run-pass/async-fns.{rlyeh,out}`（输出 `42`/`21`/`18`/`40`/`199`：无 await 单尾段、嵌套 await、多 await 链 + 跨段变量、语句形式 await + return await、手动 Pending 恢复跨 await）；`tests/run-pass/async_await.rl`（输出 `43`：手写状态机与 desugar 同构对照）；`tests/run-pass/manual_state_machine.rl`（输出 `43`：手写状态机轮询示例）。
 

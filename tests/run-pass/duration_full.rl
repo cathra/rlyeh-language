@@ -14,6 +14,9 @@ fn main() {
     let d3 = Duration::seconds(2);
     println(d3.as_millis()); // 2000
     println(d3.as_nanos()); // 2000000000
+    // from_secs_f64（U6 Cast IR 解锁：1.5s * 1e6 = 1500000us）
+    let d4 = Duration::from_secs_f64(1.5);
+    println(d4.micros()); // 1500000
     // duration_since：同一时刻差为 0
     let t0 = Instant::now();
     println(t0.duration_since(t0).micros()); // 0

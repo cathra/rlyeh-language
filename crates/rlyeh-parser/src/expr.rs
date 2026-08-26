@@ -654,6 +654,46 @@ impl<'src> Parser<'src> {
             return Ok(AstExpr::new(
                 ExprKind::StructCtor {
                     type_name: segments,
+                    type_args: Vec::new(),
+                    fields,
+                },
+                span,
+            ));
+        }
+        // U8：泛型结构体构造：`Pair<i64> { x: 3, y: 4 }`
+        // （lookahead：`<类型...>{` 模式，避免与 `<` 比较歧义）
+        if self.looks_like_generic_struct_ctor() {
+            self.bump(); // `<`
+            let mut type_args = Vec::new();
+            loop {
+                let t = self.parse_type()?;
+                type_args.push(t);
+                if self.eat(&Token::Comma) {
+                    continue;
+                }
+                break;
+            }
+            self.expect(&Token::Gt, "'>'")?;
+            self.bump(); // `{`
+            let mut fields = Vec::new();
+            while !self.check(&Token::RBrace) {
+                if self.at_eof() {
+                    return Err(self.unexpected("'}'"));
+                }
+                let fname = self.expect_ident()?;
+                self.expect(&Token::Colon, "':'")?;
+                let value = self.parse_expr()?;
+                fields.push((fname, value));
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+            }
+            let rbrace = self.expect(&Token::RBrace, "'}'")?;
+            let span = self.merge_span(span, rbrace.span);
+            return Ok(AstExpr::new(
+                ExprKind::StructCtor {
+                    type_name: segments,
+                    type_args,
                     fields,
                 },
                 span,
@@ -955,6 +995,38 @@ impl<'src> Parser<'src> {
             return false;
         }
         !self.peek_n(3).is_some_and(|t| t.token == Token::Colon)
+    }
+
+    /// U8：泛型结构体构造 lookahead——`Pair<i64> { ... }`。
+    ///
+    /// 当前 token 为 `<`，向前扫描到匹配的 `>`，若其后紧跟 `{` 则判定为
+    /// 结构体构造的类型实参列表（不消费 token，仅前瞻）。避免与比较运算
+    /// `a < b`（`<` 后非 `类型 > {` 模式）歧义。
+    fn looks_like_generic_struct_ctor(&self) -> bool {
+        if !self.check(&Token::Lt) {
+            return false;
+        }
+        let mut depth = 0;
+        let mut i = 0;
+        loop {
+            let Some(tok) = self.peek_n(i) else {
+                return false;
+            };
+            match tok.token {
+                Token::Lt => depth += 1,
+                Token::Gt => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return self
+                            .peek_n(i + 1)
+                            .is_some_and(|t| t.token == Token::LBrace);
+                    }
+                }
+                Token::RBrace | Token::Eof => return false,
+                _ => {}
+            }
+            i += 1;
+        }
     }
 
     /// 消费 `::`（由两个相邻 `Colon` 组成）

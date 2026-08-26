@@ -10,10 +10,11 @@ struct __Fut_f {
 }
 
 impl Future for __Fut_f {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {
             self.__fut_0 = g(41);
-            match self.__fut_0.poll() {
+            match self.__fut_0.poll(&mut *cx) {
                 Poll::Ready(__v) => {
                     self.v = __v;
                     self.state = 2;
@@ -25,7 +26,7 @@ impl Future for __Fut_f {
             }
         }
         if self.state == 1 {
-            match self.__fut_0.poll() {
+            match self.__fut_0.poll(&mut *cx) {
                 Poll::Ready(__v) => {
                     self.v = __v;
                     self.state = 2;

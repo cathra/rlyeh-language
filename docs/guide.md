@@ -342,6 +342,34 @@ fn sum_all(a: i64, b: i64, c: i64) -> Option<i64> {
 - 裸无参变体值可用：`return None;` 与 `Option::None` 等价
 - MVP 约束：`?` 用于非 Option/Result 类型报错；返回类型兼容性检查与现有 `return` 语义一致（宽松）
 
+##### `as` 数值转换（U6）
+
+`expr as T` 在可转换标量间做类型转换，数值语义与 Rust `as` 一致（向零截断 / 环绕截断）：
+
+```rlyeh
+let a = 3.7 as i64;          // 3：浮点 → 整数（fptosi 向零截断）
+let b = (-3.7) as i64;       // -3
+let c = 5 as f64;            // 5.000000：整数 → 浮点（sitofp）
+let d = 300 as i8;           // 44：整数截断（trunc，环绕）
+let e = (-300) as i8;        // -44
+let f = 300 as u8;           // 44
+let g = (-1) as u8;          // 255：负 → 无符号环绕
+let h: i8 = -1;
+let i = h as i64;            // -1：符号扩展（sext）
+let j = 5 as bool;           // true：整数 → bool（非零即真）
+let k = 0 as bool;           // false
+let l = true as i64;         // 1：bool → 整数（zext）
+let m = 'a' as i64;          // 97：char → 整数
+let n = 66 as char;          // 'B'：整数 → char
+let o = 42 as i64;           // 42：同类型零指令（恒等透传）
+```
+
+- 可转换标量：≤64 位整族（i8/u8/…/i64/u64）+ 浮点（f64/f32）+ bool + char
+- 语义映射：浮点↔整数 `fptosi`/`fptoui`/`sitofp`/`uitofp`；整数截断/扩展 `trunc`/`sext`/`zext`；整↔bool `icmp ne 0`/`zext i1`；整↔char `trunc`/`zext`；同存储恒等零指令
+- 窄化整数转换后按符号恢复 64 位槽表示（符号扩展不变量），`let a: i8 = -1; a as i64` 得 -1
+- MVP 限制：i128/u128（存储非 64 位槽）、指针/引用/聚合（struct/数组）转换保持擦除/不支持
+- 落地价值：解锁 `time::Duration::from_secs_f64`（`(secs * 1e6) as i64`，见 §9 时间模块）
+
 ##### 迭代器与适配器（J1–J3）
 
 ```rlyeh
@@ -625,7 +653,8 @@ import math::square as sq;
 > 借用规则：`&mut T` 可传给 `&T` 参数；严格可变性互斥 / 悬垂 / 别名检查（borrowck）已实现（见下）。
 > `ref` / `ref mut` 模式已实现（见下）：`match` 臂与 `let ref x = e;` 绑定变量为对匹配值的引用而非值拷贝。
 > 用户顶层函数与 std 预置根函数重名时（如自定义 `fn read` 与 std extern `read`），用户侧声明自动以 `read@shadow<N>` 内部名注册，std 模块内部裸名调用仍绑定 std 版本，用户代码绑定自身版本，互不干扰。
-> `&`/`&mut` 目标（U5 ✅）：支持变量、解引用 `&*p`/`&mut *p`（MIR 折叠直接透传指针——`&mut *b` 写回原 Box 堆地址生效）与不可变 `&expr`（任意表达式求值到临时槽取址，读语义）；`&obj.field`/`&arr[i]`（字段/索引取地址）、`&mut` 非左值目标、`&&T` 引用再取引用保持 Unsupported（字段/索引经拷贝取址语义错误，待 MIR place 概念）。
+> `&`/`&mut` 目标（U5 ✅）：支持变量、解引用 `&*p`/`&mut *p`（MIR 折叠直接透传指针——`&mut *b` 写回原 Box 堆地址生效）与不可变 `&expr`（任意表达式求值到临时槽取址，读语义）；`&&T` 引用再取引用保持 Unsupported。
+> **V1 真实取址（2026-08）**：`&obj.field` / `&arr[i]` 生成**真实槽地址**（GEP）——`&arr[i]` 经 MIR `PtrAdd`（base 指针 + index 索引，元素步长 8）计算元素地址，`&mut arr[i] = v` / `&mut obj.field = v` 经 DerefWrite **写回原字段 / 原元素**（替代 U5 的拷贝取址语义错误路径）；标量字段经 MIR `AddrOfField` 取字段槽地址，聚合字段（`FieldScalar::Ptr`，如 `Vec::data: [T; 0]`）直接透传字段指针值（地址即指针值）；索引可为运行期变量（`&arr[i]`）。配套新增 `AddrOfField`/`PtrAdd` MIR/LIR 指令 + codegen `FieldAddr`/`PtrAdd` 发射（`%p + %index` 经 inttoptr 计算地址）；DCE / MIR 内联 / borrowck / regionck 同步识别新指令（内联缺失曾导致迭代器内联副本读到未初始化栈值）。裸指针算术：`*const T + n`（n 为元素偏移，`&T` ↔ `*const T` 互视赋值后可用）。
 
 ```rlyeh
 let s = String::from("hello");
@@ -883,10 +912,12 @@ fn main() {
 ```
 
 - `async fn foo(args) -> i64` desugar 为 `struct __Fut_foo` + `impl Future for __Fut_foo` + 构造器 `fn foo(args) -> __Fut_foo`；`f(args)` 返回 future，`block_on(&mut fut)` 循环轮询直至 `Poll::Ready`。
+- **W1 ✅（2026-08-25）Future 泛型化**：`Future` trait 签名对齐规划 API——关联类型 `type Output`（U2）+ `cx: &mut Context` 参数（`fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>`）；`block_on` 内部 `let mut cx = Context { _unit: 0 };` 循环 `f.poll(&mut cx)`；desugar 状态机嵌套轮询子 future 时经 `&mut *cx` 透传（MVP 限制：`&mut cx` 引用再取引用被禁，须解引用再取址；`Context` 为占位类型无唤醒方法）。手写 `impl Future` 需同步新签名（`type Output = i64;` + cx 参数）。
 - `.await` 经状态机轮询子 future：await 段 `k` 占状态 `2k`（首轮询，初始化子 future 并 poll）/ `2k+1`（恢复轮询）；`Poll::Pending` 保存状态并返回挂起，`Poll::Ready(__v)` 推进到下一段。
 - 跨 await 的 `i64` 变量与子 future 提升为结构体字段（按数据依赖拓扑排序）。
 - 支持形式：`let v = e.await;` / `e.await;`（语句）/ `return e.await;` / 块尾表达式 `e.await`；await 目标为 async fn 直接调用或带类型注解的变量（`let fut: G = ...; fut.await`）。
-- **MVP 限制**：async fn 参数限 `i64`、返回限 `i64`/`()`；控制流块内 await 与表达式嵌套 await（`a.await + b.await`）不支持；递归 async fn 不支持。
+- **MVP 限制**：async fn 返回限 `i64`/`()`；控制流块内 await 与表达式嵌套 await（`a.await + b.await`）不支持；泛型 async fn 作为子 future await 暂不支持（独立 `block_on` 支持）。
+- **W6 ✅（2026-08-26）递归 async fn**：desugar 拓扑排序打破依赖环 + 递归环内子 future 槽用 `Box<__Fut_>` 打破无限大小（类型层两遍收集地基支持 `struct __Fut_f { sub: Box<__Fut_f> }` 自引用）；自递归与多函数依赖环均支持，见 `tests/run-pass/async_rec_probe.rl`。
 - 与 actor 机制分工：actor 方法 `.await` = ask 同步往返（§9.1）；普通 `async fn` 为独立状态机（与 actor 互不相关）。
 
 > **规划中**：泛型 `join_all`（Future 版）/ `timeout`（Result 版）；await 位于控制流块 / 表达式中间、按引用捕获（std-lib §10.3）。`sync` 并发原语（Mutex/RwLock/Condvar/Barrier/Channel，P1–P3 ✅）已实现。
@@ -1003,6 +1034,14 @@ v.first() / v.last()         // Option<T>
 v.binary_search(20)          // 最左下标，未找到 -1
 v.clear()
 for x in v { }               // 容器迭代（仅 Vec / HashMap）
+
+// V1 瘦指针迭代器（2026-08）：iter/iter_mut 零分配零拷贝视图
+let it = v.iter();           // Iter<T>：data 首元素 *const T + 剩余长度
+for x in v.iter() { }        // for 接入（next() -> Option<T>，元素值拷贝读取）
+let mut itm = v.iter_mut();  // IterMut<T>：*mut T + cur 写回目标
+itm.write(99);               // 写回最近 next 读取的元素（DerefSet 真实原槽）
+v.iter().map(|x| x * 2).collect()   // 适配器链（Iter 接收者）
+// 约束：迭代器持有原缓冲裸指针，迭代期间不得对 Vec 结构性修改（扩容 realloc 悬垂）
 ```
 
 ### 10.4 HashMap
@@ -1182,7 +1221,7 @@ extern fn gethostname(name: String, len: i64) -> i64;
 - **引用与借用**：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数类型、解引用 `*`、返回引用均已实现（G1 ✅，见 §8.1）；`&str` 只读借用视图已实现（G2 ✅：`String::as_str()` + `&str` 参数/返回/索引 + `String::from(&str)` 深拷贝，见 §10.2）；`str` 值（字符串字面量 / 绑定字面量的变量）已实现一等类型语义（方法调用 / `+` 拼接 / 内容比较自动升级为 String 对象；**String 形参位置的字面量实参自动升级**——普通 / 泛型函数、实例 / 静态方法、函数指针、`dyn Trait` 方法调用均可直接传字面量，见 §10.2）；裸指针已实现（G3 ✅：`*const T`/`*mut T` 类型 + `*p` 读写 + `&T`↔`*const T` 互视 + `*mut` 降级 `*const`，见 §8.2）；生命周期标注已实现（G4 ✅ MVP 语法接受：`<'a>` 与 `&'a T` 解析后丢弃，宽松检查）；`ref` / `ref mut` 模式已实现（G1 收尾：`match` 臂与 `let ref x = e;` 绑定变量为对匹配值的引用而非值拷贝，枚举子模式 / struct 字段 / 解引用写均可用，见 §8.1；MVP 注意——`match` 先拷贝匹配值，`ref` 绑定指向拷贝，与原变量无关）；**严格借用检查已实现**（G1 收尾，见 §8.1）：NLL 近似的借用排他性——`&mut` 与任何活跃借用互斥、多个 `&mut` 互斥、活跃可变借用期间写入被借用变量报 `BorrowConflict`（E0502/E0499）；`&mut` 要求 `let mut` 绑定报 `BorrowMutImmutable`（E0596）；局部引用逃逸函数（尾表达式 / `return` 返回 `&x` 或绑定引用变量）报 `DanglingReference`（E0597，参数来源引用允许返回）；语义有意宽松——读取被借用变量与经 `*p` 写入允许（裸指针别名合法），共享借用（多个 `&`）可共存，仅直接赋值被借用变量触发冲突；`print`/`println` 参数为引用时自动剥层打印解引用值（`println(r)` ≡ `println(*r)`）；严格生命周期验证仍规划中。
 - **闭包**：✅ 无捕获闭包已实现（H2，见 §3.2）：`|x, y| expr` desugar 为匿名函数 + 函数指针（零运行时开销），需 fn 类型上下文（fn 形参实参 / `let f: fn(..) = |..| ..` 注解绑定）驱动参数类型推断；参数模式仅支持简单标识符与 `_`；**返回闭包的函数已实现**（`fn make() -> fn(..) { |x| .. }` 尾闭包按 H2 签名检查生成函数指针）。捕获闭包已实现（H3 IIFE MVP，见 §3.2）：`(|x| body)(args)` 立即调用按值捕获（desugar 为匿名函数 + 捕获变量前置调用）。闭包值对象已实现（H5 补全，见 §3.2）：`let f = |x: i64| ..; f(..)` 绑定后反复调用（按值捕获，desugar 为捕获聚合对象 + 调用点字段读取展开；仅局部变量环境）；**参数类型规则**——有注解用注解、无注解由首次调用点实参推断（`let f = |x| x + 1; f(41);`，半注解亦可用，惰性检查）；**无捕获闭包值可作 fn 实参/返回值**（降级为函数指针 / 按 fn 签名固化）；捕获闭包值不跨函数边界；按引用捕获、`move` 所有权语义规划中。
 - **函数指针**：✅ 已实现（H1，见 §3.2）：`fn(T) -> R` 类型 + `let f = add` 函数值绑定 + `f(args)` 间接调用；函数值可作实参、返回值、重新绑定、类型注解。
-- **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。`dyn Trait` ✅ 已实现（H4，见 §3.2）：trait 对象（`dyn Trait` 类型 + `&T` 强制转换 + vtable 间接分派）；MVP 限制：trait/impl 非泛型、含 `Self` 签名方法不可经 dyn 调用。
+- **运算符**：✅ `?` 错误传播已实现（K1，见 §3.2）：`expr?` 在 Option/Result 上下文 desugar 为 `match` + `return` 早返回（`Some(__v) => __v` / `None => return Option::None`，Result 为 `Err(__e) => return Result::Err(__e)`）；支持表达式中间嵌套 `?`；裸无参变体值表达式（`return None;`）可用；`?` 用于非 Option/Result 类型报错。✅ **`as` 数值转换已实现（U6，见 §3.2）**：`expr as T` 在可转换标量间转换（数值→数值）——浮点↔整数 `fptosi`/`fptoui`/`sitofp`/`uitofp`（向零截断）、整数截断/扩展 `trunc`/`sext`/`zext`（`300 as i8`=44）、整↔bool `icmp ne 0`/`zext`（`5 as bool`=true）、整↔char（`'a' as i64`=97）、同类型零指令；范围：≤64 位整族 + 浮点 + bool + char，i128/u128 与指针/引用/聚合转换保持擦除。`dyn Trait` ✅ 已实现（H4，见 §3.2）：trait 对象（`dyn Trait` 类型 + `&T` 强制转换 + vtable 间接分派）；MVP 限制：trait/impl 非泛型、含 `Self` 签名方法不可经 dyn 调用。
 - **所有权层级**：✅ `Box<T>`（K2）与 `Rc<T>` / `Arc<T>`（K3）已实现（见 §8.3）：`Box::new` 堆分配 + `*` 解引用 + 字段/方法/索引自动剥层，嵌套装箱与赋值指针共享可用；`Rc`/`Arc` 支持 `clone`（强计数 +1 共享）、`strong_count`/`weak_count`、`downgrade`→`Weak`、`Weak::upgrade`、`try_unwrap`（`Result<T, Rc<T>>`），与 `Box` 同构剥层。无自动 drop（计数只增不减，与 `Vec`/`String` 一致）。L3 `Gc<T>`（K4）✅ 已实现（MVP，见 §8.4）：`Gc::new` 编译器内建 + `gc_region` 块（desugar 为 `rlyeh_gc_region_begin`/`rlyeh_gc_alloc`/`rlyeh_gc_escape`/`rlyeh_gc_collect`）+ 逃逸对象 root 登记 + 嵌套块存活链式提升 + 字段/方法/索引自动剥层；保守标记-清除运行时（`rlyeh-gc-runtime`，纯 `libc::malloc`/`free` 链表元数据，单线程无锁）。MVP 限制：块外对象永不回收（泄漏语义）、跨块逃逸对象引用图泄漏至程序结束、stop-the-world 非增量、递归标记；多线程/增量/write barrier 规划中。
 - **并发**：`fmt` 模块为规划；actor 的 `async` 方法 + `.await` + `send` 已实现（见 §9）；普通函数 `async fn` / `.await` 已支持（S1c ✅，见 §9.3：`async fn` desugar 为 Future 结构体 + poll 状态机 + 构造器，`block_on` 轮询驱动，支持 `Poll::Pending` 挂起与恢复）；`json` 序列化已实现（L2 ✅，见 §9.4：`json::stringify` / `json::parse::<T>`，turbofish 泛型实参；标量 / 数组 / struct / Vec / `HashMap` 序列化 + `i64` / `bool` / `String` / `HashMap` 反序列化；`Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划）。
 - **迭代器协议**：✅ J1–J3 已实现（见 §3.2 迭代器与适配器小节）：`for i in 0..<10` 数值区间、`for x in vec` / `for (k, v) in map` / `for x in arr`（数组迭代）容器迭代可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 可用（返回 `Vec<T>` 可链式）。`Iterator` trait 定义（std-lib §2.3）仍为规划 API（适配器为编译器内建 desugar，非 trait 实现）。

@@ -213,6 +213,40 @@ fn inline_stmt(
             value: map_local(value, subst, counter),
             ty: *ty,
         }),
+        // V1 取址指令（2026-08）：`&obj.field` / `&arr[i]` 真实 GEP 地址。
+        // 此前缺失分支导致内联时整条指令被 `_ => None` 丢弃，内联副本中
+        // 目标临时从未被写入，调用点读到未初始化栈垃圾值（`Vec::iter()` 内联
+        // 后 `&self.data[0]` 生成野指针）。
+        MirStmt::AddrOfField {
+            target,
+            base,
+            index,
+            ty,
+        } => Some(MirStmt::AddrOfField {
+            target: map_local(target, subst, counter),
+            base: map_local(base, subst, counter),
+            index: *index,
+            ty: *ty,
+        }),
+        MirStmt::PtrAdd {
+            target,
+            base,
+            offset,
+            elem,
+            is_str,
+        } => Some(MirStmt::PtrAdd {
+            target: map_local(target, subst, counter),
+            base: map_local(base, subst, counter),
+            offset: map_local(offset, subst, counter),
+            elem: *elem,
+            is_str: *is_str,
+        }),
+        // U6 Cast IR：源值映射到内联副本对应临时，目标类型名透传。
+        MirStmt::Cast { target, value, to } => Some(MirStmt::Cast {
+            target: map_local(target, subst, counter),
+            value: map_local(value, subst, counter),
+            to: to.clone(),
+        }),
         // 间接调用：函数指针参数映射到实参临时（`f` → 调用点已构造的 `add` 指针槽），
         // 签名类型名透传；此前缺失此分支导致内联后整个 CallIndirect 被丢弃，
         // 返回值临时从未被写入，调用点读到未初始化栈垃圾值。

@@ -1008,7 +1008,9 @@ fn test_enum_decl() {
         panic!();
     };
     assert_eq!(e.name, "Result2");
-    assert_eq!(e.generics, &["T".to_string()]);
+    assert_eq!(e.generics.len(), 1);
+    assert_eq!(e.generics[0].name, "T");
+    assert!(e.generics[0].bounds.is_empty());
     assert_eq!(e.variants.len(), 2);
     assert_eq!(e.variants[0].name, "Ok");
     assert_eq!(e.variants[0].tuple_fields.len(), 1);

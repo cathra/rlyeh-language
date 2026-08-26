@@ -6,7 +6,9 @@
 //   `__rlyeh_thread_self`，thread_builtin_ir，pthread 绑定），与 sendfile 相同
 //   架构；WASI/Windows 下注入返回 -1 的 stub（Unsupported，禁用文档化）。
 // - 线程函数须为 `fn() -> i64`（H1 函数指针值按地址整数经 extern i64 形参
-//   传入，codegen 做 ptrtoint）；闭包值跨线程捕获后续支持（S3）。
+//   传入，codegen 做 ptrtoint）；**闭包值跨线程捕获已支持（W6，2026-08-26）**：
+//   `Thread::start(f, arg)` 接收带参闭包值对象 + 线程输入参数，typecheck 特判
+//   生成线程入口 thunk + 输入对象，经 `__start_with_input` 启动。
 // - MVP 无 TLS 需求（S0e ✅）；join 返回值经 pthread_join 返回值槽读取。
 // - 默认栈大小（S0e ✅）：pthread_create attr=NULL 使用系统默认——Linux 约 8MB、
 //   macOS 约 512KB（stack_size 定制规划中）；栈溢出/数据竞争属调用方责任
@@ -21,7 +23,8 @@ struct Thread {
 impl Thread {
     // S0b：派生新线程运行 f（零参数、返回 i64），立即返回线程句柄。
     // 启动失败（pthread_create 非零）映射 IoError（M1b）。
-    // 注意：f 须为顶层/模块级函数（函数指针）；闭包值跨线程捕获后续支持。
+    // f 为顶层/模块级函数（函数指针）；闭包值跨线程捕获见 `__start_with_input`
+    // 与 typecheck 特判（`Thread::start(f, arg)`，f 为带参闭包值对象）。
     fn start(f: fn() -> i64) -> Result<thread::Thread, io::error::IoError> {
         let r = __rlyeh_thread_spawn(f, 0);
         if r < 0 {
@@ -43,6 +46,22 @@ impl Thread {
     // S0e：当前线程的 pthread id（正整数；MVP 无 TLS 需求，仅作标识）。
     fn current() -> i64 {
         __rlyeh_thread_self()
+    }
+}
+
+// W6 闭包跨线程捕获：`Thread::start(f, arg)`（f 为带参闭包值对象）特判展开的
+// 底层辅助。entry 为线程入口 thunk（`fn(i64) -> i64`，接收输入对象指针），
+// input 为线程输入聚合对象指针（含闭包捕获槽值 + arg）。Result 构造复用此处
+// std 语言层实现（typecheck 特判仅生成 thunk + 输入对象 + 调用本函数）。
+fn __start_with_input(entry_fn: fn(i64) -> i64, input: i64) -> Result<thread::Thread, io::error::IoError> {
+    let r = __rlyeh_thread_spawn(entry_fn, input);
+    if r < 0 {
+        Result::Err(IoError::new(
+            io::error::IoErrorKind::Other,
+            String::from("thread spawn failed"),
+        ))
+    } else {
+        Result::Ok(thread::Thread { tid: r })
     }
 }
 

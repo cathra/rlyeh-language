@@ -7,7 +7,8 @@ struct MyFut {
 }
 
 impl Future for MyFut {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.state += 1;
         if self.state >= 3 {
             Poll::Ready(self.state)
@@ -22,7 +23,8 @@ struct NeverFut {
 }
 
 impl Future for NeverFut {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         Poll::Pending
     }
 }
@@ -34,10 +36,10 @@ fn main() {
         Result::Ok(v) => println(v),
         Result::Err(_) => println(-1),
     }
-    // 超时路径：恒 Pending，50ms 到期返回 Err(-1)
+    // 超时路径：恒 Pending，50ms 到期返回 Err(TimeoutError)
     let mut f2 = NeverFut { dummy: 0 };
     match timeout(Duration::milliseconds(50), &mut f2) {
         Result::Ok(v) => println(v),
-        Result::Err(e) => println(e),
+        Result::Err(e) => println(e.message()),
     }
 }

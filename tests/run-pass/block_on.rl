@@ -6,7 +6,8 @@ struct MyFut {
 }
 
 impl Future for MyFut {
-    fn poll(&mut self) -> Poll<i64> {
+    type Output = i64;
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.state += 1;
         if self.state >= 3 {
             Poll::Ready(self.state)

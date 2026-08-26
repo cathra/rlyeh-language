@@ -121,6 +121,20 @@ fn touches_any(s: &LirStmt, aliases: &[&str]) -> bool {
         DerefWrite { base, value, .. } => {
             aliases.contains(&base.as_str()) || aliases.contains(&value.as_str())
         }
+        FieldAddr { target, base, .. } => {
+            aliases.contains(&target.as_str()) || aliases.contains(&base.as_str())
+        }
+        PtrAdd {
+            target, base, offset, ..
+        } => {
+            aliases.contains(&target.as_str())
+                || aliases.contains(&base.as_str())
+                || aliases.contains(&offset.as_str())
+        }
+        Cast { target, value, .. } => {
+            aliases.contains(&target.as_str())
+                || value.as_local().map(|l| aliases.contains(&l.as_str())).unwrap_or(false)
+        }
         Alloc { target, .. } => aliases.contains(&target.as_str()),
         RegionEnter { .. }
         | RegionExit { .. }
@@ -692,6 +706,16 @@ fn stmt_used_locals(st: &LirStmt) -> Vec<&String> {
             out.push(base);
             out.push(value);
         }
+        LirStmt::FieldAddr { target, base, .. } => {
+            out.push(target);
+            out.push(base);
+        }
+        LirStmt::PtrAdd { target, base, offset, .. } => {
+            out.push(target);
+            out.push(base);
+            out.push(offset);
+        }
+        LirStmt::Cast { value, .. } => push_local(&mut out, value),
         LirStmt::AllocInRegion { .. }
         | LirStmt::AllocInRegionDirect { .. }
         | LirStmt::Alloc { .. }
@@ -1563,6 +1587,70 @@ impl LlvmEmitter {
                     let v = self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?;
                     body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
                 }
+            }
+            LirStmt::FieldAddr { target, base, index, ty } => {
+                // `&obj.field`（V1）：GEP 到字段槽，存字段地址（i8* 槽）——
+                // 写回经 DerefWrite(base=target) 直达原字段
+                let b = self.operand_value(
+                    &LirOperand::Local(base.clone()),
+                    LirType::Ptr,
+                    body,
+                    f,
+                )?;
+                let s = self.reg();
+                body.push_str(&format!(
+                    "  %{s} = getelementptr i8, i8* {b}, i64 {}\n",
+                    index * 8
+                ));
+                let _ = ty;
+                self.store_to(target, &s, body, f)?;
+            }
+            LirStmt::PtrAdd {
+                target,
+                base,
+                offset,
+                elem,
+                is_str,
+            } => {
+                // `ptr + n`（V1）：指针推进（元素步长 8 字节 / 字符串 1 字节）
+                let b = self.operand_value(
+                    &LirOperand::Local(base.clone()),
+                    LirType::Ptr,
+                    body,
+                    f,
+                )?;
+                let i = self.operand_value(
+                    &LirOperand::Local(offset.clone()),
+                    LirType::I64,
+                    body,
+                    f,
+                )?;
+                let addr = self.reg();
+                if *is_str {
+                    body.push_str(&format!("  %{addr} = getelementptr i8, i8* {b}, i64 {i}\n"));
+                } else {
+                    let scaled = self.reg();
+                    body.push_str(&format!("  %{scaled} = mul i64 {i}, 8\n"));
+                    body.push_str(&format!(
+                        "  %{addr} = getelementptr i8, i8* {b}, i64 %{scaled}\n"
+                    ));
+                }
+                let _ = elem;
+                self.store_to(target, &addr, body, f)?;
+            }
+            LirStmt::Cast { target, value, to } => {
+                // U6 Cast IR：数值→数值类型转换（`expr as T`）
+                // 源存储类型从类型表查询（I64/F64/Bool/Char）
+                let src = match value {
+                    LirOperand::Local(l) => local_type(f, l),
+                    LirOperand::Int(_) => LirType::I64,
+                    LirOperand::Float(_) => LirType::F64,
+                    LirOperand::Bool(_) => LirType::Bool,
+                    _ => LirType::I64,
+                };
+                let v = self.operand_value(value, src, body, f)?;
+                let r = self.emit_cast(&v, src, to, body);
+                self.store_to(target, &r, body, f)?;
             }
             LirStmt::AddrOf {
                 target,
@@ -2562,6 +2650,27 @@ impl LlvmEmitter {
         let aty = local_type(f, arg);
         let fmt = self.emit_fmt_global(&builtin_fmt(aty, newline))?;
         match aty {
+            // &str 胖指针（StrFat `{data, len}`）：用 `%.*s` 长度限定打印内容。
+            // 读槽 0（data 指针）+ 槽 1（len），对齐 String 对象前两槽布局。
+            LirType::StrFat => {
+                let data_p = self.reg();
+                body.push_str(&format!(
+                    "  %{data_p} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{arg}.addr, i32 0, i32 0\n"
+                ));
+                let data_v = self.reg();
+                body.push_str(&format!("  %{data_v} = load i8*, i8** %{data_p}\n"));
+                let len_p = self.reg();
+                body.push_str(&format!(
+                    "  %{len_p} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{arg}.addr, i32 0, i32 1\n"
+                ));
+                let len_v = self.reg();
+                body.push_str(&format!("  %{len_v} = load i64, i64* %{len_p}\n"));
+                let len32 = self.reg();
+                body.push_str(&format!("  %{len32} = trunc i64 %{len_v} to i32\n"));
+                let nl = if newline { "\\n" } else { "" };
+                let fmt = self.emit_fmt_global(&format!("%.*s{nl}"))?;
+                emit_out(body, &fmt, &format!(", i32 %{len32}, i8* %{data_v}"));
+            }
             LirType::Str | LirType::I64 | LirType::F64 | LirType::Ptr => {
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;
                 emit_out(body, &fmt, &format!(", {} {v}", llvm_type(aty)?));
@@ -2675,6 +2784,103 @@ impl LlvmEmitter {
     }
 
     /// 将寄存器值按目标变量的类型存储到其槽（`target` 为 `Unit` 时忽略）。
+    /// U6 Cast IR：数值→数值类型转换指令发射（`expr as T`）。
+    /// 源值 `v`（已加载）的存储类型为 `src`（I64/F64/Bool/Char），
+    /// 目标为 `to` 类型名。返回结果寄存器名，指令追加到 `body`。
+    fn emit_cast(&mut self, v: &str, src: LirType, to: &str, body: &mut String) -> String {
+        let (bits, signed, store) = parse_cast_target(to);
+        // bool 目标的源规整一律按有符号（fptosi）——icmp ne 只关心非零，
+        // 避免 fptoui 对负浮点的 UB
+        let signed = signed || store == LirType::Bool;
+        // 1) 源规整到 i64（浮点源例外：若目标为浮点则恒等透传，否则 fptosi/fptoui）
+        // 注意：`i64v` 统一为带 `%` 的操作数文本（后续指令直接内插）
+        let i64v: String = match src {
+            LirType::F64 => {
+                if store == LirType::F64 {
+                    // 浮点恒等（f32/f64 存储统一 64 位槽）：fadd 0.0 制造裸寄存器
+                    return self.bare_reg(v, LirType::F64, body);
+                }
+                let r = self.reg();
+                if signed {
+                    body.push_str(&format!("  %{r} = fptosi double {v} to i64\n"));
+                } else {
+                    body.push_str(&format!("  %{r} = fptoui double {v} to i64\n"));
+                }
+                format!("%{r}")
+            }
+            LirType::Bool => {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = zext i1 {v} to i64\n"));
+                format!("%{r}")
+            }
+            LirType::Char => {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = zext i8 {v} to i64\n"));
+                format!("%{r}")
+            }
+            // 整数源直通（64 位槽值已保持符号扩展不变量）
+            _ => v.to_string(),
+        };
+        // 2) 按目标语义类型发射
+        match store {
+            LirType::F64 => {
+                let r = self.reg();
+                if signed {
+                    body.push_str(&format!("  %{r} = sitofp i64 {i64v} to double\n"));
+                } else {
+                    body.push_str(&format!("  %{r} = uitofp i64 {i64v} to double\n"));
+                }
+                r
+            }
+            LirType::Bool => {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = icmp ne i64 {i64v}, 0\n"));
+                r
+            }
+            LirType::Char => {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = trunc i64 {i64v} to i8\n"));
+                r
+            }
+            LirType::I64 => {
+                if bits >= 64 {
+                    // 恒等（目标位宽 ≥64 或同存储）：add 0 制造裸寄存器
+                    self.bare_reg(&i64v, LirType::I64, body)
+                } else {
+                    // 窄化：trunc to iN + sext/zext 回 i64（保持符号扩展不变量）
+                    let t = self.reg();
+                    let e = self.reg();
+                    body.push_str(&format!("  %{t} = trunc i64 {i64v} to i{bits}\n"));
+                    if signed {
+                        body.push_str(&format!("  %{e} = sext i{bits} %{t} to i64\n"));
+                    } else {
+                        body.push_str(&format!("  %{e} = zext i{bits} %{t} to i64\n"));
+                    }
+                    e
+                }
+            }
+            _ => i64v,
+        }
+    }
+
+    /// 将操作数文本转换为裸寄存器名：已是寄存器（`%r`）则剥离 `%`，
+    /// 常量则产一条恒等运算（`add/fadd 0`）制造寄存器——供 `store_to` 使用。
+    fn bare_reg(&mut self, v: &str, ty: LirType, body: &mut String) -> String {
+        if let Some(rest) = v.strip_prefix('%') {
+            return rest.to_string();
+        }
+        let r = self.reg();
+        match ty {
+            LirType::F64 => {
+                body.push_str(&format!("  %{r} = fadd double {v}, 0.000000e+00\n"));
+            }
+            _ => {
+                body.push_str(&format!("  %{r} = add i64 {v}, 0\n"));
+            }
+        }
+        r
+    }
+
     fn store_to(
         &mut self,
         target: &str,
@@ -2836,6 +3042,8 @@ fn field_scalar_llvm(ty: FieldScalar) -> Result<&'static str, CodegenError> {
         FieldScalar::Bool => "i1",
         FieldScalar::Char => "i8",
         FieldScalar::Str => "i8*",
+        // &str 胖指针：`{ i8*, i64 }`（data 指针 + 长度）双槽
+        FieldScalar::StrFat => "{ i8*, i64 }",
         FieldScalar::Ptr => "i8*",
     })
 }
@@ -2848,6 +3056,7 @@ fn field_scalar_lir(ty: FieldScalar) -> LirType {
         FieldScalar::Bool => LirType::Bool,
         FieldScalar::Char => LirType::Char,
         FieldScalar::Str => LirType::Str,
+        FieldScalar::StrFat => LirType::StrFat,
         FieldScalar::Ptr => LirType::Ptr,
     }
 }
@@ -2860,6 +3069,8 @@ fn llvm_type(ty: LirType) -> Result<&'static str, CodegenError> {
         LirType::Bool => Ok("i1"),
         LirType::Char => Ok("i8"),
         LirType::Str => Ok("i8*"),
+        // &str 胖指针：`{ i8*, i64 }`（data 指针 + 长度）双槽
+        LirType::StrFat => Ok("{ i8*, i64 }"),
         LirType::Ptr => Ok("i8*"),
         LirType::Unit => Err(CodegenError::UnsupportedType {
             ty,
@@ -2930,6 +3141,7 @@ fn binary_instr(op: &rlyeh_lir::HirBinaryOp, ty: LirType) -> Result<&'static str
 fn builtin_fmt(ty: LirType, newline: bool) -> String {
     let base = match ty {
         LirType::Str => "%s",
+        LirType::StrFat => "%p",
         LirType::I64 => "%lld",
         LirType::F64 => "%f",
         LirType::Char => "%c",
@@ -2972,4 +3184,24 @@ fn local_type(f: &LirFunction, name: &str) -> LirType {
         .find(|(n, _)| n == name)
         .map(|(_, t)| *t)
         .unwrap_or(LirType::I64)
+}
+
+/// U6 Cast IR 目标类型元信息解析：`(语义位宽, 有符号, LIR 存储类型)`。
+/// 整族（≤64 位）存储统一 64 位槽（I64）；`f32`/`f64` 存储 F64 槽；
+/// `bool`→Bool（i1）；`char`→Char（i8，无符号）。
+fn parse_cast_target(to: &str) -> (u32, bool, LirType) {
+    match to {
+        "bool" => (1, false, LirType::Bool),
+        "char" => (8, false, LirType::Char),
+        "f32" | "f64" => (64, true, LirType::F64),
+        "u8" => (8, false, LirType::I64),
+        "u16" => (16, false, LirType::I64),
+        "u32" => (32, false, LirType::I64),
+        "u64" | "usize" => (64, false, LirType::I64),
+        "i8" => (8, true, LirType::I64),
+        "i16" => (16, true, LirType::I64),
+        "i32" => (32, true, LirType::I64),
+        // i64 / isize / 其余整数目标
+        _ => (64, true, LirType::I64),
+    }
 }

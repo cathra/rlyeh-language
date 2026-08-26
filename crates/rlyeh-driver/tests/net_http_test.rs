@@ -166,7 +166,8 @@ fn main() {{
     assert_eq!(out, "404\n");
 }
 
-/// S3b：`HttpClient::get_async`（MVP 同步语义，等价 get）。
+/// W5：`HttpClient::get_async` 真异步——返回 `GetAsync` future，`block_on` 驱动
+/// 读响应（connect/写同步，读经 wait_fd 挂起），返回 `Response`。
 #[test]
 fn http_get_async() {
     let port = mock_server(|head, _body| {
@@ -177,13 +178,10 @@ fn http_get_async() {
         r#"
 fn main() {{
     let mut c = HttpClient::new();
-    match c.get_async(String::from("http://127.0.0.1:{port}/async")) {{
-        Result::Ok(r) => {{
-            println(r.status());
-            println(r.text());
-        }},
-        Result::Err(e) => println(-1),
-    }}
+    let mut g = c.get_async(String::from("http://127.0.0.1:{port}/async"));
+    let r = block_on(&mut g);
+    println(r.status());
+    println(r.text());
 }}
 "#
     );
@@ -191,7 +189,8 @@ fn main() {{
     assert_eq!(out, "200\nasync1\n");
 }
 
-/// S3b：`HttpClient::post_async`（MVP 同步语义，等价 post）。
+/// W5：`HttpClient::post_async` 真异步——返回 `GetAsync` future（POST 带 body），
+/// `block_on` 驱动读响应，返回 `Response`。
 #[test]
 fn http_post_async() {
     let port = mock_server(|head, body| {
@@ -203,13 +202,10 @@ fn http_post_async() {
         r#"
 fn main() {{
     let mut c = HttpClient::new();
-    match c.post_async(String::from("http://127.0.0.1:{port}/async-submit"), String::from("rlyeh-post-async")) {{
-        Result::Ok(r) => {{
-            println(r.status());
-            println(r.text());
-        }},
-        Result::Err(e) => println(-1),
-    }}
+    let mut g = c.post_async(String::from("http://127.0.0.1:{port}/async-submit"), String::from("rlyeh-post-async"));
+    let r = block_on(&mut g);
+    println(r.status());
+    println(r.text());
 }}
 "#
     );

@@ -132,14 +132,14 @@ fn main() {
     let s = String::from("  Rlyeh Lang  ");
     let t = s.trim().to_upper();          // "RLYEH LANG"
     println(t);
-    println(t.substring(0, 4));           // RLYEH
-    println(t.find(String::from("LANG"))); // 5
-    println(t.contains(String::from("ETA"))); // true
+    println(t.substring(0, 4));           // RLYE（半开 [0,4) = 前 4 字节）
+    println(t.find(String::from("LANG"))); // 6：匹配起始索引
+    println(t.contains(String::from("ETA"))); // false：无 ETA 子串
     let q = String::from("  Hi, Rlyeh!  ");
-    println(q.trim().to_lower().substring(0, 5)); // "hi, z"（5 字节）
+    println(q.trim().to_lower().substring(0, 5)); // "hi, r"（半开，前 5 字节）
     println(q.trim().to_lower() == String::from("hi, rlyeh!"));
 }
 "#,
     );
-    assert_eq!(out, "RLYEH LANG\nRLYEH\n5\ntrue\nhi, z\ntrue\n");
+    assert_eq!(out, "RLYEH LANG\nRLYE\n6\nfalse\nhi, r\ntrue\n");
 }

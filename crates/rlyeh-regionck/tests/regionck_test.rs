@@ -117,11 +117,13 @@ fn main() -> u32 {
 
 #[test]
 fn test_transfer_out_of_scope_region() {
-    // 区域结束后再 transfer（区域已不可见）
+    // 区域结束后再 transfer（区域名已不可见；x 须在块外定义，
+    // 因 region 块内变量块外不可见——typecheck 块级作用域）
     let src = r#"
 fn main() -> u32 {
+    let x = 1;
     region 'a {
-        let x = 1 in 'a;
+        let y = 2 in 'a;
     };
     transfer x out of 'a;
     0

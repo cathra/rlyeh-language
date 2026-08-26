@@ -209,6 +209,44 @@ pub enum MirStmt {
         /// 被指向值的标量种类
         ty: rlyeh_hir::FieldScalar,
     },
+    /// `target = &base.field`（V1）：取聚合对象字段槽地址（GEP 到字段槽，
+    /// 结果存 target 指针槽）——真实字段地址，写回经 DerefWrite(base=target)
+    /// 直达原字段（`&obj.field` / `&mut obj.field`）。
+    AddrOfField {
+        /// 目标变量（指针值）
+        target: Local,
+        /// 对象变量（聚合对象）
+        base: Local,
+        /// 字段槽位索引
+        index: usize,
+        /// 字段标量种类
+        ty: rlyeh_hir::FieldScalar,
+    },
+    /// `target = base + offset * elem_size`（V1）：裸指针算术
+    /// （元素步长：is_str→1 字节，其余→8 字节，与 IndexGet 步长规则一致）。
+    PtrAdd {
+        /// 目标变量（指针值）
+        target: Local,
+        /// 指针变量
+        base: Local,
+        /// 偏移变量（i64）
+        offset: Local,
+        /// 元素标量种类
+        elem: rlyeh_hir::FieldScalar,
+        /// 是否为字符串字符区（步长 1 字节）
+        is_str: bool,
+    },
+    /// `target = cast(value as to)`（U6 Cast IR）：
+    /// 数值→数值类型转换（`as` 关键字），codegen 按源 LIR 存储类型
+    /// 与目标语义位宽发射 `fptosi`/`sitofp`/`trunc`/`sext`/`zext`。
+    Cast {
+        /// 目标变量（转换结果）
+        target: Local,
+        /// 源值变量
+        value: Local,
+        /// 目标类型名（`Type::name()` 输出）
+        to: String,
+    },
 }
 
 /// 右值（可内联进 `Assign` 的运算树）。

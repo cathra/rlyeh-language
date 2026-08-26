@@ -91,6 +91,17 @@ pub enum Type {
     },
     /// 泛型占位
     Generic(String),
+    /// 关联类型投影（`F::Output`，W4 补全）：`base` 为被投影的基础类型
+    /// （实例化前为 `Generic("F")`，实例化后为具体类型），`assoc` 为关联类型名。
+    ///
+    /// 仅出现在泛型函数签名/body 中 `F: Trait` 约束下的 `F::Assoc` 引用；
+    /// 实例化时 base 替换为具体类型后按该类型实现的 trait 求值其关联类型。
+    AssocProjection {
+        /// 被投影的基础类型（`F::Output` 中的 `F`）
+        base: Box<Type>,
+        /// 关联类型名（`F::Output` 中的 `Output`）
+        assoc: String,
+    },
 }
 
 impl Type {
@@ -265,6 +276,7 @@ impl fmt::Display for Type {
                 }
             }
             Type::Generic(name) => write!(f, "{name}"),
+            Type::AssocProjection { base, assoc } => write!(f, "{base}::{assoc}"),
             Type::Fn(sig) => {
                 let inner = sig
                     .params
@@ -300,6 +312,9 @@ pub struct FnSignature {
 pub struct StructDef {
     /// 字段名与类型
     pub fields: Vec<(String, Type)>,
+    /// 泛型参数名（如 `Vec` 的 `["T"]`；V1 2026-08：字段访问时按接收者
+    /// 实例类型参数替换，用户代码 `Vec<Infer>.data` 等场景）
+    pub type_params: Vec<String>,
 }
 
 /// 枚举变体定义。
@@ -387,6 +402,8 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         Type::Bool => FieldScalar::Bool,
         Type::Char => FieldScalar::Char,
         Type::Str => FieldScalar::Str,
+        // &str：data 指针 + 长度双槽胖指针（V2 子区间视图，对齐 Rust fat pointer）
+        Type::Ref(inner, _) if matches!(&**inner, Type::Str) => FieldScalar::StrFat,
         // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象 / 闭包值均以指针形式存储；函数指针为指针
         Type::Ref(..)
         | Type::RawPtr(..)
