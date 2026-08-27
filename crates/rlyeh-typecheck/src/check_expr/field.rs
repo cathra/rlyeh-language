@@ -74,6 +74,13 @@ pub(super) fn check_field_access(
     };
     let mut subst = ctx.generic_subst.clone();
     for (tp, arg) in def.type_params.iter().zip(ty_args.iter()) {
+        // V3-D（2026-08-27）：实例类型参数为 `Generic` 占位（如 trait 默认方法
+        // 返回 `Take2<Self>` 时 `Self` 未实例化）时，不覆盖全局 generic_subst 的
+        // 已解析映射——否则 `self.inner`（inner: I）替换成占位 `Generic("Self")`，
+        // 方法查找 `Self::next` 匹配不到 impl。仅当实例参数为具体类型时才覆盖。
+        if matches!(arg, Type::Generic(_)) {
+            continue;
+        }
         subst.insert(tp.clone(), arg.clone());
     }
     let fty_sub = substitute(&fty, &subst);

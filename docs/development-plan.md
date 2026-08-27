@@ -66,7 +66,7 @@
 | **S** | 异步运行时 | 线程、Future/Poll/block_on、join_all/timeout/sleep、async channel/http | ✅ 已完成（13 子任务） | [`S.md`](stages/S.md) |
 | **T** | 集合与迭代器收尾 | Vec/String/HashMap API、Iterator trait、智能指针收尾 | ✅ 已完成（6 子任务） | [`T.md`](stages/T.md) |
 | **U** | 编译器地基（std 完整化前置） | 作用域栈、关联类型、泛型约束、`-> Self`、AddrOf、Cast IR、方法级泛型、泛型结构体 | ✅ U1–U8 全部完成 | [`U.md`](stages/U.md) |
-| **V** | 集合与迭代器完整化 | 借用迭代器、String 码点迭代器、Iterator 默认方法+适配器、get_mut、新集合 | 🔧 进行中（V1/V4/V5 ✅；V3 默认方法基础 ✅；V2-B/V2-E、V3-A~D 待办） | [`V.md`](stages/V.md) |
+| **V** | 集合与迭代器完整化 | 借用迭代器、String 码点迭代器、Iterator 默认方法+适配器、get_mut、新集合 | 🔧 进行中（V1 部分完成：HashMap::iter 引用迭代器/引用元素待办；V2 部分完成：chars/lines 目标签名待升级；V3 部分完成：数组/Vec 适配器走内建为语言限制；V4/V5 ✅） | [`V.md`](stages/V.md) |
 | **W** | 异步运行时完整化 | Future 泛型化、await 状态机、事件驱动 executor、join_all/timeout、recv_async、async 泛型/递归 | ✅ W1–W6 全部完成 | [`W.md`](stages/W.md) |
 | **X** | 序列化/格式化/时间完整化 | 时间 API、标准 TOML、Deserialize trait、Formatter 完整化 | 🔧 进行中（X1 ✅；X2/X3/X4 规划） | [`X.md`](stages/X.md) |
 | **Y** | IO/网络/并发/智能指针收尾 | File API、NIO 后端、HTTP 复用、锁/Channel 泛型化、Box::leak、Error::source、UDP、stack_size | 📋 规划（Y7/Y8 ✅） | [`Y.md`](stages/Y.md) |
@@ -210,7 +210,7 @@
 | 阶段 | 主题 | 子任务（关键交付，按序） | 子任务数 | 依赖 | 状态 |
 |------|------|---------|:---:|------|------|
 | **U** | 编译器地基（std 完整化前置） | U1 作用域栈重构、U2 trait 关联类型、U3 泛型约束 where、U4 `-> Self` 返回、U5 MIR AddrOf 任意目标、U6 数值转换 Cast IR、**U7 方法级泛型参数**、**U8 泛型结构体构造 + 泛型 trait** | 8 | G、T 已知限制 | ✅ 已完成（U1–U8 全部落地；执行情况见 [`stage-u-z.md`](tasks/stage-u-z.md) 叶子文档） |
-| **V** | 集合与迭代器完整化 | V1 借用迭代器（`Iter`/`IterMut`/`Iter<'_, K, V>`）、V2 String 码点迭代器（`Chars`/`Lines`）、V3 Iterator 默认方法 + 适配器迁移、V4 `get_mut` 引用语义、V5 新集合（HashSet/BTreeMap/VecDeque） | 5 | U1/U2/U3 | 🔧 进行中（V1/V4/V5 ✅、V3 默认方法基础 ✅、V2 打印/参数 ✅；V2-B/V2-E、V3-A~D 待办，见 [`stage-u-z.md`](tasks/stage-u-z.md) 与 [`v2-str-view.md`](tasks/v2-str-view.md)/[`v3-iterator-adapters.md`](tasks/v3-iterator-adapters.md)） |
+| **V** | 集合与迭代器完整化 | V1 借用迭代器（`Iter`/`IterMut`/`Iter<'_, K, V>`）、V2 String 码点迭代器（`Chars`/`Lines`）、V3 Iterator 默认方法 + 适配器迁移、V4 `get_mut` 引用语义、V5 新集合（HashSet/BTreeMap/VecDeque） | 5 | U1/U2/U3 | 🔧 进行中（**V4/V5 ✅**；**V1 部分**——Vec::iter/iter_mut ✅，HashMap::iter 引用迭代器/引用元素待办；**V2 部分**——StrFat 视图 + chars_iter/lines_iter ✅，chars/lines 目标签名待升级（需 char 类型）；**V3 部分**——Iterator::Item + 自定义迭代器适配器惰性化 ✅，数组/Vec 适配器走内建为语言限制；见 [`v2-str-view.md`](tasks/v2-str-view.md)/[`v3-iterator-adapters.md`](tasks/v3-iterator-adapters.md)/[`stage-u-z.md`](tasks/stage-u-z.md)） |
 | **W** | 异步运行时完整化 | W1 Future 泛型化（Output/Pin/Context）、W2 await 状态机扩展（控制流/表达式嵌套/引用跨 await）、W3 事件驱动 executor（epoll/kqueue/io_uring + Future 挂起）、W4 `join_all`/`timeout` Future 版 + `TimeoutError`、W5 `recv_async`/HTTP async 真异步、W6 async 泛型/递归 + 闭包跨线程捕获 | 6 | U、R（Poller）、S1c | ✅ **全部完成（W1–W6）**（执行情况见 [`stage-u-z.md`](tasks/stage-u-z.md) W 叶子文档） |
 | **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime 完整 API、X2 标准 TOML（空格形式/`[section]`/注释/多行字符串）+ 解析鲁棒性、X3 `Deserialize` trait + Serializer/Deserializer 框架 + `JsonError`/`TomlError`、X4 Formatter 完整化（`Result<(), FmtError>`） | 4 | U3/U4、Q | 🔧 进行中（X1 ✅；X2/X3/X4 规划，见 [`stage-u-z.md`](tasks/stage-u-z.md) X 叶子文档） |
 | **Y** | IO/网络/并发/智能指针收尾 | Y1 File `open_with`/`read(&mut [u8])`/`write(&[u8])`/Metadata、Y2 NIO 高性能后端（epoll/kqueue）、Y3 HTTP 连接复用 + sendfile Windows `TransmitFile`、Y4 Mutex/RwLock guard 完整 + Channel 泛型化/bounded、Y5 `Box::leak` 目标签名、Y6 `Error::source` + `Into::into` 自动转换、Y7 UDP（`net/udp.rl`）、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 📋 规划 |

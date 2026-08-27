@@ -398,7 +398,8 @@ impl Checker {
             | ExprKind::CharLiteral(_)
             | ExprKind::BoolLiteral(_)
             | ExprKind::TimeLiteral { .. }
-            | ExprKind::Set(_) => {}
+            | ExprKind::Set(_)
+            | ExprKind::Unit => {}
             ExprKind::Block(b) => self.walk_block(b),
             ExprKind::Ident(name) => self.mark_used(name),
             ExprKind::Path(_) => {} // 模块路径，非变量引用
@@ -495,6 +496,7 @@ impl Checker {
                 receiver,
                 args,
                 method: _,
+                trait_hint: _,
             } => {
                 self.walk_expr(receiver);
                 for a in args {

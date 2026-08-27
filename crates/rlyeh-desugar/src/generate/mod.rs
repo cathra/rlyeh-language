@@ -129,6 +129,7 @@ fn poll_call(receiver: AstExpr, span: Span) -> AstExpr {
             receiver,
             method: "poll".to_string(),
             args: vec![cx_ref],
+            trait_hint: None,
         },
         span,
     )

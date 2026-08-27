@@ -22,12 +22,46 @@ pub(crate) fn check_toml_stringify(
     Ok((hir, Type::Named("String".to_string(), Vec::new())))
 }
 
+/// [section]（阶段 X / X2）：判断字段类型是否为嵌套 struct（非 Vec/HashMap/String/标量）。
+/// 用于顶层 TOML 序列化把嵌套 struct 字段输出为 `[section]` 行式子表；
+/// 亦用于反序列化（toml.rs）按 section 分派字段归入对应嵌套 struct。
+pub(crate) fn is_nested_struct_type(ctx: &TypeContext, ty: &Type) -> bool {
+    if let Type::Named(ftname, fargs) = ty {
+        if !fargs.is_empty() {
+            return false;
+        }
+        let full = ctx
+            .resolve_full_name(ftname)
+            .unwrap_or_else(|| ftname.clone());
+        if full == "Vec" || full == "HashMap" || full == "String" {
+            return false;
+        }
+        return ctx.lookup_struct(ftname).is_some();
+    }
+    false
+}
+
 pub(crate) fn toml_serialize_ast(
     ctx: &mut TypeContext,
     ty: &Type,
     arg: &AstExpr,
     span: Span,
     top_level: bool,
+) -> Result<AstExpr, TypeError> {
+    // X2（多级 [section]，2026-08-27）：`sec_path` 记录当前 [section] 路径栈
+    //（顶层嵌套 struct 字段逐层 push，section 头用 `[a.b]` 点号路径）。
+    let mut sec_path: Vec<String> = Vec::new();
+    toml_serialize_ast_path(ctx, ty, arg, span, top_level, &mut sec_path)
+}
+
+/// 带 [section] 路径栈的序列化（多级嵌套支持）。`toml_serialize_ast` 的递归内核。
+pub(crate) fn toml_serialize_ast_path(
+    ctx: &mut TypeContext,
+    ty: &Type,
+    arg: &AstExpr,
+    span: Span,
+    top_level: bool,
+    sec_path: &mut Vec<String>,
 ) -> Result<AstExpr, TypeError> {
     match ty {
         // i64 → `int_to_string(x)`（std）
@@ -87,7 +121,7 @@ pub(crate) fn toml_serialize_ast(
                     },
                     span,
                 );
-                parts.push(toml_serialize_ast(ctx, elem, &idx, span, false)?);
+                parts.push(toml_serialize_ast_path(ctx, elem, &idx, span, false, sec_path)?);
             }
             parts.push(string_from_lit_ast("]".to_string(), span));
             Ok(fold_add(parts, span))
@@ -112,6 +146,7 @@ pub(crate) fn toml_serialize_ast(
                         receiver: recv,
                         method: "push_str".to_string(),
                         args: vec![val],
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -141,6 +176,7 @@ pub(crate) fn toml_serialize_ast(
                     receiver: arg.clone(),
                     method: "len".to_string(),
                     args: Vec::new(),
+                    trait_hint: None,
                 },
                 span,
             );
@@ -186,7 +222,7 @@ pub(crate) fn toml_serialize_ast(
                 },
                 span,
             );
-            let elem_ast = toml_serialize_ast(ctx, &elem_ty, &idx, span, false)?;
+            let elem_ast = toml_serialize_ast_path(ctx, &elem_ty, &idx, span, false, sec_path)?;
             loop_stmts.push(AstStmt::Semi(push(out_id.clone(), elem_ast)));
             // __i = __i + 1
             loop_stmts.push(AstStmt::Semi(AstExpr::new(
@@ -266,6 +302,7 @@ pub(crate) fn toml_serialize_ast(
                         receiver: recv,
                         method: "push_str".to_string(),
                         args: vec![val],
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -283,7 +320,7 @@ pub(crate) fn toml_serialize_ast(
             } else {
                 mk_ident_call("json_escape".to_string(), vec![k_id.clone()], span)
             };
-            let val_ser = toml_serialize_ast(ctx, &v_ty, &v_id, span, false)?;
+            let val_ser = toml_serialize_ast_path(ctx, &v_ty, &v_id, span, false, sec_path)?;
             // `if __first > 0 { __first = 0 } else { __o.push_str(",") }`
             let first_gt_zero = AstExpr::new(
                 ExprKind::ComparisonChain {
@@ -328,7 +365,7 @@ pub(crate) fn toml_serialize_ast(
             )));
             loop_stmts.push(AstStmt::Semi(push(
                 out_id.clone(),
-                string_from_lit_ast("=".to_string(), span),
+                string_from_lit_ast(" = ".to_string(), span),
             )));
             loop_stmts.push(AstStmt::Semi(push(out_id.clone(), val_ser)));
             let for_expr = AstExpr::new(
@@ -422,20 +459,37 @@ pub(crate) fn toml_serialize_ast(
                     span,
                 )
             };
-            // 顶层：多行 `f1 = v1\nf2 = v2`（字段序 = 定义序）；嵌套：内联表 `{f1 = v1,f2 = v2}`
+            // 顶层：多行 `f1 = v1\nf2 = v2`（字段序 = 定义序）；嵌套：内联表 `{f1 = v1,f2 = v2}`。
+            // X2（2026-08-27）：标准 TOML `key = value`（`=` 两侧空格）；顶层嵌套 struct
+            // 字段输出标准 `[section]` 行式子表（`\n[point]\nx = 7\ny = 9`）。
             let mut parts = if top_level {
                 Vec::new()
             } else {
                 vec![string_from_lit_ast("{".to_string(), span)]
             };
             for (i, (fname, fty_ast)) in def.fields.iter().enumerate() {
-                if i > 0 {
-                    let sep = if top_level { "\n" } else { "," };
-                    parts.push(string_from_lit_ast(sep.to_string(), span));
+                // 顶层 + 字段为嵌套 struct（非 Vec/HashMap/String）→ [section] 行式
+                let is_section = top_level && is_nested_struct_type(&*ctx, fty_ast);
+                if is_section {
+                    // 多级路径：`[a.b]`（递归 push 父字段名，section 头用点号路径）
+                    sec_path.push(fname.clone());
+                    parts.push(string_from_lit_ast(
+                        format!("\n[{}]\n", sec_path.join(".")),
+                        span,
+                    ));
+                    let farg = field_arg(fname);
+                    parts.push(toml_serialize_ast_path(ctx, fty_ast, &farg, span, true, sec_path)?);
+                    sec_path.pop();
+                } else {
+                    if i > 0 {
+                        let sep = if top_level { "\n" } else { "," };
+                        parts.push(string_from_lit_ast(sep.to_string(), span));
+                    }
+                    // X2（2026-08-27）：标准 TOML `key = value`（`=` 两侧空格）
+                    parts.push(string_from_lit_ast(format!("{fname} = "), span));
+                    let farg = field_arg(fname);
+                    parts.push(toml_serialize_ast_path(ctx, fty_ast, &farg, span, false, sec_path)?);
                 }
-                parts.push(string_from_lit_ast(format!("{fname}="), span));
-                let farg = field_arg(fname);
-                parts.push(toml_serialize_ast(ctx, fty_ast, &farg, span, false)?);
             }
             if !top_level {
                 parts.push(string_from_lit_ast("}".to_string(), span));

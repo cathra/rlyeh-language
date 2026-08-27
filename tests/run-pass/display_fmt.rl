@@ -1,24 +1,23 @@
-// 阶段 Q3 验收：Display / Debug trait + Formatter（Q3a）+ 格式化引擎接入（Q3b）。
-// - Q3a：std `fmt/module.rl` 定义 `trait Display { fn fmt(&self, f: &mut Formatter) -> String }`
-//   与 `trait Debug { fn fmt_debug(&self, f: &mut Formatter) -> String }`（方法名 `fmt_debug`
-//   避免与 Display::fmt 同名冲突——MVP 方法调用按名查找 impl）；`Formatter { buf: String }`
-//   + `Formatter::new()`。MVP 签名降级：fmt 直接返回显示字符串（String 拼接模式，
-//   与 `serde::Serialize::to_json` 同构；目标 API 为 `Result<(), FmtError>`，见
-//   std-lib.md §8 注记）。
-// - Q3b：`{}` 占位符优先查 `Display` impl（存在 `fmt` 方法）→ 生成
-//   `{ let mut __fmt_q3 = Formatter::new(); x.fmt(&mut __fmt_q3) }`；`{:?}` 查 `Debug`
-//   impl（`fmt_debug`）；`dbg!` 用 Debug 格式。内建类型（i64/bool/String/&str）走内建转换。
+// 阶段 Q3 / X4 验收：Display / Debug trait + Formatter + 格式化引擎接入。
+// - Q3a/Q3b：std `fmt/module.rl` 定义 `trait Display { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> }`
+//   与 `trait Debug { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> }`（X4：`Debug::fmt_debug`
+//   改名 `Debug::fmt`，同名经 impl 查找按 trait 区分）；`Formatter { buf, fill, width, align }`
+//   + `Formatter::new()` + `write_str`/`result`。`fmt` 返回 `Result<(), FmtError>`（写缓冲 + 错误返回）。
+// - Q3b：`{}` 查 `fmt::Display::fmt`，`{:?}` 查 `fmt::Debug::fmt`；`dbg!` 用 Debug 格式。
+//   内建类型（i64/bool/String/&str）走内建转换。
 // 输出与 display_fmt.out 精确对比
 struct Point { x: i64, y: i64 }
 
 impl Display for Point {
-    fn fmt(&self, f: &mut Formatter) -> String {
-        String::from("P(") + int_to_string(self.x) + String::from(",") + int_to_string(self.y) + String::from(")")
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::FmtError> {
+        f.write_str(String::from("P(") + int_to_string(self.x) + String::from(",") + int_to_string(self.y) + String::from(")"));
+        Result::Ok(())
     }
 }
 impl Debug for Point {
-    fn fmt_debug(&self, f: &mut Formatter) -> String {
-        String::from("Point{x:") + int_to_string(self.x) + String::from(",y:") + int_to_string(self.y) + String::from("}")
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::FmtError> {
+        f.write_str(String::from("Point{x:") + int_to_string(self.x) + String::from(",y:") + int_to_string(self.y) + String::from("}"));
+        Result::Ok(())
     }
 }
 

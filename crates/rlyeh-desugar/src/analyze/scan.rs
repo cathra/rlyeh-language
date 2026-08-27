@@ -80,7 +80,8 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
         | ExprKind::StringLiteral(_)
         | ExprKind::BoolLiteral(_)
         | ExprKind::CharLiteral(_)
-        | ExprKind::TimeLiteral { .. } => Ok(()),
+        | ExprKind::TimeLiteral { .. }
+        | ExprKind::Unit => Ok(()),
         ExprKind::Set(items) | ExprKind::ArrayLit(items) => {
             for it in items {
                 scan_expr(it, uses)?;
@@ -378,6 +379,7 @@ pub(super) fn extract_expr_awaits(
             receiver,
             method,
             args,
+            trait_hint,
         } => {
             let mut as_ = Vec::new();
             for a in args {
@@ -387,6 +389,7 @@ pub(super) fn extract_expr_awaits(
                 receiver: extract_expr_awaits(ctx, out, receiver, cur_uses, first, last)?,
                 method: method.clone(),
                 args: as_,
+                trait_hint: trait_hint.clone(),
             }
         }
         ExprKind::Return(ret) => {

@@ -70,18 +70,28 @@ pub(crate) fn resolve_ast_type(
                 }
                 return Ok(Type::Generic(name.clone()));
             }
-            // W4 补全：泛型参数关联类型投影 `F::Output`（base 为当前泛型参数时）。
-            // 产出 `Type::AssocProjection`；实例化时 base 已替换为具体类型则立即
-            // 求值（查该类型的 trait impl 的关联类型），否则保留投影待实例化替换。
+            // W4/V3-A4 补全：关联类型投影 `F::Item` / `F::Output`。
+            // - base 为当前泛型参数时：产出 `Type::AssocProjection`，实例化时替换求值。
+            // - base 为已命名具体类型（如 `Range::Item`）时：立即经 `eval_assoc_projection`
+            //   查该类型的 trait impl 的关联类型求值（V3-A4）。
             if args.is_empty() {
                 if let Some((base, member)) = name.rsplit_once("::") {
-                    // base 为泛型参数：模板收集期 type_params 含 base；实例化期
-                    // `cloned.generics` 被清空（type_params=[]）但 generic_subst 含 base
-                    //（instantiate_generic_fn 克隆后解析签名），两者任一命中即视为投影。
-                    if ctx.type_params.iter().any(|p| p == base)
-                        || ctx.generic_subst.contains_key(base)
-                    {
+                    let is_generic_param = ctx.type_params.iter().any(|p| p == base)
+                        || ctx.generic_subst.contains_key(base);
+                    if is_generic_param {
+                        // base 为泛型参数：模板收集期 type_params 含 base；实例化期
+                        // `cloned.generics` 被清空（type_params=[]）但 generic_subst 含 base
+                        //（instantiate_generic_fn 克隆后解析签名），两者任一命中即视为投影。
                         return resolve_assoc_projection(ctx, base, member, span);
+                    }
+                    // base 为命名具体类型：`Range::Item` 立即求值（查 impl 的 assoc_types）。
+                    let base_full = ctx
+                        .resolve_full_name(base)
+                        .unwrap_or_else(|| base.to_string());
+                    if let Some(resolved) =
+                        eval_assoc_projection(ctx, &Type::Named(base_full, vec![]), member)
+                    {
+                        return Ok(resolved);
                     }
                 }
             }
@@ -144,6 +154,11 @@ pub(crate) fn resolve_ast_type(
             Ok(Type::Dyn(full))
         }
         AstType::Tuple(ts) => {
+            // X4：空元组 `()` → 单元类型 `Type::Unit`（`Result<(), FmtError>` 的 `()`
+            // 作为泛型实参可解析；空 tuple 值构造见 `ExprKind::Unit`）。
+            if ts.is_empty() {
+                return Ok(Type::Unit);
+            }
             let mut resolved = Vec::with_capacity(ts.len());
             for t in ts {
                 resolved.push(resolve_ast_type(ctx, t, span)?);

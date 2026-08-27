@@ -507,6 +507,22 @@ impl<T> Iter<T> {
     }
 }
 
+// V3-D2（2026-08-27）：Iter<T> 实现 Iterator trait（type Item = T），使其
+// 能调用迁移后的惰性适配器默认方法（map/filter/take 等）。inherent next
+// 优先于 trait next（方法解析），trait next 供 Iterator 语义/默认方法使用。
+impl<T> Iterator for Iter<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        let v = *self.data;
+        self.data = self.data + 1;
+        self.len = self.len - 1;
+        Option::Some(v)
+    }
+}
+
 struct IterMut<T> {
     data: *mut T,   // 下一个待读元素地址
     cur: *mut T,    // 最近 next 读取的元素地址（write 写回目标）
@@ -537,17 +553,35 @@ impl<T> IterMut<T> {
     }
 }
 
-// T2：Iterator trait（MVP 退化——目标 `type Item` 关联类型；parser/typecheck
-// 无 trait `type` 成员载体（S1a 已验证），元素类型固定 i64。自定义迭代器经
-// `impl Iterator for T { fn next(&mut self) -> Option<i64> }` 接入 for 循环
-// （check_for_iterator 检测 next() 方法，inherent 或 trait impl 均可）。
+// V3-D2（2026-08-27）：IterMut<T> 实现 Iterator trait（type Item = T）。
+impl<T> Iterator for IterMut<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        let v = *self.data;
+        self.cur = self.data;
+        self.data = self.data + 1;
+        self.len = self.len - 1;
+        Option::Some(v)
+    }
+}
+
+// T2：Iterator trait（V3-A3，2026-08-27：引入 `type Item` 关联类型替代固定 i64，
+// `next` 返回 `Option<Self::Item>`）。自定义迭代器经
+// `impl Iterator for T { type Item = i64; fn next(&mut self) -> Option<i64> }`
+// 接入 for 循环（check_for_iterator 检测 next() 方法，inherent 或 trait impl 均可）。
 // 泛型元素迭代器（如 StdinLines 返回 Option<String>）仍走方法式接入。
 trait Iterator {
-    fn next(&mut self) -> Option<i64>;
+    // 元素类型（V3-A3）：impl 提供 `type Item = <具体类型>`
+    type Item;
 
-    // ===== V3 默认方法（2026-08-26）：基于 next() 的实现，impl 未显式实现时回退
-    // （typecheck trait 默认方法机制）。MVP 元素固定 i64（目标 `type Item` 关联
-    // 类型泛型化规划中）。=====
+    fn next(&mut self) -> Option<Self::Item>;
+
+    // ===== V3 默认方法：基于 next() 的实现，impl 未显式实现时回退
+    // （typecheck trait 默认方法机制）。MVP 默认方法仍按 i64 元素实现
+    // （count/sum 数值累加、any/all 谓词），元素 i64 时与 `Self::Item` 一致。=====
 
     // 迭代器元素个数（耗尽剩余元素）
     fn count(&mut self) -> i64 {
@@ -598,6 +632,219 @@ trait Iterator {
                 }
                 Option::None => return true,
             }
+        }
+    }
+
+    // V3-B 默认方法（2026-08-27）：find / fold（MVP 元素 i64，基于 next() 实现）。
+    // `chain`/`enumerate` 需要消耗 `self` 泛型包装（`Chain<Self, U>`/`Enumerate<Self>`），
+    // 待 trait 默认方法支持消耗式 `self` 后补（见 v3-b 叶子）。
+
+    // 返回首个满足谓词的元素（未找到返回 -1；MVP 元素 i64 简化）
+    fn find(&mut self, pred: fn(i64) -> bool) -> i64 {
+        loop {
+            match self.next() {
+                Option::Some(v) => {
+                    if pred(v) {
+                        return v;
+                    }
+                }
+                Option::None => return -1,
+            }
+        }
+    }
+
+    // 归约累加：`acc = f(acc, elem)` 逐元素折叠（MVP 累加器 i64）
+    fn fold(&mut self, init: i64, f: fn(i64, i64) -> i64) -> i64 {
+        let mut acc = init;
+        loop {
+            match self.next() {
+                Option::Some(v) => acc = f(acc, v),
+                Option::None => return acc,
+            }
+        }
+    }
+
+    // ===== V3-D1 惰性适配器（2026-08-27）：消耗 self 返回包装迭代器 =====
+    // 依赖 V3-C 的 Filter/Take 包装 + V3-D 语言增强（默认方法返回泛型包装时
+    // `Self` 实例化）。MVP 元素 i64。
+
+    // filter：返回 Filter 包装（跳过不满足谓词的元素）
+    fn filter(self, pred: fn(i64) -> bool) -> Filter<Self> {
+        Filter<Self> { inner: self, pred: pred }
+    }
+
+    // take：返回 Take 包装（取前 n 个元素）
+    fn take(self, n: i64) -> Take<Self> {
+        Take<Self> { inner: self, remaining: n }
+    }
+
+    // skip：返回 Skip 包装（跳过前 n 个元素）
+    fn skip(self, n: i64) -> Skip<Self> {
+        Skip<Self> { inner: self, to_skip: n }
+    }
+
+    // collect：消耗迭代器并收集全部元素到 Vec<i64>（V3-D2）
+    fn collect(self) -> Vec<i64> {
+        let mut v: Vec<i64> = Vec::new();
+        let mut s = self;
+        loop {
+            match s.next() {
+                Option::Some(x) => v.push(x),
+                Option::None => break,
+            }
+        }
+        v
+    }
+
+    // map：消耗 self 返回 Map 包装（对元素应用变换函数）。
+    // MVP：变换返回 i64（`Map<Self, i64>`）；方法级泛型 `<B>` 在默认方法中
+    // 受限（见 v3-d2 叶子），B 固定 i64。
+    fn map(self, f: fn(i64) -> i64) -> Map<Self, i64> {
+        Map<Self, i64> { inner: self, f: f }
+    }
+
+    // enumerate：消耗 self 返回 Enumerate 包装（产出递增序号）。
+    // 依赖 V3-C 的 Enumerate<I>（MVP 元素 i64，序号即元素索引）。
+    fn enumerate(self) -> Enumerate<Self> {
+        Enumerate<Self> { inner: self, idx: 0 }
+    }
+
+    // chain：消耗 self 与另一同类型迭代器，返回 Chain 包装（前者耗尽转后者）。
+    // MVP：`other` 类型与 `Self` 相同（`Chain<Self, Self>`）；方法级泛型 `<U>`
+    // 接异类型受限（见 v3-b 叶子）。
+    fn chain(self, other: Self) -> Chain<Self, Self> {
+        Chain<Self, Self> { a: self, b: other, on_a: true }
+    }
+}
+
+// ===== V3-C 包装迭代器（2026-08-27）：惰性适配器基础设施 =====
+// 泛型包装迭代器持底层迭代器 `I` + 参数槽，`next()` 实现变换逻辑。
+// MVP 元素固定 i64（`type Item = i64`，与 V3-A3 默认方法一致）；泛型 `I::Item`
+// 投影传播待 `where I: Iterator` 泛型约束完善后泛化。
+
+// Filter<I>：跳过不满足谓词的元素
+struct Filter<I> {
+    inner: I,
+    pred: fn(i64) -> bool,
+}
+
+impl<I> Iterator for Filter<I> {
+    type Item = i64;
+    fn next(&mut self) -> Option<i64> {
+        loop {
+            match self.inner.next() {
+                Option::Some(v) => {
+                    let p = self.pred;
+                    if p(v) {
+                        return Option::Some(v);
+                    }
+                }
+                Option::None => return Option::None,
+            }
+        }
+    }
+}
+
+// Take<I>：取前 n 个元素（计数归零返回 None）
+struct Take<I> {
+    inner: I,
+    remaining: i64,
+}
+
+impl<I> Iterator for Take<I> {
+    type Item = i64;
+    fn next(&mut self) -> Option<i64> {
+        if self.remaining <= 0 {
+            return Option::None;
+        }
+        match self.inner.next() {
+            Option::Some(v) => {
+                self.remaining = self.remaining - 1;
+                Option::Some(v)
+            }
+            Option::None => Option::None,
+        }
+    }
+}
+
+// Skip<I>：跳过前 n 个元素后再产出
+struct Skip<I> {
+    inner: I,
+    to_skip: i64,
+}
+
+impl<I> Iterator for Skip<I> {
+    type Item = i64;
+    fn next(&mut self) -> Option<i64> {
+        while self.to_skip > 0 {
+            match self.inner.next() {
+                Option::Some(_) => {
+                    self.to_skip = self.to_skip - 1;
+                }
+                Option::None => return Option::None,
+            }
+        }
+        self.inner.next()
+    }
+}
+
+// Chain<A, B>：前迭代器耗尽后转后迭代器
+struct Chain<A, B> {
+    a: A,
+    b: B,
+    on_a: bool,
+}
+
+impl<A, B> Iterator for Chain<A, B> {
+    type Item = i64;
+    fn next(&mut self) -> Option<i64> {
+        if self.on_a {
+            match self.a.next() {
+                Option::Some(v) => return Option::Some(v),
+                Option::None => {
+                    self.on_a = false;
+                }
+            }
+        }
+        self.b.next()
+    }
+}
+
+// Enumerate<I>：产出递增序号（MVP 元素 i64，序号即元素索引）
+struct Enumerate<I> {
+    inner: I,
+    idx: i64,
+}
+
+impl<I> Iterator for Enumerate<I> {
+    type Item = i64;
+    fn next(&mut self) -> Option<i64> {
+        match self.inner.next() {
+            Option::Some(_) => {
+                let i = self.idx;
+                self.idx = self.idx + 1;
+                Option::Some(i)
+            }
+            Option::None => Option::None,
+        }
+    }
+}
+
+// Map<I, B>：对底层迭代器元素应用变换函数（V3-D2）。
+// MVP：变换函数 `fn(i64) -> B`，`type Item = B`；map 默认方法按 B=i64 实例化
+//（方法级泛型 `<B>` 在默认方法中受限于类型系统，见 v3-d2 叶子）。
+struct Map<I, B> {
+    inner: I,
+    f: fn(i64) -> B,
+}
+
+impl<I, B> Iterator for Map<I, B> {
+    type Item = B;
+    fn next(&mut self) -> Option<B> {
+        let f = self.f;
+        match self.inner.next() {
+            Option::Some(v) => Option::Some(f(v)),
+            Option::None => Option::None,
         }
     }
 }
@@ -1151,6 +1398,51 @@ impl Chars {
     }
 }
 
+// V2（2026-08-27）：Chars 实现 Iterator trait（`type Item = i64` 码点），使
+// `for c in s.chars_iter()` 接入 V3 迭代器框架（目标签名 `chars() -> Chars`
+// 的基础）。inherent next 优先于 trait next。
+impl Iterator for Chars {
+    type Item = i64;
+    fn next(&mut self) -> Option<i64> {
+        if self.pos >= self.len {
+            return Option::None;
+        }
+        let b0 = self.s.data[self.pos] as i64;
+        if b0 < 0x80 {
+            self.pos = self.pos + 1;
+            return Option::Some(b0);
+        } else if b0 >= 0xE0 {
+            if b0 >= 0xF0 {
+                if self.pos + 3 < self.len {
+                    let b1 = self.s.data[self.pos + 1] as i64;
+                    let b2 = self.s.data[self.pos + 2] as i64;
+                    let b3 = self.s.data[self.pos + 3] as i64;
+                    let cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+                    self.pos = self.pos + 4;
+                    return Option::Some(cp);
+                }
+            } else {
+                if self.pos + 2 < self.len {
+                    let b1 = self.s.data[self.pos + 1] as i64;
+                    let b2 = self.s.data[self.pos + 2] as i64;
+                    let cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+                    self.pos = self.pos + 3;
+                    return Option::Some(cp);
+                }
+            }
+        } else {
+            if self.pos + 1 < self.len {
+                let b1 = self.s.data[self.pos + 1] as i64;
+                let cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F);
+                self.pos = self.pos + 2;
+                return Option::Some(cp);
+            }
+        }
+        self.pos = self.pos + 1;
+        Option::Some(b0)
+    }
+}
+
 impl Lines {
     // 取下一行（不含换行符，`\r\n` 行尾的 `\r` 一并剥除）；EOF 返回 None。
     // 末行若无尾换行也返回；尾随换行后返回一个空行（对齐 split 语义）。
@@ -1178,6 +1470,41 @@ impl Lines {
             j = j + 1;
         }
         // 推进 pos：跳过换行符（若在末尾则 pos 超过 len，下次返回 None）
+        if i < self.len {
+            self.pos = i + 1;
+        } else {
+            self.pos = self.len + 1;
+        }
+        Option::Some(line)
+    }
+}
+
+// V2（2026-08-27）：Lines 实现 Iterator trait（`type Item = String` 行），使
+// `for l in s.lines_iter()` 接入 V3 迭代器框架（目标签名 `lines() -> Lines`
+// 的基础）。inherent next 优先于 trait next。
+impl Iterator for Lines {
+    type Item = String;
+    fn next(&mut self) -> Option<String> {
+        if self.pos > self.len {
+            return Option::None;
+        }
+        let mut i = self.pos;
+        while i < self.len {
+            if self.s.data[i] == 10 {
+                break;
+            }
+            i = i + 1;
+        }
+        let mut end = i;
+        if end > self.pos && self.s.data[end - 1] == 13 {
+            end = end - 1;
+        }
+        let mut line = String::with_capacity(end - self.pos);
+        let mut j = self.pos;
+        while j < end {
+            line.push_byte(self.s.data[j]);
+            j = j + 1;
+        }
         if i < self.len {
             self.pos = i + 1;
         } else {
@@ -1321,6 +1648,30 @@ fn string_to_int(s: String) -> i64 {
         result = 0 - result;
     }
     result
+}
+
+// X2（2026-08-27）：引号感知分段——按分隔符分割，但跳过双引号字符串内的分隔符
+//（值含逗号的 TOML 内联表/数组）。返回段（含原空格，调用方自行 trim）。
+fn split_quoted(s: String, delim: i64) -> Vec<String> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut start = 0;
+    let mut in_str = false;
+    let mut i = 0;
+    while i < s.len {
+        let c = s.get(i);
+        if c == 34 {
+            // 双引号切换字符串状态
+            in_str = !in_str;
+        } else if c == delim && !in_str {
+            let part = s.substring(start, i);
+            parts.push(part);
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    let last = s.substring(start, s.len);
+    parts.push(last);
+    parts
 }
 
 // ---------------------------------------------------------------------------

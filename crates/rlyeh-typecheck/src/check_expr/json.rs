@@ -156,6 +156,7 @@ pub(crate) fn json_parse_ast(
                         receiver: recv,
                         method: method.to_string(),
                         args,
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -389,6 +390,7 @@ pub(crate) fn json_parse_ast(
                         receiver: recv,
                         method: method.to_string(),
                         args,
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -658,6 +660,7 @@ pub(crate) fn check_json_to_writer(
             receiver: args[0].clone(),
             method: "write_all".to_string(),
             args: vec![ser],
+            trait_hint: None,
         },
         span,
     );
@@ -711,6 +714,7 @@ pub(crate) fn check_json_from_reader(
             receiver: args[0].clone(),
             method: "read_to_string".to_string(),
             args: Vec::new(),
+            trait_hint: None,
         },
         span,
     );
@@ -719,6 +723,7 @@ pub(crate) fn check_json_from_reader(
             receiver: read_ast,
             method: "unwrap".to_string(),
             args: Vec::new(),
+            trait_hint: None,
         },
         span,
     );

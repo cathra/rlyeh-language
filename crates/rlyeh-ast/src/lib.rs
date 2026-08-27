@@ -317,6 +317,8 @@ pub enum ExprKind {
     Path(Vec<String>),
     /// 集合字面量 `(a, b, c)`，元素可为范围或单值
     Set(Vec<AstExpr>),
+    /// 单元类型字面量 `()`（X4：`Result::Ok(())` 的 `()` 值；空 tuple）
+    Unit,
     /// 范围表达式 `a..<b` / `a...b` / `a<..b`
     Range {
         /// 下界
@@ -494,6 +496,10 @@ pub enum ExprKind {
         method: String,
         /// 实参
         args: Vec<AstExpr>,
+        /// X4：可选的 trait 提示（`fmt::Display` / `fmt::Debug`）——引擎生成
+        /// 同名 trait 方法（Display::fmt 与 Debug::fmt）的调用时，据此按 trait
+        /// 区分分派；普通方法调用为 `None`。
+        trait_hint: Option<String>,
     },
 
     /// 字段访问

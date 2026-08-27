@@ -506,6 +506,22 @@ impl TypeContext {
             .find(|d| type_matches(d, self_type) && d.methods.iter().any(|m| m.sig.name == method))
     }
 
+    /// X4：按目标类型 + trait 名查找含指定方法的 trait impl 块。
+    /// 用于同名方法分属不同 trait 时（如 `Display::fmt` 与 `Debug::fmt`），
+    /// 按 trait 名精确区分；`trait_name` 为解析后的完整符号名（如 `fmt::Display`）。
+    pub fn find_impl_for_trait_method(
+        &self,
+        self_type: &Type,
+        trait_name: &str,
+        method: &str,
+    ) -> Option<&ImplDef> {
+        self.impl_defs.iter().find(|d| {
+            d.trait_name.as_deref() == Some(trait_name)
+                && type_matches(d, self_type)
+                && d.methods.iter().any(|m| m.sig.name == method)
+        })
+    }
+
     /// V3 trait 默认方法回退（2026-08-26）：`find_impl_for_method` 找不到"实现了
     /// 该方法的 impl"时，寻找类型匹配且是 trait impl、且该 trait 声明了 `method`
     /// 默认实现的 impl。返回的 impl 用于确定 self 类型与泛型统一，方法定义

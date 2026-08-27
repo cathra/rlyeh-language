@@ -30,6 +30,157 @@ pub(crate) fn check_toml_parse(
     Ok((hir, target))
 }
 
+/// X2（[section] 完整实现，2026-08-27）：生成嵌套 struct 字段的内部字段分派链。
+/// `[point]` section 内 `x = 7` → `if __name == "x" { __p.point.x = <parse __val> }`。
+/// 遍历嵌套 struct 的字段，`__name` 匹配则递归 `toml_parse_ast` 解析 `__val` 赋值。
+fn build_inner_field_dispatch(
+    ctx: &mut TypeContext,
+    path: &[String],
+    p_id: &AstExpr,
+    name_id: &AstExpr,
+    val_id: &AstExpr,
+    sfty: &Type,
+    span: Span,
+) -> AstExpr {
+    let inner_def = match sfty {
+        Type::Named(inner_name, _) => ctx.lookup_struct(inner_name).cloned(),
+        _ => None,
+    };
+    let mut inner_chain: Option<AstExpr> = None;
+    if let Some(idef) = inner_def {
+        for (ifname, ifty) in idef.fields.iter().rev() {
+            let name_eq = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![
+                        name_id.clone(),
+                        string_from_lit_ast(ifname.clone(), span),
+                    ],
+                    operators: vec![CompareOp::Eq],
+                },
+                span,
+            );
+            let inner = inner_chain.take();
+            // 多级 target：`__p.<path[0]>.<path[1]>...<ifname>`（递归 FieldAccess）
+            let mut base = p_id.clone();
+            for seg in path {
+                base = AstExpr::new(
+                    ExprKind::FieldAccess { expr: base, field: seg.clone() },
+                    span,
+                );
+            }
+            let target = AstExpr::new(
+                ExprKind::FieldAccess { expr: base, field: ifname.clone() },
+                span,
+            );
+            // 字段值解析：`toml_parse_ast(ctx, ifty, val_id, span, false)`；
+            // 解析失败（如字段类型不受支持）回退为直接引用 `__val`（保留文本）。
+            let val_ast = match toml_parse_ast(ctx, ifty, val_id, span, false) {
+                Ok(v) => v,
+                Err(_) => val_id.clone(),
+            };
+            let then_block = AstBlock {
+                stmts: vec![AstStmt::Semi(AstExpr::new(
+                    ExprKind::Assign {
+                        target,
+                        op: AssignOp::Assign,
+                        value: val_ast,
+                    },
+                    span,
+                ))],
+                final_expr: None,
+                span,
+            };
+            inner_chain = Some(AstExpr::new(
+                ExprKind::If {
+                    cond: name_eq,
+                    then_block,
+                    else_block: inner.map(|b| AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(b),
+                        span,
+                    }),
+                },
+                span,
+            ));
+        }
+    }
+    match inner_chain {
+        Some(c) => c,
+        None => AstExpr::new(
+            ExprKind::Block(AstBlock {
+                stmts: Vec::new(),
+                final_expr: None,
+                span,
+            }),
+            span,
+        ),
+    }
+}
+
+/// X2（多级 [section]，2026-08-27）：递归生成所有嵌套 struct 的 `[section]` 分派分支。
+/// 从 `path_prefix` 出发遍历 `fields` 的嵌套 struct 字段，为每个路径（`inner`、
+/// `inner.p`）生成 `else if __cur_sec == <路径>` 分支；再递归子 struct 的嵌套字段。
+/// `else_chain` 为已构建的后续分支（自后向前），返回含本层分支的链。
+fn build_section_branches(
+    ctx: &mut TypeContext,
+    fields: &[(String, Type)],
+    path_prefix: &[String],
+    p_id: &AstExpr,
+    cur_sec_id: &AstExpr,
+    name_id: &AstExpr,
+    val_id: &AstExpr,
+    span: Span,
+    mut else_chain: Option<AstBlock>,
+) -> Option<AstBlock> {
+    for (sfname, sfty) in fields.iter().rev() {
+        if !crate::check_expr::toml_ser::is_nested_struct_type(&*ctx, sfty) {
+            continue;
+        }
+        // 当前路径 = 前缀 + 字段名
+        let mut path = path_prefix.to_vec();
+        path.push(sfname.clone());
+        // 先递归子 struct 的嵌套字段（更深路径分支）
+        if let Type::Named(inner_name, _) = sfty {
+            if let Some(idef) = ctx.lookup_struct(inner_name).cloned() {
+                else_chain = build_section_branches(
+                    ctx, &idef.fields, &path, p_id, cur_sec_id, name_id, val_id, span, else_chain,
+                );
+            }
+        }
+        // 当前路径分支：`else if __cur_sec == "inner.p" { <内部字段分派> }`
+        let path_str = path.join(".");
+        let inner_chain = build_inner_field_dispatch(ctx, &path, p_id, name_id, val_id, sfty, span);
+        let sec_eq = AstExpr::new(
+            ExprKind::ComparisonChain {
+                elements: vec![
+                    cur_sec_id.clone(),
+                    string_from_lit_ast(path_str, span),
+                ],
+                operators: vec![CompareOp::Eq],
+            },
+            span,
+        );
+        let new_if = AstExpr::new(
+            ExprKind::If {
+                cond: sec_eq,
+                then_block: AstBlock {
+                    stmts: vec![AstStmt::Semi(inner_chain)],
+                    final_expr: None,
+                    span,
+                },
+                else_block: else_chain.take(),
+            },
+            span,
+        );
+        else_chain = Some(AstBlock {
+            stmts: Vec::new(),
+            final_expr: Some(new_if),
+            span,
+        });
+    }
+    else_chain
+}
+
 pub(crate) fn toml_parse_ast(
     ctx: &mut TypeContext,
     ty: &Type,
@@ -119,6 +270,7 @@ pub(crate) fn toml_parse_ast(
                         receiver: recv,
                         method: method.to_string(),
                         args,
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -141,6 +293,7 @@ pub(crate) fn toml_parse_ast(
                                     receiver: v_id.clone(),
                                     method: "push".to_string(),
                                     args: vec![e_id],
+                                    trait_hint: None,
                                 },
                                 span,
                             )),
@@ -183,10 +336,14 @@ pub(crate) fn toml_parse_ast(
                         AstStmt::Let {
                             pattern: AstPattern::Ident(parts_name),
                             type_anno: None,
-                            init: mcall(
-                                body_id,
-                                "split",
-                                vec![string_from_lit_ast(",".to_string(), span)],
+                            // X2（2026-08-27）：数组用引号感知分段（元素含逗号字符串不分割）
+                            init: mk_ident_call(
+                                "split_quoted".to_string(),
+                                vec![
+                                    body_id,
+                                    AstExpr::new(ExprKind::IntLiteral(44), span), // ','
+                                ],
+                                span,
                             ),
                             mutable: false,
                         },
@@ -274,6 +431,7 @@ pub(crate) fn toml_parse_ast(
                         receiver: recv,
                         method: method.to_string(),
                         args,
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -347,6 +505,7 @@ pub(crate) fn toml_parse_ast(
                                     receiver: m_id.clone(),
                                     method: "insert".to_string(),
                                     args: vec![k_id, v_id],
+                                    trait_hint: None,
                                 },
                                 span,
                             )),
@@ -414,10 +573,14 @@ pub(crate) fn toml_parse_ast(
                         AstStmt::Let {
                             pattern: AstPattern::Ident(parts_name),
                             type_anno: None,
-                            init: mcall(
-                                body_id,
-                                "split",
-                                vec![string_from_lit_ast(",".to_string(), span)],
+                            // X2（2026-08-27）：HashMap 内联表用引号感知分段（值含逗号字符串不分割）
+                            init: mk_ident_call(
+                                "split_quoted".to_string(),
+                                vec![
+                                    body_id,
+                                    AstExpr::new(ExprKind::IntLiteral(44), span), // ','
+                                ],
+                                span,
                             ),
                             mutable: false,
                         },
@@ -477,6 +640,9 @@ pub(crate) fn toml_parse_ast(
             let c_name = ctx.fresh_temp();
             let name_name = ctx.fresh_temp();
             let val_name = ctx.fresh_temp();
+            let cur_sec_name = ctx.fresh_temp();
+            let cur_sec_id = AstExpr::new(ExprKind::Ident(cur_sec_name.clone()), span);
+            let cbr_name = ctx.fresh_temp();
             let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
             let body_id = AstExpr::new(ExprKind::Ident(body_name.clone()), span);
             let parts_id = AstExpr::new(ExprKind::Ident(parts_name.clone()), span);
@@ -491,6 +657,7 @@ pub(crate) fn toml_parse_ast(
                         receiver: recv,
                         method: method.to_string(),
                         args,
+                        trait_hint: None,
                     },
                     span,
                 )
@@ -559,6 +726,52 @@ pub(crate) fn toml_parse_ast(
                 ));
             }
             let if_chain = chain.expect("struct 至少一个字段");
+            // X2（[section] 完整实现，2026-08-27）：按 `__cur_sec` 分派字段——
+            // 顶层（`__cur_sec.len() == 0`）走 `if_chain`；每个嵌套 struct 字段
+            // 一个 `else if __cur_sec == "point"` 分支，内部再做该 struct 的字段分派。
+            // 仅顶层多行（非内联）需要 section 分派；内联表走原 `if_chain`。
+            let dispatch: AstExpr = if inline {
+                if_chain
+            } else {
+                // 多级 [section]：递归生成所有嵌套 struct 路径的 section 分支
+                let mut else_chain = build_section_branches(
+                    ctx, &def.fields, &[], &p_id, &cur_sec_id, &name_id, &val_id, span, None,
+                );
+                // 顶层：if __cur_sec.len() == 0 { if_chain } else { <section 分支> }
+                AstExpr::new(
+                    ExprKind::If {
+                        cond: AstExpr::new(
+                            ExprKind::ComparisonChain {
+                                elements: vec![
+                                    AstExpr::new(
+                                        ExprKind::MethodCall {
+                                            receiver: cur_sec_id.clone(),
+                                            method: "len".to_string(),
+                                            args: Vec::new(),
+                                            trait_hint: None,
+                                        },
+                                        span,
+                                    ),
+                                    AstExpr::new(ExprKind::IntLiteral(0), span),
+                                ],
+                                operators: vec![CompareOp::Eq],
+                            },
+                            span,
+                        ),
+                        then_block: AstBlock {
+                            stmts: vec![AstStmt::Semi(if_chain)],
+                            final_expr: None,
+                            span,
+                        },
+                        else_block: else_chain.take().or_else(|| Some(AstBlock {
+                            stmts: Vec::new(),
+                            final_expr: None,
+                            span,
+                        })),
+                    },
+                    span,
+                )
+            };
             // `if __c >= 0 { let __name = ...; let __val = ...; <if 链> }`
             let if_parse = AstExpr::new(
                 ExprKind::If {
@@ -578,12 +791,17 @@ pub(crate) fn toml_parse_ast(
                                 pattern: AstPattern::Ident(name_name),
                                 type_anno: None,
                                 init: mcall(
-                                    part_id.clone(),
-                                    "substring",
-                                    vec![
-                                        AstExpr::new(ExprKind::IntLiteral(0), span),
-                                        c_id.clone(),
-                                    ],
+                                    mcall(
+                                        part_id.clone(),
+                                        "substring",
+                                        vec![
+                                            AstExpr::new(ExprKind::IntLiteral(0), span),
+                                            c_id.clone(),
+                                        ],
+                                    ),
+                                    // X2（2026-08-27）：trim 剥离 `key = value` 键两侧空格
+                                    "trim",
+                                    Vec::new(),
                                 ),
                                 mutable: false,
                             },
@@ -591,23 +809,28 @@ pub(crate) fn toml_parse_ast(
                                 pattern: AstPattern::Ident(val_name),
                                 type_anno: None,
                                 init: mcall(
-                                    part_id.clone(),
-                                    "substring",
-                                    vec![
-                                        AstExpr::new(
-                                            ExprKind::Binary {
-                                                op: BinaryOp::Add,
-                                                left: c_id.clone(),
-                                                right: AstExpr::new(ExprKind::IntLiteral(1), span),
-                                            },
-                                            span,
-                                        ),
-                                        mcall(part_id.clone(), "len", Vec::new()),
-                                    ],
+                                    mcall(
+                                        part_id.clone(),
+                                        "substring",
+                                        vec![
+                                            AstExpr::new(
+                                                ExprKind::Binary {
+                                                    op: BinaryOp::Add,
+                                                    left: c_id.clone(),
+                                                    right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                                },
+                                                span,
+                                            ),
+                                            mcall(part_id.clone(), "len", Vec::new()),
+                                        ],
+                                    ),
+                                    // X2（2026-08-27）：trim 剥离 `key = value` 值两侧空格
+                                    "trim",
+                                    Vec::new(),
                                 ),
                                 mutable: false,
                             },
-                            AstStmt::Semi(if_chain),
+                            AstStmt::Semi(dispatch),
                         ],
                         final_expr: None,
                         span,
@@ -616,25 +839,84 @@ pub(crate) fn toml_parse_ast(
                 },
                 span,
             );
-            // `for __part in __parts { let __c = __part.find("="); <if 解析> }`
+            // X2（[section]，2026-08-27）：`[section]` 头检测——若 `__part` 以 `[` 开头，
+            // 提取 `[..]` 名到 `__cur_sec`（`let __cbr = __part.find("]"); __cur_sec = __part.substring(1, __cbr)`）。
+            // 仅顶层多行（非内联）需要 [section] 状态机。
+            let section_detect: Option<AstStmt> = if inline {
+                None
+            } else {
+                let set_sec = AstExpr::new(
+                    ExprKind::Assign {
+                        target: cur_sec_id.clone(),
+                        op: AssignOp::Assign,
+                        value: mcall(
+                            mcall(part_id.clone(), "substring", vec![
+                                AstExpr::new(ExprKind::IntLiteral(1), span),
+                                AstExpr::new(ExprKind::Ident(cbr_name.clone()), span),
+                            ]),
+                            "trim",
+                            Vec::new(),
+                        ),
+                    },
+                    span,
+                );
+                let inner_block = AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(cbr_name),
+                            type_anno: None,
+                            init: mcall(
+                                part_id.clone(),
+                                "find",
+                                vec![string_from_lit_ast("]".to_string(), span)],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Semi(set_sec),
+                    ],
+                    final_expr: None,
+                    span,
+                };
+                Some(AstStmt::Semi(AstExpr::new(
+                    ExprKind::If {
+                        cond: AstExpr::new(
+                            ExprKind::ComparisonChain {
+                                elements: vec![
+                                    mcall(part_id.clone(), "find", vec![string_from_lit_ast("[".to_string(), span)]),
+                                    AstExpr::new(ExprKind::IntLiteral(0), span),
+                                ],
+                                operators: vec![CompareOp::Eq],
+                            },
+                            span,
+                        ),
+                        then_block: inner_block,
+                        else_block: None,
+                    },
+                    span,
+                )))
+            };
+            // `for __part in __parts { <[section] 检测> let __c = __part.find("="); <if 解析> }`
+            let mut for_stmts = Vec::new();
+            if let Some(sd) = section_detect {
+                for_stmts.push(sd);
+            }
+            for_stmts.push(AstStmt::Let {
+                pattern: AstPattern::Ident(c_name),
+                type_anno: None,
+                init: mcall(
+                    part_id,
+                    "find",
+                    vec![string_from_lit_ast("=".to_string(), span)],
+                ),
+                mutable: false,
+            });
+            for_stmts.push(AstStmt::Semi(if_parse));
             let for_expr = AstExpr::new(
                 ExprKind::For {
                     pattern: AstPattern::Ident(part_name),
                     iterator: parts_id.clone(),
                     body: AstBlock {
-                        stmts: vec![
-                            AstStmt::Let {
-                                pattern: AstPattern::Ident(c_name),
-                                type_anno: None,
-                                init: mcall(
-                                    part_id,
-                                    "find",
-                                    vec![string_from_lit_ast("=".to_string(), span)],
-                                ),
-                                mutable: false,
-                            },
-                            AstStmt::Semi(if_parse),
-                        ],
+                        stmts: for_stmts,
                         final_expr: None,
                         span,
                     },
@@ -680,17 +962,42 @@ pub(crate) fn toml_parse_ast(
                         AstStmt::Let {
                             pattern: AstPattern::Ident(parts_name),
                             type_anno: None,
-                            init: mcall(
-                                body_id,
-                                "split",
-                                vec![string_from_lit_ast(sep.to_string(), span)],
-                            ),
+                            // X2（2026-08-27）：内联表用引号感知分段 `split_quoted`
+                            //（值含逗号的字符串不分割）；顶层多行用 `split("\n")`。
+                            init: if inline {
+                                mk_ident_call(
+                                    "split_quoted".to_string(),
+                                    vec![
+                                        body_id,
+                                        AstExpr::new(ExprKind::IntLiteral(44), span), // ','
+                                    ],
+                                    span,
+                                )
+                            } else {
+                                mcall(
+                                    body_id,
+                                    "split",
+                                    vec![string_from_lit_ast(sep.to_string(), span)],
+                                )
+                            },
                             mutable: false,
                         },
                         AstStmt::Let {
                             pattern: AstPattern::Ident(p_name),
                             type_anno: Some(AstType::Path(n.clone(), Vec::new())),
                             init: zero_ctor,
+                            mutable: true,
+                        },
+                        // X2（[section] 完整实现，2026-08-27）：`__cur_sec` 记录当前 section
+                        //（顶层为空串；`[fname]` 行设置）。for 循环内按 section 分派字段。
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(cur_sec_name),
+                            type_anno: None,
+                            init: mk_path_call(
+                                vec!["String".to_string(), "new".to_string()],
+                                Vec::new(),
+                                span,
+                            ),
                             mutable: true,
                         },
                         AstStmt::Semi(for_expr),

@@ -232,6 +232,7 @@ impl <'src> Parser<'src> {
                                 "push".to_string()
                             },
                             args,
+                            trait_hint: None,
                         },
                         span,
                     )));

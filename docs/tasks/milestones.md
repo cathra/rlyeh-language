@@ -13,7 +13,7 @@
 | **G–L** | 编译器能力补齐 | [`stage-g-l.md`](./stage-g-l.md) | 若干 | ✅ 全部完成（G1–G4、H1–H5、I、J1–J3、K1–K4、L1–L4） |
 | **M–T** | 标准库深度完善 | [`stage-m-t.md`](./stage-m-t.md) | 59 | ✅ 全部完成（M–T 各阶段） |
 | **U** | 编译器地基 | [`stage-u-z.md`](./stage-u-z.md) | 8 | ✅ 全部完成（U1–U6 + U7 方法级泛型 + U8 泛型结构体/泛型 trait） |
-| **V** | 集合与迭代器完整化 | [`stage-u-z.md`](./stage-u-z.md)（[V2](./v2-str-view.md) / [V3](./v3-iterator-adapters.md)） | 5（V3 细分为 12 子任务） | 🔧 进行中（V1/V4/V5 ✅；V3 默认方法 ✅；V2 打印/参数 ✅，子区间/API 待办） |
+| **V** | 集合与迭代器完整化 | [`stage-u-z.md`](./stage-u-z.md)（[V2](./v2-str-view.md) / [V3](./v3-iterator-adapters.md)） | 5（V3 细分为 12 子任务） | 🔧 进行中（V4/V5 ✅；V1 部分——HashMap::iter/引用元素待办；V2 部分——chars/lines 目标签名待升级；V3 部分——数组/Vec 适配器走内建为语言限制） |
 | **W** | 异步运行时完整化 | [`stage-u-z.md`](./stage-u-z.md) | 6 | ✅ 全部完成（W1–W6；**注意**：`async_if_await`/`async_neg` 运行时 poll 死循环内存暴涨已知问题待修复） |
 | **X** | 序列化/格式化/时间完整化 | [`stage-u-z.md`](./stage-u-z.md) | 4 | 🔧 进行中（X1 ✅；X2/X3/X4 规划） |
 | **Y** | IO/网络/并发/智能指针收尾 | [`stage-u-z.md`](./stage-u-z.md) | 8 | 📋 规划 |
@@ -41,8 +41,9 @@
 | 问题 | 阶段 | 状态 |
 |------|------|------|
 | `async_if_await.rl` / `async_neg.rl` 运行时 poll 死循环内存暴涨（1.2GB+） | W2 | 📋 待修复（已 `// skip:` 临时跳过） |
-| V2-B 子区间视图（trim_start/trim_end 等） | V2 | 📋 规划 |
-| V2-D 返回值/深拷贝、V2-E API 对齐 | V2 | 📋 规划 |
+| V1 `HashMap::iter` 引用迭代器 + 引用元素 `Option<&T>` | V1 | 📋 待办 |
+| V2 `chars`/`lines` 目标签名（返回 `Chars`/`Lines` 迭代器，需 char 类型） | V2 | 📋 待办（兼容保留决策） |
+| V3 数组/Vec 适配器走 trait 方法（数组非命名类型语言限制） | V3 | 📋 待办（需语言增强） |
 | X2/X3/X4、Y1–Y8 | X/Y | 📋 规划 |
 
 ---

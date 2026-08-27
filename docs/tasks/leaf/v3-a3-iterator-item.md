@@ -1,7 +1,7 @@
 # V3-A3：std — `Iterator::Item` 落地 + 各 impl 具体化
 
 > **所属任务**：[V3 Iterator 关联类型 + 适配器迁移](../v3-iterator-adapters.md)（由 V3-A 细分子任务）
-> **状态**：📋 规划
+> **状态**：✅ 已完成（`Iterator` trait 引入 `type Item` + `next -> Option<Self::Item>` + 各 impl 补 type Item，2026-08-27）
 > **风险**：中（涉及多个 impl 与全量回归）
 > **依赖**：V3-A1、V3-A2
 > **权威来源**：`core.rl`（`Iterator` trait 545 + 各 `impl Iterator`）、`std-lib.md` §2.3

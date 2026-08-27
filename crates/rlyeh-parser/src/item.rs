@@ -340,9 +340,15 @@ impl<'src> Parser<'src> {
                 return Err(self.unexpected("'}'"));
             }
             if self.check(&Token::Type) {
-                // 关联类型声明 `type Item;`（U2）
+                // 关联类型声明 `type Item;` 或 `type Item = Concrete;`（U2 / V3-A1）
                 self.bump();
                 let tname = self.expect_ident()?;
+                // V3-A1：支持可选默认具体化 `type Item = Concrete;`——默认类型
+                // 由 typecheck 消费（V3-A3），此处仅消费 `= <type>;` 语法、记录名字。
+                if self.check(&Token::Assign) {
+                    self.bump();
+                    self.parse_type()?; // 丢弃默认具体化（AST 仅记录名字，见 V3-A3）
+                }
                 self.expect(&Token::Semicolon, "';'")?;
                 types.push(tname);
                 continue;

@@ -259,7 +259,13 @@ pub(super) fn instantiate_impl_method(
             span,
         });
     };
-    let base_fn = format!("{base_name}::{}", method_def.sig.name);
+    // X4：trait impl 方法符号带 trait 区分（`Point::fmt`（Display）与
+    // `Point::fmt`（Debug）同名共存）——trait 名如 `fmt::Debug` 转为
+    // `Point::fmt__fmt::Debug`，避免同名方法符号碰撞。
+    let base_fn = match &impl_def.trait_name {
+        Some(tn) => format!("{base_name}::{}__{tn}", method_def.sig.name),
+        None => format!("{base_name}::{}", method_def.sig.name),
+    };
     let body_ast = method_def.body.clone().ok_or_else(|| TypeError::Unsupported {
         what: "无函数体的抽象方法被调用".to_string(),
         span,
@@ -307,6 +313,14 @@ pub(super) fn instantiate_impl_method(
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
     let saved_assoc = std::mem::take(&mut ctx.assoc_types);
     ctx.type_params = impl_def.type_params.clone();
+    // V3-D2（2026-08-27）：方法级泛型参数（`fn map<B>`）加入 type_params，使
+    // 方法体检查时泛型参数（如返回 `Map<Self, B>` 的 `B`）可解析（此前仅 impl
+    // 泛型参数，方法级泛型 `B` 在 body 中报 `undefined type B`）。
+    for mp in &body_ast.generics {
+        if !ctx.type_params.contains(&mp.name) {
+            ctx.type_params.push(mp.name.clone());
+        }
+    }
     ctx.generic_subst = subst.clone();
     // 关联类型映射（U2）：`Self::Item` 签名重解析 / 方法体检查时替换为
     // impl 定义的具体类型（经泛型替换）。

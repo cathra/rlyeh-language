@@ -21,7 +21,7 @@ use crate::error::DriverError;
 /// 否则用户升级工具链后旧缓存中的 IR 与新版编译器语义不一致
 /// （如 2026-08-24 发布级优化：calloc 清零 + clang -O2/-O3 改动、push_str
 /// 字面量快速路径特判、WASM calloc 位宽适配后，旧缓存 IR 语义不一致）。
-pub const CACHE_VERSION: u32 = 4;
+pub const CACHE_VERSION: u32 = 5;
 
 /// 缓存索引（`index.json` 内容）。
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

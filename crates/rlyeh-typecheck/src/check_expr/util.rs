@@ -123,11 +123,17 @@ pub(super) fn value_to_string_for_ty(
         ));
     }
     // Q3b：自定义类型走 Display / Debug trait 方法
-    // （`{}` → `fmt`，`{:?}` → `fmt_debug`；方法名查找 impl，与手写 impl 调用
-    // 路径一致，MVP 无 trait bound 检查）。`fmt` 直接返回 String（拼接模式）。
-    let method = if debug { "fmt_debug" } else { "fmt" };
-    if ctx.find_impl_for_method(&base, method).is_some() {
-        // 块表达式：`let mut __fmt_q3 = Formatter::new(); x.fmt(&mut __fmt_q3)`
+    // （X4 完整化：`{}` → `fmt::Display::fmt`，`{:?}` → `fmt::Debug::fmt`；
+    // 同名 `fmt` 经 impl 查找按 trait 名区分——`find_impl_for_trait_method`）。
+    // `fmt` 返回 `Result<(), FmtError>`（写缓冲），调用后取 `Formatter::result()`。
+    let method = "fmt".to_string();
+    let trait_name = if debug { "fmt::Debug" } else { "fmt::Display" };
+    let has_impl = ctx
+        .find_impl_for_trait_method(&base, trait_name, &method)
+        .is_some();
+    if has_impl {
+        // 块表达式：
+        //   { let mut __fmt_q3 = Formatter::new(); x.fmt(&mut __fmt_q3); __fmt_q3.result() }
         // （MVP `&mut` 仅支持变量目标，临时值 `&mut Formatter::new()` 不可用）
         let tmp = "__fmt_q3".to_string();
         let f_new = AstExpr::new(
@@ -157,15 +163,29 @@ pub(super) fn value_to_string_for_ty(
         let call = AstExpr::new(
             ExprKind::MethodCall {
                 receiver: arg.clone(),
-                method: method.to_string(),
+                method: method.clone(),
                 args: vec![f_ref],
+                // X4：引擎生成的 fmt 调用按 trait 分派（Display::fmt / Debug::fmt 同名）
+                trait_hint: Some(trait_name.to_string()),
+            },
+            span,
+        );
+        // `x.fmt(&mut __fmt_q3)` 作为表达式语句（返回 Result 忽略）
+        let call_stmt = AstStmt::Semi(call);
+        // `__fmt_q3.result()`：取回拼接结果 String
+        let result_call = AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: AstExpr::new(ExprKind::Ident(tmp.clone()), span),
+                method: "result".to_string(),
+                args: Vec::new(),
+                trait_hint: None,
             },
             span,
         );
         return Ok(AstExpr::new(
             ExprKind::Block(AstBlock {
-                stmts: vec![bind],
-                final_expr: Some(call),
+                stmts: vec![bind, call_stmt],
+                final_expr: Some(result_call),
                 span,
             }),
             span,

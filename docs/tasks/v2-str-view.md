@@ -1,8 +1,8 @@
 # V2 — String 引用视图 `&str` 完整化
 
 > **阶段**：V（集合与迭代器完整化）
-> **状态**：✅ 已完成（V2-A/B/C/D/E 全部完成，2026-08-26）
-> **最后更新**：2026-08-26
+> **状态**：🔧 部分完成（V2-A~E ✅；`chars`/`lines` 目标签名（返回 `Chars`/`Lines` 迭代器）待升级，2026-08-27）
+> **最后更新**：2026-08-27
 > **权威来源**：阶段详情文档 [`stages/V.md`](../stages/V.md)
 > **核心目标**：将 `&str` 从"指向整个 String 对象的瘦指针"统一为 **StrFat 双槽胖指针 `{data, len}`**，支持零拷贝 data 子区间视图（`trim`/`as_str_range`），并修复 `&str` 打印链路。
 > **本层职责**：本索引文档只记录 V2 各子任务（叶子文档）的任务列表与实现进度；**具体实施情况见各叶子文档**。
@@ -19,7 +19,7 @@
 | **V2-D** | [`v2-d-params.md`](./leaf/v2-d-params.md) | V2-A | 中 | ✅ 已完成（参数/返回值 borrowck/深拷贝，2026-08-26） |
 | **V2-E** | [`v2-e-api-align.md`](./leaf/v2-e-api-align.md) | V2-B | 低 | ✅ 已完成（API 对齐评估 + 兼容保留，2026-08-26） |
 
-**进度小结**：V2-A/B/C/D/E ✅ 全部完成（2026-08-26）。
+**进度小结**：V2-A/B/C/D/E ✅ 全部完成（StrFat 语义/trim/打印/参数/API 对齐）；`chars_iter`/`lines_iter` 迭代器已可用。**2026-08-27 推进**：`Chars`/`Lines` 已实现 `Iterator` trait（`type Item = i64` 码点 / `String` 行），`for c in s.chars_iter()` / `for l in t.lines_iter()` 经 V3 迭代器框架接入（`v2_chars_lines_iter.rl`）。**待办**：`chars`/`lines` 目标签名（返回 `Chars`/`Lines` 迭代器、元素 `Option<char>`）——当前保留 `-> Vec` 兼容签名（`s.chars().len()`/`[i]` 依赖 Vec），需 char 类型 + 语义切换后升级（V2-E 兼容决策）。
 
 ---
 

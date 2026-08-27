@@ -5,17 +5,18 @@ struct Counter {
     pos: i64,
 }
 
-impl Counter {
+impl Iterator for Counter {
+    type Item = i64;
     fn new(limit: i64) -> Counter {
         Counter { limit: limit, pos: 0 }
     }
     fn next(&mut self) -> Option<i64> {
         if self.pos >= self.limit {
-            return None;
+            return Option::None;
         }
         let v = self.pos;
         self.pos += 1;
-        Some(v)
+        Option::Some(v)
     }
 }
 
@@ -52,28 +53,28 @@ fn main() {
     let sk = [1, 2, 3, 4, 5].skip(2);
     println(sum_vec(sk));        // 12
 
-    // 7. 迭代器 map（0..<5 的 *10）
-    let im = Counter::new(5).map(|x| x * 10);
+    // 7. 迭代器 map（0..<5 的 *10）→ collect
+    let im = Counter::new(5).map(|x| x * 10).collect();
     println(sum_vec(im));        // 100
 
-    // 8. 迭代器 filter（偶数）
-    let itf = Counter::new(6).filter(|x| x % 2 == 0);
+    // 8. 迭代器 filter（偶数）→ collect 收集到 Vec
+    let itf = Counter::new(6).filter(|x| x % 2 == 0).collect();
     println(sum_vec(itf));       // 0+2+4 = 6
 
     // 9. 迭代器 fold
     let itt = Counter::new(4).fold(100, |acc, x| acc - x);
     println(itt);                // 100-0-1-2-3 = 94
 
-    // 10. 迭代器 take
-    let itk = Counter::new(10).take(4);
+    // 10. 迭代器 take → collect
+    let itk = Counter::new(10).take(4).collect();
     println(sum_vec(itk));       // 0+1+2+3 = 6
 
-    // 11. 迭代器 skip
-    let its = Counter::new(6).skip(4);
+    // 11. 迭代器 skip → collect
+    let its = Counter::new(6).skip(4).collect();
     println(sum_vec(its));       // 4+5 = 9
 
-    // 12. 链式：filter → map（filter 返回 Vec，Vec 也可作适配器源）
-    let chained = Counter::new(6).filter(|x| x > 1).map(|x| x * x);
+    // 12. 链式：filter → map → collect（惰性包装迭代器）
+    let chained = Counter::new(6).filter(|x| x > 1).map(|x| x * x).collect();
     println(sum_vec(chained));   // 2^2+3^2+4^2+5^2 = 54
 
     // 13. Vec 上取 skip + collect 组合

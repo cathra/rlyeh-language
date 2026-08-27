@@ -50,6 +50,25 @@ fn test_trait_and_impl() {
 }
 
 #[test]
+fn test_trait_assoc_type_decl() {
+    // V3-A1：trait 内关联类型声明 `type Item;`（无默认）与 `type Item = i64;`（默认具体化）
+    let program = parse_ok(
+        "trait IterA { type Item; fn next(&mut self) -> Option<Self::Item>; } \
+         trait IterB { type Item = i64; fn next(&mut self) -> Option<Self::Item>; }",
+    );
+    let AstItem::TraitDecl(ta) = &program.items[0] else {
+        panic!();
+    };
+    assert_eq!(ta.types, vec!["Item".to_string()]);
+    assert!(ta.methods[0].body.is_none());
+    let AstItem::TraitDecl(tb) = &program.items[1] else {
+        panic!();
+    };
+    // `type Item = i64;` 记录名字 `Item`（默认具体化由 typecheck 消费）
+    assert_eq!(tb.types, vec!["Item".to_string()]);
+}
+
+#[test]
 fn test_use_and_mod() {
     let program = parse_ok("import foo::bar as baz; module m { fn inner() {} }");
     let AstItem::UseDecl(u) = &program.items[0] else {

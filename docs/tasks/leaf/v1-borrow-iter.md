@@ -15,7 +15,11 @@
 
 ## 技术细节
 
-`Iter<T> { data: *const T, len }`/`IterMut<T> { data: *mut T, cur, len }` 裸指针 + 剩余长度；`iter(&self)` 经 `let p: *const T = &self.data[0]`（V1 GEP 真实取址）取首元素地址；`next() -> Option<T>` 值拷贝读取推进、`IterMut::write(x)` 经 DerefSet 写回真实原槽；编译器特判构造 `Iter::new`/`IterMut::new`；接入 for 与 J3 适配器。替代 T1a 退化的『元素值拷贝缓冲』。待办：引用元素 `Option<&T>`、`HashMap::iter`。
+`Iter<T> { data: *const T, len }`/`IterMut<T> { data: *mut T, cur, len }` 裸指针 + 剩余长度；`iter(&self)` 经 `let p: *const T = &self.data[0]`（V1 GEP 真实取址）取首元素地址；`next() -> Option<T>` 值拷贝读取推进、`IterMut::write(x)` 经 DerefSet 写回真实原槽；编译器特判构造 `Iter::new`/`IterMut::new`；接入 for 与 J3 适配器。替代 T1a 退化的『元素值拷贝缓冲』。
+
+**待办（受语言限制，2026-08-27 评估）**：
+- **引用元素 `Option<&T>`**：独立引用迭代器 `next() -> Option<&T>`（持 `&Vec<T>` + 游标）可行，但**泛型结构体构造需显式类型实参**（方法内无法从 `self: &Vec<T>` 推断 `IterRef<T>`），且 **Rlyeh 泛型结构体不支持静态方法（`new`）**——故 `Vec::iter_ref()` 无法在方法内构造泛型 `IterRef<T>`。需语言增强（泛型结构体构造实参推断 / 静态方法）。
+- **`HashMap::iter` 引用迭代器（`(&K, &V)`）**：需元组支持（键值对），MVP 未提供——`iter()` 当前返回 `Vec<K>` 键缓冲退化，配 `values()` 使用。
 
 ## 验证
 

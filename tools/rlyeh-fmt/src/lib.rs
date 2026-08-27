@@ -489,6 +489,7 @@ fn fmt_expr(e: &AstExpr) -> String {
             minute,
             is_pm,
         } => fmt_time(*hour, *minute, *is_pm),
+        ExprKind::Unit => "()".to_string(),
         ExprKind::Ident(name) => name.clone(),
         ExprKind::Path(seg) => seg.join("::"),
         ExprKind::Set(elems) => format!(
@@ -591,6 +592,7 @@ fn fmt_expr(e: &AstExpr) -> String {
             receiver,
             method,
             args,
+            trait_hint: _,
         } => {
             let r = fmt_operand(receiver, PREC_POSTFIX, false);
             let a = args.iter().map(fmt_expr).collect::<Vec<_>>().join(", ");

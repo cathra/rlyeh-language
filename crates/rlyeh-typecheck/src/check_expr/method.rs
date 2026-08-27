@@ -261,6 +261,7 @@ pub(super) fn check_method_call(
     receiver: &AstExpr,
     method: &str,
     args: &[AstExpr],
+    trait_hint: Option<&str>,
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     // `r#` 前缀（关键字转义，如 `fn r#send`）在方法调用处去前缀，
@@ -717,14 +718,20 @@ pub(super) fn check_method_call(
     // V3（2026-08-26）：`find_impl_for_method` 找不到"实现了该方法的 impl"时，
     // 回退到 `find_trait_default_impl`——类型匹配的 trait impl 且 trait 声明了
     // 该方法的默认实现（`impl Trait for X {}` 未显式实现该方法）。
-    let impl_def = ctx
-        .find_impl_for_method(&self_ty, method)
-        .cloned()
-        .or_else(|| ctx.find_trait_default_impl(&self_ty, method).cloned())
-        .ok_or_else(|| TypeError::FunctionNotFound {
-            name: format!("{self_ty}::{method}"),
-            span,
-        })?;
+    // X4：`trait_hint`（如 `fmt::Display` / `fmt::Debug`）时按 trait 名区分——
+    // 同名 trait 方法（Display::fmt 与 Debug::fmt）经此精确分派。
+    let impl_def = if let Some(tn) = trait_hint {
+        ctx.find_impl_for_trait_method(&self_ty, tn, method)
+            .cloned()
+    } else {
+        ctx.find_impl_for_method(&self_ty, method)
+            .cloned()
+            .or_else(|| ctx.find_trait_default_impl(&self_ty, method).cloned())
+    }
+    .ok_or_else(|| TypeError::FunctionNotFound {
+        name: format!("{self_ty}::{method}"),
+        span,
+    })?;
     let method_def = impl_def
         .methods
         .iter()
@@ -801,14 +808,21 @@ pub(super) fn check_method_call(
         hir_args.push(hir);
     }
     // 回填可能定型类型参数，重算签名（返回类型必须用定型后的 subst）
+    // V3-B（2026-08-27）：参数类型中的 `Self`（如 `chain(self, other: Self)`）同样
+    // 替换为 impl 目标具体类型——否则默认方法参数 `Self` 占位无法与实参匹配。
+    let impl_self_ty = substitute(&impl_def.self_type, &subst);
     expected = method_def
         .sig
         .params
         .iter()
         .skip(1)
-        .map(|p| substitute(p, &subst))
+        .map(|p| replace_type_self(&substitute(p, &subst), &impl_self_ty))
         .collect();
-    let ret_ty = substitute(&method_def.sig.return_type, &subst);
+    // V3-D（2026-08-27）：返回类型中的 `Self` 替换为 impl 目标具体类型。
+    // 默认方法返回 `Take2<Self>` 时，`Self`（trait 实现类型 = impl_def.self_type）
+    // 须替换为具体类型，否则 `Take2<Self>` 的 `next` 内 `Self::next` 无法解析。
+    let mut ret_ty = substitute(&method_def.sig.return_type, &subst);
+    ret_ty = replace_type_self(&ret_ty, &impl_self_ty);
 
     // 方法函数名：inherent/trait 方法统一 `Type::method`，泛型实例化追加后缀
     let Type::Named(base_name, _) = &impl_def.self_type else {
@@ -983,4 +997,52 @@ pub(super) fn devirtualize_dyn_call(
         },
         sig.return_type.clone(),
     )))
+}
+
+/// V3-D（2026-08-27）：递归替换类型中的 `Self`（`Type::Generic("Self")`）为
+/// 具体类型 `concrete`。用于 trait 默认方法返回 `Take2<Self>` 等含 `Self`
+/// 的签名实例化——`Self` 表示 impl 目标类型，须替换后方法体/后续调用才能解析。
+pub(super) fn replace_type_self(ty: &Type, concrete: &Type) -> Type {
+    use Type::*;
+    match ty {
+        Generic(n) if n == "Self" => concrete.clone(),
+        // 含子类型需递归的变体
+        Named(name, args) => Named(
+            name.clone(),
+            args.iter().map(|a| replace_type_self(a, concrete)).collect(),
+        ),
+        Ref(inner, m) => Ref(Box::new(replace_type_self(inner, concrete)), *m),
+        RawPtr(inner, m) => RawPtr(Box::new(replace_type_self(inner, concrete)), *m),
+        Tuple(items) => Tuple(items.iter().map(|i| replace_type_self(i, concrete)).collect()),
+        Array(inner, size) => Array(Box::new(replace_type_self(inner, concrete)), *size),
+        Fn(sig) => {
+            let params = sig
+                .params
+                .iter()
+                .map(|p| replace_type_self(p, concrete))
+                .collect();
+            let ret = replace_type_self(&sig.return_type, concrete);
+            Fn(Box::new(crate::types::FnSignature {
+                params,
+                return_type: ret,
+            }))
+        }
+        Closure {
+            captures,
+            params,
+            ret,
+            fn_name,
+        } => Closure {
+            captures: captures.iter().map(|c| replace_type_self(c, concrete)).collect(),
+            params: params.iter().map(|p| replace_type_self(p, concrete)).collect(),
+            ret: Box::new(replace_type_self(ret, concrete)),
+            fn_name: fn_name.clone(),
+        },
+        AssocProjection { base, assoc } => AssocProjection {
+            base: Box::new(replace_type_self(base, concrete)),
+            assoc: assoc.clone(),
+        },
+        // 其余变体（标量 / 不可递归 / 非 Self 泛型占位）原样返回
+        other => other.clone(),
+    }
 }

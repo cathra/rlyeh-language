@@ -292,8 +292,10 @@ impl <'src> Parser<'src> {
     pub(super) fn parse_paren_or_set(&mut self) -> Result<AstExpr, ParseError> {
         let lp = self.expect(&Token::LParen, "'('")?;
         if self.eat(&Token::RParen) {
+            // X4：空 `()` 为单元类型字面量（`Result::Ok(())` 的值）；`in ()` 空集合
+            // 由 `parse_in_target`/`parse_set_elements` 单独解析，不经过此处。
             return Ok(AstExpr::new(
-                ExprKind::Set(Vec::new()),
+                ExprKind::Unit,
                 self.merge_span(lp.span, lp.span),
             ));
         }
@@ -354,6 +356,7 @@ impl <'src> Parser<'src> {
                             receiver,
                             method: name,
                             args,
+                            trait_hint: None,
                         },
                         span,
                     ))
@@ -390,6 +393,7 @@ impl <'src> Parser<'src> {
                             receiver,
                             method: name,
                             args,
+                            trait_hint: None,
                         },
                         span,
                     ))

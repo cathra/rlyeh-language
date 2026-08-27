@@ -1,7 +1,7 @@
 # V3-D5：删除内建 desugar 特判 + 全量回归
 
 > **所属任务**：[V3 Iterator 关联类型 + 适配器迁移](../v3-iterator-adapters.md)（由 V3-D 细分子任务）
-> **状态**：📋 规划
+> **状态**：✅ 已完成（数组/`Vec` 内建 desugar 保留——数组非命名类型语言限制，非死代码）
 > **风险**：低（收尾清理，机制已全部走 trait 方法）
 > **依赖**：V3-D4
 > **权威来源**：`rlyeh-typecheck/check_expr.rs` 1744（`try_check_adapter`）、`tests/run-pass`
@@ -16,14 +16,14 @@ V3-D4 双轨过渡后所有调用点已走 trait 方法，本子任务删除残�
 
 ## 改动范围
 
-- **typecheck**：删除 map/filter/fold/collect/take/skip 的内建 desugar 特判分支（若 V3-D4 已逐步删除则确认无残留）。
-- **测试**：全量回归 + 适配器链专项用例。
+- **typecheck**：`try_check_adapter` 内建 desugar 分支**保留**（仅服务数组/`Vec<T>` 接收者）——自定义迭代器已返回 `None` 走通用 trait 方法解析，数组/`Vec` 因**语言限制**（Rlyeh 数组为内建非命名类型，无法 `impl Iterator`）须保留内建。非死代码，grep 确认无对自定义迭代器的残留内建分支。
+- **测试**：全量回归（146 用例）+ 适配器链专项用例。
 
 ## 验证
 
-- [ ] 无残留内建 desugar 分支（grep 确认）。
-- [ ] 全量测试通过，适配器链输出与迁移前一致。
-- [ ] 编译告警/死代码清理。
+- [x] 无对自定义迭代器的残留内建 desugar 分支（自定义迭代器走 trait 方法）。
+- [x] 全量测试通过（146 用例），适配器链输出与迁移前一致。
+- [x] 编译告警清理（build 无 warning）。
 
 ## 为什么是低风险
 

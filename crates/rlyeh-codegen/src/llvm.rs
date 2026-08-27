@@ -463,7 +463,18 @@ impl LlvmEmitter {
             } => {
                 let lt = field_scalar_llvm(*ty)?;
                 let vty = field_scalar_lir(*ty);
-                let v = self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?;
+                // X4：`()` 单元值作为字段值（`Wrapper::Empty(())` / `Result::Ok(())`
+                // 的 payload）——`()` 是 0 大小，槽写 0 占位，不 load（Unit 类型
+                // 局部变量未分配槽，load `%x.addr` 会未定义）。
+                let val_is_unit = f
+                    .locals
+                    .iter()
+                    .any(|(n, t)| n == value && *t == LirType::Unit);
+                let v = if val_is_unit {
+                    "0".to_string()
+                } else {
+                    self.operand_value(&LirOperand::Local(value.clone()), vty, body, f)?
+                };
                 // V2-C（2026-08-26，方案 A）：StrFat 值槽（`.addr` = `{i8*,i64}`）
                 // 直接 GEP 写槽——**不读 `.addr` 值当对象指针**（否则 base 的 data
                 // 槽被当作指针解引用，写到错误地址，根因见 task-v2.md）。

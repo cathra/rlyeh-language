@@ -56,6 +56,8 @@ pub(crate) fn infer_expr(
         ExprKind::StringLiteral(s) => Ok((HirExpr::StringLiteral(s.clone()), Type::Str)),
         ExprKind::CharLiteral(c) => Ok((HirExpr::CharLiteral(*c), Type::Char)),
         ExprKind::BoolLiteral(b) => Ok((HirExpr::BoolLiteral(*b), Type::Bool)),
+        // X4：单元类型字面量 `()`（`Result::Ok(())` 的值；空 tuple）
+        ExprKind::Unit => Ok((HirExpr::Unit, Type::Unit)),
         ExprKind::TimeLiteral { hour, minute, .. } => {
             // 时间字面量归一化为分钟值，按整数处理（可与整数集合/范围统一比较）
             let minutes = i128::from(*hour) * 60 + i128::from(*minute);
@@ -659,7 +661,8 @@ pub(crate) fn infer_expr(
             receiver,
             method,
             args,
-        } => check_method_call(ctx, receiver, method, args, span),
+            trait_hint,
+        } => check_method_call(ctx, receiver, method, args, trait_hint.as_deref(), span),
         ExprKind::StructCtor {
             type_name,
             type_args,

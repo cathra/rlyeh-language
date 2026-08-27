@@ -210,6 +210,7 @@ fn unlock_stmt(var: &str, span: Span) -> AstStmt {
             receiver,
             method: "unlock".to_string(),
             args: vec![],
+            trait_hint: None,
         },
         span,
     );
