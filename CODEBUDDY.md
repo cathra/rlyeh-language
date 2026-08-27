@@ -650,22 +650,22 @@ fn main() {
 - **违反此约束视为缺陷**，代码评审必须拒绝超过上限的改动，并优先修复既有超限文件（逐步拆分回归至 1000 行内）。
 - 拆分时保持语义等价，拆完后必须通过全量回归（`rlyeh test` + `cargo test`）。
 
-**现状超限文件（2026-08-27 统计，需逐步拆分回归 ≤1000 行）**：
+**超限文件拆分进度（2026-08-27）**：9 个超限 Rust 文件已全部拆分回归 ≤1000 行；`core.rl` 为编译器预置的单一语言源码（类型同一命名空间互引用），直接拆分需改 stdlib 注入机制 + 测试内联副本，暂不拆分（专项处理）。
 
-| 文件 | 当前行数 | 拆分方向 |
-|------|:---:|---------|
-| `crates/rlyeh-typecheck/src/check_expr.rs` | 11779 | 按表达式类别拆分（check_expr_*.rs 或子模块） |
-| `crates/rlyeh-codegen/src/llvm.rs` | 3259 | 按指令/类型发射拆分 |
-| `crates/rlyeh-desugar/src/analyze.rs` | 1933 | 按分析阶段拆分 |
-| `crates/rlyeh-desugar/src/generate.rs` | 1451 | 按生成器拆分 |
-| `crates/rlyeh-driver/src/lib.rs` | 1462 | 按 CLI 子命令拆分 |
-| `crates/rlyeh-parser/src/expr.rs` | 1384 | 按表达式优先级拆分 |
-| `crates/rlyeh-typecheck/src/check_item.rs` | 1226 | 按 item 类别拆分 |
-| `crates/rlyeh-lir/src/lower.rs` | 1168 | 按语句/操作数拆分 |
-| `crates/rlyeh-parser/src/tests.rs` | 1108 | 按语法类别拆分 |
-| `crates/rlyeh-std/rlyeh/core.rl` | 2186 | 按模块拆分（string/collections/io 等） |
+| 文件 | 拆分前 | 拆分后（≤1000 行） | 状态 |
+|------|:---:|---------|------|
+| `crates/rlyeh-typecheck/src/check_expr.rs` | 11779 | `check_expr/mod.rs` + iter/binary/call/resolve/construct/field/heap/index_enum/method/generic/macro_serialize/util（12 文件） | ✅ 已完成 |
+| `crates/rlyeh-codegen/src/llvm.rs` | 3259 | `llvm.rs`(壳) + `llvm/llvm_call/ctor/emit/func/region/util`（6 文件） | ✅ 已完成 |
+| `crates/rlyeh-desugar/src/analyze.rs` | 1933 | `analyze/mod.rs` + expand/scan/segment | ✅ 已完成 |
+| `crates/rlyeh-desugar/src/generate.rs` | 1451 | `generate/mod.rs` + gen_poll/rewrite/devar | ✅ 已完成 |
+| `crates/rlyeh-driver/src/lib.rs` | 1462 | `lib.rs` + platform_ir.rs + util.rs | ✅ 已完成 |
+| `crates/rlyeh-parser/src/expr.rs` | 1384 | `expr/mod.rs` + primary/control/macro_ | ✅ 已完成 |
+| `crates/rlyeh-typecheck/src/check_item.rs` | 1226 | `check_item/mod.rs` + collect/actor/fn_sig | ✅ 已完成 |
+| `crates/rlyeh-lir/src/lower.rs` | 1168 | `lower/mod.rs` + lower_stmts.rs | ✅ 已完成 |
+| `crates/rlyeh-parser/src/tests.rs` | 1108 | `tests/mod.rs` + region/control/decl | ✅ 已完成 |
+| `crates/rlyeh-std/rlyeh/core.rl` | 2186 | —（预置单一语言源码，暂不拆分） | ⏸ 专项处理 |
 
-> **拆分优先级**：先拆最大的 `check_expr.rs`（11779 行），再按上表自上而下；每个文件拆分后须通过全量回归（`rlyeh test` 139 用例 + `cargo test`）。新增代码一律不得再扩大既有超限文件。
+> **拆分规范**：保持语义等价；`mod`/`use` 改为子模块（`mod xxx;` + `use xxx::*`，子模块私有函数提升为 `pub(super)`/`pub(crate)`，对外 API 从 mod.rs 显式 re-export）；每个文件拆分后须通过全量回归（`rlyeh test` 139 用例 + `cargo test`）。新增代码一律不得再扩大超限文件。
 
 ### 7.1 Rust 代码（编译器实现）
 
