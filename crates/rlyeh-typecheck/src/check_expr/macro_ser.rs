@@ -32,13 +32,49 @@ pub(crate) fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>,
                     chars.next();
                     cur.push('{');
                 } else {
-                    // `{:?}`（debug）或 `{}`（display）
+                    // `{}`（display）、`{:?}`（debug）、或带格式说明符
+                    // （X4：`{:>10}` / `{:<5}` / `{:^8}` / `{:*>10}`，`fill align width`）。
                     let mut is_debug = false;
+                    // X4 格式说明符（默认：无对齐、宽度 0、填充空格）
+                    let mut align: char = '\0';
+                    let mut width: i64 = 0;
+                    let mut fill: u8 = b' ';
                     if chars.peek() == Some(&':') {
                         chars.next();
                         if chars.peek() == Some(&'?') {
                             chars.next();
                             is_debug = true;
+                        } else {
+                            // 解析 `fill align width`：可选填充字符 + 可选对齐符 + 可选宽度
+                            if let Some(&c) = chars.peek() {
+                                if c != '}' && !c.is_ascii_digit() && c != '<' && c != '>' && c != '^'
+                                {
+                                    // 第一个非对齐/非数字字符作为填充字符
+                                    if c.is_ascii() {
+                                        fill = c as u8;
+                                        chars.next();
+                                    }
+                                }
+                            }
+                            if let Some(&c) = chars.peek() {
+                                if c == '<' || c == '>' || c == '^' {
+                                    align = c;
+                                    chars.next();
+                                }
+                            }
+                            // 数字宽度
+                            let mut w = String::new();
+                            while let Some(&c) = chars.peek() {
+                                if c.is_ascii_digit() {
+                                    w.push(c);
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                            if !w.is_empty() {
+                                width = w.parse::<i64>().unwrap_or(0);
+                            }
                         }
                     }
                     if chars.peek() == Some(&'}') {
@@ -48,12 +84,18 @@ pub(crate) fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>,
                                 text: std::mem::take(&mut cur),
                                 is_value: false,
                                 is_debug: false,
+                                align: '\0',
+                                width: 0,
+                                fill: b' ',
                             });
                         }
                         segs.push(FormatSeg {
                             text: String::new(),
                             is_value: true,
                             is_debug,
+                            align,
+                            width,
+                            fill,
                         });
                     } else {
                         return Err(TypeError::Unsupported {
@@ -82,6 +124,9 @@ pub(crate) fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>,
             text: cur,
             is_value: false,
             is_debug: false,
+            align: '\0',
+            width: 0,
+            fill: b' ',
         });
     }
     if segs.is_empty() {
@@ -90,6 +135,9 @@ pub(crate) fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>,
             text: String::new(),
             is_value: false,
             is_debug: false,
+            align: '\0',
+            width: 0,
+            fill: b' ',
         });
     }
     Ok(segs)

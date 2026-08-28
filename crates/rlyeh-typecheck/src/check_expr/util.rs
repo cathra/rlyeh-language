@@ -39,6 +39,107 @@ pub(super) fn ty_to_zero_ast(ctx: &TypeContext, ty: &Type, span: Span) -> Result
     }
 }
 
+/// X4：对齐格式占位符应用（`{:>10}` 右 / `{:<5}` 左 / `{:^8}` 居中）。
+/// 用 std `pad_start`（左填充=右对齐）/ `pad_end`（右填充=左对齐）实现；
+/// 居中经 `let __s = base; (width - __s.len())/2` 计算左填充量后两次 pad。
+pub(super) fn align_string_ast(
+    ctx: &mut TypeContext,
+    base: AstExpr,
+    align: char,
+    width: i64,
+    fill: u8,
+    span: Span,
+) -> Result<AstExpr, TypeError> {
+    let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+        AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: recv,
+                method: method.to_string(),
+                args,
+                trait_hint: None,
+            },
+            span,
+        )
+    };
+    let fill_lit = AstExpr::new(ExprKind::IntLiteral(fill as i128), span);
+    let width_lit = AstExpr::new(ExprKind::IntLiteral(width as i128), span);
+    match align {
+        '>' => Ok(mcall(base, "pad_start", vec![width_lit, fill_lit])),
+        '<' => Ok(mcall(base, "pad_end", vec![width_lit, fill_lit])),
+        '^' => {
+            // 居中：左 pad = (width - len) / 2
+            let s_name = ctx.fresh_temp();
+            let len_name = ctx.fresh_temp();
+            let left_name = ctx.fresh_temp();
+            let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
+            let len_id = AstExpr::new(ExprKind::Ident(len_name.clone()), span);
+            let left_id = AstExpr::new(ExprKind::Ident(left_name.clone()), span);
+            // __s.pad_start(len + left, fill).pad_end(width, fill)
+            let right_end = mcall(
+                mcall(
+                    s_id.clone(),
+                    "pad_start",
+                    vec![
+                        AstExpr::new(
+                            ExprKind::Binary {
+                                op: BinaryOp::Add,
+                                left: len_id.clone(),
+                                right: left_id.clone(),
+                            },
+                            span,
+                        ),
+                        fill_lit.clone(),
+                    ],
+                ),
+                "pad_end",
+                vec![width_lit.clone(), fill_lit.clone()],
+            );
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(s_name),
+                            type_anno: None,
+                            init: base,
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(len_name),
+                            type_anno: None,
+                            init: mcall(s_id.clone(), "len", Vec::new()),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(left_name),
+                            type_anno: None,
+                            init: AstExpr::new(
+                                ExprKind::Binary {
+                                    op: BinaryOp::Div,
+                                    left: AstExpr::new(
+                                        ExprKind::Binary {
+                                            op: BinaryOp::Sub,
+                                            left: width_lit.clone(),
+                                            right: len_id,
+                                        },
+                                        span,
+                                        ),
+                                        right: AstExpr::new(ExprKind::IntLiteral(2), span),
+                                },
+                                span,
+                            ),
+                            mutable: false,
+                        },
+                    ],
+                    final_expr: Some(right_end),
+                    span,
+                }),
+                span,
+            ))
+        }
+        _ => Ok(base),
+    }
+}
+
 pub(super) fn value_to_string_ast(
     ctx: &mut TypeContext,
     arg: &AstExpr,
@@ -258,7 +359,13 @@ pub(super) fn check_format_macro(
         let seg_ast = if seg.is_value {
             let arg = &args[value_idx];
             value_idx += 1;
-            value_to_string_ast(ctx, arg, seg.is_debug, span)?
+            let base = value_to_string_ast(ctx, arg, seg.is_debug, span)?;
+            // X4：对齐格式占位符（`{:>10}` / `{:<5}` / `{:^8}`）——按宽度对齐。
+            if seg.width > 0 && seg.align != '\0' {
+                align_string_ast(ctx, base, seg.align, seg.width, seg.fill, span)?
+            } else {
+                base
+            }
         } else {
             string_from_lit_ast(seg.text.clone(), span)
         };

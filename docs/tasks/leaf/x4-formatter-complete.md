@@ -1,7 +1,7 @@
 # X4 Formatter 完整化
 
 > **所属阶段**：阶段 X
-> **状态**：🔧 核心完成（Formatter 升级 ✅；`Result<(), FmtError>` 签名 ✅；`Debug::fmt` 改名 ✅；FmtError ✅；对齐/宽度/精度字段存储 ✅，2026-08-27）
+> **状态**：✅ 已完成（Formatter 升级 ✅；`Result<(), FmtError>` 签名 ✅；`Debug::fmt` 改名 ✅；FmtError ✅；对齐格式占位符引擎应用 ✅，2026-08-28）
 > **依赖**：U3/U4、Q3
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
@@ -25,12 +25,13 @@
 - **语言级：方法调用按 trait 分派**：`ExprKind::MethodCall` 新增 `trait_hint` 字段；`check_method_call` 支持 `trait_hint`（`fmt::Display`/`fmt::Debug`）经 `find_impl_for_trait_method` 精确分派。
 - **Q3b 引擎**：`{}` → `fmt::Display::fmt`，`{:?}` → `fmt::Debug::fmt`；`fmt` 返回 `Result<(), FmtError>`（写缓冲），调用后取 `Formatter::result()`。
 - **测试**：`display_fmt.rl` 迁移为 `Result<(), fmt::FmtError>` + `f.write_str` + `Debug::fmt`（`.out` 精确对比：`P(1,2)`/`Point{x:1,y:2}`/`dbg: Point{x:1,y:2}`）；example `08-format/display_fmt.rl` 同步。
-- **待办**：Formatter 对齐/宽度/精度字段（`fill`/`width`/`align`）为状态存储，对齐格式占位符（`{:>10}`）的完整引擎应用留待后续。
+- **对齐格式占位符引擎应用**（2026-08-28）：`parse_format_string` 解析格式说明符（`fill align width`，如 `{:>10}`/`{:<5}`/`{:^8}`/`{:*>10}`）；`FormatSeg` 增加 `align`/`width`/`fill` 字段；`check_format_macro` 对占位符值生成对齐逻辑（`>` 右→`pad_start`、`<` 左→`pad_end`、`^` 居中→`(width-len)/2` 双 pad）。测试 `x4_format_align.{rl,out}`：`         7`/`ab   `/` rlyeh  `/`********42`/`123`。
 
 ## 验证
 
 - [x] `display_fmt.{rl,out}`（`{}`/`{:?}` 按 trait 区分 + `dbg!` + 内建类型兼容 + `.out` 精确对比）。
-- [x] 全量回归：157 用例通过（`()` 值、codegen payload、方法符号带 trait、MethodCall trait_hint 改动零破坏）。
+- [x] `x4_format_align.{rl,out}`（对齐占位符：右/左/居中/自定义填充 + 宽度不足原样 + `.out` 精确对比）。
+- [x] 全量回归：158 用例通过（`()` 值、codegen payload、方法符号带 trait、MethodCall trait_hint 改动零破坏）。
 
 ## 变更记录
 
@@ -38,3 +39,4 @@
 |------|------|
 | 2026-08-26 | 由阶段 U–Z 执行记录细化为独立叶子文档 |
 | 2026-08-27 | Formatter 升级 + FmtError + Display/Debug 签名改 Result<(),FmtError> + Debug 改名 fmt + () 单元值支持 + 方法符号带 trait 区分 + MethodCall trait_hint 分派 |
+| 2026-08-28 | 对齐格式占位符引擎应用（fill align width 解析 + pad_start/pad_end/居中），158 用例全过 |

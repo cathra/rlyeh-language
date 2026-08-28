@@ -572,7 +572,7 @@ fn fmt_expr(e: &AstExpr) -> String {
         ExprKind::If { .. }
         | ExprKind::Match { .. }
         | ExprKind::For { .. }
-        | ExprKind::While { .. }
+        | ExprKind::While { .. 
         | ExprKind::Loop { .. }
         | ExprKind::Region { .. }
         | ExprKind::GcRegion { .. } => fmt_expr_compact_block(e),

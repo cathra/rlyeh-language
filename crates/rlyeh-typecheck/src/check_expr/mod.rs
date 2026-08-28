@@ -785,6 +785,12 @@ pub(crate) struct FormatSeg {
     is_value: bool,
     /// `{:?}` → true（Q3b：Debug 路径；`{}` → false，Display 路径）
     is_debug: bool,
+    /// X4：对齐说明符（`<` 左 / `>` 右 / `^` 居中；无 = `\0`）
+    align: char,
+    /// X4：宽度（`{:>10}` → 10；无 = 0）
+    width: i64,
+    /// X4：填充字符字节（`{:*>10}` → `*` = 42；无 = 空格 32）
+    fill: u8,
 }
 
 /// 解析格式串占位符：`{}`（Display）、`{:?}`（Debug）、`{{`/`}}` 转义。
