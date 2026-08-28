@@ -75,9 +75,9 @@ if [[ -d "$SKILL_SRC" ]]; then
     rm -rf "$PREFIX/skills/rlyeh-language"
     mkdir -p "$PREFIX/skills"
     cp -R "$SKILL_SRC" "$PREFIX/skills/"
-    echo "    技能 -> $PREFIX/skills/rlyeh-language（来源: $SKILL_SRC）"
+    echo "    技能 -> $PREFIX/skills/rlyeh-language（来源: ${SKILL_SRC}）"
 else
-    echo "!! 未找到技能目录（$SKILL_SRC），跳过"
+    echo "!! 未找到技能目录（${SKILL_SRC}），跳过"
 fi
 
 # 5b. 复制 std-demos 用例项目（纯代码，不编译）

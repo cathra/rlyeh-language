@@ -146,10 +146,31 @@ unsafe fn cstr(ptr: *const c_char) -> String {
 ///
 /// 返回 `None` 表示符号未找到（Rlyeh 侧可能未生成该函数，或符号被 strip）。
 unsafe fn resolve_symbol(name: &str) -> Option<*mut c_void> {
-    #[cfg(not(target_os = "wasi"))]
+    // POSIX（macOS/Linux/BSD）：dlsym(RTLD_DEFAULT, name) 从当前进程查找导出符号。
+    #[cfg(all(unix, not(target_os = "wasi")))]
     {
         let name_c = std::ffi::CString::new(name).ok()?;
         let ptr = libc::dlsym(libc::RTLD_DEFAULT, name_c.as_ptr());
+        if ptr.is_null() {
+            None
+        } else {
+            Some(ptr)
+        }
+    }
+    // Windows（全平台发布，2026-08-28）：GetProcAddress(GetModuleHandleA(NULL), name)
+    // 等价于 POSIX 的 dlsym(RTLD_DEFAULT)——从当前 exe/dll 查找导出符号。
+    // 注意：Rlyeh 生成的 handle/factory 函数须在链接时导出（release 链接 -Wl,--export-all
+    // 或 /EXPORT），否则 GetProcAddress 查不到。
+    #[cfg(target_os = "windows")]
+    {
+        extern "system" {
+            fn GetModuleHandleA(name: *const i8) -> *mut c_void;
+            fn GetProcAddress(module: *mut c_void, name: *const i8) -> *mut c_void;
+        }
+        // 当前进程模块句柄（GetModuleHandleA(NULL)）。
+        let module = GetModuleHandleA(std::ptr::null());
+        let name_c = std::ffi::CString::new(name).ok()?;
+        let ptr = GetProcAddress(module, name_c.as_ptr());
         if ptr.is_null() {
             None
         } else {

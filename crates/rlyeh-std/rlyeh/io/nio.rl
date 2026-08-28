@@ -304,11 +304,45 @@ fn kevent_make(fd: i64, filter: i64, flags: i64) -> String {
 }
 
 // 创建 kqueue 实例，返回 kq fd（失败返回 -1）。
+// `__rlyeh_kqueue` 由 driver 按目标注入（macOS/BSD 原生、其他平台 stub -1）。
 fn kqueue_new() -> i64 {
-    kqueue()
+    __rlyeh_kqueue()
 }
 
 // 向 kqueue 提交 kevent 变更列表（EV_ADD/EV_DELETE 等）。返回就绪事件数（<0 失败）。
 fn kevent_ctl(kq: i64, changes: String, nchanges: i64) -> i64 {
-    kevent(kq, changes, nchanges, String::from(""), 0, String::from(""))
+    __rlyeh_kevent(kq, changes, nchanges, String::from(""), 0, String::from(""))
+}
+
+// Y2b：等待 kqueue 就绪事件（阻塞）。timeout 为毫秒（-1 无限）。
+// 返回就绪 kevent 结构体缓冲（32 字节/项，data[i] 即 i 项第 i 字节）。
+fn kevent_wait(kq: i64, nevents: i64, timeout_ms: i64) -> String {
+    let mut evlist = String::with_capacity(nevents * 32);
+    let mut i = 0;
+    while i < nevents * 32 {
+        evlist.push_byte(0);
+        i = i + 1;
+    }
+    // timeout: `{tv_sec i64, tv_nsec i64}` 16 字节缓冲（String）或空（无限）。
+    // MVP：timeout_ms < 0 用空（无限）；否则构造 timespec。
+    let t = if timeout_ms < 0 {
+        String::from("")
+    } else {
+        let mut tb = String::with_capacity(16);
+        let sec = timeout_ms / 1000;
+        let nsec = (timeout_ms % 1000) * 1000000;
+        let mut j = 0;
+        while j < 8 {
+            tb.push_byte((sec >> (j * 8)) & 0xFF);
+            j = j + 1;
+        }
+        j = 0;
+        while j < 8 {
+            tb.push_byte((nsec >> (j * 8)) & 0xFF);
+            j = j + 1;
+        }
+        tb
+    };
+    let n = __rlyeh_kevent(kq, String::from(""), 0, evlist, nevents, t);
+    evlist
 }

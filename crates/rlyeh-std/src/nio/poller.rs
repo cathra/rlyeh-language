@@ -147,10 +147,10 @@ mod imp {
         fn to_epoll_flags(interest: Interest) -> u32 {
             let mut f = 0u32;
             if interest.is_readable() {
-                f |= libc::EPOLLIN;
+                f |= libc::EPOLLIN as u32;
             }
             if interest.is_writable() {
-                f |= libc::EPOLLOUT;
+                f |= libc::EPOLLOUT as u32;
             }
             f
         }

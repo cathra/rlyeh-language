@@ -280,9 +280,18 @@ pub(crate) fn infer_expr(
                         _ => match heap_wrapper_inner(&o_ty) {
                             Some(t) => t,
                             None => {
+                                // Y4b-1（2026-08-28）：自定义 `Deref` trait 解引用——
+                                // o_ty 实现了 `deref` 方法时，`*x` 生成 `x.deref()` 调用
+                                // （返回 `deref()` 的目标类型）；否则维持内建类型限制报错。
+                                if ctx.find_impl_for_method(&o_ty, "deref").is_some() {
+                                    let (deref_hir, t) = check_method_call(
+                                        ctx, operand, "deref", &[], None, span,
+                                    )?;
+                                    return Ok((deref_hir, t));
+                                }
                                 return Err(TypeError::Unsupported {
                                     what: format!(
-                                        "解引用 `*` 仅支持引用类型 `&T`、裸指针 `*const T`/`*mut T` 或堆装箱 `Box<T>`/`Rc<T>`/`Arc<T>`/`Gc<T>`，发现 `{o_ty}`"
+                                        "解引用 `*` 仅支持引用类型 `&T`、裸指针 `*const T`/`*mut T`、堆装箱 `Box<T>`/`Rc<T>`/`Arc<T>`/`Gc<T>` 或实现 `Deref<T>` trait 的类型，发现 `{o_ty}`"
                                     ),
                                     span,
                                 })

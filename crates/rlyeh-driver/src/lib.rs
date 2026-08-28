@@ -434,6 +434,12 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
         if is_wasm_triple(t) {
             return assemble_wasm(&ll_path, out_path, t, &dir);
         }
+        // Y（2026-08-28）：跨 OS ELF 目标（Linux/RISC-V/LoongArch musl）——宿主
+        // clang 的 ld 无法链接跨 OS 目标（macOS ld 不认识 `--hash-style` 等），
+        // 改用 rust-lld（多目标链接器）+ Rust musl sysroot 的 crt/libc 链接。
+        if is_elf_musl_target(t) && is_cross_target(target) {
+            return assemble_cross_elf(&ll_path, out_path, t, &dir);
+        }
     }
 
     let clang = clang_path();
@@ -836,8 +842,174 @@ pub fn target_arch(triple: &str) -> Option<&str> {
 pub fn is_cross_target(target: Option<&str>) -> bool {
     match target {
         None => false,
-        Some(t) => target_arch(t) != Some(host_arch()),
+        // Y（2026-08-28 完善）：交叉 = 架构不同 **或** OS 不同。此前仅比架构，
+        // 导致同架构跨 OS（macOS arm64 → Linux arm64）误判为同平台（宿主 ld 无法
+        // 链接跨 OS 目标）。OS 码见 target_os_code（1=linux 2=macos 3=windows 4=bsd 5=wasi）。
+        Some(t) => {
+            target_arch(t) != Some(host_arch()) || target_os_code(Some(t)) != host_os_code()
+        }
     }
+}
+
+/// 主机 OS 码（与 [`target_os_code`] 同一命名：1=linux 2=macos 3=windows 4=freebsd 5=wasi）。
+fn host_os_code() -> i32 {
+    match std::env::consts::OS {
+        "linux" => 1,
+        "macos" => 2,
+        "windows" => 3,
+        "freebsd" => 4,
+        _ => 0,
+    }
+}
+
+/// 指定目标是否为 Linux/ELF musl 目标（`*-linux-musl`）——交叉编译走 rust-lld +
+/// Rust musl sysroot 链接链路（Y，2026-08-28）。
+pub fn is_elf_musl_target(target: &str) -> bool {
+    target.ends_with("-linux-musl")
+}
+
+/// rust-lld 路径探测：Rust 自带多目标链接器（`<rustup>/lib/rustlib/<host>/bin/rust-lld`），
+/// 支持 ELF/RISC-V/LoongArch 等目标，替代宿主 clang 的 ld 做跨 OS 链接。
+fn rust_lld_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let toolchains = Path::new(&home).join(".rustup/toolchains");
+    let entries = std::fs::read_dir(&toolchains).ok()?;
+    for e in entries.flatten() {
+        // rust-lld 在 <host>/bin/ 下，遍历各 rustlib/<host>/bin
+        let rustlib = e.path().join("lib/rustlib");
+        if let Ok(rd) = std::fs::read_dir(&rustlib) {
+            for host in rd.flatten() {
+                let lld = host.path().join("bin/rust-lld");
+                if lld.is_file() {
+                    return Some(lld);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 跨 OS ELF（Linux/RISC-V/LoongArch musl）汇编 + 链接：clang 汇编 LLVM IR → object，
+/// rust-lld + Rust musl sysroot crt/libc 链接。解锁 macOS → Linux/RISC-V/LoongArch 交叉编译。
+fn assemble_cross_elf(
+    ll_path: &Path,
+    out_path: &Path,
+    target: &str,
+    dir: &Path,
+) -> Result<(), DriverError> {
+    // 1. clang 汇编 LLVM IR → 目标平台 object
+    let clang = clang_path();
+    let obj = dir.join("main.o");
+    // 注入 `rust_eh_personality` stub（链接 Rust compiler_builtins rlib 时，它引用
+    // 此 panic/unwind 符号；Rlyeh 程序不用 unwind，stub 返回 0 即可）。
+    let ll_content = std::fs::read_to_string(ll_path).map_err(DriverError::Io)?;
+    let ll_with_stub = format!(
+        "{ll_content}\n; rust_eh_personality stub（Rlyeh 不用 unwind，返回 0）\ndefine i32 @rust_eh_personality(i32, i8*, i8*) {{\nentry:\n  ret i32 0\n}}\n"
+    );
+    let ll_stub_path = dir.join("main_stub.ll");
+    std::fs::write(&ll_stub_path, ll_with_stub).map_err(DriverError::Io)?;
+    let mut asm_cmd = Command::new(&clang);
+    asm_cmd
+        .arg(format!("--target={target}"))
+        .arg("-c")
+        .arg(&ll_stub_path)
+        .arg("-o")
+        .arg(&obj);
+    let asm_out = asm_cmd.output().map_err(|e| {
+        DriverError::Clang(format!("无法启动 `{clang}`: {e}"))
+    })?;
+    if !asm_out.status.success() {
+        return Err(DriverError::Clang(String::from_utf8_lossy(&asm_out.stderr).to_string()));
+    }
+
+    // 2. rust-lld + Rust musl sysroot crt/libc 链接
+    let lld = rust_lld_path().ok_or_else(|| DriverError::Clang(
+        "交叉编译 ELF 目标需要 rust-lld（未找到，Rust 工具链应自带）".to_string(),
+    ))?;
+    // Rust musl sysroot 的 self-contained：crt1.o/crti.o/crtbeginS.o + libc.a（从 rustc 查询）
+    let sysroot = rust_sysroot_target_selfcontained(target);
+
+    let scrt1 = sysroot.join("Scrt1.o");
+    let crti = sysroot.join("crti.o");
+    let crtbegin = sysroot.join("crtbeginS.o");
+    let crtend = sysroot.join("crtendS.o");
+    let crtn = sysroot.join("crtn.o");
+
+    let mut link_cmd = Command::new(&lld);
+    link_cmd
+        .arg("-flavor").arg("gnu")
+        .arg(&scrt1)
+        .arg(&crti)
+        .arg(&crtbegin)
+        .arg(&obj)
+        // 静态链接 musl libc.a（含 __*tf3 等 f128 内建；-Bstatic 避免动态搜索遗漏）
+        .arg("-Bstatic")
+        .arg("-lc")
+        .arg("-Bdynamic")
+        .arg("-L").arg(&sysroot)
+        // arm64/RISC-V/LoongArch 的 long double = f128：musl printf 无条件引用
+        // __*tf3 等 f128 内建（libc.a 仅 U 引用不提供定义）。Rust 的 compiler_builtins
+        // 提供这些 soft-float 内建——链接其 rlib 解析符号。
+        .arg("-o").arg(out_path)
+        .arg(&crtend)
+        .arg(&crtn)
+        .arg("-O1")
+        .arg("--strip-debug");
+    // f128 内建（__*tf3 等）：arm64/RISC-V/LoongArch 的 long double 需要，Rust
+    // compiler_builtins rlib 提供。条件添加（有则链接，无则跳过）。
+    if let Some(cb) = rust_compiler_builtins_path(target) {
+        link_cmd.arg(&cb);
+        // compiler_builtins 引用 `rust_eh_personality`（panic/unwind）——musl 的
+        // libunwind.a 提供（self-contained）。
+        let libunwind = sysroot.join("libunwind.a");
+        if libunwind.is_file() {
+            link_cmd.arg(&libunwind);
+        }
+    }
+    let link_out = link_cmd.output().map_err(|e| {
+        DriverError::Clang(format!("无法启动 `{}`: {e}", lld.display()))
+    })?;
+    if !link_out.status.success() {
+        return Err(DriverError::Clang(String::from_utf8_lossy(&link_out.stderr).to_string()));
+    }
+    Ok(())
+}
+
+/// 目标架构的 Rust `libcompiler_builtins` rlib 路径（提供 f128 等 soft-float 内建）。
+/// arm64/RISC-V/LoongArch 的 long double = f128，musl printf 引用 `__*tf3`，需此库解析。
+fn rust_compiler_builtins_path(target: &str) -> Option<PathBuf> {
+    let sysroot = rust_sysroot(target)?;
+    let dir = sysroot.join("lib/rustlib").join(target).join("lib");
+    let entries = std::fs::read_dir(&dir).ok()?;
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with("libcompiler_builtins-") && name.ends_with(".rlib") {
+            return Some(e.path());
+        }
+    }
+    None
+}
+
+/// rustc 工具链 sysroot（`rustc --print sysroot`）。
+fn rust_sysroot(target: &str) -> Option<PathBuf> {
+    let out = Command::new("rustc")
+        .arg("--print").arg("sysroot")
+        .output()
+        .ok()?;
+    if out.status.success() {
+        Some(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim().to_string()))
+    } else {
+        None
+    }
+}
+
+/// 从 rustc 查询目标 sysroot 的 self-contained 目录（`<rustc-sysroot>/lib/rustlib/<target>/lib/self-contained`）。
+fn rust_sysroot_target_selfcontained(target: &str) -> PathBuf {
+    rust_sysroot(target)
+        .unwrap_or_default()
+        .join("lib/rustlib")
+        .join(target)
+        .join("lib/self-contained")
 }
 
 /// 本机架构（与 [`target_arch`] 同一归一化命名）。

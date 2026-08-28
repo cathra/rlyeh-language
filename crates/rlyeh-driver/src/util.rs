@@ -46,6 +46,14 @@ pub(crate) fn join_errors<T: std::fmt::Display>(errs: Vec<T>) -> String {
 
 /// 查找可用的 C 编译器（优先 clang，回退 cc）。
 pub(crate) fn clang_path() -> String {
+    // Y（2026-08-28）：`RLYEH_CLANG` 环境变量显式指定汇编/链接器（如指向
+    // `zig cc` / LLVM 官方 clang），用于 Apple clang 不支持的 RISC-V/LoongArch
+    // 交叉目标。可含参数（如 `zig cc`），经 Command::new 会按首个 token 调用。
+    if let Ok(c) = std::env::var("RLYEH_CLANG") {
+        if !c.trim().is_empty() {
+            return c.trim().to_string();
+        }
+    }
     for cand in ["clang", "cc"] {
         let status = Command::new(cand)
             .arg("--version")

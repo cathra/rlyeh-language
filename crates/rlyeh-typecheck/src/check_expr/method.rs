@@ -203,15 +203,21 @@ pub(super) fn check_static_method_call(
         }
     }
 
-    // 泛型 impl 的静态方法：MVP 不支持（self 类型无法由调用确定类型参数）
+    // 泛型 impl 的静态方法：Y4b-2（2026-08-28）从实参推断类型参数（替代 MVP
+    // unsupported）。`MyMutex::new(42)` → 参数 `v: T` 与实参 `i64` 填充 `T = i64`；
+    // 支持裸 `Generic(tp)` 参数的直接推断；复合参数（`Vec<T>` 等）统一推断待扩展。
+    let mut subst: HashMap<String, Type> = HashMap::new();
     if !impl_def.type_params.is_empty() {
-        return Err(TypeError::Unsupported {
-            what: format!("泛型 impl `{ty_name}` 的静态方法 `{method}`"),
-            span,
-        });
+        for (pty, arg) in method_def.sig.params.iter().zip(args) {
+            if let Type::Generic(tp) = pty {
+                if impl_def.type_params.iter().any(|p| p == tp) && !subst.contains_key(tp) {
+                    let (_, arg_ty) = infer_expr(ctx, arg)?;
+                    subst.insert(tp.clone(), arg_ty);
+                }
+            }
+        }
     }
 
-    let subst: HashMap<String, Type> = HashMap::new();
     let expected: Vec<Type> = method_def
         .sig
         .params

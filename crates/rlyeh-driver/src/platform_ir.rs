@@ -8,13 +8,60 @@ use super::*;
 pub(crate) fn platform_builtin_ir(target: Option<&str>) -> String {
     let os = target_os_code(target);
     format!(
-        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n",
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n{}\n",
         os,
         sendfile_builtin_ir(os),
         thread_builtin_ir(os),
         time_builtin_ir(os),
-        file_stat_builtin_ir(os)
+        file_stat_builtin_ir(os),
+        kqueue_builtin_ir(os)
     )
+}
+
+/// `__rlyeh_kqueue`/`__rlyeh_kevent` 平台内建（Y，2026-08-28）。
+/// core.rl 以 `__rlyeh_` 前缀声明（不生成 declare，与 sendfile 同一机制），driver 按
+/// 目标注入定义：
+/// - macOS(2)/BSD(4)：转发系统 `kqueue`/`kevent`（String 经 StrFat 取 data 指针）。
+/// - 其他目标（Linux/RISC-V/LoongArch/WASI）：stub 定义返回 -1（标准库 nio 按
+///   `__rlyeh_target_os()` 短路，运行时不调用即无副作用）。
+fn kqueue_builtin_ir(os: i32) -> String {
+    if os == 2 || os == 4 {
+        // macOS / BSD：转发系统 kqueue/kevent。Rlyeh extern 的 String 参数在调用点
+        // 序列化为 `i8*`（String 结构体 data 指针，见 llvm_call.rs extern 特判），
+        // 故 `__rlyeh_kevent` 的 String 形参直接用 `i8*` 透传给系统 kevent。
+        // 系统 kevent 的 nchanges/nevents 为 `int`（i32），Rlyeh i64 需 trunc。
+        return r#"
+; __rlyeh_kqueue / __rlyeh_kevent（macOS/BSD 原生转发）
+declare i32 @kqueue()
+declare i32 @kevent(i64, i8*, i32, i8*, i32, i8*)
+define i32 @__rlyeh_kqueue() {
+entry:
+  %r = call i32 @kqueue()
+  ret i32 %r
+}
+define i32 @__rlyeh_kevent(i64 %kq, i8* %changelist, i64 %nchanges, i8* %eventlist, i64 %nevents, i8* %timeout) {
+entry:
+  %nch = trunc i64 %nchanges to i32
+  %nev = trunc i64 %nevents to i32
+  %r = call i32 @kevent(i64 %kq, i8* %changelist, i32 %nch, i8* %eventlist, i32 %nev, i8* %timeout)
+  ret i32 %r
+}
+"#
+        .to_string();
+    }
+    // 其他平台：stub 定义（返回 -1，标准库 nio 运行时按 __rlyeh_target_os 短路）
+    r#"
+; __rlyeh_kqueue / __rlyeh_kevent stub（非 macOS/BSD 平台：返回 -1）
+define i32 @__rlyeh_kqueue() {
+entry:
+  ret i32 -1
+}
+define i32 @__rlyeh_kevent(i64 %0, i8* %1, i64 %2, i8* %3, i64 %4, i8* %5) {
+entry:
+  ret i32 -1
+}
+"#
+    .to_string()
 }
 
 /// `__rlyeh_sendfile(i64 out_fd, i64 in_fd, i64* off, i64 count) -> i64` 的平台实现。

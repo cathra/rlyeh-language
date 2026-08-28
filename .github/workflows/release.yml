@@ -7,6 +7,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   release:
     strategy:
@@ -17,18 +20,35 @@ jobs:
             target: aarch64-apple-darwin
             name: rlyeh-macos-arm64
             ext: ''
+            clang_setup: xcode
           - os: macos-latest
             target: x86_64-apple-darwin
             name: rlyeh-macos-x86_64
             ext: ''
+            clang_setup: xcode
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             name: rlyeh-linux-x86_64
             ext: ''
+            clang_setup: apt
+          # Linux arm64：GitHub ARM runner 原生构建（ubuntu-24.04-arm）
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            name: rlyeh-linux-arm64
+            ext: ''
+            clang_setup: apt
           - os: windows-latest
-            target: x86_64-pc-windows-msvc
+            target: x86_64-pc-windows-gnu
             name: rlyeh-windows-x86_64
             ext: .exe
+            clang_setup: llvm
+          # Windows arm64：LLVM/MinGW arm64 交叉（rust-lld 链接，需 Windows ARM64
+          # sysroot；本机 macOS 缺 import 库，由 CI 提供）
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            name: rlyeh-windows-arm64
+            ext: .exe
+            clang_setup: llvm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,14 +58,69 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build release binary
+      # rlyeh-driver 运行时经外部 clang 汇编 LLVM IR + 链接（lib.rs compile_ir），
+      # 故各平台需安装 clang。
+      - name: Install clang (macOS)
+        if: matrix.clang_setup == 'xcode'
+        run: xcode-select --install || true
+
+      - name: Install clang (Linux)
+        if: matrix.clang_setup == 'apt'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+
+      - name: Install clang (Windows, LLVM)
+        if: matrix.clang_setup == 'llvm'
+        shell: pwsh
+        run: |
+          choco install llvm -y
+          echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      # Windows GNU 目标链接器：MinGW gcc（driver + actor 运行时经 MinGW 链接验证）。
+      - name: Install MinGW linker (Windows)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: pwsh
+        run: choco install mingw -y
+
+      - name: Build release binaries
+        shell: bash
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir -p dist/bin
+          for b in rlyeh-driver rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon; do
+            cp "target/${{ matrix.target }}/release/$b${{ matrix.ext }}" "dist/bin/$b${{ matrix.ext }}"
+          done
+
+      # 完整 toolchain：标准库 + 技能 + examples，随包分发。
+      - name: Assemble toolchain (std/skills/examples)
         shell: bash
         run: |
-          cargo build -p rlyeh-driver --release --target ${{ matrix.target }}
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/rlyeh-driver${{ matrix.ext }} dist/${{ matrix.name }}${{ matrix.ext }}
+          cp -R crates/rlyeh-std/rlyeh dist/std
+          if [ -d skills/rlyeh-language ]; then cp -R skills/rlyeh-language dist/skills/; fi
+          if [ -d examples/std-demos ]; then cp -R examples/std-demos dist/examples/; fi
+
+      # 生成 rlyeh 入口 wrapper（可重定位：bin/ 与 std/ 同级）。
+      - name: Generate rlyeh wrapper
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            printf '@echo off\r\nset RLYEH_STD_PATH=%%~dp0..\\std\r\n"%%~dp0rlyeh-driver.exe" %%*\r\n' > dist/bin/rlyeh.bat
+          else
+            printf '#!/usr/bin/env bash\nexport RLYEH_STD_PATH="${RLYEH_STD_PATH:-$(cd "$(dirname "$0")/.." && pwd)/std}"\nexec "$(dirname "$0")/rlyeh-driver" "$@"\n' > dist/bin/rlyeh
+            chmod +x dist/bin/rlyeh
+          fi
+
+      - name: Archive toolchain
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "${{ matrix.name }}.tar.gz" bin std skills examples
+          cd ..
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.name }}${{ matrix.ext }}
+          files: dist/${{ matrix.name }}.tar.gz

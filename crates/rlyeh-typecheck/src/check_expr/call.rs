@@ -347,12 +347,10 @@ pub(super) fn check_call(
         if ty_full == "Gc" && method == "new" {
             return check_gc_new(ctx, args, span);
         }
-        // `Box::leak` 特判（T3a）：泄漏堆对象，返回指向堆 `T` 的裸指针
-        // `*mut T`（G3 语义，`*p` 读写可用），不再释放。
-        // 目标签名 `fn leak(self) -> &'static mut T`——MVP 退化：返回裸指针
-        // 而非引用（值语义等价——`&*b` 经 MIR 折叠（U5）取 Box 槽 0 指针值，
-        // 与 `FieldGet(b, 0, Ptr)` 同一地址；裸指针规避 borrowck 引用逃逸检查；
-        // `'static` 生命周期标注宽松丢弃（G4））。
+        // `Box::leak` 特判（T3a / Y5）：泄漏堆对象，返回指向堆 `T` 的 `&'static mut T`
+        // 引用（目标签名），不再释放。U5 AddrOf 已就绪——返回 `&mut T`（引用），
+        // codegen 中引用与裸指针同为地址值（取 Box 槽 0 指针），`*leaked` 解引用
+        // 走 `Type::Ref` 分支得 `T`；`'static` 生命周期标注宽松丢弃（G4）。
         if ty_full == "Box" && method == "leak" {
             if args.len() != 1 {
                 return Err(TypeError::UnexpectedArgumentCount {
@@ -369,7 +367,7 @@ pub(super) fn check_call(
                 index: 0,
                 ty: FieldScalar::Ptr,
             };
-            return Ok((ptr, Type::RawPtr(Box::new(inner), true)));
+            return Ok((ptr, Type::Ref(Box::new(inner), Mutability::Mutable)));
         }
         // `Weak` 升级特判：`Weak::upgrade(w)`（K3 弱引用升级为强引用）
         if ty_full == "Weak" && method == "upgrade" {

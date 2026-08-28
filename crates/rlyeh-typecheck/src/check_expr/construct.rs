@@ -29,6 +29,22 @@ pub(super) fn check_struct_construct(
     for ta in type_args {
         resolved_args.push(resolve_ast_type(ctx, ta, span)?);
     }
+    // Y4a（2026-08-28）：泛型 struct 字面量构造——`type_args` 为空（无 turbofish）
+    // 且 struct 含泛型参数时，从字段实参推断泛型参数。支持字段类型为裸
+    // `Generic(tp)` 的直接推断（`MutexGuard { value: 42 }` → value: T → T = i64）；
+    // 复合字段（`Vec<T>` 等）的统一推断暂不覆盖（登记 lang-defects.md）。
+    if resolved_args.is_empty() && !def.type_params.is_empty() {
+        for (fname, fval) in fields {
+            if let Some((_, fty)) = def.fields.iter().find(|(n, _)| n == fname) {
+                if let Type::Generic(tp) = fty {
+                    if def.type_params.iter().any(|p| p == tp) {
+                        let (_, arg_ty) = infer_expr(ctx, fval)?;
+                        resolved_args.push(arg_ty);
+                    }
+                }
+            }
+        }
+    }
     if !resolved_args.is_empty() && resolved_args.len() != def.type_params.len() {
         return Err(TypeError::GenericArityMismatch {
             name: struct_name.clone(),
