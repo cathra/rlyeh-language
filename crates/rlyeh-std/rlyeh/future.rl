@@ -207,6 +207,9 @@ impl Error for TimeoutError {
     fn message(&self) -> String {
         self.message
     }
+    fn source(&self) -> Option<String> {
+        Option::None
+    }
 }
 
 // S2c/W4：带超时阻塞轮询——`duration` 内未 `Ready` 返回 `Err(TimeoutError)`（超时）。

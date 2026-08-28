@@ -254,3 +254,61 @@ fn is_nonblocking(fd: i64) -> Result<bool, io::error::IoError> {
     }
     Result::Ok((flags & 4) != 0)
 }
+
+// ===== Y2a（2026-08-28）：kqueue/kevent 平台后端 FFI 绑定 =====
+// macOS/BSD 高性能事件后端（替代 poll 的 O(n) 扫描）。kevent 结构体 32 字节：
+//   ident(uintptr 8B) + filter(int16 2B) + flags(uint16 2B) +
+//   fflags(uint32 4B) + data(intptr 8B) + udata(ptr 8B)
+// 常量（macOS/BSD）：EVFILT_READ=-1、EVFILT_WRITE=-2；EV_ADD=0x1、EV_DELETE=0x2。
+// 仅 FFI 绑定 + 结构体构造（Y2a）；接入 Poller 分派为 Y2b。
+
+// 构造 kevent 结构体缓冲（小端字节填充；fd 为 ident，filter/EVFILT 常量，flags/EV_* 常量）。
+fn kevent_make(fd: i64, filter: i64, flags: i64) -> String {
+    let mut buf = String::with_capacity(32);
+    // ident: uintptr_t（8 字节小端）
+    let mut i = 0;
+    while i < 8 {
+        buf.push_byte((fd >> (i * 8)) & 0xFF);
+        i = i + 1;
+    }
+    // filter: int16（EVFILT_READ=-1 / EVFILT_WRITE=-2，负数经算术右移 & 0xFF）
+    buf.push_byte(filter & 0xFF);
+    buf.push_byte((filter >> 8) & 0xFF);
+    // flags: uint16（EV_ADD=0x1 / EV_DELETE=0x2）
+    buf.push_byte(flags & 0xFF);
+    buf.push_byte((flags >> 8) & 0xFF);
+    // fflags: uint32 = 0
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    // data: intptr（8 字节）= 0
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    // udata: void*（8 字节）= 0
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf.push_byte(0);
+    buf
+}
+
+// 创建 kqueue 实例，返回 kq fd（失败返回 -1）。
+fn kqueue_new() -> i64 {
+    kqueue()
+}
+
+// 向 kqueue 提交 kevent 变更列表（EV_ADD/EV_DELETE 等）。返回就绪事件数（<0 失败）。
+fn kevent_ctl(kq: i64, changes: String, nchanges: i64) -> i64 {
+    kevent(kq, changes, nchanges, String::from(""), 0, String::from(""))
+}

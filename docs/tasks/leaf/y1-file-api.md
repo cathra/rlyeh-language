@@ -1,7 +1,7 @@
 # Y1 File 目标 API
 
 > **所属阶段**：阶段 Y
-> **状态**：🔧 部分完成
+> **状态**：🔧 部分完成（剩余 `read(&mut [u8])`/`write(&[u8])` 切片实参挂 U1 切片成熟，2026-08-28）
 > **依赖**：U1
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
@@ -17,6 +17,10 @@
 
 `io/file.rl`：`open(path)` 默认只读兼容壳 ≡ `open_with(path, Read)`；`struct Metadata{size, mtime, is_file, is_dir}` + `File::metadata() -> Result<Metadata, IoError>`（4 槽非按值 calloc 堆对象）；driver 注入 `__rlyeh_file_size/mtime/mode` 平台内建（POSIX stat(2) 直读——Linux/macOS 偏移经本机 clang offsetof 实测、其余平台 -1 stub）；S_IFMT 掩码判定 is_file/is_dir。**`read(&mut [u8])`/`write(&[u8])` 切片实参挂 U1**（MVP 保留 `read(cap)`/`write(String)` 降级）。
 
+## 风险评估（2026-08-28）
+
+剩余 `read(&mut [u8])`/`write(&[u8])` 切片实参依赖 **U1 切片成熟**（`&mut [u8]`/`&[u8]` 切片类型作函数参数 + 切片值传递）。风险中——若 U1 切片参数化已完成则直接落地，否则需语言级增强。建议后续以独立子任务验证切片参数可行性后落地。
+
 ## 验证
 
 `file_open_with.{rlyeh,out}` + `io_file_test.rs` 新增 file_open_with_modes/file_metadata_complete（11/11 全绿）。
@@ -26,3 +30,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-08-26 | 由阶段 U–Z 执行记录细化为独立叶子文档 |
+| 2026-08-28 | 标注剩余切片实参挂 U1 依赖 + 风险评估 |

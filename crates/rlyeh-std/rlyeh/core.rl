@@ -2355,6 +2355,12 @@ extern fn __rlyeh_file_mode(path: String) -> i64;
 // --- io/nio.rl + io/sendfile.rl：非阻塞 IO + 零拷贝传输（R 阶段，2026-08）---
 extern fn fcntl(fd: i64, cmd: i64, arg: i64) -> i32;   // F_GETFL=3 / F_SETFL=4（O_NONBLOCK=0x4）；i32 返回 → extern_ret32 清洗
 extern fn poll(fds: String, nfds: i64, timeout: i64) -> i32;   // pollfd 缓冲（8 字节/项）
+// Y2a（2026-08-28）：kqueue/kevent（macOS/BSD 高性能事件后端）。kevent 结构体
+// 32 字节缓冲（ident uintptr 8B + filter int16 2B + flags uint16 2B + fflags
+// uint32 4B + data intptr 8B + udata ptr 8B），经 String 承载传 data 指针；
+// timeout 为 `{timespec.tv_sec i64, tv_nsec i64}` 16 字节缓冲（String）或空。
+extern fn kqueue() -> i32;
+extern fn kevent(kq: i64, changelist: String, nchanges: i64, eventlist: String, nevents: i64, timeout: String) -> i32;
 extern fn fileno(f: i64) -> i32;   // FILE* → 底层 fd（File::sendfile_to）
 // sendfile(2) 平台差异由 driver 注入 define（见 rlyeh-driver lib.rs platform_builtin_ir）：
 // 统一签名 (out_fd, in_fd, off_ptr, count)；WASI 下注入返回 -1 的 stub。
