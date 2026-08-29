@@ -114,6 +114,14 @@ pub(crate) fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &st
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
     ctx.type_params = t.generics.iter().map(|p| p.name.clone()).collect();
 
+    let full = full_name(prefix, &t.name);
+    // P7d-1（2026-08-29）：标记「正在收集的 trait」，使方法签名内的自引用
+    // （如 `fn source(&self) -> Option<&dyn Error>`）在 trait 尚未注册进 trait_defs
+    // 前，经 resolve.rs 的 dyn 分支回退到自身名字解析（不提前插入占位 def，避免
+    // 干扰泛型 trait 的方法签名解析）。
+    let saved_collecting = ctx.collecting_trait.take();
+    ctx.collecting_trait = Some(full.clone());
+
     let mut methods = Vec::new();
     for m in &t.methods {
         let mut params = Vec::with_capacity(m.params.len());
@@ -142,8 +150,9 @@ pub(crate) fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &st
 
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
+    ctx.collecting_trait = saved_collecting;
     ctx.insert_trait(
-        full_name(prefix, &t.name),
+        full,
         TraitDef {
             name: t.name.clone(),
             type_params: t.generics.iter().map(|p| p.name.clone()).collect(),
@@ -251,16 +260,20 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
         });
     }
 
-    ctx.type_params = saved_params;
-    ctx.generic_subst = saved_subst;
-    ctx.assoc_types = saved_assoc;
-    ctx.self_type = saved_self;
     // P6c（2026-08-29）：解析 trait 泛型实参（如 `From<IoErrorKind>` 的 `IoErrorKind`）。
+    // 须在恢复 type_params 之前进行——此时 ctx.type_params 仍为 imp.generics（方法
+    // 循环结束后未被外层 restore 覆盖），trait 类型实参中的 impl 级泛型参数
+    // （如 `impl<T> Wrap<T> for Pair<T>` 的 `Wrap<T>` 之 `T`）才能正确解析；否则会因
+    // type_params 已清空而报 undefined type。
     let trait_type_args = imp
         .trait_type_args
         .iter()
         .map(|t| resolve_ast_type(ctx, t, imp.span))
         .collect::<Result<Vec<Type>, TypeError>>()?;
+    ctx.type_params = saved_params;
+    ctx.generic_subst = saved_subst;
+    ctx.assoc_types = saved_assoc;
+    ctx.self_type = saved_self;
     ctx.insert_impl(ImplDef {
         trait_name,
         self_type,

@@ -135,23 +135,29 @@ pub(crate) fn resolve_ast_type(
         // 布局为 2 槽胖指针（数据指针 + vtable 指针），转换与调用见
         // `coerce_to_dyn` / `check_method_call` 的 Dyn 分支。
         AstType::Dyn(name) => {
-            let full = if ctx.trait_defs.contains_key(name) {
-                name.clone()
+            // 复用 resolve_trait_key：支持裸名 / 模块前缀 / use 别名 / `::Name` 结尾
+            // 定位（与 collect_impl 一致）。
+            // P7d-1（2026-08-29）：若未找到且当前正在收集同名 trait（自引用 trait，
+            // 如 `trait Error { fn source(&self) -> Option<&dyn Error> }`），回退到自身。
+            if let Some(full) = ctx.resolve_trait_key(name) {
+                Ok(Type::Dyn(full))
+            } else if let Some(cur) = &ctx.collecting_trait {
+                let bare = name.rsplit("::").next().unwrap_or(name);
+                let cur_bare = cur.rsplit("::").next().unwrap_or(cur);
+                if bare == cur_bare {
+                    Ok(Type::Dyn(cur.clone()))
+                } else {
+                    Err(TypeError::UndefinedType {
+                        name: name.clone(),
+                        span,
+                    })
+                }
             } else {
-                // use 导入别名（`use shape::Shape` 后 `dyn Shape`）
-                ctx.use_aliases
-                    .get(name)
-                    .filter(|f| ctx.trait_defs.contains_key(*f))
-                    .cloned()
-                    .unwrap_or_else(|| name.clone())
-            };
-            if !ctx.trait_defs.contains_key(&full) {
-                return Err(TypeError::UndefinedType {
+                Err(TypeError::UndefinedType {
                     name: name.clone(),
                     span,
-                });
+                })
             }
-            Ok(Type::Dyn(full))
         }
         AstType::Tuple(ts) => {
             // X4：空元组 `()` → 单元类型 `Type::Unit`（`Result<(), FmtError>` 的 `()`

@@ -83,6 +83,10 @@ pub struct TypeContext {
     pub enum_defs: HashMap<String, EnumDef>,
     /// trait 定义表
     pub trait_defs: HashMap<String, TraitDef>,
+    /// P7d-1（2026-08-29）：当前正在收集的 trait 完整名（含模块前缀）。
+    /// 用于自引用 trait（如 `trait Error { fn source(&self) -> Option<&dyn Error> }`）
+    /// 在尚未注册进 trait_defs 前，让 dyn 解析回退到自身名字。
+    pub collecting_trait: Option<String>,
     /// impl 块列表（inherent 与 trait impl 统一存放）
     pub impl_defs: Vec<ImplDef>,
     /// 变体名索引（变体名 → (枚举名, 变体名)，支持裸名 `Some(x)` 构造）

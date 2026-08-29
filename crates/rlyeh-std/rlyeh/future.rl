@@ -207,7 +207,8 @@ impl Error for TimeoutError {
     fn message(&self) -> String {
         self.message
     }
-    fn source(&self) -> Option<String> {
+    // P7d-1（2026-08-29）：升级为 Option<&dyn Error>（真实错误链；P4 上转型已支持）
+    fn source(&self) -> Option<&dyn Error> {
         Option::None
     }
 }

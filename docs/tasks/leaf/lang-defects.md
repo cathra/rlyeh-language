@@ -38,7 +38,7 @@ Y 阶段任务风险评估（2026-08-28）在实测中探测到多个语言级�
 
 - **症状**：`impl From<io::error::IoErrorKind> for IoError` → parser 报 `expected '>', found Colon`（泛型类型实参不支持 `::` 路径）；裸名 `impl From<IoErrorKind>` 可行。
 - **影响**：Y6b 的 `From`/`Into` std 层只能对**裸名**类型生效；模块内路径类型（`io::error::IoErrorKind`）的泛型 impl 不可写。
-- **where 子句缺失**：`impl<T, U> Into<U> for T where U: From<T>`（blanket impl）不可行——无 `where` 子句语法。
+- **where 子句 + `Into` blanket 已支持（P6b / P6c-1/2，2026-08-29）**：`where` 子句语法已可解析进 AST（约束名记录，bound 支持 `::` 路径与泛型实参）；`Into::into` 的 blanket 语义由 typechecker 实现——`Into::<U>::into(x)` 约束求解确认 `impl From<A_source> for U_target` 存在后改写 `From::from(x)`（不注册真实 blanket impl，规避其方法体 `From::from(self)` 泛型静态检查障碍）。**仍待专项**：通用 `where` 约束求解（任意 blanket impl 的方法体在泛型层面静态检查 + 关联类型投影依赖 bound）尚未实现，`where` 约束目前仅记录不校验。
 - **修复方向**：parser 泛型类型实参支持 `::` 路径 + 增加 `where` 子句（`?` 运算符 From 自动转换前提）。
 
 ### 5. 泛型 impl 静态方法类型参数推断（源自 Y4b）— ✅ 已修复（Y4b-2）
@@ -120,6 +120,15 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 
 **风险**：高（复合字段推断 + 无 turbofish 双重语言级障碍，破坏性大）。**建议**：登记 lang-defects 待专项（Y4c 已登记）；先修复合字段推断或引入 turbofish/泛型返回推断后再推进。
 
+### 9. 方法返回 `&self.struct_field` 引用悬空（源自 P7d-1 / Y6c）
+
+- **症状**：方法返回 `&self.field`（取结构体字段地址作为引用返回）时，codegen 生成的字段槽地址指向**按值传入的 `self` 参数**（方法返回后该参数所在槽销毁），调用方拿到的引用悬空——解引用读到垃圾值或段错误。
+- **实证（2026-08-29，P7d-1）**：`trait Error { fn source(&self) -> Option<&dyn Error> }` 的 `impl Error for AppError { fn source(&self) -> Option<&dyn Error> { let d: &dyn Error = &self.source; ... } }`（`source: &IoFailure` 为引用字段）输出错乱；改为「持有引用类型字段 + 上转**存储的引用值**」（`let d: &dyn Error = self.source;`）则正确（`self.source` 是字段里的引用值，上转而非取地址）。
+- **根因**：V1「真实取址」（`&obj.field` → GEP 槽地址）对**局部/按值 self 字段**生成的是临时栈地址，返回该地址即悬空；MVP 借用检查未将「返回字段地址」判定为 `DanglingReference`（仅对返回 `&x` 局部变量/绑定引用变量判定）。
+- **影响**：错误包装器（及其他需返回内部引用者）**不能**用 `&self.field` 形式返回字段引用；须把内部引用作为**引用类型字段**存储，并返回该字段的引用**值**（上转型），而非对字段取地址。
+- **约束/规避**：MVP 暂不支持 `&dyn Error` 直接作 struct 字段（dtor/vtable 槽归零），故 `source` 链载体退化到具体引用类型（`&IoFailure`）；待借用检查补全「返回字段地址 = 悬空」判定 + `&dyn Error` 字段支持后解除。
+- **状态**：📋 登记（MVP 已知限制，非阻塞——用引用值字段规避即可，见 y6-error-source.md P7d-1 小节）。
+
 ## 变更记录
 
 | 日期 | 变更 |
@@ -130,3 +139,4 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 2026-08-28 | 登记完整 Poller kqueue 分派待专项（Y2b） |
 | 2026-08-28 | 登记 Channel<T> 泛型化待专项（Y4c，复合字段推断 + 无 turbofish） |
 | 2026-08-28 | 细化 #6（Mutex<T> 空锁→带值锁，生命周期 MVP 裸指针集 + Deref 可选）；#7（Poller kqueue 分派，基础设施已齐、无语言障碍、低风险优先）；#8（Channel<T> 复合字段推断 + 无 turbofish 双重障碍） |
+| 2026-08-29 | 新增 #9（方法返回 `&self.struct_field` 引用悬空，源自 P7d-1 / Y6c 实证）：V1 真实取址对按值 self 字段生成临时栈地址、返回即悬空，MVP 借用检查未判定为 DanglingReference；规避——内部引用用引用类型字段存储并返回引用值（非取地址） |

@@ -41,29 +41,31 @@ impl IoError {
 // MVP 仅 message()；正式 Display/Debug 随 Q3（格式化 trait）。
 // H4 限制：dyn Trait 仅可作局部变量绑定（不可作函数参数），
 // describe 类调用在函数体内构造 `let d: dyn Error = ...`。
-// Y6a（2026-08-28）：补 `source()`——非 dyn 退化返回 `Option<String>`
-// （源错误 message 字符串；`&dyn Error` 构造障碍见 lang-defects.md）。
+// Y6a（2026-08-28）：补 `source()`——初版因 `&dyn Error` 上转型未实现退化为
+// `Option<String>`（仅返回源错误 message 字符串）。
+// P7d-1（2026-08-29）：利用 P4 已完成的 `&dyn Error` 上转型，升级为
+// `Option<&dyn Error>`，形成真实错误链（逐层 source 追溯，而非字符串拷贝）。
 trait Error {
     fn message(&self) -> String;
-    fn source(&self) -> Option<String>;
+    fn source(&self) -> Option<&dyn Error>;
 }
 
 impl Error for IoError {
     fn message(&self) -> String {
         self.message
     }
-    fn source(&self) -> Option<String> {
+    fn source(&self) -> Option<&dyn Error> {
         Option::None
     }
 }
 
 // M2b / Y6b（2026-08）：错误转换约定（std-lib.md §12 From/Into trait）。
-// Y6b（2026-08-28）：泛型 trait `From<T>`/`Into<T>` 声明 + **裸名**类型实参
-// impl 可行（`impl From<IoErrorKind>`；路径实参 `From<io::error::IoErrorKind>`
-// 触发 parser 错误——泛型实参不支持 `::` 路径）。`IoError` 经 `From<IoErrorKind>`
-// 接入 `from_kind`。MVP 限制：parser 无 where 子句（blanket impl 不可行）→
-// `Into` 需显式 impl 或 `into()` 调用退化；`?` 运算符 From 自动转换（`E: Into<F>`）
-// 待语言级（lang-defects.md）。
+// Y6b（2026-08-28）：泛型 trait `From<T>`/`Into<T>` 声明 + 类型实参支持 `::` 路径
+// （`impl From<io::error::IoErrorKind> for IoError`，P6a）与 `where` 子句（P6b）。
+// `IoError` 经 `From<IoErrorKind>` 接入 `from_kind`。
+// P6c（2026-08-29）：`From::from` + `?` 运算符 From 自动转换已落地；
+// P6c-1/2（2026-08-29）：`Into::into` 经 blanket 语义实现——`Into::<U>::into(x)`
+// 约束求解确认 `impl From<A> for U` 存在后改写 `From::from(x)`（std 无需注册 blanket impl）。
 trait From<T> {
     fn from(v: T) -> Self;
 }
