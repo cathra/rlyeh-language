@@ -966,8 +966,10 @@ pub(crate) use misc::{builtin_signature, coerce_to_dyn, type_mentions_self};
 // 宏/序列化辅助被兄弟子模块调用，显式 re-export 供 `use super::*` 可见
 pub(crate) use macro_ser::{check_macro_call, parse_format_string, string_from_lit_ast,
     mk_ident_call, mk_path_call, bin_add, fold_add};
-pub(crate) use json::{check_json_parse, check_json_to_writer, check_json_from_reader};
-pub(crate) use toml::check_toml_parse;
+pub(crate) use json::{
+    check_json_parse, check_json_try_parse, check_json_to_writer, check_json_from_reader,
+};
+pub(crate) use toml::{check_toml_parse, check_toml_try_parse};
 pub(crate) use json_ser::check_json_stringify;
 pub(crate) use toml_ser::check_toml_stringify;
 // 闭包辅助被 call.rs 等兄弟子模块调用

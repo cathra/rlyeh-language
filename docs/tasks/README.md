@@ -24,6 +24,7 @@
 | 阶段 U–Z | [`stage-u-z.md`](./stage-u-z.md) | 目标 API 对齐（development-plan §3c）；子任务列表 + 叶子 + 进度 |
 | V2 任务 | [`v2-str-view.md`](./v2-str-view.md) | `&str` 引用视图（V2-A~E 子任务 + 叶子） |
 | V3 任务 | [`v3-iterator-adapters.md`](./v3-iterator-adapters.md) | Iterator 适配器（V3-A1~A4/B/C/D1~D5/E 子任务 + 叶子；高风险 A/D 已分解为低/中风险） |
+| 专项开发计划 | [`专项开发计划.md`](./专项开发计划.md) | 整合 lang-defects/parser-rework/legacy-misc 待办为 P1–P10，按风险/依赖排 7 批次执行序 |
 
 ---
 
@@ -64,3 +65,4 @@
 | 2026-08-26 | 全量细化：A–Z 全部任务细化为单文档叶子（155 个），stage 索引改为叶子清单 |
 | 2026-08-26 | 补齐层级：stage 索引补「阶段 → 子任务列表 → 叶子」分层；里程碑执行情况迁移至 milestone-1/2/3.md |
 | 2026-08-26 | 里程碑三级结构：CODEBUDDY §6 = 里程碑列表；milestone-*.md = 任务列表；milestone-tasks/ = 单任务文档（23 个） |
+| 2026-08-28 | 新增专项开发计划索引（整合 lang-defects/parser-rework/legacy-misc 待办为 P1–P10 执行计划） |

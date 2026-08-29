@@ -38,7 +38,7 @@ fn mutex_trylock_ebusy_semantics() {
     let out = run(
         r#"
 fn main() {
-    let m = Mutex::new();
+    let m = Mutex::new(0);
     // 未加锁：try_lock 成功
     if m.try_lock() { println(1); } else { println(0); }   // 1
     // 已加锁：try_lock 失败（EBUSY）
@@ -59,7 +59,7 @@ fn mutex_lock_unlock_critical_section() {
     let out = run(
         r#"
 fn main() {
-    let m = Mutex::new();
+    let m = Mutex::new(0);
     let mut count = 0;
     let mut i = 0;
     while i < 10 {
@@ -81,7 +81,7 @@ fn mutex_loop_stability() {
     let out = run(
         r#"
 fn main() {
-    let m = Mutex::new();
+    let m = Mutex::new(0);
     let mut i = 0;
     while i < 100 {
         m.lock();
@@ -93,6 +93,27 @@ fn main() {
 "#,
     );
     assert_eq!(out, "100\n");
+}
+
+/// P5（2026-08-28）：带值锁 + lock_guard 访问——`Mutex::new(v)` 带值，守卫
+/// `get`/`get_mut` 经引用读写被锁值，函数尾自动解锁。
+#[test]
+fn mutex_value_lock_guard() {
+    let out = run(
+        r#"
+fn main() {
+    let mut m = Mutex::new(42);
+    let g = m.lock_guard();
+    println(*g.get());      // 42（带值锁读）
+    let mut m2 = Mutex::new(10);
+    let mut g2 = m2.lock_guard();
+    *g2.get_mut() = 77;     // 写回
+    println(*g2.get());     // 77
+    println(m2.value);      // 77（写回生效）
+}
+"#,
+    );
+    assert_eq!(out, "42\n77\n77\n");
 }
 
 /// RwLock 读-读共享、读锁下写锁互斥（EBUSY）。

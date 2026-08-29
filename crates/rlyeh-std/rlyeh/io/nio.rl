@@ -39,24 +39,34 @@ impl Event {
     }
 }
 
-// R1b：事件轮询器（poll(2) 封装）。
+// R1b：事件轮询器（poll(2) 封装 + kqueue 分派，Y2b）。
 // 内部维护注册表：fd 列表 + 关注标志（POLLIN=1 / POLLOUT=4）+ 应用侧 token。
+// P1（2026-08-28）：`kq` 字段接入 kqueue——macOS(2)/BSD(4) 在 `new` 创建 kqueue，
+// `register`/`deregister`/`poll` 走 kevent 分派（O(1)），其他平台 `kq=-1` 回退 poll(2)。
 struct Poller {
     fds: Vec<i64>,
     events: Vec<i64>,
     tokens: Vec<i64>,
+    kq: i64,
 }
 
 impl Poller {
-    // 创建轮询器（poll(2) 无显式创建，Poller 仅为注册表状态容器）。
+    // 创建轮询器。macOS/BSD 建 kqueue（kq>0）；其他平台 kq=-1（回退 poll(2)）。
     fn new() -> Result<io::nio::Poller, io::error::IoError> {
+        let kq = if __rlyeh_target_os() == 2 || __rlyeh_target_os() == 4 {
+            io::nio::kqueue_new()
+        } else {
+            -1
+        };
         Result::Ok(io::nio::Poller {
             fds: Vec::new(),
             events: Vec::new(),
             tokens: Vec::new(),
+            kq: kq,
         })
     }
     // 注册 fd 并绑定应用侧 token；重复注册报 AlreadyExists。
+    // macOS/BSD 额外向 kqueue 提交 EV_ADD（按 interest 映射 EVFILT_READ/WRITE）。
     fn register(&mut self, fd: i64, token: i64, interest: io::nio::Interest) -> Result<i64, io::error::IoError> {
         let n = self.fds.len();
         let mut i = 0;
@@ -69,22 +79,34 @@ impl Poller {
             }
             i = i + 1;
         }
+        if self.kq >= 0 {
+            io::nio::kq_change(self.kq, fd, io::nio::interest_filter_mask(interest), 1);
+        }
         self.fds.push(fd);
         self.events.push(io::nio::interest_events(interest));
         self.tokens.push(token);
         Result::Ok(1)
     }
     // 修改 fd 的关注事件与 token；未注册则追加注册（与 register 等价）。
+    // macOS/BSD 额外向 kqueue 重新提交 EV_ADD（kevent 同 ident+filter 覆盖，删旧增新由 mask 决定）。
     fn reregister(&mut self, fd: i64, token: i64, interest: io::nio::Interest) -> Result<i64, io::error::IoError> {
         let n = self.fds.len();
         let mut i = 0;
         while i < n {
             if self.fds[i] == fd {
+                if self.kq >= 0 {
+                    // 删旧 filter（旧 poll 掩码→filter mask），加新 filter（新 mask）
+                    io::nio::kq_change(self.kq, fd, io::nio::events_to_filter_mask(self.events[i]), 2);
+                    io::nio::kq_change(self.kq, fd, io::nio::interest_filter_mask(interest), 1);
+                }
                 self.events[i] = io::nio::interest_events(interest);
                 self.tokens[i] = token;
                 return Result::Ok(1);
             }
             i = i + 1;
+        }
+        if self.kq >= 0 {
+            io::nio::kq_change(self.kq, fd, io::nio::interest_filter_mask(interest), 1);
         }
         self.fds.push(fd);
         self.events.push(io::nio::interest_events(interest));
@@ -92,11 +114,15 @@ impl Poller {
         Result::Ok(1)
     }
     // 注销 fd（最后一项覆盖被删项后 pop，保持注册表紧凑）。
+    // macOS/BSD 额外向 kqueue 提交 EV_DELETE。
     fn deregister(&mut self, fd: i64) -> Result<i64, io::error::IoError> {
         let n = self.fds.len();
         let mut i = 0;
         while i < n {
             if self.fds[i] == fd {
+                if self.kq >= 0 {
+                    io::nio::kq_change(self.kq, fd, io::nio::events_to_filter_mask(self.events[i]), 2);
+                }
                 self.fds[i] = self.fds[n - 1];
                 self.events[i] = self.events[n - 1];
                 self.tokens[i] = self.tokens[n - 1];
@@ -114,6 +140,7 @@ impl Poller {
     }
     // 阻塞等待就绪事件；timeout_ms < 0 表示无限等待。
     // 返回本次就绪的事件列表（每次调用重新扫描 revents，interest 为实际就绪方向）。
+    // macOS/BSD 且 kq>=0 走 kqueue（kevent_wait + 解析）；否则回退 poll(2)。
     fn poll(&self, timeout_ms: i64) -> Result<Vec<io::nio::Event>, io::error::IoError> {
         if __rlyeh_target_os() == 5 {
             return Result::Err(IoError::new(
@@ -124,6 +151,9 @@ impl Poller {
         let n = self.fds.len();
         if n == 0 {
             return Result::Ok(Vec::new());
+        }
+        if self.kq >= 0 {
+            return self.kq_poll(timeout_ms);
         }
         // 构造 pollfd 缓冲：8 字节/项（fd int32 小端 + events int16 小端 + revents int16 = 0）
         let mut buf = String::with_capacity(n * 8);
@@ -162,6 +192,46 @@ impl Poller {
                     token: self.tokens[k],
                     interest: io::nio::revents_interest(revents),
                 });
+            }
+            k = k + 1;
+        }
+        Result::Ok(evs_out)
+    }
+    // Poller::poll 的 kqueue 分派：等待 + 解析 kevent 列表。
+    // 每项 32 字节：ident(fd 低 4B) + filter(int16 u16：EVFILT_READ=-1→0xFFFF/EVFILT_WRITE=-2→0xFFFE)。
+    // 用 fd 在注册表反查 token；filter 判断 interest（可读/可写）。
+    fn kq_poll(&self, timeout_ms: i64) -> Result<Vec<io::nio::Event>, io::error::IoError> {
+        let n = self.fds.len();
+        let res = io::nio::kevent_wait_res(self.kq, n, timeout_ms);
+        if res.count < 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("kevent failed"),
+            ));
+        }
+        let mut evs_out = Vec::new();
+        let mut k = 0;
+        while k < res.count {
+            let base = k * 32;
+            let fd = res.evlist.data[base]
+                | (res.evlist.data[base + 1] << 8)
+                | (res.evlist.data[base + 2] << 16)
+                | (res.evlist.data[base + 3] << 24);
+            let filt = res.evlist.data[base + 8] | (res.evlist.data[base + 9] << 8);
+            let mut j = 0;
+            while j < n {
+                if self.fds[j] == fd {
+                    let interest = if filt == 65535 {
+                        io::nio::Interest::Readable
+                    } else {
+                        io::nio::Interest::Writable
+                    };
+                    evs_out.push(io::nio::Event {
+                        token: self.tokens[j],
+                        interest: interest,
+                    });
+                }
+                j = j + 1;
             }
             k = k + 1;
         }
@@ -346,3 +416,93 @@ fn kevent_wait(kq: i64, nevents: i64, timeout_ms: i64) -> String {
     let n = __rlyeh_kevent(kq, String::from(""), 0, evlist, nevents, t);
     evlist
 }
+
+// ===== P1（2026-08-28）：Poller kqueue 分派辅助 =====
+// interest → filter 掩码（bit0=EVFILT_READ(-1), bit1=EVFILT_WRITE(-2)）。
+fn interest_filter_mask(i: io::nio::Interest) -> i64 {
+    match i {
+        io::nio::Interest::Readable => 1,
+        io::nio::Interest::Writable => 2,
+        io::nio::Interest::ReadableWritable => 3,
+    }
+}
+// poll 掩码（interest_events：Readable=1/Writable=4/ReadableWritable=5）→ filter 掩码。
+fn events_to_filter_mask(ev: i64) -> i64 {
+    if (ev & 4) != 0 {
+        if (ev & 1) != 0 {
+            3
+        } else {
+            2
+        }
+    } else {
+        1
+    }
+}
+// 构造 kevent changes 缓冲（含 mask 中各 filter 的一个 kevent，flags=EV_ADD(1)/EV_DELETE(2)）。
+fn kevent_changes(fd: i64, mask: i64, flags: i64) -> String {
+    let mut buf = String::with_capacity(64);
+    if (mask & 1) != 0 {
+        let ev = io::nio::kevent_make(fd, -1, flags);   // EVFILT_READ
+        let mut i = 0;
+        while i < 32 {
+            buf.push_byte(ev.data[i]);
+            i = i + 1;
+        }
+    }
+    if (mask & 2) != 0 {
+        let ev = io::nio::kevent_make(fd, -2, flags);   // EVFILT_WRITE
+        let mut i = 0;
+        while i < 32 {
+            buf.push_byte(ev.data[i]);
+            i = i + 1;
+        }
+    }
+    buf
+}
+// 计算 mask 的 filter 数（nchanges）。
+fn filter_count(mask: i64) -> i64 {
+    let mut c = 0;
+    if (mask & 1) != 0 { c = c + 1; }
+    if (mask & 2) != 0 { c = c + 1; }
+    c
+}
+// 向 kqueue 提交 EV_ADD(flags=1)/EV_DELETE(flags=2) 的 kevent 变更。
+fn kq_change(kq: i64, fd: i64, mask: i64, flags: i64) -> i64 {
+    let ch = io::nio::kevent_changes(fd, mask, flags);
+    io::nio::kevent_ctl(kq, ch, io::nio::filter_count(mask))
+}
+// 就绪结果：count = 实际就绪 kevent 数，evlist = 32 字节/项缓冲。
+struct KeventRes {
+    count: i64,
+    evlist: String,
+}
+// 等待 kqueue 就绪事件并返回就绪数 + 缓冲（供 Poller::poll 解析）。
+fn kevent_wait_res(kq: i64, nevents: i64, timeout_ms: i64) -> io::nio::KeventRes {
+    let mut evlist = String::with_capacity(nevents * 32);
+    let mut i = 0;
+    while i < nevents * 32 {
+        evlist.push_byte(0);
+        i = i + 1;
+    }
+    let t = if timeout_ms < 0 {
+        String::from("")
+    } else {
+        let mut tb = String::with_capacity(16);
+        let sec = timeout_ms / 1000;
+        let nsec = (timeout_ms % 1000) * 1000000;
+        let mut j = 0;
+        while j < 8 {
+            tb.push_byte((sec >> (j * 8)) & 0xFF);
+            j = j + 1;
+        }
+        j = 0;
+        while j < 8 {
+            tb.push_byte((nsec >> (j * 8)) & 0xFF);
+            j = j + 1;
+        }
+        tb
+    };
+    let cnt = __rlyeh_kevent(kq, String::from(""), 0, evlist, nevents, t);
+    io::nio::KeventRes { count: cnt, evlist: evlist }
+}
+

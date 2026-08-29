@@ -77,6 +77,21 @@ pub(crate) fn check_stmt(
                             pending_dyn_concrete = Some(inner_ty);
                         }
                     }
+                    // P4（2026-08-28）：`&dyn Trait` 上转型——注解为 `&dyn Trait`、
+                    // init 为 `&T`（T 实现该 trait）时，把 `&T` 引用上转为胖指针引用
+                    // `&dyn Trait`（data 指向引用目标、vtable 指向 T 的实现）。
+                    // 与 H4 值上转型同构，仅注解为 `Ref(Dyn)`；胖指针布局相同（2 槽）。
+                    else if let (Type::Ref(inner_at, _), Type::Ref(inner_init, _)) = (&at, &ty) {
+                        if let Type::Dyn(trait_name) = &**inner_at {
+                            if let Type::Named(_, _) = &**inner_init {
+                                let concrete = (**inner_init).clone();
+                                h_init =
+                                    coerce_to_dyn(ctx, h_init, &concrete, trait_name, span)?;
+                                ty = at.clone();
+                                pending_dyn_concrete = Some(concrete);
+                            }
+                        }
+                    }
                     if !at.compatible_with(&ty) {
                         return Err(TypeError::WrongType {
                             expected: at.to_string(),

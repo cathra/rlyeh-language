@@ -1650,6 +1650,75 @@ fn string_to_int(s: String) -> i64 {
     result
 }
 
+// P2（2026-08-28）：严格整数解析（`json.try_parse`/`toml.try_parse` 用）——
+// 全数字 + 可选负号，非法/部分合法输入返回 Err（替代 string_to_int 的宽松停止解析）。
+fn parse_int_strict(s: String) -> Result<i64, String> {
+    let mut i = 0;
+    let mut negative = 0;
+    if s.len > 0 {
+        if s.get(0) == 45 {
+            negative = 1;
+            i = 1;
+        }
+    }
+    if i >= s.len {
+        return Result::Err(String::from("invalid integer"));
+    }
+    let mut result = 0;
+    while i < s.len {
+        let c = s.get(i);
+        if 48 <= c <= 57 {
+            result = result * 10 + (c - 48);
+            i = i + 1;
+        } else {
+            return Result::Err(String::from("invalid integer"));
+        }
+    }
+    if negative == 1 {
+        result = 0 - result;
+    }
+    Result::Ok(result)
+}
+
+// P2（2026-08-28）：严格 JSON 字符串还原（`json.try_parse` 用）——校验首尾双引号闭合 +
+// 转义合法性，失败返回 Err（替代 json_unescape 的无校验剥引号）。
+fn json_unescape_checked(s: String) -> Result<String, String> {
+    if s.len < 2 {
+        return Result::Err(String::from("invalid string"));
+    }
+    if s.get(0) != 34 || s.get(s.len - 1) != 34 {
+        return Result::Err(String::from("unterminated string"));
+    }
+    let mut buf = String::new();
+    let mut i = 1;
+    while i < s.len - 1 {
+        let c = s.get(i);
+        if c == 92 {
+            if i + 1 < s.len - 1 {
+                let n = s.get(i + 1);
+                if n == 34 {
+                    buf.push_byte(34);
+                } else if n == 92 {
+                    buf.push_byte(92);
+                } else if n == 110 {
+                    buf.push_byte(10);
+                } else if n == 116 {
+                    buf.push_byte(9);
+                } else {
+                    return Result::Err(String::from("invalid escape"));
+                }
+                i = i + 2;
+            } else {
+                return Result::Err(String::from("invalid escape"));
+            }
+        } else {
+            buf.push_byte(c);
+            i = i + 1;
+        }
+    }
+    Result::Ok(buf)
+}
+
 // X2（2026-08-27）：引号感知分段——按分隔符分割，但跳过双引号字符串内的分隔符
 //（值含逗号的 TOML 内联表/数组）。返回段（含原空格，调用方自行 trim）。
 fn split_quoted(s: String, delim: i64) -> Vec<String> {

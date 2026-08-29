@@ -2,6 +2,8 @@
 //! （由 mod.rs 二次拆分而来，保持语义等价）
 
 use super::*;
+// P4c：`&T → &dyn Trait` 返回上转型（coerce_to_dyn 在 check_expr）
+use crate::check_expr::coerce_to_dyn;
 
 /// 收集全部顶层函数签名（用于跨模块解析与检查前声明）。
 pub fn collect_fn_signatures(
@@ -167,6 +169,21 @@ pub(crate) fn check_fn_body_with_self(
         // 零捕获闭包值等价于 fn 指针（调用展开为空字段读取），签名匹配时
         // 将尾表达式替换为 `FnPtr(__closure_N)`。
         let mut downgraded = false;
+        // P4c（2026-08-28）：`&dyn Trait` 作函数返回值——尾表达式为 `&T`
+        // （T 实现该 trait）时上转为胖指针引用 `&dyn Trait`（Y6 `source() -> &dyn Error` 前提）。
+        let mut upshifted = false;
+        if let (Type::Ref(inner_ret, _), Type::Ref(inner_body, _)) = (&return_type, &body_ty) {
+            if let Type::Dyn(trait_name) = &**inner_ret {
+                if let Type::Named(..) = &**inner_body {
+                    if let Some(fe) = hir_body.final_expr.take() {
+                        let concrete = (**inner_body).clone();
+                        let up = coerce_to_dyn(ctx, fe, &concrete, trait_name, f.span)?;
+                        hir_body.final_expr = Some(up);
+                        upshifted = true;
+                    }
+                }
+            }
+        }
         if let Type::Fn(sig) = &return_type {
             // 已固化无捕获闭包值 → fn 指针降级
             if let Some((fp_hir, fp_ty)) = try_closure_value_as_fn(&body_ty) {
@@ -194,7 +211,7 @@ pub(crate) fn check_fn_body_with_self(
                 }
             }
         }
-        if !downgraded {
+        if !downgraded && !upshifted {
             ctx.pop_scope();
             return Err(TypeError::WrongType {
                 expected: return_type.to_string(),

@@ -376,20 +376,37 @@ pub(super) fn check_method_call(
     //   let __vtp  = FieldGet(__obj, 1, Ptr);     // vtable 指针
     //   let __m    = Index(__vtp, 3+idx, Ptr);    // vtable[3+idx] 方法函数指针
     //   final: CallIndirect { callee: __m, args: [__data, ...实参], param_names, ret_name }
-    if let Type::Dyn(trait_name) = &recv_ty {
+    // P4（2026-08-28）：`&dyn Trait` 接收者同样走 vtable 虚调用（receiver 为
+    // `Ref(Dyn)`，胖指针布局与 `dyn Trait` 相同：槽 0=data 指针、槽 1=vtable）。
+    let dyn_trait_name = match &recv_ty {
+        Type::Dyn(t) => Some(t.clone()),
+        Type::Ref(inner, _) => match &**inner {
+            Type::Dyn(t) => Some(t.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(trait_name) = dyn_trait_name.as_ref() {
+        let trait_name = trait_name.clone();
         // H4 去虚拟化：接收者为 dyn 局部变量且绑定源具体类型已知时，静态分派到
         // 具体类型方法（vtable 调用在循环中受间接调用屏障阻止优化，静态调用
         // 可被 LLVM 内联 / 常量折叠；dyn 变量被重新赋值时映射已失效回退 vtable）
         if let HirExpr::Variable(var) = &recv_hir {
-            if let Some(devirt) =
-                devirtualize_dyn_call(ctx, var, trait_name, method, recv_hir.clone(), args, span)?
-            {
+            if let Some(devirt) = devirtualize_dyn_call(
+                ctx,
+                var,
+                trait_name.as_str(),
+                method,
+                recv_hir.clone(),
+                args,
+                span,
+            )? {
                 return Ok(devirt);
             }
         }
         let trait_def = ctx
             .trait_defs
-            .get(trait_name)
+            .get(&trait_name)
             .cloned()
             .ok_or_else(|| TypeError::UndefinedType {
                 name: trait_name.clone(),

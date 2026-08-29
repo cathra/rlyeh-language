@@ -129,7 +129,7 @@ fn main() {
     let fds = socketpair_stream();
     let a = fd_at(fds, 0);
     let b = fd_at(fds, 1);
-    let mut p = Poller { fds: Vec::new(), events: Vec::new(), tokens: Vec::new() };
+    let mut p = Poller { fds: Vec::new(), events: Vec::new(), tokens: Vec::new(), kq: -1 };
     match p.register(a, 7, Interest::Readable) {
         Ok(n) => println(n),
         Err(_) => println(-1),
@@ -167,7 +167,7 @@ fn main() {
     let fds = socketpair_stream();
     let a = fd_at(fds, 0);
     let b = fd_at(fds, 1);
-    let mut p = Poller { fds: Vec::new(), events: Vec::new(), tokens: Vec::new() };
+    let mut p = Poller { fds: Vec::new(), events: Vec::new(), tokens: Vec::new(), kq: -1 };
     let _ = p.register(a, 1, Interest::Readable);
     match p.reregister(a, 9, Interest::Writable) {
         Ok(n) => println(n),
@@ -207,7 +207,7 @@ fn main() {
     let fds = socketpair_stream();
     let a = fd_at(fds, 0);
     let b = fd_at(fds, 1);
-    let mut p = Poller { fds: Vec::new(), events: Vec::new(), tokens: Vec::new() };
+    let mut p = Poller { fds: Vec::new(), events: Vec::new(), tokens: Vec::new(), kq: -1 };
     let _ = p.register(a, 1, Interest::Readable);
     match p.register(a, 2, Interest::Readable) {
         Ok(n) => println(0),
@@ -223,6 +223,47 @@ fn main() {
 "#,
     );
     assert_eq!(out, "1\n2\n");
+}
+
+/// P1（2026-08-28）：kqueue 分派路径——`Poller::new()` 在 macOS/BSD 建真 kqueue，
+/// register → 对端写入 → poll 走 kevent 返回就绪事件（token/readable）。
+/// 仅当 `Poller::new()` 走 kqueue 分支（macOS/BSD 码 2/4）时验证；
+/// 其他平台（Linux/Windows）回退 poll(2)，同样应就绪。
+#[test]
+fn poller_kqueue_dispatch() {
+    let out = run(
+        r#"
+fn main() {
+    match Poller::new() {
+        Ok(p) => {
+            let mut pp = p;
+            let fds = socketpair_stream();
+            let a = fd_at(fds, 0);
+            let b = fd_at(fds, 1);
+            match pp.register(a, 42, Interest::Readable) {
+                Ok(n) => println(n),
+                Err(_) => println(-1),
+            }
+            let _ = send_all(b, String::from("hello"));
+            match pp.poll(2000) {
+                Ok(evs) => {
+                    println(evs.len());
+                    let e0 = evs[0];
+                    println(e0.token);
+                    println(e0.is_readable());
+                },
+                Err(_) => println(-1),
+            }
+            let _ = close(a);
+            let _ = close(b);
+        },
+        Err(_) => println(-1),
+    }
+}
+"#,
+    );
+    // new() 走 kqueue（macOS/BSD）或 poll 回退（其他）：register=1, 就绪=1, token=42, readable=true
+    assert_eq!(out, "1\n1\n42\ntrue\n");
 }
 
 /// R3：sendfile 自由函数——File(fileno) → TCP 连接，offset=0 count=13 发送，

@@ -48,6 +48,11 @@ pub(super) fn check_call(
     if name == "json::parse" || name == "json::from_str" {
         return check_json_parse(ctx, args, type_args, span);
     }
+    // P2：`json::try_parse::<T>(s) -> Result<T, JsonError>` 严格解析
+    // （非法输入返回 Err，替代 `json::parse` 的静默零值/宽松解析）。
+    if name == "json::try_parse" {
+        return check_json_try_parse(ctx, args, type_args, span);
+    }
     // Q4 `toml` 模块（轻量 MVP）：`toml.to_string`/`toml.stringify` 序列化（基础标量 /
     // 嵌套表（内联表）/ 数组），`toml.from_str`/`toml.parse` 反序列化（round-trip 对齐
     // stringify 的紧凑输出）。MVP 无泛型 trait 约束（`T: Serialize` / `T: Deserialize`
@@ -57,6 +62,10 @@ pub(super) fn check_call(
     }
     if name == "toml::parse" || name == "toml::from_str" {
         return check_toml_parse(ctx, args, type_args, span);
+    }
+    // P3：`toml::try_parse::<T>(s) -> Result<T, TomlError>` 严格解析
+    if name == "toml::try_parse" {
+        return check_toml_try_parse(ctx, args, type_args, span);
     }
     // Q2b 流式 writer/reader（目标 `File`；TcpStream 留待流式 read_all 方法化）：
     // `json.to_writer(w, v)` → `w.write_all(json.stringify(v))`，返回

@@ -18,43 +18,59 @@
 // MVP 限制：if/match 分支内的提前 return / break 不注入（块尾注入前置，
 // 显式 `g.unlock()` 手动调用仍可用）；按方法名 `lock_guard` 特判。
 // 定义前置：typecheck 对 struct 类型注册顺序敏感（即注册即查），
-// 故守卫类型须在 Mutex::lock_guard 引用前声明；字段为裸指针（无类型依赖），
+// 故守卫类型须在 Mutex::lock_guard 引用前声明；字段为锁指针 + 数据引用（无类型依赖），
 // unlock 直接经 extern（避免 Mutex 方法前向依赖）。
-struct MutexGuard { p: i64 }
+// P5（2026-08-28）：带值锁 MVP——`Mutex { value: i64 }` 数据载荷 + `new(v: i64)`；
+// `MutexGuard` 持 `value_ptr: &mut i64` 引用被锁值，`get`/`get_mut` 经引用读写。
+// （完整泛型 `Mutex<T>`/`MutexGuard<T>` 因「泛型 struct 引用字段构造」语言级障碍
+// 暂缓——Y4a 泛型 struct 构造的字段类型替换未覆盖 `&mut T` 引用字段，登记待专项；
+// MVP 值类型限 i64，Channel 纯锁用 `Mutex::new(0)`。）
+struct MutexGuard { p: i64, value_ptr: &mut i64 }
 
 impl MutexGuard {
     // 显式解锁（编译器注入自动调用；手动调用后守卫仍会被再次注入——宽松语义）
     fn unlock(self) {
         let _ = pthread_mutex_unlock(self.p);
     }
+    // 读被锁值（解引用守卫持有的引用）
+    fn get(&self) -> &i64 {
+        self.value_ptr
+    }
+    // 写被锁值（可变引用写回原 Mutex.value）
+    fn get_mut(&mut self) -> &mut i64 {
+        self.value_ptr
+    }
 }
 
 // 互斥锁（非递归；p 为 pthread_mutex_t*）。
 // macOS pthread_mutex_t = 64 字节，Linux glibc = 40 字节，calloc(1, 64) 双平台安全。
-struct Mutex { p: i64 }
+// P5（2026-08-28）：带值锁——`value: i64` 数据载荷，`new(v: i64)` 初始化。
+struct Mutex { p: i64, value: i64 }
 
 impl Mutex {
-    fn new() -> sync::Mutex {
+    fn new(v: i64) -> sync::Mutex {
         let p = calloc(1, 64);
         let _ = pthread_mutex_init(p, 0);   // attr = NULL
-        sync::Mutex { p: p }
+        sync::Mutex { p: p, value: v }
     }
     // 加锁（无竞争者时立即返回；已持锁线程重复加锁为未定义行为）
-    fn lock(self) {
+    fn lock(&self) {
         let _ = pthread_mutex_lock(self.p);
     }
-    fn unlock(self) {
+    fn unlock(&self) {
         let _ = pthread_mutex_unlock(self.p);
     }
     // 尝试加锁：成功返回 true，已被占用返回 false（不阻塞）
-    fn try_lock(self) -> bool {
+    fn try_lock(&self) -> bool {
         let r = pthread_mutex_trylock(self.p);
         r == 0
     }
-    // P2：lock_guard 返回守卫（加锁并返回 MutexGuard；作用域结束自动解锁）
-    fn lock_guard(self) -> sync::MutexGuard {
+    // P2：lock_guard 返回守卫（加锁并返回 MutexGuard；作用域结束自动解锁）。
+    // P5：`&mut self` 借用调用方 Mutex，`value_ptr: &mut self.value` 指向调用方值
+    // （规避值传递参数拷贝后 `&value` 悬垂）。
+    fn lock_guard(&mut self) -> sync::MutexGuard {
         self.lock();
-        sync::MutexGuard { p: self.p }
+        sync::MutexGuard { p: self.p, value_ptr: &mut self.value }
     }
 }
 
@@ -197,7 +213,7 @@ fn channel() -> sync::ChannelPair {
     let wake_r = net::fd_at(sp, 0);
     let wake_w = net::fd_at(sp, 1);
     let ch = Rc::new(sync::Channel {
-        m: Mutex::new(),
+        m: Mutex::new(0),
         cv: Condvar::new(),
         closed: 0,
         head: 0,
