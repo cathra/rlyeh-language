@@ -48,9 +48,9 @@ Y 阶段任务风险评估（2026-08-28）在实测中探测到多个语言级�
 - **修复（2026-08-28，Y4b-2）**：method.rs 静态方法分支对泛型 impl 从实参推断类型参数（裸 `Generic(tp)` 参数直接填充）。
 - **遗留限制**：复合参数（`Vec<T>` 等）的统一推断暂不覆盖。
 
-### 6.（待专项）std `Mutex` 泛型化（源自 Y4b-2）
+### 6. std `Mutex` 泛型化（源自 Y4b-2）— ✅ 已完成（Y4b-2，P5，2026-08-29）
 
-**现状**：`sync/module.rl` 的 `Mutex { p: i64 }` 为空锁（仅 pthread 原语指针，无数据载荷），`Mutex::new()` 无参；`MutexGuard { p: i64 }` 仅持锁指针、`unlock()` 走 extern，无数据访问能力。语言级能力已齐（Y4a 泛型构造 + Y4b-1 Deref + Y4b-2 泛型静态方法推断），原型验证通过。
+**现状**：`sync/module.rl` 的 `Mutex<T> { p: i64, value: T }` 已为「带值锁」——`Mutex::new(v: T)` 携带数据，`MutexGuard<T> { p: i64, value: &mut T }` 经裸指针访问 `value`（MVP 生命周期退化，绕过借用检查）；`get`/`get_mut` 已落地（P5，2026-08-29）。
 
 **目标签名**：
 ```rlyeh
@@ -78,6 +78,8 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 
 **风险**：中-高（数据载荷生命周期 + 泛型构造波及面大）。**MVP 最小集**：先只改 `Mutex<T>` 携带值 + `get/get_mut` 裸指针访问（不动 Deref 分派），signature 落地即可验证。
 
+**落地（2026-08-29，P5 / Y4b-2）**：`sync/module.rl` 的 `Mutex<T> { p: i64, value: T }`、`MutexGuard<T> { p: i64, value: &mut T }` 已实现；`new(v: T)`/`lock_guard`/`get`/`get_mut` 落地。验收 `tests/run-pass/mutex_value.rl`（`Mutex::new(42)` → `get()`=42 → `(&mut g).get_mut()`+`*p=100` → `get()`=100，输出 `42/100/0`）；`mutex_guard.rl` 验证 guard 自动解锁。全量 173 用例全绿。
+
 ### 7. 完整 Poller kqueue 分派（源自 Y2b）— ✅ 已完成（Y2c，2026-08-29）
 
 **现状**：kqueue 基础设施**已全部就绪**（Y2a/Y2b）：
@@ -101,9 +103,9 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 
 **风险**：低。**推进顺序建议**：#7 已完成（Y2c）；随后做 #6（Mutex，MVP 裸指针集），最后 #8（触发多重语言级障碍，需专项）。
 
-### 8.（待专项）`Channel<T>` 泛型化（源自 Y4c）
+### 8. `Channel<T>` 泛型化（源自 Y4c）— ✅ 已完成（Y4c，P7c，2026-08-29）
 
-**现状**：`sync/module.rl` 的 `Channel { queue: Vec<i64> }` 元素**硬编码 i64**；`Sender`/`Receiver`/`RecvAsync` 同理；`recv`/`try_recv`/`next` 返回 `Option<i64>`，`recv_async` 的 `Future::Output = i64`（close 且空返回哨兵 `-1` 表达 `Option::None`）。
+**现状**：`sync/module.rl` 的 `Channel<T> { queue: Vec<T> }` 元素已参数化 `T`；`Sender<T>`/`Receiver<T>`/`RecvAsync<T>` 同理；`recv`/`try_recv`/`next` 返回 `Result<T, IoError>`（close 且空返回 `Err`），`recv_async` 的 `Future::Output = T`（P7c，2026-08-29）。
 
 **目标**：`Channel<T>`/`Sender<T>`/`Receiver<T>`/`RecvAsync<T>` 泛型化，元素类型参数化。
 
@@ -119,6 +121,8 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 - core.rl import 泛型化
 
 **风险**：高（复合字段推断 + 无 turbofish 双重语言级障碍，破坏性大）。**建议**：登记 lang-defects 待专项（Y4c 已登记）；先修复合字段推断或引入 turbofish/泛型返回推断后再推进。
+
+**落地（2026-08-29，P7c / Y4c）**：`Channel<T>`/`Sender<T>`/`Receiver<T>` 已泛型化，`channel::<T>()` 以 turbofish 显式指定元素类型（MVP 无复合字段推断，靠 turbofish 兜底）；`send`/`recv` 收发 `T` 值（`recv` 返回 `Result<T, IoError>`）。验收 `tests/run-pass/{channel,recv_async,async_combo}.rl` 用 `channel::<i64>()` 收发值通过；`future.rl` 内部 `Channel<i64>` 通道驱动异步 fd 事件。全量 173 用例全绿。
 
 ### 9. 方法返回 `&self.struct_field` 引用悬空（源自 P7d-1 / Y6c）
 
@@ -149,3 +153,4 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 2026-08-28 | 细化 #6（Mutex<T> 空锁→带值锁，生命周期 MVP 裸指针集 + Deref 可选）；#7（Poller kqueue 分派，基础设施已齐、无语言障碍、低风险优先）；#8（Channel<T> 复合字段推断 + 无 turbofish 双重障碍） |
 | 2026-08-29 | 新增 #9（方法返回 `&self.struct_field` 引用悬空，源自 P7d-1 / Y6c 实证）：V1 真实取址对按值 self 字段生成临时栈地址、返回即悬空，MVP 借用检查未判定为 DanglingReference；规避——内部引用用引用类型字段存储并返回引用值（非取地址） |
 | 2026-08-29 | #7 完整 Poller kqueue 分派标记已完成（Y2c，y2c_poller_kqueue.rl 端到端验证 macOS kqueue EV_ADD/kq_poll）；新增 #10（跨模块 &mut self 自动借用失效，源自 Y2c） |
+| 2026-08-29 | #6 std Mutex 泛型化（Y4b-2，P5）与 #8 Channel<T> 泛型化（Y4c，P7c）标记已完成（代码早已落地，本轮补 mutex_value.rl 验证 + 文档收尾）；173 用例全绿 |
