@@ -30,6 +30,59 @@ pub(super) fn check_trait_static_call(
         .map(|a| infer_expr(ctx, a))
         .collect::<Result<Vec<_>, _>>()?;
 
+    // P6c-1/2（2026-08-29）：`Into::into` 经 blanket 语义实现——`Into<U>::into(x)`
+    // 等价于 `From::from(x)`，当且仅当存在 `impl From<A_source> for U_target`。
+    // 不注册 blanket impl（其方法体 `From::from(self)` 无法在泛型层面静态检查），
+    // 改由类型检查器在此直接改写，并以其约束求解确认 `From` impl 存在。
+    let trait_short = trait_key.rsplit("::").next().unwrap_or(trait_key);
+    if trait_short == "Into" && method == "into" {
+        if type_args.len() != 1 {
+            return Err(TypeError::Unsupported {
+                what: "`Into::into` 需经 turbofish 指定目标类型（如 `Into::<Target>::into(x)`）；`x.into()` 方法形式的目标类型推断待专项".to_string(),
+                span,
+            });
+        }
+        let u_target = type_args[0].clone();
+        let a_source = match arg_infos.first() {
+            Some((_, t)) => t.clone(),
+            None => {
+                return Err(TypeError::UnexpectedArgumentCount {
+                    name: "Into::into".to_string(),
+                    expected: 1,
+                    found: 0,
+                    span,
+                })
+            }
+        };
+        // 约束求解：确认 `impl From<A_source> for U_target` 存在（即 `From<A_source>`
+        // 对 `U_target` 有可用 trait impl；缺失则报错，语义对齐 Rust `U: From<T>`）。
+        let from_key = ctx
+            .resolve_trait_key("From")
+            .unwrap_or_else(|| "From".to_string());
+        if ctx
+            .find_impl_for_trait_method(&u_target, &from_key, "from")
+            .is_none()
+        {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "`Into::<{u_target}>::into` 不可用：缺少 `impl From<{a_source}> for {u_target}`"
+                ),
+                span,
+            });
+        }
+        // 改写：`From::from(x)`（Self = U_target，turbofish 绑定 From 泛型参数 = A_source）。
+        // 复用 trait 关联函数调用路径，零新增 IR 节点。
+        return check_trait_static_call(
+            ctx,
+            &from_key,
+            "from",
+            args,
+            &[a_source],
+            Some(u_target),
+            span,
+        );
+    }
+
     let mut chosen: Option<&ImplDef> = None;
     for d in &ctx.impl_defs {
         if d.trait_name.as_deref() != Some(trait_key) {
