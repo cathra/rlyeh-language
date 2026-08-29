@@ -78,12 +78,12 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 
 **风险**：中-高（数据载荷生命周期 + 泛型构造波及面大）。**MVP 最小集**：先只改 `Mutex<T>` 携带值 + `get/get_mut` 裸指针访问（不动 Deref 分派），signature 落地即可验证。
 
-### 7.（待专项）完整 Poller kqueue 分派（源自 Y2b）
+### 7. 完整 Poller kqueue 分派（源自 Y2b）— ✅ 已完成（Y2c，2026-08-29）
 
 **现状**：kqueue 基础设施**已全部就绪**（Y2a/Y2b）：
 - driver `platform_ir.rs` 已注入 `__rlyeh_kqueue`/`__rlyeh_kevent`（macOS=2/BSD=4 原生转发 `kqueue`/`kevent`，其他平台 stub -1）
 - `io/nio.rl` 已有 `kevent_make`（32B 结构体）、`kqueue_new`、`kevent_ctl`（EV_ADD/DELETE）、`kevent_wait`（阻塞等待），`y2b_kqueue_wait.rl` 已验证等待真实 socketpair 事件
-- 当前 `Poller`（`io/nio.rl`）仅用 poll(2)（`fds/events/tokens` 三 Vec 注册表），未接入 kqueue
+- `Poller`（`io/nio.rl`）已按 `__rlyeh_target_os()` 分派：macOS/BSD 建 kqueue（`kq>0`）走 EV_ADD/kq_poll，其他平台 `kq=-1` 回退 poll(2)；新增 `tests/run-pass/y2c_poller_kqueue.rl` 端到端验证（socketpair 一端写 → `(&mut q).register(fd0, 7, io::nio::Interest::Readable)` → `q.poll(-1)` 返回就绪事件 `token==7` 且 `is_readable()`，输出 `3`）
 
 **目标**：`Poller` 结构加 `kq: i64` 字段，`new`/`register`/`deregister`/`poll` 按 `__rlyeh_target_os()` 分派：
 - macOS/BSD（码 2/4）：`new` 建 kq + 注册表；`register` = EV_ADD + `kevent_ctl`；`deregister` = EV_DELETE；`poll` = `kevent_wait`（O(1)，非 O(n) 扫描）
@@ -99,7 +99,7 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 - examples/projects/chatd/{client,server}.rl、smoke/main.rl：`Poller::new()/register/poll` 调用签名不变，**无需迁移**（纯内部实现替换）
 - core.rl import、future.rl：签名不变，无改动
 
-**风险**：低。**推进顺序建议**：优先做 #7（无语言障碍，独立可完成），随后做 #6（Mutex，MVP 裸指针集），最后 #8（触发多重语言级障碍，需专项）。
+**风险**：低。**推进顺序建议**：#7 已完成（Y2c）；随后做 #6（Mutex，MVP 裸指针集），最后 #8（触发多重语言级障碍，需专项）。
 
 ### 8.（待专项）`Channel<T>` 泛型化（源自 Y4c）
 
@@ -129,6 +129,14 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 - **约束/规避**：MVP 暂不支持 `&dyn Error` 直接作 struct 字段（dtor/vtable 槽归零），故 `source` 链载体退化到具体引用类型（`&IoFailure`）；待借用检查补全「返回字段地址 = 悬空」判定 + `&dyn Error` 字段支持后解除。
 - **状态**：📋 登记（MVP 已知限制，非阻塞——用引用值字段规避即可，见 y6-error-source.md P7d-1 小节）。
 
+### 10. 跨模块 `&mut self` 方法自动借用失效（源自 Y2c）
+
+- **症状**：用户程序跨模块调用 `io::nio::Poller` 的 `&mut self` 方法 `q.register(...)` → typecheck 报 `expected (), found io::nio::Poller`；同模块 `future.rl` 调用 `q.register(...)` 正常（W3 executor 已落地）。
+- **对照**：跨模块调用 `&self` 方法（如 `q.poll(0)`）正常；仅 `&mut self` 自动借用跨模块失败。
+- **绕过**：显式 `(&mut q).register(...)` 提供 `&mut` 接收者，功能正确（y2c_poller_kqueue.rl 已验证）。
+- **影响**：std 跨模块 `&mut self` API（`Poller::register`/`reregister`/`deregister`）从用户代码直接调用报错，需显式 `&mut` 借用；属 API 人体工学名实非阻塞。
+- **状态**：📋 登记（MVP 已知限制，非阻塞）。
+
 ## 变更记录
 
 | 日期 | 变更 |
@@ -140,3 +148,4 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 2026-08-28 | 登记 Channel<T> 泛型化待专项（Y4c，复合字段推断 + 无 turbofish） |
 | 2026-08-28 | 细化 #6（Mutex<T> 空锁→带值锁，生命周期 MVP 裸指针集 + Deref 可选）；#7（Poller kqueue 分派，基础设施已齐、无语言障碍、低风险优先）；#8（Channel<T> 复合字段推断 + 无 turbofish 双重障碍） |
 | 2026-08-29 | 新增 #9（方法返回 `&self.struct_field` 引用悬空，源自 P7d-1 / Y6c 实证）：V1 真实取址对按值 self 字段生成临时栈地址、返回即悬空，MVP 借用检查未判定为 DanglingReference；规避——内部引用用引用类型字段存储并返回引用值（非取地址） |
+| 2026-08-29 | #7 完整 Poller kqueue 分派标记已完成（Y2c，y2c_poller_kqueue.rl 端到端验证 macOS kqueue EV_ADD/kq_poll）；新增 #10（跨模块 &mut self 自动借用失效，源自 Y2c） |

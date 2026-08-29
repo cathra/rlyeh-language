@@ -9,7 +9,7 @@
 | 任务 | 内容 | 状态 | 详情 |
 |------|------|------|------|
 | Y1 | **File 目标 API**：`open_with(path, OpenMode)`（`open(path)` 保留兼容壳）；`read(&mut [u8])`/`write(&[u8])` 切片实参（§4.1 目标签名，替代 `read(cap)`/`write(String)` 降级——依赖切片借用成熟 + 数组切片参数化）；`metadata` 返回完整 `Metadata`（size/mtime/is_file/is_dir，替代仅返回大小的 MVP） | ✅ 部分完成 | [`y1-file-api.md`](../tasks/leaf/y1-file-api.md) |
-| Y2 | **NIO 高性能后端**：`io/nio.rl` 的 poll(2) 后端之上增加 `Interest` 平台后端抽象——Linux `epoll`（`epoll_create1`/`epoll_ctl`/`epoll_wait`，O(1) 事件）、macOS `kqueue`（`kqueue`/`kevent`，`EVFILT_READ`/`EVFILT_WRITE`）；`Poller` 内部按 `__rlyeh_target_os()` 分派；为 W3 事件驱动 executor 提供平台后端 | 🔧 部分完成（Y2a kqueue FFI 绑定 + Y2b kqueue 等待真实事件验证 ✅，2026-08-28，165 用例全绿；完整 Poller 分派待专项） | [`y2-nio-backend.md`](../tasks/leaf/y2-nio-backend.md) |
+| Y2 | **NIO 高性能后端**：`io/nio.rl` 的 poll(2) 后端之上增加 `Interest` 平台后端抽象——Linux `epoll`（`epoll_create1`/`epoll_ctl`/`epoll_wait`，O(1) 事件）、macOS `kqueue`（`kqueue`/`kevent`，`EVFILT_READ`/`EVFILT_WRITE`）；`Poller` 内部按 `__rlyeh_target_os()` 分派；为 W3 事件驱动 executor 提供平台后端 | ✅ 已完成（Y2a kqueue FFI 绑定 + Y2b kqueue 等待真实事件验证 ✅ + Y2c Poller kqueue 分派 ✅，2026-08-29，172 用例全绿） | [`y2-nio-backend.md`](../tasks/leaf/y2-nio-backend.md) |
 | Y3 | **HTTP 连接复用 + sendfile 平台补全**：`HttpClient` 连接池（keep-alive：`Connection: keep-alive` + 复用空闲连接，替代每请求新建 + close）；sendfile Windows `TransmitFile` 分支（§4.5「非 Unix 返回 Unsupported」消除） | 🔧 部分完成 | [`y3-http-keepalive.md`](../tasks/leaf/y3-http-keepalive.md) |
 | Y4 | **锁 guard 完整 + Channel 泛型化**：`Mutex<T>`/`RwLock<T>` 泛型化（目标签名 `lock(&self) -> MutexGuard<T>`，替代裸 `lock/unlock` + `lock_guard()` 命名特判——方法名对齐目标 API）；`RwLockWriteGuard`/`RwLockReadGuard`（P2b 规划）；`Deref`/`DerefMut` 语义（`*guard` 解引用访问数据，替代 MVP 独立访问器）；`Channel<T>` 泛型化（元素不再限 i64）、`bounded_channel(capacity)` 有界队列（send 满阻塞）、`SendError<T>`/`RecvError`/`TryRecvError` 错误类型（替代 `Option` 退化）、`Arc<LockFreeQueue>`（跨线程 Sender/Receiver，依赖 U3） | 🔧 部分完成（Y4a 泛型构造 + Y4b-1 Deref 分派 + Y4b-2 泛型静态方法推断 ✅，2026-08-28，165 用例全绿；Y4c 复合字段推断障碍登记 lang-defects #8 暂缓 + std Mutex/Poller 迁移待专项） | [`y4-lock-guard-channel.md`](../tasks/leaf/y4-lock-guard-channel.md) |
 | Y5 | **`Box::leak` 目标签名**：`fn leak(self) -> &'static mut T`（依赖 U5 AddrOf 任意目标，替代 `*mut T` 裸指针退化）；`'static` 宽松丢弃（G4 现状） | ✅ 已完成（返回 `&'static mut T`，2026-08-28，166 用例全绿） | [`y5-box-leak-signature.md`](../tasks/leaf/y5-box-leak-signature.md) |
@@ -33,10 +33,10 @@
 >
 > 本文件保留计划主体（§2/§3/§3b/§3c 阶段详情）与状态标识；详细实现流水见任务树 / git 历史。
 
-**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 进行中、W 全部完成、X 全部完成（X1–X4 ✅）、Y 部分完成（Y7/Y8/Y5 ✅；Y1/Y3 🔧；Y2/Y6 🔧；Y4 🔧，已拆分与风险评估，见下方）。
+**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 进行中、W 全部完成、X 全部完成（X1–X4 ✅）、Y 部分完成（Y7/Y8/Y5 ✅；Y1/Y3 🔧；Y2/Y6 ✅；Y4 🔧，已拆分与风险评估，见下方）。
 
 > **Y 阶段风险评估与拆分（2026-08-28）**：Y4/Y6 探测到语言级缺陷（泛型 struct 字面量构造实例化失败、`&dyn Error` 构造失败、泛型 trait 实参路径不支持 + where 子句缺失），已登记至专项 [`lang-defects.md`](../tasks/leaf/lang-defects.md)；Y4 拆分 Y4a/Y4b/Y4c、Y6 拆分 Y6a/Y6b、Y2 拆分 Y2a/Y2b；Y1 挂 U1 切片、Y5 依赖 U5、Y3 sendfile Windows 不可验证（待专项）。
-> **推进记录（2026-08-28）**：Y6a + Y6b + Y2a + Y4a + Y4b-1 + Y4b-2 + Y2b（kqueue 等待验证）+ Y5（Box::leak 目标签名）已完成，**166 用例全绿**。Y 阶段语言级能力已覆盖（泛型构造推断 / Deref 分派 / 泛型静态方法推断 / kqueue FFI / Box::leak 引用）。剩余待专项（lang-defects #6/#7/#8）：std Mutex 泛型化迁移、完整 Poller kqueue 分派、Channel<T> 泛型化（复合字段推断 + 无 turbofish）。Y1（U1 切片）、Y3（Windows）、Y4b-3/4 后续。
+> **推进记录（2026-08-28）**：Y6a + Y6b + Y2a + Y4a + Y4b-1 + Y4b-2 + Y2b（kqueue 等待验证）+ Y5（Box::leak 目标签名）已完成，**166 用例全绿**。Y 阶段语言级能力已覆盖（泛型构造推断 / Deref 分派 / 泛型静态方法推断 / kqueue FFI / Box::leak 引用）。剩余待专项（lang-defects #6/#8）：std Mutex 泛型化迁移、Channel<T> 泛型化（复合字段推断 + 无 turbofish）。Y1（U1 切片）、Y3（Windows）、Y4b-3/4 后续。
 
 ---
 
@@ -56,4 +56,4 @@
 > **最后更新**：2026-08-25
 
 > **维护者**：Rlyeh Language Team
-> **最后更新**：2026-08-26
+> **最后更新**：2026-08-29

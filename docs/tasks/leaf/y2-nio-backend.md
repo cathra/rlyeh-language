@@ -1,7 +1,7 @@
 # Y2 NIO 高性能后端
 
 > **所属阶段**：阶段 Y
-> **状态**：🔧 部分完成（Y2a kqueue FFI 绑定 + Y2b kqueue 等待真实事件验证 ✅，2026-08-28；完整 Poller 分派待专项）
+> **状态**：✅ 已完成（Y2a kqueue FFI 绑定 ✅ + Y2b kqueue 等待真实事件验证 ✅ + Y2c Poller kqueue 分派 ✅，2026-08-29）
 > **依赖**：R
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
@@ -32,9 +32,15 @@ poll(2) 之上增加 epoll/kqueue 平台后端。
 - **验证** `y2b_kqueue_wait.{rl,out}`：kqueue + socketpair → fd1 写数据 → fd0 EVFILT_READ 就绪 → kevent 等待返回 ident=fd0（4 项断言全过）。
 - **待专项（破坏性）**：`Poller` 结构加 `kq` 字段 + `new`/`register`/`deregister`/`poll` 按 `__rlyeh_target_os()` 分派 kqueue（macOS）vs poll（兜底）vs epoll（Linux）。波及 core.rl/future.rl/examples/tests 等 31 处，登记 lang-defects。
 
+### Y2c（✅ 已完成，2026-08-29）
+- `io/nio.rl` 的 `Poller` 已按 `__rlyeh_target_os()` 分派：`new` 在 macOS/BSD 建 kqueue（`kq>0`），`register`/`reregister`/`deregister` 在 `kq>=0` 走 `kq_change`（EV_ADD/EV_DELETE + `kevent_ctl`），`poll` 走 `kq_poll`（`kevent_wait` + 按 udata token 回填 `Event`）；其他平台 `kq=-1` 回退 poll(2)。
+- `future.rl` 的 W3 事件驱动 executor 已在 macOS 经此路径（`Poller::new()` + `register` + `poll`）真实等待 fd 就绪，被 `recv_async`/`timeout`/`join_all` 等异步测试间接验证。
+- **验证** `y2c_poller_kqueue.{rl,out}`：socketpair 一端写、另一端 `(&mut q).register(fd0, 7, io::nio::Interest::Readable)` 后 `q.poll(-1)`，断言返回 1 个就绪事件且 `token==7` 且 `is_readable()`；macOS 走真实 kqueue EV_ADD/kq_poll 分派，输出 `3`。
+- **已知语言限制（登记 lang-defects #10）**：跨模块调用 `&mut self` 方法（如 `q.register(...)`）时自动借用 `&mut` 暂未生效，显式 `(&mut q).register(...)` 可绕过且功能正确。
+
 ## 验证
 
-`y2a_kqueue.{rl,out}` + `y2b_kqueue_wait.{rl,out}`（165 用例全绿）；`nio_epoll_test.rs`（Linux）/`nio_kqueue_test.rs`（macOS 或 CI 矩阵，完整分派）。
+`y2a_kqueue.{rl,out}` + `y2b_kqueue_wait.{rl,out}` + `y2c_poller_kqueue.{rl,out}`（172 用例全绿）；`nio_epoll_test.rs`（Linux）/`nio_kqueue_test.rs`（macOS 或 CI 矩阵，完整分派）。
 
 ## 变更记录
 
@@ -44,3 +50,4 @@ poll(2) 之上增加 epoll/kqueue 平台后端。
 | 2026-08-28 | 风险拆分为 Y2a（FFI 绑定）/ Y2b（分派） |
 | 2026-08-28 | Y2a kqueue FFI 绑定完成（160 用例全绿） |
 | 2026-08-28 | Y2b kqueue 等待真实事件验证完成（165 用例全绿；完整 Poller 分派待专项） |
+| 2026-08-29 | Y2c Poller kqueue 分派完成（io/nio.rl 按 __rlyeh_target_os() 分派 kqueue/poll(2)；y2c_poller_kqueue.rl 端到端验证；172 用例全绿） |
