@@ -116,7 +116,7 @@ impl LlvmEmitter {
             }
             LirType::Char => {
                 let r = self.reg();
-                body.push_str(&format!("  %{r} = zext i8 {v} to i64\n"));
+                body.push_str(&format!("  %{r} = zext i32 {v} to i64\n"));
                 format!("%{r}")
             }
             // 整数源直通（64 位槽值已保持符号扩展不变量）
@@ -140,7 +140,7 @@ impl LlvmEmitter {
             }
             LirType::Char => {
                 let r = self.reg();
-                body.push_str(&format!("  %{r} = trunc i64 {i64v} to i8\n"));
+                body.push_str(&format!("  %{r} = trunc i64 {i64v} to i32\n"));
                 r
             }
             LirType::I64 => {
@@ -224,11 +224,9 @@ impl LlvmEmitter {
             LirOperand::Int(i) => Ok(i.to_string()),
             LirOperand::Float(x) => Ok(format!("0x{:016X}", x.to_bits())),
             LirOperand::Char(c) => {
-                let b = u8::try_from(*c as u32).map_err(|_| CodegenError::UnsupportedType {
-                    ty: LirType::Char,
-                    context: "MVP 仅支持 ASCII 字符".to_string(),
-                })?;
-                Ok(b.to_string())
+                // char 为 32 位 Unicode 码点（Rust char，0..=0x10FFFF），
+                // 允许全部 Unicode（V2 拓宽，不再限 ASCII）。
+                Ok((*c as u32).to_string())
             }
             LirOperand::Bool(b) => Ok(if *b { "true" } else { "false" }.to_string()),
             LirOperand::String(s) => self.emit_string_global(s),

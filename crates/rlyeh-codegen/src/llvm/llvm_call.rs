@@ -411,11 +411,9 @@ impl LlvmEmitter {
                 emit_out(body, &fmt, &format!(", {} {v}", llvm_type(aty)?));
             }
             LirType::Char => {
+                // char 已为 32 位，printf %c 变参直接传 i32（无需 i8→i32 提升）
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;
-                let r = self.reg();
-                // printf 变参整型提升：i8 → i32
-                body.push_str(&format!("  %{r} = zext i8 {v} to i32\n"));
-                emit_out(body, &fmt, &format!(", i32 %{r}"));
+                emit_out(body, &fmt, &format!(", i32 {v}"));
             }
             LirType::Bool => {
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;

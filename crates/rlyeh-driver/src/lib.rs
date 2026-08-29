@@ -64,13 +64,25 @@ pub fn build_executable_with_target(
 }
 
 /// 编译并运行源码，返回程序标准输出（UTF-8），无缓存。
+///
+/// 编译深递归程序（async/HTTP 状态机）时 Rlyeh 编译器（Rust 代码）递归较深，
+/// macOS 上默认线程栈仅 ~2MB 会溢出；与 run-pass worker 线程一致（见
+/// `test_runner.rs`），在 64MB 栈线程中执行编译+运行。Linux 默认 8MB 栈不受影响。
 pub fn run_source(source: &str) -> Result<String, DriverError> {
-    let dir = temp_dir();
-    let exe = dir.join("rlyeh-run");
-    build_executable(source, &exe)?;
-    let out = run_exe(&exe)?;
-    let _ = std::fs::remove_dir_all(&dir);
-    Ok(out)
+    let source = source.to_string();
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let dir = temp_dir();
+            let exe = dir.join("rlyeh-run");
+            build_executable(&source, &exe)?;
+            let out = run_exe(&exe)?;
+            let _ = std::fs::remove_dir_all(&dir);
+            Ok(out)
+        })
+        .map_err(|e| DriverError::Run(format!("无法启动编译线程: {e}")))?
+        .join()
+        .map_err(|_| DriverError::Run("编译线程 panic".to_string()))?
 }
 
 /// 编译入口文件（含 `module foo;` 外部模块）为 LLVM IR 文本，无缓存。
@@ -99,13 +111,25 @@ pub fn build_executable_file_with_target(
 }
 
 /// 编译并运行入口文件（含外部模块），返回程序标准输出（UTF-8），无缓存。
+///
+/// 编译深递归程序（async/HTTP 状态机）时 Rlyeh 编译器（Rust 代码）递归较深，
+/// macOS 上默认线程栈仅 ~2MB 会溢出；与 run-pass worker 线程一致（见
+/// `test_runner.rs`），在 64MB 栈线程中执行编译+运行。Linux 默认 8MB 栈不受影响。
 pub fn run_source_file(entry: &Path) -> Result<String, DriverError> {
-    let dir = temp_dir();
-    let exe = dir.join("rlyeh-run");
-    build_executable_file(entry, &exe)?;
-    let out = run_exe(&exe)?;
-    let _ = std::fs::remove_dir_all(&dir);
-    Ok(out)
+    let entry = entry.to_path_buf();
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let dir = temp_dir();
+            let exe = dir.join("rlyeh-run");
+            build_executable_file(&entry, &exe)?;
+            let out = run_exe(&exe)?;
+            let _ = std::fs::remove_dir_all(&dir);
+            Ok(out)
+        })
+        .map_err(|e| DriverError::Run(format!("无法启动编译线程: {e}")))?
+        .join()
+        .map_err(|_| DriverError::Run("编译线程 panic".to_string()))?
 }
 
 /// 读取源码文件并执行静态检查（`rlyeh check`）。

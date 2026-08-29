@@ -8,7 +8,7 @@ fn main() -> i64 {
     let mut sum = 0;
     let mut count = 0;
     for c in s.chars_iter() {
-        sum = sum + c; // 65 + 98 + 33 = 196
+        sum = sum + (c as i64); // 65 + 98 + 33 = 196（c 为 char，需 as i64）
         count = count + 1;
     }
 

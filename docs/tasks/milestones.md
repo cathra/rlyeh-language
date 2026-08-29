@@ -16,7 +16,7 @@
 | **V** | 集合与迭代器完整化 | [`stage-u-z.md`](./stage-u-z.md)（[V2](./v2-str-view.md) / [V3](./v3-iterator-adapters.md)） | 5（V3 细分为 12 子任务） | 🔧 进行中（V4/V5 ✅；V1 部分——HashMap::iter/引用元素待办；V2 部分——chars/lines 目标签名待升级；V3 部分——数组/Vec 适配器走内建为语言限制） |
 | **W** | 异步运行时完整化 | [`stage-u-z.md`](./stage-u-z.md) | 6 | ✅ 全部完成（W1–W6；**注意**：`async_if_await`/`async_neg` 运行时 poll 死循环内存暴涨已知问题待修复） |
 | **X** | 序列化/格式化/时间完整化 | [`stage-u-z.md`](./stage-u-z.md) | 4 | 🔧 进行中（X1 ✅；X2/X3/X4 规划） |
-| **Y** | IO/网络/并发/智能指针收尾 | [`stage-u-z.md`](./stage-u-z.md) | 8 | 📋 规划 |
+| **Y** | IO/网络/并发/智能指针收尾 | [`stage-u-z.md`](./stage-u-z.md) | 8 | 🔧 部分完成（Y4/Y7/Y8 ✅；Y1/Y3 部分；Y2/Y5/Y6 规划） |
 
 ---
 

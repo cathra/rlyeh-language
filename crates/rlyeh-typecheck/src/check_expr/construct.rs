@@ -700,7 +700,7 @@ pub(super) fn check_iter_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
-    let expected = if name == "Iter" { 2 } else { 3 };
+    let expected = if name == "Iter" || name == "IterRef" { 2 } else { 3 };
     if args.len() != expected {
         return Err(TypeError::UnexpectedArgumentCount {
             name: format!("{name}::new"),

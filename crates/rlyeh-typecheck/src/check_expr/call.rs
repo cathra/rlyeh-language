@@ -569,9 +569,10 @@ pub(super) fn check_call(
         {
             return check_btreemap_construct(ctx, method, args, span);
         }
-        // `Iter` / `IterMut` 构造器特判（V1 瘦指针迭代器，2026-08）：
-        // `Iter::new(data, len)`（2 槽）/ `IterMut::new(data, cur, len)`（3 槽）
-        if matches!(ty_full.as_str(), "Iter" | "IterMut")
+        // `Iter` / `IterMut` / `IterRef` 构造器特判（V1 瘦指针迭代器，2026-08）：
+        // `Iter::new(data, len)`（2 槽）/ `IterMut::new(data, cur, len)`（3 槽）/
+        // `IterRef::new(data, len)`（2 槽，返回 `Option<&T>` 引用视图）。
+        if matches!(ty_full.as_str(), "Iter" | "IterMut" | "IterRef")
             && ctx.lookup_struct(&ty_full).is_some()
             && method == "new"
         {

@@ -85,6 +85,21 @@ pub(super) fn check_index(
             },
             Type::Char,
         )),
+        Type::RawPtr(elem_ty, _) => {
+            // 裸指针索引 `p[i]`：对 base 指针做 GEP 到元素 i（base 即元素 0 地址），
+            // 返回元素类型。与数组/Vec 索引同构（codegen 对 base 做 GEP），支持
+            // 引用迭代器 `&p[0]` 取元素引用（V1 IterRef 零拷贝视图）。
+            let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
+            Ok((
+                HirExpr::Index {
+                    base: Box::new(b_hir),
+                    index: Box::new(i_hir),
+                    elem: field_scalar_of(&elem_sub),
+                    is_str: false,
+                },
+                elem_sub,
+            ))
+        }
         Type::Named(n, args) => {
             let full = ctx.resolve_full_name(&n).unwrap_or_else(|| n.clone());
             // `s[i]`：String 对象按字节索引（步长 1），base 取槽 0 的 data 指针

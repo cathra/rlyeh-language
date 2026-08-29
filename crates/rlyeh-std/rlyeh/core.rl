@@ -405,6 +405,13 @@ impl<T> Vec<T> {
         let p: *mut T = &mut self.data[0];
         IterMut::new(p, p, self.len)
     }
+    // V1：只读引用迭代器——返回 `IterRef<T>`（*const T + 剩余长度），next() 返回
+    // 元素 `Option<&T>` 引用（零拷贝，指向原缓冲真实槽）。可用于零拷贝读取与
+    // 原地写回（`*r = x`）。迭代期间不得对 Vec 做结构性修改（指针悬垂）。
+    fn iter_ref(&self) -> IterRef<T> {
+        let p: *const T = &self.data[0];
+        IterRef::new(p, self.len)
+    }
     // V4：可变索引访问——`Option<&mut T>` 引用语义：越界返回 None，命中返回对原槽的
     // 可变引用，经 `match { Some(r) => *r = x }` 写回真实槽（非拷贝）。
     fn get_mut(&mut self, i: i64) -> Option<&mut T> {
@@ -565,6 +572,34 @@ impl<T> Iterator for IterMut<T> {
         self.data = self.data + 1;
         self.len = self.len - 1;
         Option::Some(v)
+    }
+}
+
+// V1：只读引用迭代器——`IterRef<T>` 零分配引用视图（next() 返回 `Option<&T>`）。
+// 与 Iter<T> 同布局（*const T + 剩余长度），但 next 返回元素引用而非值拷贝，
+// 支持零拷贝读取与写回原缓冲。接入 for 循环（inherent next 检测，无需 Iterator
+// trait——`type Item = &T` 引用类型对适配器框架不友好，for 循环仅需 inherent next）。
+struct IterRef<T> {
+    data: *const T,
+    len: i64,
+}
+
+impl<T> IterRef<T> {
+    // 取当前元素引用（指向原缓冲真实槽）并推进：耗尽返回 None。
+    fn next(&mut self) -> Option<&T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        let r: &T = &self.data[0];
+        self.data = self.data + 1;
+        self.len = self.len - 1;
+        Option::Some(r)
+    }
+    fn len(&self) -> i64 {
+        self.len
+    }
+    fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 
@@ -1173,33 +1208,25 @@ impl String {
     fn as_str_range(&self, start: i64, end: i64) -> &str {
         self.as_str()
     }
-    // T1b：字符列表——MVP 字节级：逐字节返回（字符 = 字节，与 to_upper / 索引
-    // 步长 1 字节一致；目标 `Chars` 迭代器 + UTF-8 码点解码规划）。
-    fn chars(&self) -> Vec<i64> {
-        let mut cs: Vec<i64> = Vec::new();
-        let mut i = 0;
-        while i < self.len {
-            cs.push(self.data[i]);
-            i = i + 1;
-        }
-        cs
-    }
-    // V2：字符码点迭代器——返回 `Chars`（UTF-8 码点解码，`next() -> Option<char>`）。
-    // 保留 `chars()`（字节级 Vec<i64>）兼容；`chars_iter` 为码点级迭代器。
-    fn chars_iter(&self) -> Chars {
+    // V2（2026-08-29）：字符码点迭代器——返回 `Chars`（UTF-8 码点解码，
+    // `next() -> Option<char>`）。`chars()` 即目标签名入口（此前兼容版为
+    // `chars_iter()`，现二者等价，`chars_iter` 保留为别名）。
+    fn chars(&self) -> Chars {
         Chars { s: self, pos: 0, len: self.len }
     }
-    // T1b：行切分——按换行符（\n = 10）切分，返回 Vec<String>（复用 split 语义，
-    // 连续换行产生空行段、尾随换行后有尾空行段）。目标 `Lines` 迭代器规划；
-    // MVP 差异：\r\n 行尾的 \r 保留（字节语义，未剥除）。
-    fn lines(&self) -> Vec<String> {
-        let result = self.split("\n");
-        result
+    // V2 别名：与 `chars()` 等价（历史迭代器入口名）。
+    fn chars_iter(&self) -> Chars {
+        self.chars()
     }
-    // V2：行迭代器——返回 `Lines`（按 \n/\r\n 分行，剥 \r；next() -> Option<String>）。
-    // 保留 `lines()`（Vec<String>）兼容；`lines_iter` 为惰性迭代器。
-    fn lines_iter(&self) -> Lines {
+    // V2（2026-08-29）：行迭代器——返回 `Lines`（按 \n/\r\n 分行，剥 \r；
+    // `next() -> Option<String>`）。`lines()` 即目标签名入口（此前兼容版为
+    // `lines_iter()`，现二者等价，`lines_iter` 保留为别名）。
+    fn lines(&self) -> Lines {
         Lines { s: self, pos: 0, len: self.len }
+    }
+    // V2 别名：与 `lines()` 等价（历史迭代器入口名）。
+    fn lines_iter(&self) -> Lines {
+        self.lines()
     }
     fn grow(&mut self) {
         let new_cap = if self.cap == 0 { 8 } else { self.cap * 2 };
@@ -1348,17 +1375,17 @@ impl Chars {
     // 取下一个 UTF-8 码点并推进；耗尽返回 None。
     // 解码：首字节 b0 确定码点宽度（0-7F=1 字节 ASCII；C2-DF=2；E0-EF=3；
     // F0-F4=4），读取后续连续字节（10xxxxxx）校验并组合码点。
-    // V2：`next() -> Option<i64>`（码点值）。返回 UTF-8 码点数值而非 `char`，
-    // 因 Rlyeh `char` 类型 codegen 仅支持 ASCII（非 ASCII `as char` 报错），
-    // 用 `i64` 码点值可表达全部 Unicode 码点（含多字节）。
-    fn next(&mut self) -> Option<i64> {
+    // V2：`next() -> Option<char>`。Rlyeh `char` 已于 2026-08-29 拓宽为 32 位
+    // Unicode 码点，可表达全部 Unicode（含多字节）；UTF-8 码点解码后直接以
+    // `char` 返回（此前因 char 仅 ASCII 而退回 i64 码点值，现无需）。
+    fn next(&mut self) -> Option<char> {
         if self.pos >= self.len {
             return Option::None;
         }
         let b0 = self.s.data[self.pos] as i64;
         if b0 < 0x80 {
             self.pos = self.pos + 1;
-            return Option::Some(b0);
+            return Option::Some(b0 as char);
         } else if b0 >= 0xE0 {
             if b0 >= 0xF0 {
                 // 4 字节
@@ -1368,7 +1395,7 @@ impl Chars {
                     let b3 = self.s.data[self.pos + 3] as i64;
                     let cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
                     self.pos = self.pos + 4;
-                    return Option::Some(cp);
+                    return Option::Some(cp as char);
                 }
             } else {
                 // 3 字节
@@ -1377,7 +1404,7 @@ impl Chars {
                     let b2 = self.s.data[self.pos + 2] as i64;
                     let cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
                     self.pos = self.pos + 3;
-                    return Option::Some(cp);
+                    return Option::Some(cp as char);
                 }
             }
         } else {
@@ -1391,26 +1418,26 @@ impl Chars {
         }
         // 不完整序列 / 无法解码：按单字节推进（鲁棒降级）
         self.pos = self.pos + 1;
-        Option::Some(b0)
+        Option::Some(b0 as char)
     }
     fn is_empty(&self) -> bool {
         self.pos >= self.len
     }
 }
 
-// V2（2026-08-27）：Chars 实现 Iterator trait（`type Item = i64` 码点），使
-// `for c in s.chars_iter()` 接入 V3 迭代器框架（目标签名 `chars() -> Chars`
-// 的基础）。inherent next 优先于 trait next。
+// V2（2026-08-29）：Chars 实现 Iterator trait（`type Item = char` 码点），使
+// `for c in s.chars()` 接入 V3 迭代器框架（目标签名 `chars() -> Chars`
+// 的落地）。inherent next 优先于 trait next。
 impl Iterator for Chars {
-    type Item = i64;
-    fn next(&mut self) -> Option<i64> {
+    type Item = char;
+    fn next(&mut self) -> Option<char> {
         if self.pos >= self.len {
             return Option::None;
         }
         let b0 = self.s.data[self.pos] as i64;
         if b0 < 0x80 {
             self.pos = self.pos + 1;
-            return Option::Some(b0);
+            return Option::Some(b0 as char);
         } else if b0 >= 0xE0 {
             if b0 >= 0xF0 {
                 if self.pos + 3 < self.len {
@@ -1419,7 +1446,7 @@ impl Iterator for Chars {
                     let b3 = self.s.data[self.pos + 3] as i64;
                     let cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
                     self.pos = self.pos + 4;
-                    return Option::Some(cp);
+                    return Option::Some(cp as char);
                 }
             } else {
                 if self.pos + 2 < self.len {
@@ -1427,7 +1454,7 @@ impl Iterator for Chars {
                     let b2 = self.s.data[self.pos + 2] as i64;
                     let cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
                     self.pos = self.pos + 3;
-                    return Option::Some(cp);
+                    return Option::Some(cp as char);
                 }
             }
         } else {
@@ -1439,7 +1466,7 @@ impl Iterator for Chars {
             }
         }
         self.pos = self.pos + 1;
-        Option::Some(b0)
+        Option::Some(b0 as char)
     }
 }
 
@@ -1479,9 +1506,9 @@ impl Lines {
     }
 }
 
-// V2（2026-08-27）：Lines 实现 Iterator trait（`type Item = String` 行），使
-// `for l in s.lines_iter()` 接入 V3 迭代器框架（目标签名 `lines() -> Lines`
-// 的基础）。inherent next 优先于 trait next。
+// V2（2026-08-29）：Lines 实现 Iterator trait（`type Item = String` 行），使
+// `for l in s.lines()` 接入 V3 迭代器框架（目标签名 `lines() -> Lines`
+// 的落地）。inherent next 优先于 trait next。
 impl Iterator for Lines {
     type Item = String;
     fn next(&mut self) -> Option<String> {
@@ -2010,6 +2037,17 @@ impl<K, V> HashMap<K, V> {
         let result = self.keys();
         result
     }
+    // V1-b：键值对引用迭代器——`iter_pairs() -> HashMapIter<K,V>`，`next()` 返回
+    // `Option<KVRef<K,V>>`（`key`/`val` 两裸指针指向原 keys/vals 真实槽，零拷贝）。
+    // 遍历跳过空/墓碑槽（states != 1）。因 Rlyeh 元组运行时未就绪，键值对以
+    // `KVRef` 结构体承载，等价 Rust `(&K, &V)` 引用语义。迭代期间不得对 HashMap
+    // 做结构性修改（push/remove/grow 触发重哈希会使指针悬垂）。
+    fn iter_pairs(&self) -> HashMapIter<K, V> {
+        let sp: *const i64 = &self.states[0];
+        let kp: *const K = &self.keys[0];
+        let vp: *const V = &self.vals[0];
+        HashMapIter { states: sp, keys: kp, vals: vp, idx: 0, cap: self.cap }
+    }
     // V4：可变取值——`Option<&mut V>` 引用语义：键不存在返回 None，命中返回对原槽的
     // 可变引用，经 `match { Some(r) => *r = x }` 写回真实槽（非拷贝）。
     fn get_mut(&mut self, k: K) -> Option<&mut V> {
@@ -2115,6 +2153,41 @@ impl<T> VecDeque<T> {
         } else {
             Option::Some(self.buf[self.front + self.len - 1])
         }
+    }
+}
+
+// V1-b：HashMap 键值对引用迭代器（零拷贝视图）。`HashMapIter` 持有原表三数组指针
+// （states/keys/vals）+ 游标 + 容量；`next()` 跳过 states != 1 的空/墓碑槽，返回
+// `KVRef`（两裸指针指向原 keys/vals 真实槽）。等价 Rust `(&K, &V)` 引用语义，但用
+// 结构体承载（Rlyeh 元组运行时未就绪）。接入 for 循环（inherent next 检测，无需
+// Iterator trait——`type Item = KVRef<K,V>` 对适配器框架不友好，for 循环仅需
+// inherent next）。
+struct HashMapIter<K, V> {
+    states: *const i64,
+    keys: *const K,
+    vals: *const V,
+    idx: i64,
+    cap: i64,
+}
+
+struct KVRef<K, V> {
+    key: *const K,
+    val: *const V,
+}
+
+impl<K, V> HashMapIter<K, V> {
+    // 取下一存活槽的键值引用对并推进；耗尽（无更多 states==1 槽）返回 None。
+    fn next(&mut self) -> Option<KVRef<K, V>> {
+        while self.idx < self.cap {
+            if self.states[self.idx] == 1 {
+                let k: *const K = &self.keys[self.idx];
+                let v: *const V = &self.vals[self.idx];
+                self.idx = self.idx + 1;
+                return Option::Some(KVRef { key: k, val: v });
+            }
+            self.idx = self.idx + 1;
+        }
+        Option::None
     }
 }
 

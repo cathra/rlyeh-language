@@ -580,7 +580,9 @@ pub(crate) fn field_scalar_llvm(ty: FieldScalar) -> Result<&'static str, Codegen
         FieldScalar::Int => "i64",
         FieldScalar::Float => "double",
         FieldScalar::Bool => "i1",
-        FieldScalar::Char => "i8",
+        // char：32 位 Unicode 码点（V2 拓宽：原为 i8 仅 ASCII，现支持全部
+        // Unicode 码点 0..=0x10FFFF，解锁 Chars::next() -> Option<char>）
+        FieldScalar::Char => "i32",
         FieldScalar::Str => "i8*",
         // &str 胖指针：`{ i8*, i64 }`（data 指针 + 长度）双槽
         FieldScalar::StrFat => "{ i8*, i64 }",
@@ -605,7 +607,7 @@ pub(crate) fn llvm_type(ty: LirType) -> Result<&'static str, CodegenError> {
         LirType::I64 => Ok("i64"),
         LirType::F64 => Ok("double"),
         LirType::Bool => Ok("i1"),
-        LirType::Char => Ok("i8"),
+        LirType::Char => Ok("i32"),
         LirType::Str => Ok("i8*"),
         // &str 胖指针：`{ i8*, i64 }`（data 指针 + 长度）双槽
         LirType::StrFat => Ok("{ i8*, i64 }"),
@@ -722,7 +724,7 @@ pub(crate) fn local_type(f: &LirFunction, name: &str) -> LirType {
 pub(crate) fn parse_cast_target(to: &str) -> (u32, bool, LirType) {
     match to {
         "bool" => (1, false, LirType::Bool),
-        "char" => (8, false, LirType::Char),
+        "char" => (32, false, LirType::Char),
         "f32" | "f64" => (64, true, LirType::F64),
         "u8" => (8, false, LirType::I64),
         "u16" => (16, false, LirType::I64),

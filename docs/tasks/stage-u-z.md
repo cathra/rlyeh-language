@@ -1,7 +1,7 @@
 # 阶段 U–Z（目标 API 对齐与编译器能力补齐）
 
 > **所属任务树**：[任务文档导航](./README.md)
-> **状态**：🔧 进行中（U ✅；V 🔧；W ✅；X 🔧；Y 📋）
+> **状态**：🔧 进行中（U ✅；V 🔧（V1 借用迭代器 ✅ 已完成；V2 `chars`/`lines` 目标签名 ✅ 已完成——`char` 类型已拓宽至 32 位 Unicode 码点）；W ✅（async_if_await/async_neg poll 死循环已于 2026-08-29 验收修复并解除 skip）；X 🔧；Y 🔧 部分完成（Y4/Y7/Y8 ✅））
 > **权威来源**：阶段详情文档 [`stages/U.md`](../stages/U.md)、[`stages/Y.md`](../stages/Y.md)；执行记录见本文件 §执行记录
 > **本层职责**：记录阶段 U–Z 的任务列表与进度 + 执行记录；其中 V 阶段已拆分为任务文档（V2/V3）+ 叶子文档，其余阶段具体实施见权威源文档。
 
@@ -12,10 +12,10 @@
 | 阶段 | 主题 | 子任务 | 子任务数 | 依赖 | 状态 |
 |------|------|--------|:---:|------|------|
 | **U** | 编译器地基 | U1 作用域栈、U2 关联类型、U3 泛型约束、U4 `-> Self`、U5 AddrOf、U6 Cast IR、U7 方法级泛型、U8 泛型结构体 + 泛型 trait | 8 | G、T | ✅ 全部完成（U1–U6 + U7/U8） |
-| **V** | 集合与迭代器完整化 | V1 借用迭代器、V2 String 码点迭代器、V3 默认方法 + 适配器迁移、V4 `get_mut`、V5 新集合 | 5 | U1/U2/U3 | 🔧 进行中 → **见 [V2](./v2-str-view.md) / [V3](./v3-iterator-adapters.md) 任务文档**——V4/V5 ✅；V1 部分（HashMap::iter/引用元素待办）、V2 部分（chars/lines 目标签名待升级）、V3 部分（数组/Vec 适配器走内建为语言限制） |
-| **W** | 异步运行时完整化 | W1 Future 泛型化、W2 await 状态机、W3 事件驱动 executor、W4 join_all/timeout、W5 recv_async/HTTP async、W6 async 泛型/递归 | 6 | U、R、S1c | ✅ 全部完成（W1–W6；**async_if_await/async_neg poll 死循环内存暴涨已知问题待修复**） |
+| **V** | 集合与迭代器完整化 | V1 借用迭代器、V2 String 码点迭代器、V3 默认方法 + 适配器迁移、V4 `get_mut`、V5 新集合 | 5 | U1/U2/U3 | 🔧 进行中 → **见 [V2](./v2-str-view.md) / [V3](./v3-iterator-adapters.md) 任务文档**——V4/V5 ✅；V1 部分（HashMap::iter/引用元素待办）、V2 ✅（chars/lines 目标签名已完成，`char` 拓宽 32 位）、V3 部分（数组/Vec 适配器走内建为语言限制） |
+| **W** | 异步运行时完整化 | W1 Future 泛型化、W2 await 状态机、W3 事件驱动 executor、W4 join_all/timeout、W5 recv_async/HTTP async、W6 async 泛型/递归 | 6 | U、R、S1c | ✅ 全部完成（W1–W6；async_if_await/async_neg poll 死循环已于 2026-08-29 验收修复并解除 skip） |
 | **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime、X2 标准 TOML、X3 Deserialize + Serializer、X4 Formatter | 4 | U3/U4、Q | 🔧 进行中（X1 ✅；**X2 部分**——`key = value` 空格 + round-trip ✅；**X3 核心**——Deserialize trait ✅；X2 剩余 [section]/注释/多行/引号感知、X3 Serializer 框架、X4 规划） |
-| **Y** | IO/网络/并发/智能指针收尾 | Y1 File API、Y2 NIO 高性能后端、Y3 HTTP 连接复用 + sendfile、Y4 guard 完整 + Channel 泛型化、Y5 `Box::leak`、Y6 `Error::source`、Y7 UDP、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 📋 规划 |
+| **Y** | IO/网络/并发/智能指针收尾 | Y1 File API、Y2 NIO 高性能后端、Y3 HTTP 连接复用 + sendfile、Y4 guard 完整 + Channel 泛型化、Y5 `Box::leak`、Y6 `Error::source`、Y7 UDP、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 🔧 部分完成（Y4/Y7/Y8 ✅；Y1/Y3 部分；Y2/Y5/Y6 规划） |
 
 ---
 
@@ -23,7 +23,7 @@
 
 | V 子任务 | 任务文档（索引） | 叶子文档（具体实施） | 状态 |
 |---------|-----------------|---------------------|------|
-| V2（`&str`） | [`v2-str-view.md`](./v2-str-view.md) | `leaf/v2-a-semantics.md` … `leaf/v2-e-api-align.md` | 🔧（V2-A~E ✅；`chars`/`lines` 目标签名待升级，需 char 类型） |
+| V2（`&str`） | [`v2-str-view.md`](./v2-str-view.md) | `leaf/v2-a-semantics.md` … `leaf/v2-e-api-align.md` | ✅（V2-A~E ✅；`chars`/`lines` 目标签名 ✅ 已完成——`chars()`/`lines()` 现返回 `Chars`/`Lines` 迭代器、`Chars::next() -> Option<char>`，`char` 类型拓宽至 32 位 Unicode 码点，2026-08-29） |
 | V3（Iterator） | [`v3-iterator-adapters.md`](./v3-iterator-adapters.md) | `leaf/v3-a1..a4.md`（关联类型，低/中）+ `leaf/v3-b/c.md` + `leaf/v3-d1..d5.md`（适配器，中/低）+ `leaf/v3-e-builtin-cleanup.md` | 🔧（A~E 子任务已落地；自定义迭代器适配器惰性化 ✅；数组/Vec 适配器走内建为语言限制） |
 
 > V1/V4/V5 属 V 阶段已完成项，具体实施见 任务树 §执行记录。
@@ -58,7 +58,7 @@
 
 | 子任务 | 叶子文档 | 状态 |
 |--------|---------|------|
-| V1 借用迭代器瘦指针 MVP | [`v1-borrow-iter.md`](leaf/v1-borrow-iter.md) | 🔧 部分完成（`Vec::iter`/`iter_mut` 瘦指针 ✅；`HashMap::iter` 引用迭代器 + 引用元素 `Option<&T>` 待办） |
+| V1 借用迭代器瘦指针 MVP | [`v1-borrow-iter.md`](leaf/v1-borrow-iter.md) | ✅ 已完成（`Vec::iter`/`iter_mut`/`iter_ref` + `HashMap::iter_pairs` 零拷贝引用迭代 ✅ 2026-08-29；元组运行时未就绪，KV 对以 `KVRef` 结构体承载，等价 `(&K,&V)`） |
 | V4 `get_mut` 引用语义 | [`v4-get-mut.md`](leaf/v4-get-mut.md) | ✅ 已完成 |
 | V5 新集合：VecDeque / HashSet / BTreeMap | [`v5-new-collections.md`](leaf/v5-new-collections.md) | ✅ 已完成 |
 | V2-A：`&str` 语义统一为 StrFat 双槽 | [`v2-a-semantics.md`](leaf/v2-a-semantics.md) | ✅ 已完成（审计 + 文档澄清，2026-08-26） |
@@ -106,7 +106,7 @@
 | Y1 File 目标 API | [`y1-file-api.md`](leaf/y1-file-api.md) | 🔧 部分完成 |
 | Y2 NIO 高性能后端 | [`y2-nio-backend.md`](leaf/y2-nio-backend.md) | 📋 规划 |
 | Y3 HTTP 连接复用 + sendfile 平台补全 | [`y3-http-keepalive.md`](leaf/y3-http-keepalive.md) | 🔧 部分完成 |
-| Y4 锁 guard 完整 + Channel 泛型化 | [`y4-lock-guard-channel.md`](leaf/y4-lock-guard-channel.md) | 📋 规划 |
+| Y4 锁 guard 完整 + Channel 泛型化 | [`y4-lock-guard-channel.md`](leaf/y4-lock-guard-channel.md) | ✅ 已完成（#6 Mutex 泛型化 + #8 Channel<T> 泛型化，2026-08-29 验收用例 `mutex_value.rl` 通过） |
 | Y5 `Box::leak` 目标签名 | [`y5-box-leak-signature.md`](leaf/y5-box-leak-signature.md) | 📋 规划 |
 | Y6 错误体系完整化 | [`y6-error-source.md`](leaf/y6-error-source.md) | 📋 规划 |
 | Y7 UDP | [`y7-udp.md`](leaf/y7-udp.md) | ✅ 已完成 |
@@ -118,3 +118,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-08-26 | 阶段 U–Z 纳入任务树（索引；V 阶段链接 V2/V3 任务文档） |
+| 2026-08-29 | V2 完整完成：`char` 类型 codegen 由 i8 拓宽至 i32（32 位 Unicode 码点）；`chars()`/`lines()` 目标签名升级为返回 `Chars`/`Lines` 迭代器、`Chars::next() -> Option<char>`；`tokenize` 改写为顺序迭代；std 内 V3 适配器 `Item` 误置 `char` 还原为 `i64`；全量 177 用例通过 |

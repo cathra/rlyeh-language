@@ -427,6 +427,15 @@ pub(super) fn unify(
             }
             Ok(())
         }
+        // G3：裸指针与引用同理递归统一内层（泛型结构体字段含 `*const T` /
+        // `*mut T` 时，可从裸指针实参反推泛型参数，例如 `KVRef { key: p }`
+        // 由 `p: *const K` 定型 `KVRef<K, _>`）。
+        Type::RawPtr(inner, _) => {
+            if let Type::RawPtr(ainner, _) = arg {
+                unify(inner, ainner, subst)?;
+            }
+            Ok(())
+        }
         // T1a：函数类型递归统一（fn 形参含泛型类型参数时按实参 fn 签名反推，
         // 与 substitute 的 Fn 递归替换配套——此前静默接受不反推，导致
         // `Vec::sort_by(cmp: fn(T, T) -> i64)` 传 `fn(i64, i64) -> i64` 报错）。

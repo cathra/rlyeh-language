@@ -21,6 +21,10 @@ fn temp_project() -> PathBuf {
 }
 
 /// 运行内联源码（自动注入 core.rl），返回程序输出。
+///
+/// 编译深递归程序（async 状态机）时 Rlyeh 编译器递归较深，macOS 上默认测试线程
+/// 栈仅 ~2MB 会溢出；`run_source_file` 已在 64MB 栈线程中执行编译+运行（见
+/// `lib.rs` 与 `test_runner.rs`），故此处直接调用即可。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");
