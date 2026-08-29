@@ -134,7 +134,18 @@ pub(super) fn check_for_range(
             upper,
             lower_inclusive,
             upper_inclusive,
-        } => (lower, upper, *lower_inclusive, *upper_inclusive),
+        } => {
+            // P8：for 范围迭代须显式边界（省略 `..` 仅切片 `v[..]` 支持）
+            let lower = lower.as_ref().ok_or_else(|| TypeError::Unsupported {
+                what: "for 范围迭代器缺少下界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+                span,
+            })?;
+            let upper = upper.as_ref().ok_or_else(|| TypeError::Unsupported {
+                what: "for 范围迭代器缺少上界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+                span,
+            })?;
+            (lower, upper, *lower_inclusive, *upper_inclusive)
+        }
         _ => {
             return Err(TypeError::Unsupported {
                 what: "非 range 迭代器的 for 循环（集合 / 容器迭代在 MVP 阶段）".to_string(),

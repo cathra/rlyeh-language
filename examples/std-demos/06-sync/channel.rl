@@ -2,7 +2,7 @@
 // 输出与 channel.out 精确对比
 fn main() {
     // 1. 基础 send/recv（FIFO）
-    let mut pair = channel();
+    let mut pair = channel::<i64>();
     let mut tx = pair.tx;
     let mut rx = pair.rx;
     tx.send(10);
@@ -46,7 +46,7 @@ fn main() {
     }
 
     // 5. iter（next 接入 for 循环，不阻塞）
-    let mut pair2 = channel();
+    let mut pair2 = channel::<i64>();
     let mut tx2 = pair2.tx;
     let mut rx2 = pair2.rx;
     tx2.send(1);
@@ -60,7 +60,7 @@ fn main() {
     println(sum);                        // 6
 
     // 6. 多 Sender / Receiver 共享同一队列（Rc clone）
-    let mut pair3 = channel();
+    let mut pair3 = channel::<i64>();
     let mut tx3a = pair3.tx;
     let mut rx3 = pair3.rx;
     let mut tx3b = tx3a.clone();
@@ -75,18 +75,21 @@ fn main() {
         Option::None => println(-1),
     }
 
-    // 7. recv_async（S3a，MVP 同步语义）：非空立即返回 / close 后空返回 None
-    let mut pair4 = channel();
+    // 7. recv_async（W5 真异步 future + block_on）：有数据立即 Ready / close 后空 None
+    // P7c：`RecvAsync<T>` 泛型化，`Output = Option<T>`
+    let mut pair4 = channel::<i64>();
     let mut tx4 = pair4.tx;
     let mut rx4 = pair4.rx;
     tx4.send(7);
-    match rx4.recv_async() {
+    let mut r4: sync::RecvAsync<i64> = rx4.recv_async();
+    match block_on(&mut r4) {
         Option::Some(v) => println(v),   // 7
         Option::None => println(-1),
     }
     tx4.close();
-    match rx4.recv_async() {
+    let mut r5: sync::RecvAsync<i64> = rx4.recv_async();
+    match block_on(&mut r5) {
         Option::Some(v) => println(v),
-        Option::None => println(-1),     // -1
+        Option::None => println(-1),     // close 且空
     }
 }

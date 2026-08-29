@@ -144,6 +144,13 @@ pub(crate) fn check_fn_body_with_self(
     // 返回类型检查（签名在收集阶段已存入，此处重新解析以保持一致性）
     let return_type = fn_signature_with_self(ctx, f, self_ty, f.span)?.return_type;
 
+    // P6c：`?` 运算符 From 自动转换需知函数返回类型（目标错误类型），
+    // 在函数体检查期间写入，退出时恢复（避免嵌套 fn/闭包互相污染）。
+    let saved_return_type = std::mem::replace(
+        &mut ctx.current_return_type,
+        Some(return_type.clone()),
+    );
+
     // `fn make() -> fn(i64) -> i64 { |x| x + 1 }`：返回类型为 fn 且函数体
     // 尾表达式为闭包时，按 H2 无捕获闭包签名检查（H5 补全，返回闭包的函数）。
     // U1：函数体不额外开块作用域（`check_block_inner`），体内部 let 直接留在
@@ -212,6 +219,7 @@ pub(crate) fn check_fn_body_with_self(
             }
         }
         if !downgraded && !upshifted {
+            ctx.current_return_type = saved_return_type;
             ctx.pop_scope();
             return Err(TypeError::WrongType {
                 expected: return_type.to_string(),
@@ -221,6 +229,7 @@ pub(crate) fn check_fn_body_with_self(
         }
     }
 
+    ctx.current_return_type = saved_return_type;
     ctx.pop_scope();
     Ok(Some(hir_body))
 }

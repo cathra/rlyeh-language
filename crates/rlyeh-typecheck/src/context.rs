@@ -143,6 +143,9 @@ pub struct TypeContext {
     /// 由 `rlyeh build --profile` 读取 `.rl_profile` 后注入；
     /// `adaptive` 区域在检查时优先采用该容量作为 `HirRegionOptions.size`。
     pub region_hints: HashMap<String, usize>,
+    /// 当前函数/方法声明返回类型（P6c，`?` 运算符 From 自动转换用于确定目标错误类型）。
+    /// 在函数/actor 方法体检查入口设置，退出时恢复。
+    pub current_return_type: Option<Type>,
 }
 
 impl TypeContext {
@@ -371,6 +374,25 @@ impl TypeContext {
         None
     }
 
+    /// 解析 trait 名的完整符号键（trait 未纳入 `resolve_full_name`，单独处理）。
+    ///
+    /// 依次尝试：1) 精确键；2) 当前模块前缀；3) 以 `::name` 结尾的 trait（如
+    /// 用户写 `From` 引用 `io::error::From`）。P6c（2026-08-29）。
+    pub(crate) fn resolve_trait_key(&self, name: &str) -> Option<String> {
+        if self.trait_defs.contains_key(name) {
+            return Some(name.to_string());
+        }
+        if let Some(full) = self.resolve_full_name(name) {
+            if self.trait_defs.contains_key(&full) {
+                return Some(full);
+            }
+        }
+        self.trait_defs
+            .keys()
+            .find(|k| k == &name || k.ends_with(&format!("::{name}")))
+            .cloned()
+    }
+
     /// 按名字查找 actor 定义（支持短名 → 完整名解析，与 struct 一致）。
     pub fn lookup_actor(&self, name: &str) -> Option<&AstActorDecl> {
         self.resolve_full_name(name)
@@ -551,7 +573,13 @@ impl TypeContext {
 
 /// impl 块目标类型与具体类型匹配（未含泛型参数的 impl 需精确匹配；
 /// 含泛型参数的 impl 匹配同名类型，参数在调用点替换）。
-fn type_matches(imp: &ImplDef, concrete: &Type) -> bool {
+pub(crate) fn type_matches(imp: &ImplDef, concrete: &Type) -> bool {
+    // P6c（2026-08-29）：blanket impl（`impl<T, U> Into<U> for T`——self_type 为裸
+    // 泛型参数）可匹配任意具体类型；类型参数在调用点按 turbofish / 实参替换。
+    // （`impl<T> Bag<T>` 的 self_type 是 `Named("Bag",[T])`，不受本分支影响。）
+    if matches!(&imp.self_type, Type::Generic(_)) {
+        return true;
+    }
     let Type::Named(name, _) = &imp.self_type else {
         return false;
     };

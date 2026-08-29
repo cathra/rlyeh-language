@@ -2,7 +2,7 @@
 
 > **所属专项**：[专项开发计划](../专项开发计划.md)（P5）
 > **来源缺陷**：[`leaf/lang-defects.md`](lang-defects.md) #6（std `Mutex` 泛型化，源自 Y4b-2）
-> **状态**：✅ 部分完成（2026-08-28：带值锁 MVP——`Mutex { value: i64 }` + `new(v)` + 守卫 `get`/`get_mut` 引用访问；**完整泛型 `Mutex<T>` 因「泛型 struct 引用字段构造」语言级障碍暂缓，登记待专项**）
+> **状态**：✅ 已完成（2026-08-29：完整泛型 `Mutex<T>` 带值锁 + `MutexGuard<T>` 引用访问——此前「泛型 struct 引用字段构造」障碍已由 **P7a 的 `unify` 复合/引用字段推断**修复）
 > **风险**：中（原「中-高」——已通过 P5a-1~P5d-2 拆分为可独立实现/验证的子步骤；生命周期 MVP 用裸指针方案 + P5b-3 无悬垂验证隔离风险）
 > **前置能力**：P4（生命周期/借用 MVP 思路）；Y4a/Y4b（泛型构造 + 静态方法推断已齐）
 
@@ -74,4 +74,5 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 2026-08-28 | 由专项开发计划 P5 生成叶子文档（拆分 P5a/b/c/d） |
 | 2026-08-28 | 细化 P5a→P5a-1/2、P5b→P5b-1/2/3（裸指针生命周期正确性 + get_mut 写回验证）、P5c→P5c-1/2、P5d→P5d-1/2，全部到可执行子步骤粒度 |
 | 2026-08-28 | 整体与 P5b 风险降为中（子步骤均为中/低，裸指针生命周期由 P5b-3 无悬垂验证隔离） |
-| 2026-08-28 | ✅ 部分完成：`sync/module.rl` 带值锁 MVP——`Mutex { p, value: i64 }` + `new(v: i64)` + `lock(&self)`/`unlock(&self)`/`try_lock(&self)`；`MutexGuard { p, value_ptr: &mut i64 }` + `get`/`get_mut` 引用访问（`lock_guard(&mut self)` 借调用方 self 规避悬垂）；`Channel.m` 用 `Mutex::new(0)` 纯锁；`sync_test.rs` 迁移 `Mutex::new()` → `Mutex::new(0)` + 新增 `mutex_value_lock_guard`（get/get_mut 验证）。验证：`Mutex::new(42).lock_guard().get()` 读、`*g.get_mut()=77` 写回、函数尾自动解锁；sync_test 7 全过 + cargo test 全绿。**障碍**：完整泛型 `Mutex<T>`/`MutexGuard<T>` 因「泛型 struct 引用字段构造」报 `Guard.value 期望 &mut T, found &mut i64`（Y4a 泛型 struct 构造的字段类型替换未覆盖 `&mut T` 引用字段；泛型方法返回 `&T` 正常、值返回正常，仅构造含 `&mut T` 字段的守卫失败）——登记待专项 |
+| 2026-08-28 | ✅ 部分完成：`sync/module.rl` 带值锁 MVP——`Mutex { p, value: i64 }` + `new(v: i64)` + `lock(&self)`/`unlock(&self)`/`try_lock(&self)`；`MutexGuard { p, value_ptr: &mut i64 }` + `get`/`get_mut` 引用访问（`lock_guard(&mut self)` 借调用方 self 规避悬垂）；`Channel.m` 用 `Mutex::new(0)` 纯锁；`sync_test.rs` 迁移 `Mutex::new()` → `Mutex::new(0)` + 新增 `mutex_value_lock_guard`（get/get_mut 验证）。验证：`Mutex::new(42).lock_guard().get()` 读、`*g.get_mut()=77` 写回、函数尾自动解锁；sync_test 7 全过 + cargo test 全绿。**障碍**：完整泛型 `Mutex<T>`/`MutexGuard<T>` 因「泛型 struct 引用字段构造」报 `Guard.value 期望 &mut T, found &mut i64`（Y4a 泛型 struct 构造的字段类型替换未覆盖 `&mut T` 引用字段）——登记待专项 |
+| 2026-08-29 | ✅ 障碍解除，升级为**完整泛型**：P7a 把 `construct.rs` 的字段推断改为 `unify` 递归统一后，泛型 struct 引用字段构造（`Guard { value: &mut self.value }`）可用。`sync/module.rl` 最终为 `Mutex<T> { p, value: T }` + `new(v: T)` + `lock_guard(&mut self) -> MutexGuard<T>`；`MutexGuard<T> { p, value: &mut T }` + `get`/`get_mut`；`Condvar::wait<T>(m: Mutex<T>)`；`Channel.m: Mutex<i64>`（纯锁用 `Mutex::new(0)`）。验证：`Mutex::new(true)`（**非 i64 类型，证明泛型生效**）+ `lock_guard().get()` → 1；`*g.get_mut()=99` 写回 → `m2.value`=99；sync_test 7 全过 + cargo test 全绿 |

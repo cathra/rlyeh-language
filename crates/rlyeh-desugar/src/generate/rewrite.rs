@@ -80,8 +80,9 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             upper_inclusive,
         } => AstExpr::new(
             ExprKind::Range {
-                lower: rewrite_expr(lower, lifted, span),
-                upper: rewrite_expr(upper, lifted, span),
+                // P8：边界可为 None（切片省略边界）
+                lower: lower.as_ref().map(|e| rewrite_expr(e, lifted, span)),
+                upper: upper.as_ref().map(|e| rewrite_expr(e, lifted, span)),
                 lower_inclusive: *lower_inclusive,
                 upper_inclusive: *upper_inclusive,
             },

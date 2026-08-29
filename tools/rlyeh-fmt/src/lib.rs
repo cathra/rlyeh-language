@@ -501,7 +501,12 @@ fn fmt_expr(e: &AstExpr) -> String {
             upper,
             lower_inclusive,
             upper_inclusive,
-        } => fmt_range_expr(lower, upper, *lower_inclusive, *upper_inclusive),
+        } => fmt_range_expr(
+            lower.as_ref(),
+            upper.as_ref(),
+            *lower_inclusive,
+            *upper_inclusive,
+        ),
         ExprKind::Binary { op, left, right } => {
             let p = bin_prec(*op);
             let l = fmt_operand(left, p, false);
@@ -887,7 +892,12 @@ fn fmt_pattern(p: &AstPattern) -> String {
             upper,
             lower_inclusive,
             upper_inclusive,
-        } => fmt_range_expr(lower, upper, *lower_inclusive, *upper_inclusive),
+        } => fmt_range_expr(
+            Some(lower),
+            Some(upper),
+            *lower_inclusive,
+            *upper_inclusive,
+        ),
         AstPattern::Ref(inner, mut_) => {
             let m = if *mut_ { "mut " } else { "" };
             format!("ref {}{}", m, fmt_pattern(inner))
@@ -911,18 +921,29 @@ fn fmt_literal_value(l: &LiteralValue) -> String {
 }
 
 fn fmt_range_expr(
-    lower: &AstExpr,
-    upper: &AstExpr,
+    lower: Option<&AstExpr>,
+    upper: Option<&AstExpr>,
     lower_inclusive: bool,
     upper_inclusive: bool,
 ) -> String {
-    let lo = if lower_inclusive {
-        fmt_operand(lower, PREC_COMPARE, false)
-    } else {
-        format!("<{}", fmt_operand(lower, PREC_COMPARE, false))
+    // P8：省略边界——lower=None 输出空串（无 `<` 前缀），upper=None 仅输出区间运算符
+    let lo = match lower {
+        Some(l) => {
+            let s = fmt_operand(l, PREC_COMPARE, false);
+            if lower_inclusive {
+                s
+            } else {
+                format!("<{s}")
+            }
+        }
+        None => String::new(),
     };
     let hi = if upper_inclusive { "..." } else { "..<" };
-    format!("{}{}{}", lo, hi, fmt_operand(upper, PREC_COMPARE, false))
+    let hi_s = match upper {
+        Some(u) => format!("{hi}{}", fmt_operand(u, PREC_COMPARE, false)),
+        None => hi.to_string(),
+    };
+    format!("{lo}{hi_s}")
 }
 
 fn fmt_type(t: &AstType) -> String {

@@ -4,7 +4,7 @@
 // 输出与 mutex_guard.out 精确对比
 fn main() {
     // A. 块表达式级守卫：块尾自动注入 g.unlock()
-    let m = Mutex::new();
+    let mut m = Mutex::new(0);
     {                                // 块表达式语句须加分号（parse_block：无分号即块尾表达式）
         let g = m.lock_guard();      // 加锁
         let t = m.try_lock();        // 守卫持锁中 → false
@@ -15,7 +15,7 @@ fn main() {
     if ok { m.unlock(); }
 
     // B. 嵌套块（if 分支）守卫：分支块尾注入（与 Rust 词法作用域一致）
-    let m2 = Mutex::new();
+    let mut m2 = Mutex::new(0);
     let r = if true {
         let g = m2.lock_guard();
         42
@@ -26,8 +26,8 @@ fn main() {
     if ok2 { m2.unlock(); }
 
     // C. 多守卫顺序注入（g1、g2 在块尾依次 unlock）
-    let m3 = Mutex::new();
-    let m4 = Mutex::new();
+    let mut m3 = Mutex::new(0);
+    let mut m4 = Mutex::new(0);
     {                                // 块表达式语句须加分号
         let g1 = m3.lock_guard();
         let g2 = m4.lock_guard();
@@ -39,7 +39,7 @@ fn main() {
     if b { m4.unlock(); }
 
     // D. while 循环体内守卫：每次迭代各自解锁
-    let m5 = Mutex::new();
+    let mut m5 = Mutex::new(0);
     let mut i = 0;
     while i < 3 {
         let g = m5.lock_guard();     // 每次迭代加锁

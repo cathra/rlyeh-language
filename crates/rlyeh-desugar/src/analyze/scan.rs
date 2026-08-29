@@ -93,8 +93,14 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
             upper,
             ..
         } => {
-            scan_expr(lower, uses)?;
-            scan_expr(upper, uses)
+            // P8：边界可为 None（切片省略边界），仅扫描 Some 侧
+            if let Some(l) = lower {
+                scan_expr(l, uses)?;
+            }
+            if let Some(u) = upper {
+                scan_expr(u, uses)?
+            }
+            Ok(())
         }
         ExprKind::Unary { operand, .. } => scan_expr(operand, uses),
         ExprKind::Binary { left, right, .. } => {
@@ -426,8 +432,15 @@ pub(super) fn extract_expr_awaits(
             lower_inclusive,
             upper_inclusive,
         } => ExprKind::Range {
-            lower: extract_expr_awaits(ctx, out, lower, cur_uses, first, last)?,
-            upper: extract_expr_awaits(ctx, out, upper, cur_uses, first, last)?,
+            // P8：边界可为 None（切片省略边界）
+            lower: lower
+                .as_ref()
+                .map(|e| extract_expr_awaits(ctx, out, e, cur_uses, first, last))
+                .transpose()?,
+            upper: upper
+                .as_ref()
+                .map(|e| extract_expr_awaits(ctx, out, e, cur_uses, first, last))
+                .transpose()?,
             lower_inclusive: *lower_inclusive,
             upper_inclusive: *upper_inclusive,
         },

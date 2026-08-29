@@ -2,7 +2,7 @@
 
 > **所属专项**：[专项开发计划](../专项开发计划.md)（P7）
 > **来源缺陷**：[`leaf/lang-defects.md`](lang-defects.md) #8（`Channel<T>` 泛型化，源自 Y4c）
-> **状态**：📋 待办
+> **状态**：✅ 基本完成（2026-08-29：P7a 复合字段推断 + P7b turbofish + **P7c std `Channel<T>` 全类型泛型化**（含 `RecvAsync<T>` 的 `Output = Option<T>`，已验证 `Channel<bool>` 非 i64 元素）；P7d 错误类型暂不实施——见下）
 > **风险**：中（原「高」——已通过 P7a-1~P7d-2 拆分为可独立实现/验证的子步骤 + 两个语言级障碍（复合字段推断/turbofish）隔离为前置子任务 P7a/P7b 逐个化解；P7b 方案 B 已否决，消除架构性推断高风险）
 > **前置能力**：P7a 复合字段推断 + P7b turbofish/泛型返回推断
 
@@ -79,15 +79,12 @@
 - **涉及**：`sync/module.rl`、`core.rl` import
 - **验收**：`Channel<i64>`/`Channel<String>` 构造/发送/接收泛型化
 
-### P7d（低风险）错误类型 + 测试迁移
+### P7d 错误类型 + 测试迁移
 
-`SendError<T>`/`RecvError` 目标签名；`recv_async.rl`/channel.rl/run-pass/06-sync 示例迁移。
-
-- **P7d-1（低风险）错误类型**：`SendError<T>`（携带发送的值）/`RecvError` 目标签名 + `Display`。验收：错误类型可构造/显示。
-- **P7d-2（低风险）测试迁移**：`recv_async.rl`/channel.rl/run-pass/06-sync 示例迁移（`Channel<i64>` + 断言值类型）。验收：迁移后回归全绿。
-
+- **P7d-2（低风险）测试迁移** ✅ 已完成：`recv_async.rl`/`channel.rl`/`async_combo.rl`/`examples/.../06-sync/channel.rl` 迁移（`channel::<i64>()` turbofish + `sync::RecvAsync<i64>` + `Output = Option<T>` 的 match 解包）。验收：4 个文件运行通过 + cargo test 全绿。
+- **P7d-1 错误类型** ⏸️ **暂不实施**（记录决策）：`SendError<T>`（携带发送的值）/`RecvError` 属**目标签名**——当前 `Channel<T>` 为**无界队列**，`send` 恒成功（无失败路径），引入 `SendError<T>` 需改 `send` 签名返回 `Result<(), SendError<T>>` 并再次全量迁移所有调用点，收益为 0（无实际错误场景）。**待有界通道 / 断开检测（`Sender` 全 drop 后 send 失败）落地时一并引入**，届时 `SendError<T>` 携带值可用于错误恢复。
 - **涉及**：`sync/module.rl` 错误类型 + tests/examples
-- **验收**：迁移后回归全绿
+- **验收**：迁移后回归全绿（已达成）；错误类型待有界通道时补
 
 ## 执行步骤
 
@@ -108,9 +105,5 @@
 |------|------|
 | 2026-08-28 | 由专项开发计划 P7 生成叶子文档（拆分 P7a/b/c/d，定位 construct.rs:36-47） |
 | 2026-08-28 | 细化 P7a→P7a-1/2/3/4（Vec/HashMap 复合推断 + 构造返回实参传播）、P7b→P7b-1/2/3（根因：自由函数 turbofish 已支持 mod.rs:67-103，关联路径段间未支持，选方案 A）、P7c→P7c-1/2/3、P7d→P7d-1/2，全部到可执行子步骤粒度 |
-
-## 变更记录
-
-| 日期 | 变更 |
-|------|------|
-| 2026-08-28 | 由专项开发计划 P7 生成叶子文档（拆分 P7a/b/c/d，定位 construct.rs:36-47） |
+| 2026-08-29 | ✅ P7a 完成：`construct.rs` 泛型 struct 构造的字段类型推断从「裸 `Generic(tp)` 直接匹配」改为 **`unify` 递归统一**（支持复合字段 `Vec<T>`/`HashMap<K,V>`）+ 按 `def.type_params` 顺序提取实参。验证 `let b: Bag<i64> = Bag { items: Vec::with_capacity(8) }` 推断 T=i64（此前报 `expected Bag<i64>, found Bag`）。✅ P7b 完成：P7b-1 parser（`expr/mod.rs`）turbofish 关闭后支持继续 `::` 路径段（`Type::<T>::method`）；P7b-2 typecheck（`call.rs` turbofish 调用优先走 static method call；`method.rs check_static_method_call` + `generic.rs check_generic_call` 接收 type_args 预填 subst）。验证 `Vec::<i64>::new()`、`Cell::<i64>::new(42)`、`Bag::<i64>::new()` + `b.add(1)` 全通；自由函数 turbofish `json::parse::<i64>`/`::<HashMap<i64,i64>>` 无回归；cargo test 全绿 |
+| 2026-08-29 | ✅ P7c 完成：`sync/module.rl` 全类型泛型化——`Channel<T>`/`Sender<T>`/`Receiver<T>`/`ChannelPair<T>`/`RecvAsync<T>`；`channel<T>()`（turbofish 指定元素类型）+ `send(val: T)`/`recv()`/`try_recv()`/`next()` → `Option<T>`；`RecvAsync<T>` 的 `Future::Output = Option<T>`（**替代 MVP 哨兵 -1**）；`Condvar::wait<T>` 已泛型化。构造处显式带实参（`sync::Channel<T>{..}`/`Sender<T>`/`Receiver<T>`/`ChannelPair<T>`/`RecvAsync<T>`）——Rc 嵌套时字段推断无法反推外层 T。验证：`channel::<i64>()` send/recv → 42；`channel::<bool>()`（**非 i64 元素**）→ 1；`block_on(&mut RecvAsync<i64>)` → `Some(7)` / close 空 → `None`。迁移 4 个文件（recv_async.rl/channel.rl/async_combo.rl/examples 06-sync/channel.rl）+ cargo test 全绿。P7d-1 `SendError<T>`/`RecvError` 暂不实施（无界队列 send 恒成功，待有界通道时引入） |

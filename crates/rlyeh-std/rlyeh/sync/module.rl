@@ -20,35 +20,33 @@
 // 定义前置：typecheck 对 struct 类型注册顺序敏感（即注册即查），
 // 故守卫类型须在 Mutex::lock_guard 引用前声明；字段为锁指针 + 数据引用（无类型依赖），
 // unlock 直接经 extern（避免 Mutex 方法前向依赖）。
-// P5（2026-08-28）：带值锁 MVP——`Mutex { value: i64 }` 数据载荷 + `new(v: i64)`；
-// `MutexGuard` 持 `value_ptr: &mut i64` 引用被锁值，`get`/`get_mut` 经引用读写。
-// （完整泛型 `Mutex<T>`/`MutexGuard<T>` 因「泛型 struct 引用字段构造」语言级障碍
-// 暂缓——Y4a 泛型 struct 构造的字段类型替换未覆盖 `&mut T` 引用字段，登记待专项；
-// MVP 值类型限 i64，Channel 纯锁用 `Mutex::new(0)`。）
-struct MutexGuard { p: i64, value_ptr: &mut i64 }
+// P5（2026-08-29 升级为完整泛型）：`MutexGuard<T>` 持 `value: &mut T` 引用被锁值，
+// `get`/`get_mut` 经引用读写。（此前「泛型 struct 引用字段构造」障碍已由 P7a 的
+// `unify` 复合/引用字段推断修复——`Guard { value: &mut self.value }` 可推断 T。）
+struct MutexGuard<T> { p: i64, value: &mut T }
 
-impl MutexGuard {
+impl<T> MutexGuard<T> {
     // 显式解锁（编译器注入自动调用；手动调用后守卫仍会被再次注入——宽松语义）
     fn unlock(self) {
         let _ = pthread_mutex_unlock(self.p);
     }
     // 读被锁值（解引用守卫持有的引用）
-    fn get(&self) -> &i64 {
-        self.value_ptr
+    fn get(&self) -> &T {
+        self.value
     }
     // 写被锁值（可变引用写回原 Mutex.value）
-    fn get_mut(&mut self) -> &mut i64 {
-        self.value_ptr
+    fn get_mut(&mut self) -> &mut T {
+        self.value
     }
 }
 
 // 互斥锁（非递归；p 为 pthread_mutex_t*）。
 // macOS pthread_mutex_t = 64 字节，Linux glibc = 40 字节，calloc(1, 64) 双平台安全。
-// P5（2026-08-28）：带值锁——`value: i64` 数据载荷，`new(v: i64)` 初始化。
-struct Mutex { p: i64, value: i64 }
+// P5（2026-08-29）：`Mutex<T>` 带值锁——`value: T` 数据载荷，`new(v: T)` 初始化。
+struct Mutex<T> { p: i64, value: T }
 
-impl Mutex {
-    fn new(v: i64) -> sync::Mutex {
+impl<T> Mutex<T> {
+    fn new(v: T) -> sync::Mutex<T> {
         let p = calloc(1, 64);
         let _ = pthread_mutex_init(p, 0);   // attr = NULL
         sync::Mutex { p: p, value: v }
@@ -66,11 +64,11 @@ impl Mutex {
         r == 0
     }
     // P2：lock_guard 返回守卫（加锁并返回 MutexGuard；作用域结束自动解锁）。
-    // P5：`&mut self` 借用调用方 Mutex，`value_ptr: &mut self.value` 指向调用方值
+    // P5：`&mut self` 借用调用方 Mutex，`value: &mut self.value` 指向调用方值
     // （规避值传递参数拷贝后 `&value` 悬垂）。
-    fn lock_guard(&mut self) -> sync::MutexGuard {
+    fn lock_guard(&mut self) -> sync::MutexGuard<T> {
         self.lock();
-        sync::MutexGuard { p: self.p, value_ptr: &mut self.value }
+        sync::MutexGuard { p: self.p, value: &mut self.value }
     }
 }
 
@@ -121,7 +119,8 @@ impl Condvar {
         sync::Condvar { p: p }
     }
     // 调用方须已持有 m（与同一 Mutex 配对；伪唤醒由调用方循环复查条件）
-    fn wait(self, m: sync::Mutex) {
+    // P5：Mutex 泛型化，wait 参数接受任意 Mutex<T>（锁原语只依赖 p 字段）。
+    fn wait<T>(self, m: sync::Mutex<T>) {
         let _ = pthread_cond_wait(self.p, m.p);
     }
     // 唤醒一个等待者（无等待者时空操作）
@@ -152,49 +151,51 @@ impl Barrier {
 }
 
 // ===== Channel（P1，2026-08）：无界并发队列 =====
-// MVP 元素限 i64；队列状态经 Rc<Channel> 共享（Sender/Receiver 各自持有 clone）。
+// P7c（2026-08-29）：元素类型参数化 `Channel<T>`（此前 MVP 限 i64）。
+// 队列状态经 Rc<Channel<T>> 共享（Sender/Receiver 各自持有 clone）。
 // recv 空队列挂起（Condvar wait），send 后 notify_one 唤醒；
 // close 后队列耗尽 recv 返回 None（try_recv 空返回 None，不阻塞）。
 // 注意：queue 只增（head 单调推进，无元素移除的 MVP 简化）。
 // W5（2026-08-25）：`wake_r`/`wake_w` 为 socketpair 唤醒 fd——`send`/`close`
 // 向 `wake_w` 写字节，`recv_async` 的 future 经 `wake_r` 读就绪挂起（W3
 // `wait_fd`/`Context.fd` 事件驱动，非阻塞线程），实现「挂起直到数据/close」。
-struct Channel {
-    m: sync::Mutex,
+struct Channel<T> {
+    m: sync::Mutex<i64>,
     cv: sync::Condvar,
     closed: i64,
     head: i64,
-    queue: Vec<i64>,
+    queue: Vec<T>,
     wake_r: i64,
     wake_w: i64,
 }
 
-struct Sender { ch: Rc<sync::Channel> }
-struct Receiver { ch: Rc<sync::Channel> }
+struct Sender<T> { ch: Rc<sync::Channel<T>> }
+struct Receiver<T> { ch: Rc<sync::Channel<T>> }
 // 元组返回类型 MVP 未实现（(1, 2) 被解析为集合），channel() 返回结构体对。
-struct ChannelPair { tx: sync::Sender, rx: sync::Receiver }
+struct ChannelPair<T> { tx: sync::Sender<T>, rx: sync::Receiver<T> }
 
 // W5（2026-08-25）：异步接收 future（`Receiver::recv_async` 返回值）。
 // poll：先消费唤醒字节（避免 fd 永久就绪忙等），try_recv 非阻塞取消息——
-// 有则 `Ready(v)`；空且未关闭则向 `cx.fd`（`wake_r` 读）注册挂起，由事件驱动
-// executor（W3 `block_on`）经 poll(2) 等 `send`/`close` 写的唤醒字节就绪再轮询；
-// close 且空返回哨兵 `-1`（`Option::None` 语义，MVP `Output` 限 i64）。
-struct RecvAsync {
-    ch: Rc<sync::Channel>,
+// 有则 `Ready(Some(v))`；空且未关闭则向 `cx.fd`（`wake_r` 读）注册挂起，由事件驱动
+// executor（W3 `block_on`）经 poll(2) 等 `send`/`close` 写的唤醒字节就绪再轮询。
+// P7c：`Output = Option<T>`——close 且空返回 `None`（替代 MVP 哨兵 `-1`，
+// 哨兵仅对 i64 有效，泛型化后改用 Option 表达「关闭且空」）。
+struct RecvAsync<T> {
+    ch: Rc<sync::Channel<T>>,
 }
 
-impl Future for RecvAsync {
-    type Output = i64;
+impl<T> Future for RecvAsync<T> {
+    type Output = Option<T>;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         // 消费唤醒字节（send/close 写入），避免 fd 永久就绪导致忙等
         let _ = net::recv_some(self.ch.wake_r, 64);
         // 非阻塞取消息
-        let mut r = sync::Receiver { ch: self.ch.clone() };
+        let mut r = sync::Receiver<T> { ch: self.ch.clone() };
         match r.try_recv() {
-            Option::Some(v) => Poll::Ready(v),
+            Option::Some(v) => Poll::Ready(Option::Some(v)),
             Option::None => {
                 if self.ch.closed != 0 {
-                    Poll::Ready(-1)
+                    Poll::Ready(Option::None)
                 } else {
                     cx.fd = self.ch.wake_r;
                     cx.interest = 1;
@@ -205,14 +206,17 @@ impl Future for RecvAsync {
     }
 }
 
-fn channel() -> sync::ChannelPair {
+// P7c：泛型通道构造——调用点用 turbofish 指定元素类型（`channel::<i64>()`）。
+fn channel<T>() -> sync::ChannelPair<T> {
     // 构造调用用裸名（`sync::Mutex::new()` 路径 typecheck 不支持；
     // 裸名经 core.rl `import sync::Mutex` 别名解析为 sync::Mutex）
     // W5：创建 socketpair 唤醒 fd（`send`/`close` 写 `wake_w` 触发 `wake_r` 读就绪）
     let sp = net::socketpair_stream();
     let wake_r = net::fd_at(sp, 0);
     let wake_w = net::fd_at(sp, 1);
-    let ch = Rc::new(sync::Channel {
+    // P7c：构造显式带泛型实参（`sync::Channel<T>` / `Sender<T>` / `Receiver<T>`）——
+    // Rc 嵌套（`Rc<Channel<T>>`）时字段推断无法反推外层 T，须显式给出。
+    let ch = Rc::new(sync::Channel<T> {
         m: Mutex::new(0),
         cv: Condvar::new(),
         closed: 0,
@@ -221,17 +225,18 @@ fn channel() -> sync::ChannelPair {
         wake_r: wake_r,
         wake_w: wake_w,
     });
-    sync::ChannelPair {
-        tx: sync::Sender { ch: ch.clone() },
-        rx: sync::Receiver { ch: ch },
+    sync::ChannelPair<T> {
+        tx: sync::Sender<T> { ch: ch.clone() },
+        rx: sync::Receiver<T> { ch: ch },
     }
 }
 
-impl Sender {
+impl<T> Sender<T> {
     // 发送（无界队列永不阻塞；唤醒一个等待中的接收者）。
     // `r#` 转义：`send` 为 actor 保留字（定义名归一化为 send，调用处 `.send(...)` 可用）
     // W5：向 `wake_w` 写唤醒字节，使 `recv_async` 挂起的 fd 读就绪（事件驱动）。
-    fn r#send(&mut self, val: i64) {
+    // P7c：元素类型参数化（`val: T`）
+    fn r#send(&mut self, val: T) {
         self.ch.m.lock();
         self.ch.queue.push(val);
         self.ch.cv.notify_one();
@@ -239,7 +244,7 @@ impl Sender {
         self.ch.m.unlock();
     }
     // 尝试发送：无界队列恒成功，返回 true
-    fn try_send(&mut self, val: i64) -> bool {
+    fn try_send(&mut self, val: T) -> bool {
         self.r#send(val);
         true
     }
@@ -253,14 +258,14 @@ impl Sender {
         self.ch.m.unlock();
     }
     // 多 Sender 共享同一队列（Rc clone）
-    fn clone(self) -> sync::Sender {
+    fn clone(self) -> sync::Sender<T> {
         sync::Sender { ch: self.ch.clone() }
     }
 }
 
-impl Receiver {
+impl<T> Receiver<T> {
     // 阻塞接收：队列空且未关闭时挂起等待；关闭且空返回 None
-    fn r#recv(&mut self) -> Option<i64> {
+    fn r#recv(&mut self) -> Option<T> {
         loop {
             self.ch.m.lock();
             if self.ch.queue.len() > self.ch.head {
@@ -278,7 +283,7 @@ impl Receiver {
         }
     }
     // 尝试接收：非空立即返回 Some(v)，空返回 None（不阻塞）
-    fn try_recv(&mut self) -> Option<i64> {
+    fn try_recv(&mut self) -> Option<T> {
         self.ch.m.lock();
         if self.ch.queue.len() > self.ch.head {
             let v = self.ch.queue[self.ch.head];
@@ -289,21 +294,20 @@ impl Receiver {
         self.ch.m.unlock();
         Option::None
     }
-    // S3a/W5：异步接收——返回 `RecvAsync` future，`async fn` 内经
-    // `let r: sync::RecvAsync = rx.recv_async(); r.await` 挂起（不阻塞线程）。
-    // future 的 poll：try_recv 非阻塞取消息（有则 Ready），空且未关闭则向
+    // S3a/W5：异步接收——返回 `RecvAsync<T>` future，`async fn` 内经
+    // `let r: sync::RecvAsync<T> = rx.recv_async(); r.await` 挂起（不阻塞线程）。
+    // future 的 poll：try_recv 非阻塞取消息（有则 `Ready(Some(v))`），空且未关闭则向
     // `cx.fd`（wake_r）注册读就绪挂起；`send`/`close` 写唤醒字节触发 poll 重查。
-    // MVP 退化：`Output` 限 `i64`（收到值 / `-1` = close 且空），`Option<i64>`
-    // 语义经哨兵值表达。
-    fn recv_async(&mut self) -> sync::RecvAsync {
-        sync::RecvAsync { ch: self.ch.clone() }
+    // P7c：`Output = Option<T>`（close 且空 → `Ready(None)`，替代 MVP 哨兵 `-1`）。
+    fn recv_async(&mut self) -> sync::RecvAsync<T> {
+        sync::RecvAsync<T> { ch: self.ch.clone() }
     }
     // J2 迭代器接入：for v in rx { ... }（内部 try_recv 语义，不阻塞）
-    fn next(&mut self) -> Option<i64> {
+    fn next(&mut self) -> Option<T> {
         self.try_recv()
     }
     // 多 Receiver 共享同一队列（Rc clone）
-    fn clone(self) -> sync::Receiver {
+    fn clone(self) -> sync::Receiver<T> {
         sync::Receiver { ch: self.ch.clone() }
     }
 }

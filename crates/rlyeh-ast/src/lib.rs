@@ -209,6 +209,11 @@ pub struct AstImplBlock {
     /// 泛型参数名列表
     /// 泛型参数列表
     pub generics: Vec<AstTypeParam>,
+    /// trait 泛型实参（`impl Trait<Args> for Type` 中的 `Args`，如
+    /// `impl From<IoErrorKind> for IoError` 的 `IoErrorKind`）。
+    /// 此前 parser 消费后丢弃，导致 trait 关联方法的泛型参数无法绑定；
+    /// P6c（2026-08-29）补回以支持 trait 关联函数调用（如 `From::from`）。
+    pub trait_type_args: Vec<AstType>,
     /// 关联类型定义列表（`type Item = Concrete;`）
     pub types: Vec<(String, AstType)>,
     /// 方法列表
@@ -320,11 +325,15 @@ pub enum ExprKind {
     /// 单元类型字面量 `()`（X4：`Result::Ok(())` 的 `()` 值；空 tuple）
     Unit,
     /// 范围表达式 `a..<b` / `a...b` / `a<..b`
+    /// P8（2026-08-29）：`lower`/`upper` 可为 `None`（省略边界）——
+    /// **仅切片** `v[..]`/`v[0..]`/`v[..<3]` 支持（缺省语义：lower=0、upper=len）；
+    /// 其他场景（`for i in a..b` / `x in a..<b` / 集合字面量）须显式给出，
+    /// 否则 typecheck 报「范围缺少边界」。
     Range {
-        /// 下界
-        lower: AstExpr,
-        /// 上界
-        upper: AstExpr,
+        /// 下界（`None` = 省略，切片场景等价于 0）
+        lower: Option<AstExpr>,
+        /// 上界（`None` = 省略，切片场景等价于 len）
+        upper: Option<AstExpr>,
         /// 下界是否包含（`a..` / `a...` 含，`a<..` 不含）
         lower_inclusive: bool,
         /// 上界是否包含（`a...` 含，`a..<` 不含）

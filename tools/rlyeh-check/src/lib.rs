@@ -409,8 +409,13 @@ impl Checker {
                 lower_inclusive: _,
                 upper_inclusive: _,
             } => {
-                self.walk_expr(lower);
-                self.walk_expr(upper);
+                // P8：边界可为 None（切片省略边界），仅遍历 Some 侧
+                if let Some(l) = lower {
+                    self.walk_expr(l);
+                }
+                if let Some(u) = upper {
+                    self.walk_expr(u);
+                }
             }
             ExprKind::Binary { left, right, .. } => {
                 self.walk_expr(left);

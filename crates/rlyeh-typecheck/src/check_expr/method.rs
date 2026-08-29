@@ -165,6 +165,7 @@ pub(super) fn check_static_method_call(
     ty_name: &str,
     method: &str,
     args: &[AstExpr],
+    type_args: &[AstType],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     // W6：闭包值跨线程捕获——`Thread::start(f, arg)`（f 为带参闭包值对象）。
@@ -207,6 +208,14 @@ pub(super) fn check_static_method_call(
     // unsupported）。`MyMutex::new(42)` → 参数 `v: T` 与实参 `i64` 填充 `T = i64`；
     // 支持裸 `Generic(tp)` 参数的直接推断；复合参数（`Vec<T>` 等）统一推断待扩展。
     let mut subst: HashMap<String, Type> = HashMap::new();
+    // P7b-2（2026-08-29）：turbofish 类型实参优先——`Bag::<i64>::new()` 给出 `T = i64`
+    // （静态方法无参可推断时，turbofish 是唯一类型实参来源；`Vec::<i64>::new()` 等）。
+    if !type_args.is_empty() && !impl_def.type_params.is_empty() {
+        for (tp, ta) in impl_def.type_params.iter().zip(type_args) {
+            let ta_ty = resolve_ast_type(ctx, ta, span)?;
+            subst.insert(tp.clone(), ta_ty);
+        }
+    }
     if !impl_def.type_params.is_empty() {
         for (pty, arg) in method_def.sig.params.iter().zip(args) {
             if let Type::Generic(tp) = pty {

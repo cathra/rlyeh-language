@@ -42,8 +42,12 @@ jobs:
             name: rlyeh-windows-x86_64
             ext: .exe
             clang_setup: llvm
-          # Windows arm64：LLVM/MinGW arm64 交叉（rust-lld 链接，需 Windows ARM64
-          # sysroot；本机 macOS 缺 import 库，由 CI 提供）
+          # Windows arm64：用 MSVC target（`aarch64-pc-windows-msvc`）而非 GNU——
+          # GitHub runner 自带 Visual Studio（MSVC 工具链/SDK 齐备），而 arm64 MinGW
+          # 链接器（`aarch64-w64-mingw32-gcc`）在 choco 的 mingw 包中未提供（仅
+          # x86_64/i686），本机 macOS 亦无法交叉构建验证。rlyeh 运行时在 Windows 侧
+          # 依赖 Win32 API（`GetProcAddress`/`GetModuleHandleA`，MSVC 与 MinGW 皆提供），
+          # POSIX `dlsym` 已按 target_os 分派，故 MSVC 目标可链接。
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             name: rlyeh-windows-arm64

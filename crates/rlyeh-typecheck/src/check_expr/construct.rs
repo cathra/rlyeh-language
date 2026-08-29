@@ -30,18 +30,23 @@ pub(super) fn check_struct_construct(
         resolved_args.push(resolve_ast_type(ctx, ta, span)?);
     }
     // Y4a（2026-08-28）：泛型 struct 字面量构造——`type_args` 为空（无 turbofish）
-    // 且 struct 含泛型参数时，从字段实参推断泛型参数。支持字段类型为裸
-    // `Generic(tp)` 的直接推断（`MutexGuard { value: 42 }` → value: T → T = i64）；
-    // 复合字段（`Vec<T>` 等）的统一推断暂不覆盖（登记 lang-defects.md）。
+    // 且 struct 含泛型参数时，从字段实参推断泛型参数。
+    // P7a（2026-08-29）：改用 `unify` 统一字段类型与实参类型——支持**复合字段**
+    // （`Vec<T>` / `HashMap<K,V>` 等；此前仅裸 `Generic(tp)` 直接推断，
+    // `Bag { items: Vec::with_capacity(8) }` 无法推断 T）。unify 对复合类型
+    // 递归统一 args（`Vec<T>` vs `Vec<i64>` → T = i64），不匹配时静默跳过。
     if resolved_args.is_empty() && !def.type_params.is_empty() {
+        let mut field_subst_infer: HashMap<String, Type> = HashMap::new();
         for (fname, fval) in fields {
             if let Some((_, fty)) = def.fields.iter().find(|(n, _)| n == fname) {
-                if let Type::Generic(tp) = fty {
-                    if def.type_params.iter().any(|p| p == tp) {
-                        let (_, arg_ty) = infer_expr(ctx, fval)?;
-                        resolved_args.push(arg_ty);
-                    }
-                }
+                let (_, arg_ty) = infer_expr(ctx, fval)?;
+                unify(fty, &arg_ty, &mut field_subst_infer)?;
+            }
+        }
+        // 按 def.type_params 声明顺序提取（非按字段顺序，保证实参位置正确）
+        for tp in &def.type_params {
+            if let Some(t) = field_subst_infer.get(tp) {
+                resolved_args.push(t.clone());
             }
         }
     }
@@ -917,10 +922,23 @@ pub(crate) fn check_string_from(
     // 其余非字面量 Str（裸字面量类型）不支持（须先经 String::from/String 变量）
     let s = match &s_hir {
         HirExpr::StringLiteral(s) => Some(s.clone()),
-        HirExpr::Variable(name) => match ctx.lookup_local_init(name) {
-            Some(HirExpr::StringLiteral(s)) => Some(s.clone()),
-            _ => None,
-        },
+        HirExpr::Variable(name) => {
+            // P9b（2026-08-29）：多层直链追踪——`let a = "x"; let b = a; String::from(b)`
+            // （此前仅查一层 `lookup_local_init`，`b` 的 init 是变量 `a` 时失败）。
+            // 深度上限 8 防自引用/长链开销；fn 边界由 lookup_local_init 天然不穿透。
+            let mut cur = ctx.lookup_local_init(name).cloned();
+            let mut depth = 0;
+            loop {
+                match cur {
+                    Some(HirExpr::StringLiteral(s)) => break Some(s),
+                    Some(HirExpr::Variable(n)) if depth < 8 => {
+                        cur = ctx.lookup_local_init(&n).cloned();
+                        depth += 1;
+                    }
+                    _ => break None,
+                }
+            }
+        }
         _ => None,
     }
     .ok_or_else(|| TypeError::Unsupported {

@@ -211,3 +211,51 @@ fn main() {
     );
     assert_eq!(out, "hello rlyeh\n11\ntrue\ntrue\nhello rlyeh!\n");
 }
+
+/// P8（2026-08-29）：Vec 切片省略边界——`v[..]`（全量）/ `v[..<2]`（省略下界）/
+/// `v[1..<]`（省略上界，依赖 `Vec::slice` 的 clamp：`e > len → len`）。
+#[test]
+fn vec_slice_omitted_bounds() {
+    let out = run(
+        r#"
+fn main() {
+    let mut v: Vec<i64> = Vec::new();
+    v.push(10); v.push(20); v.push(30);
+    // 全量切片（两侧省略）
+    let a = v[..];
+    println(a.len());            // 3
+    let a2 = v[..<];
+    println(a2.len());           // 3
+    // 省略下界
+    let b = v[..<2];
+    println(b.len());            // 2
+    println(b.get(0));           // 10
+    // 省略上界
+    let c = v[1..<];
+    println(c.len());            // 2
+    println(c.get(0));           // 20
+}
+"#,
+    );
+    assert_eq!(out, "3\n3\n2\n10\n2\n20\n");
+}
+
+/// P8（2026-08-29）：String 切片省略边界——`s[1..<]`（省略上界）/
+/// `s[..<2]`（省略下界），依赖 `String::substring` 的 clamp。
+#[test]
+fn string_slice_omitted_bounds() {
+    let out = run(
+        r#"
+fn main() {
+    let s = String::from("hello");
+    let t = s[1..<];             // "ello"
+    println(t);
+    let u = s[..<2];             // "he"
+    println(u);
+    let w = s[..];               // 全量 "hello"
+    println(w);
+}
+"#,
+    );
+    assert_eq!(out, "ello\nhe\nhello\n");
+}

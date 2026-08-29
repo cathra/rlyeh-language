@@ -212,6 +212,8 @@ pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
         type_name: fut_ty_name(&a.decl.name),
         // W6：透传泛型参数到 impl（`impl<T> Future for __Fut_foo<T>`）。
         generics: a.decl.generics.clone(),
+        // P6c：trait 泛型实参（Future 无泛型实参，空）。
+        trait_type_args: Vec::new(),
         // W6：关联类型定义 `type Output = <ret_ty or i64>;`（U2）。
         // `()` 返回沿用 i64（尾值 Ready(0)）；泛型返回 `T` 经单态化替换。
         types: vec![(

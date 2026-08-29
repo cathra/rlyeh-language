@@ -98,6 +98,24 @@ impl<'src> Parser<'src> {
                 } else {
                     Vec::new()
                 };
+                // P7b（2026-08-29）：关联路径段间 turbofish——`Type::<T>::method(args)`
+                // （`Vec::<i64>::new()`）：turbofish 关闭后若继续 `::`，收集后续路径段
+                // 拼到 callee 路径名（此前仅支持 `foo::<T>(args)` 自由函数 turbofish，
+                // `Type::<T>::method` 报 `expected '(', found Colon`）。
+                while self.eat_colon_colon() {
+                    let seg = self.expect_ident()?;
+                    let cspan = lhs.span;
+                    let new_kind = match &*lhs.kind {
+                        ExprKind::Ident(name) => ExprKind::Path(vec![name.clone(), seg]),
+                        ExprKind::Path(segs) => {
+                            let mut new_segs = segs.clone();
+                            new_segs.push(seg);
+                            ExprKind::Path(new_segs)
+                        }
+                        _ => return Err(self.unexpected("路径段")),
+                    };
+                    lhs = AstExpr::new(new_kind, cspan);
+                }
                 let (args, end) = self.parse_call_args()?;
                 let span = self.merge_span(start, end);
                 lhs = AstExpr::new(ExprKind::Call { callee: lhs, args, type_args }, span);
@@ -106,7 +124,42 @@ impl<'src> Parser<'src> {
             if self.check(&Token::LBracket) {
                 let start = lhs.span;
                 self.bump();
-                let index = self.parse_expr()?;
+                // P8：下界省略——`v[..]` / `v[..<3]`（`[` 后直接是范围运算符，无下界表达式）。
+                // 中缀 Range 要求左侧有 lhs，故省略下界的切片在此特判构造。
+                // `Token::Range`（旧语法 `..`）：切片上下文接受为「全量切片 `v[..]`」
+                // （符合 Rust 直觉；其他上下文的裸 `..` 仍按废弃语法报错）。
+                let index = match self.peek().map(|t| t.token.clone()) {
+                    Some(Token::DotDotLt)
+                    | Some(Token::DotDotDot)
+                    | Some(Token::LtDotDot)
+                    | Some(Token::Range) => {
+                        let rstart = self.peek().expect("non-eof").span;
+                        let (lower_inclusive, upper_inclusive) =
+                            match self.peek().map(|t| t.token.clone()) {
+                                Some(Token::DotDotLt) => (true, false),
+                                Some(Token::DotDotDot) => (true, true),
+                                Some(Token::LtDotDot) => (false, true),
+                                _ => (true, false), // `..` → `..<` 语义
+                            };
+                        self.bump();
+                        let upper = if self.check(&Token::RBracket) {
+                            None
+                        } else {
+                            Some(self.parse_expr()?)
+                        };
+                        let end = upper.as_ref().map(|u| u.span).unwrap_or(rstart);
+                        AstExpr::new(
+                            ExprKind::Range {
+                                lower: None,
+                                upper,
+                                lower_inclusive,
+                                upper_inclusive,
+                            },
+                            self.merge_span(rstart, end),
+                        )
+                    }
+                    _ => self.parse_expr()?,
+                };
                 let rb = self.expect(&Token::RBracket, "']'")?;
                 let span = self.merge_span(start, rb.span);
                 lhs = AstExpr::new(ExprKind::Index { expr: lhs, index }, span);
@@ -251,11 +304,17 @@ impl<'src> Parser<'src> {
                 };
                 self.bump();
                 let start = lhs.span;
-                let upper = self.parse_expr_prec(prec::RANGE + 1)?;
-                let span = self.merge_span(start, upper.span);
+                // P8：上界省略——`v[0..]` / `v[0..<]`（`]` 前无上界表达式）
+                let upper = if self.check(&Token::RBracket) {
+                    None
+                } else {
+                    Some(self.parse_expr_prec(prec::RANGE + 1)?)
+                };
+                let end = upper.as_ref().map(|u| u.span).unwrap_or(start);
+                let span = self.merge_span(start, end);
                 lhs = AstExpr::new(
                     ExprKind::Range {
-                        lower: lhs,
+                        lower: Some(lhs),
                         upper,
                         lower_inclusive,
                         upper_inclusive,

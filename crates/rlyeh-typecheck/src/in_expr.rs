@@ -47,6 +47,15 @@ pub(crate) fn check_in_expression(
                 upper_inclusive,
             } => {
                 // 范围元素：离散展开（要求编译期整数常量）
+                // P8：集合字面量内的范围须显式边界（省略 `..` 仅切片支持）
+                let lower = lower.as_ref().ok_or_else(|| TypeError::Unsupported {
+                    what: "集合内范围缺少下界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+                    span,
+                })?;
+                let upper = upper.as_ref().ok_or_else(|| TypeError::Unsupported {
+                    what: "集合内范围缺少上界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+                    span,
+                })?;
                 let lo = const_eval_int(lower, span)?;
                 let hi = const_eval_int(upper, span)?;
                 let vals = expand_range(lo, hi, *lower_inclusive, *upper_inclusive, span)?;
@@ -91,6 +100,16 @@ pub(crate) fn check_in_range_expression(
             span,
         });
     };
+
+    // P8：`in` 范围判断须显式边界（省略 `..` 仅切片 `v[..]` 支持）
+    let lower = lower.as_ref().ok_or_else(|| TypeError::Unsupported {
+        what: "`in` 范围缺少下界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+        span,
+    })?;
+    let upper = upper.as_ref().ok_or_else(|| TypeError::Unsupported {
+        what: "`in` 范围缺少上界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+        span,
+    })?;
 
     let (v_hir, v_ty) = check_expr::infer_expr(ctx, &value)?;
     let (lo_hir, lo_ty) = check_expr::infer_expr(ctx, lower)?;

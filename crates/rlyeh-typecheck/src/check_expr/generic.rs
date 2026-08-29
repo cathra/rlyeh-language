@@ -7,6 +7,7 @@ pub(super) fn check_generic_call(
     ctx: &mut TypeContext,
     resolved: &str,
     args: &[AstExpr],
+    type_args: &[AstType],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     let template = ctx
@@ -28,6 +29,14 @@ pub(super) fn check_generic_call(
 
     // 由实参类型推断类型参数
     let mut subst: HashMap<String, Type> = HashMap::new();
+    // P7b-2（2026-08-29）：turbofish 类型实参预填——`Bag::<i64>::new()` 无实参可
+    // 推断时，turbofish 是唯一类型实参来源（`Vec::<i64>::new()` / `Channel::<T>::new()`）。
+    if !type_args.is_empty() && !template.type_params.is_empty() {
+        for (tp, ta) in template.type_params.iter().zip(type_args) {
+            let ta_ty = resolve_ast_type(ctx, ta, span)?;
+            subst.insert(tp.clone(), ta_ty);
+        }
+    }
     let mut hir_args = Vec::with_capacity(args.len());
     for (arg, pty) in args.iter().zip(&template.sig.params) {
         let (hir, ty) = infer_expr(ctx, arg)?;

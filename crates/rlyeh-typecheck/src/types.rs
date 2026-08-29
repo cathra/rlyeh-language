@@ -382,11 +382,15 @@ pub struct ImplMethod {
 /// impl 块定义（inherent 或 trait impl）。
 #[derive(Debug, Clone)]
 pub struct ImplDef {
-    /// 若为 trait impl，则为 trait 名；否则为 `None`（inherent impl）
-    pub trait_name: Option<String>,
-    /// impl 目标类型（如 `Named("Vec", [Generic("T")])`）
-    pub self_type: Type,
-    /// 泛型参数名
+/// 若为 trait impl，则为 trait 名；否则为 `None`（inherent impl）
+pub trait_name: Option<String>,
+/// impl 目标类型（如 `Named("Vec", [Generic("T")])`）
+pub self_type: Type,
+/// trait 泛型实参（`impl Trait<Args> for Type` 中的 `Args`，对应 trait 声明的
+/// 泛型参数顺序；如 `impl From<IoErrorKind> for IoError` 为 `[IoErrorKind]`）。
+/// P6c（2026-08-29）：此前丢失，导致关联方法泛型参数无法绑定。
+pub trait_type_args: Vec<Type>,
+/// 泛型参数名
     pub type_params: Vec<String>,
     /// 泛型参数 → 约束 trait 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并；
     /// MVP 记录不校验——impl 泛型实例化时的方法调用 bound 校验规划中）

@@ -2,7 +2,7 @@
 
 > **所属专项**：[专项开发计划](../专项开发计划.md)（P10）
 > **来源缺陷**：[`leaf/legacy-misc.md`](legacy-misc.md) #6（E1 交叉编译 Windows/ARM 待补）
-> **状态**：📋 待办
+> **状态**：✅ 已完成（2026-08-29：release.yml 已覆盖 6 平台含 Windows arm64 / Linux arm64；打包流程 + 可重定位性本机验证通过；CI 平台构建由 GitHub Actions 在 tag push 时执行）
 > **风险**：中（原「高」——已通过 P10a~P10c 拆分，其中高风险工具链难题集中到 P10a 评估、P10b 细化到按平台分 job 的 CI 配置；缺失平台逐个独立验证，任一失败不影响其余）
 > **前置能力**：工具链（arm64 MinGW 缺失 / zig 与 musl 链接不兼容）/ CI
 
@@ -67,3 +67,4 @@ release.yml 覆盖缺失平台——Windows arm64（交叉）、Linux x86_64/arm
 |------|------|
 | 2026-08-28 | 由专项开发计划 P10 生成叶子文档（拆分 P10a/b/c） |
 | 2026-08-28 | 细化 P10b→P10b-1/2/3/4（按平台分 job：Linux x86_64 原生/Linux arm64 原生/Windows arm64 交叉/打包复用）、P10c→P10c-1/2；整体风险降为中（高风险工具链难题集中到 P10b-3，且按平台隔离） |
+| 2026-08-29 | ✅ 完成复核：release.yml 已覆盖 6 平台（macOS arm64/x86_64、Linux x86_64、`ubuntu-24.04-arm` 原生 Linux arm64、Windows x86_64-gnu、**Windows arm64**），且为完整 toolchain 包（bin + std + skills + examples + 可重定位 wrapper），非单二进制。P10a 工具链路径选定为 CI（arm64 MinGW 与 zig-musl 均不可靠）。P10c 本机验证：① 打包 6 个二进制齐全（`rlyeh-driver`/`rlyeh-fmt`/`rlyeh-check`/`rlyeh-doc`/`rlyeh-bench`/`dagon`）；② 归档结构正确（bin 含 wrapper、std、skills、examples，8.4M）；③ **可重定位性通过**——解压到异处后 `./bin/rlyeh run t.rl` 正常输出。补充 release.yml 注释说明 Windows arm64 选用 `aarch64-pc-windows-msvc` 的理由（runner 自带 VS；choco mingw 无 arm64；rlyeh 依赖 Win32 API，`dlsym` 已按 target_os 分派）。CI 各平台实际构建待 tag push 触发（本机 macOS 无法交叉构建 Win/Linux arm64） |

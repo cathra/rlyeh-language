@@ -447,7 +447,7 @@ fn test_time_literal_in_set() {
         panic!("expected inclusive range");
     };
     assert!(matches!(
-        &*lower.kind,
+        &*lower.as_ref().unwrap().kind,
         ExprKind::TimeLiteral {
             hour: 9,
             minute: 0,
@@ -455,7 +455,7 @@ fn test_time_literal_in_set() {
         }
     ));
     assert!(matches!(
-        &*upper.kind,
+        &*upper.as_ref().unwrap().kind,
         ExprKind::TimeLiteral {
             hour: 18,
             minute: 0,

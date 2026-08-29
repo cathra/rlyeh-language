@@ -138,6 +138,15 @@ pub(crate) fn infer_expr(
             lower_inclusive: _,
             upper_inclusive: _,
         } => {
+            // P8：非切片的裸 Range 须显式边界（省略 `..` 仅切片 `v[..]` 支持）
+            let lower = lower.as_ref().ok_or_else(|| TypeError::Unsupported {
+                what: "范围表达式缺少下界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+                span,
+            })?;
+            let upper = upper.as_ref().ok_or_else(|| TypeError::Unsupported {
+                what: "范围表达式缺少上界（省略边界 `..` 仅切片 `v[..]` 支持）".to_string(),
+                span,
+            })?;
             let (_, lo_ty) = infer_expr(ctx, lower)?;
             let (hi_hir, hi_ty) = infer_expr(ctx, upper)?;
             if !lo_ty.compatible_with(&hi_ty) {

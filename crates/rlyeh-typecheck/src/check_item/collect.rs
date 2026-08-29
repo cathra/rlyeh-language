@@ -255,9 +255,16 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
     ctx.generic_subst = saved_subst;
     ctx.assoc_types = saved_assoc;
     ctx.self_type = saved_self;
+    // P6c（2026-08-29）：解析 trait 泛型实参（如 `From<IoErrorKind>` 的 `IoErrorKind`）。
+    let trait_type_args = imp
+        .trait_type_args
+        .iter()
+        .map(|t| resolve_ast_type(ctx, t, imp.span))
+        .collect::<Result<Vec<Type>, TypeError>>()?;
     ctx.insert_impl(ImplDef {
         trait_name,
         self_type,
+        trait_type_args,
         type_params: imp.generics.iter().map(|p| p.name.clone()).collect(),
         bounds: imp
             .generics

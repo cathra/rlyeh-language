@@ -2,6 +2,188 @@
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
 use super::*;
+use std::collections::HashMap;
+use crate::context::type_matches;
+
+/// P6c（2026-08-29）：trait 关联函数调用（`From::from` / `Into::into` 等）。
+///
+/// 查找并实例化 `impl Trait<Args> for Self` 中的关联方法；Self 可由 `self_target`
+/// （如 `?` 运算符的目标错误类型）给定，或从 impl 的具体 `self_type` 推断（手动调用）。
+pub(super) fn check_trait_static_call(
+    ctx: &mut TypeContext,
+    trait_key: &str,
+    method: &str,
+    args: &[AstExpr],
+    type_args: &[Type],
+    self_target: Option<Type>,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let trait_def = ctx.lookup_trait(trait_key).cloned();
+    let trait_params = trait_def
+        .as_ref()
+        .map(|t| t.type_params.clone())
+        .unwrap_or_default();
+
+    // 推断实参类型（亦用于无 turbofish 时按实参位置推断 trait 参数）
+    let arg_infos: Vec<(HirExpr, Type)> = args
+        .iter()
+        .map(|a| infer_expr(ctx, a))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut chosen: Option<&ImplDef> = None;
+    for d in &ctx.impl_defs {
+        if d.trait_name.as_deref() != Some(trait_key) {
+            continue;
+        }
+        let method_def = match d.methods.iter().find(|m| m.sig.name == method) {
+            Some(m) => m,
+            None => continue,
+        };
+        // Self 约束（给定时要求匹配）
+        if let Some(st) = &self_target {
+            if !type_matches(d, st) {
+                continue;
+            }
+        }
+        // 构造 trait 参数绑定：turbofish 优先，否则从实参位置推断
+        let mut bind: HashMap<String, Type> = HashMap::new();
+        for (i, ta) in type_args.iter().enumerate() {
+            if let Some(tp) = trait_params.get(i) {
+                bind.insert(tp.clone(), ta.clone());
+            }
+        }
+        if bind.is_empty() {
+            for (i, p) in method_def.sig.params.iter().enumerate() {
+                if let Type::Generic(tp) = p {
+                    if trait_params.iter().any(|x| x == tp) && !bind.contains_key(tp) {
+                        if let Some((_, aty)) = arg_infos.get(i) {
+                            bind.insert(tp.clone(), aty.clone());
+                        }
+                    }
+                }
+            }
+        }
+        // 与 impl 记录的 trait_type_args 对齐（均为具体类型时一致性校验）
+        let mut ok = true;
+        if d.trait_type_args.len() == trait_params.len() {
+            for (tp, ta) in trait_params.iter().zip(&d.trait_type_args) {
+                if let Some(b) = bind.get(tp) {
+                    if !b.compatible_with(ta) {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if ok {
+            chosen = Some(d);
+            break;
+        }
+    }
+
+    let impl_def: ImplDef = match chosen {
+        Some(d) => d.clone(),
+        None => {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "找不到 `{trait_key}::{method}` 的可用 trait impl（需实现 `impl {trait_key}<..> for <Self>`）"
+                ),
+                span,
+            })
+        }
+    };
+
+    // 确定 Self：调用上下文给定，否则取自 impl 的具体 self_type（必须非泛型）
+    let self_ty = match &self_target {
+        Some(st) => st.clone(),
+        None => {
+            let s = &impl_def.self_type;
+            if matches!(s, Type::Generic(_)) {
+                return Err(TypeError::Unsupported {
+                    what: format!(
+                        "`{trait_key}::{method}` 的 Self 无法从上下文确定（需目标类型注解 / 返回值上下文）"
+                    ),
+                    span,
+                });
+            }
+            s.clone()
+        }
+    };
+
+    // 组装替换：trait 参数绑定 + Self
+    let mut subst: HashMap<String, Type> = HashMap::new();
+    for (i, ta) in type_args.iter().enumerate() {
+        if let Some(tp) = trait_params.get(i) {
+            subst.insert(tp.clone(), ta.clone());
+        }
+    }
+    if subst.is_empty() {
+        let method_def = impl_def
+            .methods
+            .iter()
+            .find(|m| m.sig.name == method)
+            .unwrap();
+        for (i, p) in method_def.sig.params.iter().enumerate() {
+            if let Type::Generic(tp) = p {
+                if trait_params.iter().any(|x| x == tp) && !subst.contains_key(tp) {
+                    if let Some((_, aty)) = arg_infos.get(i) {
+                        subst.insert(tp.clone(), aty.clone());
+                    }
+                }
+            }
+        }
+    }
+    subst.insert("Self".to_string(), self_ty.clone());
+
+    let method_def = impl_def
+        .methods
+        .iter()
+        .find(|m| m.sig.name == method)
+        .cloned()
+        .ok_or_else(|| TypeError::FunctionNotFound {
+            name: format!("{trait_key}::{method}"),
+            span,
+        })?;
+
+    let expected: Vec<Type> = method_def
+        .sig
+        .params
+        .iter()
+        .map(|p| substitute(p, &subst))
+        .collect();
+    let ret_ty = substitute(&method_def.sig.return_type, &subst);
+
+    let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &subst, span)?;
+
+    if arg_infos.len() != expected.len() {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("{trait_key}::{method}"),
+            expected: expected.len(),
+            found: arg_infos.len(),
+            span,
+        });
+    }
+    let mut hir_args = Vec::with_capacity(arg_infos.len());
+    for (i, (hir, ty)) in arg_infos.into_iter().enumerate() {
+        if !ty.compatible_with(&expected[i]) {
+            return Err(TypeError::ArgumentTypeMismatch {
+                name: format!("{trait_key}::{method}"),
+                index: i,
+                expected: expected[i].to_string(),
+                found: ty.to_string(),
+                span,
+            });
+        }
+        hir_args.push(hir);
+    }
+    Ok((
+        HirExpr::Call {
+            callee: fn_name,
+            args: hir_args,
+        },
+        ret_ty,
+    ))
+}
 
 pub(super) fn check_call(
     ctx: &mut TypeContext,
@@ -408,20 +590,38 @@ pub(super) fn check_call(
 
     // 静态方法调用：`Point::origin()`（impl 中无 self 的方法）
     // （仅当 `Type::method` 不是普通函数/泛型模板时才走此路径）
-    if !ctx.fn_signatures.contains_key(&resolved) && !ctx.fn_templates.contains_key(&resolved) {
+    // P7b-2（2026-08-29）：turbofish 调用（type_args 非空）优先走 static method
+    // call——impl 泛型方法只注册为普通 fn_signatures（不注册为 fn_templates），
+    // 若按原条件跳过则 turbofish 实参被忽略（`Bag::<i64>::new()` 返回无参 `Bag`）。
+    let is_turbofish = !type_args.is_empty();
+    if is_turbofish
+        || (!ctx.fn_signatures.contains_key(&resolved)
+            && !ctx.fn_templates.contains_key(&resolved))
+    {
         if let Some((ty_name, method)) = resolved.split_once("::") {
             let ty_full = ctx
                 .resolve_full_name(ty_name)
                 .unwrap_or_else(|| ty_name.to_string());
             if ctx.lookup_struct(&ty_full).is_some() || ctx.lookup_enum(&ty_full).is_some() {
-                return check_static_method_call(ctx, &ty_full, method, args, span);
+                // P7b-2：传入 turbofish 类型实参（`Bag::<i64>::new()` → T = i64）
+                return check_static_method_call(ctx, &ty_full, method, args, type_args, span);
+            }
+            // P6c（2026-08-29）：trait 关联函数调用（`From::from` / `Into::into` 等）。
+            // Self 类型无法从调用点单独确定时（无期望类型上下文），由 impl 的具体
+            // self_type 推断（如 `From::<E1>::from(e)` 的 Self = 该 impl 的目标类型）。
+            if let Some(trait_key) = ctx.resolve_trait_key(&ty_full).or_else(|| ctx.resolve_trait_key(ty_name)) {
+                let resolved_args: Vec<Type> = type_args
+                    .iter()
+                    .map(|t| resolve_ast_type(ctx, t, span))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return check_trait_static_call(ctx, &trait_key, method, args, &resolved_args, None, span);
             }
         }
     }
 
-    // 泛型函数模板：调用点按实参类型实例化
+    // 泛型函数模板：调用点按实参类型实例化（P7b-2：turbofish 实参优先预填）
     if ctx.fn_templates.contains_key(&resolved) {
-        return check_generic_call(ctx, &resolved, args, span);
+        return check_generic_call(ctx, &resolved, args, type_args, span);
     }
 
     let signature = match ctx.lookup_fn_signature(&resolved).cloned() {

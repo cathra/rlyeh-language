@@ -119,6 +119,25 @@ impl<'src> Parser<'src> {
         Ok(params)
     }
 
+    /// P6b（2026-08-29）：where bound 类型 → 约束名字符串。
+    /// 路径类型取路径名（泛型实参不参与约束校验，P6c 待专项）；其余递归取内层名。
+    fn ast_type_bound_name(ty: &rlyeh_ast::AstType) -> String {
+        use rlyeh_ast::AstType;
+        match ty {
+            AstType::Path(n, _) => n.clone(),
+            AstType::Dyn(n) => n.clone(),
+            AstType::Ref(inner, _) | AstType::RawPtr(inner, _) | AstType::Array(inner, _) => {
+                Self::ast_type_bound_name(inner)
+            }
+            AstType::Tuple(ts) => ts
+                .first()
+                .map(Self::ast_type_bound_name)
+                .unwrap_or_else(|| "Tuple".to_string()),
+            AstType::Fn(_, ret) => Self::ast_type_bound_name(ret),
+            AstType::Infer => "_".to_string(),
+        }
+    }
+
     /// 可选 where 子句（U3）：`where K: Bound1 [+ Bound2], V: Bound3`，
     /// 约束按参数名合并到给定泛型参数列表（不存在的参数名忽略）。
     fn parse_where_clause(
@@ -133,7 +152,15 @@ impl<'src> Parser<'src> {
             self.expect(&Token::Colon, "':'")?;
             let mut bounds = Vec::new();
             loop {
-                let b = self.expect_ident()?;
+                // P6b（2026-08-29）：bound 走完整类型解析——支持 `::` 路径
+                // （`T: io::some::Trait`）与带泛型实参的 trait（`U: From<T>`）。
+                // MVP：bound 记录 trait 路径名（泛型实参不参与约束校验，P6c 待专项）。
+                let ty = self.parse_type()?;
+                let b = match &ty {
+                    AstType::Path(n, _) => n.clone(),
+                    AstType::Dyn(n) => n.clone(),
+                    other => Self::ast_type_bound_name(other),
+                };
                 bounds.push(b);
                 if !self.eat(&Token::Plus) {
                     break;
@@ -374,8 +401,11 @@ impl<'src> Parser<'src> {
         // - `impl Trait for X`：`first` 后紧跟 `for`；
         // - `impl<T> Trait<T> for X`：`first` 后 `<...>`（trait 泛型实参）再 `for`；
         // - `impl<T> Foo<T>`：`first` 后 `<...>` 但 `>` 后非 `for`（inherent，目标类型泛型实参）。
-        // 用 lookahead（`<...>for` 模式）区分，避免无回溯误判。
+        // 用 lookahead（`<...>for` 模式）区分， 避免无回溯误判。
         let is_trait_impl = self.check(&Token::For) || self.looks_like_generic_trait_impl();
+        // P6c（2026-08-29）：trait 泛型实参收集（如 `impl From<IoErrorKind> for IoError`
+        // 的 `IoErrorKind`），此前消费后丢弃导致 trait 关联方法泛型无法绑定。
+        let mut trait_type_args: Vec<AstType> = Vec::new();
         let (trait_name, type_name) = if is_trait_impl {
             // `first` 可能带 trait 泛型实参 `<T>`（`Trait<T>`），消费后遇 `for`
             if self.check(&Token::Lt) {
@@ -384,7 +414,10 @@ impl<'src> Parser<'src> {
                     if self.at_eof() {
                         return Err(self.unexpected("'>'"));
                     }
-                    self.expect_ident()?;
+                    // P6a（2026-08-29）：trait 泛型实参走完整类型解析——
+                    // 支持 `::` 路径（`impl From<io::error::IoErrorKind>`）与嵌套泛型
+                    // （此前 `expect_ident()` 只取裸名，遇 `::` 报 `expected '>', found Colon`）。
+                    trait_type_args.push(self.parse_type()?);
                     if !self.eat(&Token::Comma) {
                         break;
                     }
@@ -406,7 +439,8 @@ impl<'src> Parser<'src> {
                 if self.at_eof() {
                     return Err(self.unexpected("'>'"));
                 }
-                self.expect_ident()?;
+                // P6a：self 类型泛型实参同样走完整类型解析（路径 + 嵌套泛型）
+                self.parse_type()?;
                 if !self.eat(&Token::Comma) {
                     break;
                 }
@@ -439,6 +473,7 @@ impl<'src> Parser<'src> {
             trait_name,
             type_name,
             generics,
+            trait_type_args,
             types,
             methods,
             span: self.merge_span(start, end),

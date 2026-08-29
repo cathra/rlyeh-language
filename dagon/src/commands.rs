@@ -90,8 +90,13 @@ fn write_project_files(dir: &Path, name: &str, lib: bool) -> Result<()> {
         .save(&dir.join("Rlyeh.toml"))
         .map_err(|e| DagonError::Manifest(format!("写入 Rlyeh.toml 失败: {e}")))?;
     let entry = if lib { "lib.rl" } else { "main.rl" };
+    // P9a（2026-08-29）：lib 模板补导出函数（此前为空壳注释，新库项目无可读起点）
     let body = if lib {
-        "// {name} 库入口\n"
+        "// {name} 库入口\n\
+         // 示例导出函数（`pub fn` 可被依赖方 `import {name}::hello;` 后调用）\n\
+         pub fn hello() -> String {\n\
+         \x20   String::from(\"Hello from {name}!\")\n\
+         }\n"
     } else {
         "// {name} 应用入口\nfn main() {\n    println(\"Hello from {name}!\");\n}\n"
     };

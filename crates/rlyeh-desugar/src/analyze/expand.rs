@@ -252,6 +252,17 @@ pub(super) fn expand_for(
             lower_inclusive,
             upper_inclusive,
         } => {
+            // P8：for 区间迭代须显式边界（省略边界 `..` 仅切片 `v[..]` 支持）
+            let lower = lower.as_ref().ok_or_else(|| DesugarError::Unsupported {
+                what: "W2 MVP：for 内 await 区间迭代器须显式下界（省略边界 `..` 仅切片支持）"
+                    .to_string(),
+                span: iterator.span,
+            })?;
+            let upper = upper.as_ref().ok_or_else(|| DesugarError::Unsupported {
+                what: "W2 MVP：for 内 await 区间迭代器须显式上界（省略边界 `..` 仅切片支持）"
+                    .to_string(),
+                span: iterator.span,
+            })?;
             let lo = if contains_await_expr(lower) {
                 let mut u = HashSet::new();
                 extract_expr_awaits(ctx, out, lower, &mut u, first, last)?

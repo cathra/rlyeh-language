@@ -486,6 +486,48 @@ pub(super) fn substitute(ty: &Type, subst: &HashMap<String, Type>) -> Type {
     }
 }
 
+/// 将编译期 [`Type`] 反向转为 [`rlyeh_ast::AstType`]（用于构造 turbofish /
+/// 类型注解 AST，如 `From::<E1>::from(__e)` 的 `::<E1>`）。P6c（2026-08-29）。
+pub(crate) fn type_to_ast(ty: &Type) -> rlyeh_ast::AstType {
+    use rlyeh_ast::AstType;
+    use Mutability::*;
+    match ty {
+        Type::Named(n, args) => {
+            AstType::Path(n.clone(), args.iter().map(type_to_ast).collect())
+        }
+        Type::Ref(inner, m) => AstType::Ref(Box::new(type_to_ast(inner)), matches!(m, Mutable)),
+        Type::RawPtr(inner, m) => AstType::RawPtr(Box::new(type_to_ast(inner)), *m),
+        Type::Tuple(ts) => AstType::Tuple(ts.iter().map(type_to_ast).collect()),
+        Type::Array(inner, _) => AstType::Array(Box::new(type_to_ast(inner)), None),
+        Type::Fn(sig) => AstType::Fn(
+            sig.params.iter().map(type_to_ast).collect(),
+            Box::new(type_to_ast(&sig.return_type)),
+        ),
+        Type::Dyn(t) => AstType::Dyn(t.clone()),
+        Type::Generic(g) => AstType::Path(g.clone(), Vec::new()),
+        Type::Str => AstType::Path("string".to_string(), Vec::new()),
+        Type::Bool => AstType::Path("bool".to_string(), Vec::new()),
+        Type::Char => AstType::Path("char".to_string(), Vec::new()),
+        Type::Unit => AstType::Path("()".to_string(), Vec::new()),
+        Type::I8 => AstType::Path("i8".to_string(), Vec::new()),
+        Type::I16 => AstType::Path("i16".to_string(), Vec::new()),
+        Type::I32 => AstType::Path("i32".to_string(), Vec::new()),
+        Type::I64 => AstType::Path("i64".to_string(), Vec::new()),
+        Type::I128 => AstType::Path("i128".to_string(), Vec::new()),
+        Type::ISize => AstType::Path("isize".to_string(), Vec::new()),
+        Type::U8 => AstType::Path("u8".to_string(), Vec::new()),
+        Type::U16 => AstType::Path("u16".to_string(), Vec::new()),
+        Type::U32 => AstType::Path("u32".to_string(), Vec::new()),
+        Type::U64 => AstType::Path("u64".to_string(), Vec::new()),
+        Type::U128 => AstType::Path("u128".to_string(), Vec::new()),
+        Type::USize => AstType::Path("usize".to_string(), Vec::new()),
+        Type::F32 => AstType::Path("f32".to_string(), Vec::new()),
+        Type::F64 => AstType::Path("f64".to_string(), Vec::new()),
+        // Never / Infer / Closure / AssocProjection 不作为 turbofish 实参；兜底为名表达
+        _ => AstType::Path(ty.to_string(), Vec::new()),
+    }
+}
+
 pub(super) fn peel_ref(ty: &Type) -> Type {
     match ty {
         Type::Ref(inner, _) => (**inner).clone(),

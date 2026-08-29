@@ -97,8 +97,8 @@ pub(super) fn check_field_access(
 pub(super) fn check_slice(
     ctx: &mut TypeContext,
     expr: &AstExpr,
-    lower: &AstExpr,
-    upper: &AstExpr,
+    lower: Option<&AstExpr>,
+    upper: Option<&AstExpr>,
     lower_inclusive: bool,
     upper_inclusive: bool,
     span: Span,
@@ -119,23 +119,34 @@ pub(super) fn check_slice(
             span,
         });
     }
-    let (lo_hir, lo_ty) = infer_expr(ctx, lower)?;
-    let (hi_hir, hi_ty) = infer_expr(ctx, upper)?;
+    // P8（2026-08-29）：省略边界——lower=None → `0`；upper=None → `i64::MAX`
+    // （依赖 std `substring`/`slice` 的 clamp：`e > len → len`，故大值落到实际长度）。
+    let (lo_hir, lo_ty) = match lower {
+        Some(l) => infer_expr(ctx, l)?,
+        None => (HirExpr::IntLiteral(0), Type::I64),
+    };
+    let (hi_hir, hi_ty) = match upper {
+        Some(u) => infer_expr(ctx, u)?,
+        None => (HirExpr::IntLiteral(i64::MAX as i128), Type::I64),
+    };
     if !lo_ty.is_integer() {
         return Err(TypeError::ExpectedInt {
             found: lo_ty.to_string(),
-            span: lower.span,
+            span: lower.map(|l| l.span).unwrap_or(span),
         });
     }
     if !hi_ty.is_integer() {
         return Err(TypeError::ExpectedInt {
             found: hi_ty.to_string(),
-            span: upper.span,
+            span: upper.map(|u| u.span).unwrap_or(span),
         });
     }
     // 区间 → substring 的半开参数 [start, end)：
-    // `..<` 含下界不含上界；`...` 双闭（end + 1）；`<..` 不含下界（start + 1）
-    let start = if lower_inclusive {
+    // `..<` 含下界不含上界；`...` 双闭（end + 1）；`<..` 不含下界（start + 1）。
+    // P8：省略下界 → 固定 0（不再 `+1`）；省略上界 → 固定 i64::MAX（不再 `+1`）。
+    let start = if lower.is_none() {
+        HirExpr::IntLiteral(0)
+    } else if lower_inclusive {
         lo_hir
     } else {
         HirExpr::Binary(
@@ -144,7 +155,9 @@ pub(super) fn check_slice(
             Box::new(HirExpr::IntLiteral(1)),
         )
     };
-    let end = if upper_inclusive {
+    let end = if upper.is_none() {
+        HirExpr::IntLiteral(i64::MAX as i128)
+    } else if upper_inclusive {
         HirExpr::Binary(
             HirBinaryOp::Add,
             Box::new(hi_hir),

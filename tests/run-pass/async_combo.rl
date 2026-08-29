@@ -38,11 +38,14 @@ fn main() {
         Result::Err(e) => println("err"),
     }
     // 4. recv_async 真异步（W5）+ block_on
-    let mut p = channel();
+    let mut p = channel::<i64>();
     let mut tx = p.tx;
     let mut rx = p.rx;
     tx.send(42);
-    let mut ra: sync::RecvAsync = rx.recv_async();
-    let v = block_on(&mut ra);
-    println(v);              // 42
+    // P7c：RecvAsync<T> 泛型化 + `Output = Option<T>`
+    let mut ra: sync::RecvAsync<i64> = rx.recv_async();
+    match block_on(&mut ra) {
+        Option::Some(rv) => println(rv), // 42
+        Option::None => println(-1),
+    }
 }

@@ -222,8 +222,8 @@ fn test_for_loop() {
     else {
         panic!("expected half-open range iterator");
     };
-    assert!(matches!(&*lower.kind, ExprKind::IntLiteral(0)));
-    assert!(matches!(&*upper.kind, ExprKind::IntLiteral(10000)));
+    assert!(matches!(&*lower.as_ref().unwrap().kind, ExprKind::IntLiteral(0)));
+    assert!(matches!(&*upper.as_ref().unwrap().kind, ExprKind::IntLiteral(10000)));
 }
 
 #[test]

@@ -17,8 +17,9 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             upper_inclusive,
         } => AstExpr::new(
             ExprKind::Range {
-                lower: devar(lower),
-                upper: devar(upper),
+                // P8：边界可为 None（切片省略边界），devar 仅作用于 Some 侧
+                lower: lower.as_ref().map(|e| devar(e)),
+                upper: upper.as_ref().map(|e| devar(e)),
                 lower_inclusive: *lower_inclusive,
                 upper_inclusive: *upper_inclusive,
             },

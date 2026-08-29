@@ -2,6 +2,7 @@
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
 use super::*;
+use crate::check_expr::util::type_to_ast;
 
 pub(super) fn check_index(
     ctx: &mut TypeContext,
@@ -19,11 +20,12 @@ pub(super) fn check_index(
         ..
     } = &*index.kind
     {
+        // P8：边界可为 None（切片省略边界 `v[..]`/`v[0..]`/`v[..<3]`）
         return check_slice(
             ctx,
             expr,
-            lower,
-            upper,
+            lower.as_ref(),
+            upper.as_ref(),
             *lower_inclusive,
             *upper_inclusive,
             span,
@@ -349,10 +351,10 @@ pub(super) fn check_question(
         span,
     };
     // arm2：失败臂 `None => return None` / `Err(__e) => return Err(__e)`
-    let (none_pat, ret_args) = if has_err_field {
+    let (none_pat, _ret_args) = if has_err_field {
         (
             AstPattern::Enum(none_variant.to_string(), vec![AstPattern::Ident(err.clone())]),
-            vec![mk_ident(err)],
+            vec![mk_ident(err.clone())],
         )
     } else {
         (AstPattern::Enum(none_variant.to_string(), vec![]), vec![])
@@ -360,6 +362,35 @@ pub(super) fn check_question(
     // 失败变体经完整路径构造（`Option::None` / `Result::Err(e)`）：裸 `None`
     // 是 Ident（infer_expr 无变体兜底），带参变体是 Call（走 check_call 的
     // split_variant_path 兜底）。枚举名取自 `Type::Named`（可能含模块路径）。
+    // P6c（2026-08-29）：若错误类型不同（`E1` ≠ `E2`），经 trait 关联函数
+    // `From::<E1>::from(__e)` 自动转换（需 `impl From<E1> for E2`），语义对齐 Rust `?`。
+    let err_arg: AstExpr = if has_err_field {
+        let target_err = match &ctx.current_return_type {
+            Some(Type::Named(rn, rargs)) if rn.ends_with("Result") => rargs.get( 1).cloned(),
+            _ => None,
+        };
+        let e1 = match &inner_ty {
+            Type::Named(_, iargs) => iargs.get(1).cloned(),
+            _ => None,
+        };
+        match (e1, target_err) {
+            (Some(e1), Some(e2)) if !e1.compatible_with(&e2) => AstExpr::new(
+                ExprKind::Call {
+                    callee: AstExpr::new(
+                        ExprKind::Path(vec!["From".to_string(), "from".to_string()]),
+                        span,
+                    ),
+                    args: vec![mk_ident(err.clone())],
+                    type_args: vec![type_to_ast(&e1)],
+                },
+                span,
+            ),
+            _ => mk_ident(err),
+        }
+    } else {
+        mk_ident(err)
+    };
+
     let Type::Named(en_name, _) = &inner_ty else {
         unreachable!("Option/Result 分支已保证 Named")
     };
@@ -367,7 +398,14 @@ pub(super) fn check_question(
     callee_segs.push(none_variant.to_string());
     let callee = AstExpr::new(ExprKind::Path(callee_segs), span);
     let ret_inner = if has_err_field {
-        AstExpr::new(ExprKind::Call { callee, args: ret_args, type_args: Vec::new() }, span)
+        AstExpr::new(
+            ExprKind::Call {
+                callee,
+                args: vec![err_arg],
+                type_args: Vec::new(),
+            },
+            span,
+        )
     } else {
         callee
     };
