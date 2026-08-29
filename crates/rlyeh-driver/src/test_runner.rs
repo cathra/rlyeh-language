@@ -185,19 +185,24 @@ fn run_tasks_parallel(tasks: Vec<PendingTask>) -> Vec<TestCaseResult> {
             let next = &next;
             let tasks = tasks.clone();
             let tx = tx.clone();
-            scope.spawn(move || {
-                loop {
-                    let i = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(task) = tasks.get(i) else {
-                        break; // 任务取尽
-                    };
-                    let result = run_one(task);
-                    // 发送失败（接收端已 drop）即退出
-                    if tx.send((i, result)).is_err() {
-                        break;
+            // 工作线程显式放大栈（64MB）：run-pass 并行编译 LLVM 时默认 2MB
+            // 线程栈会溢出 abort（P7d-1 验证期发现），故用 Builder 指定栈大小。
+            std::thread::Builder::new()
+                .stack_size(64 * 1024 * 1024)
+                .spawn_scoped(scope, move || {
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(task) = tasks.get(i) else {
+                            break; // 任务取尽
+                        };
+                        let result = run_one(task);
+                        // 发送失败（接收端已 drop）即退出
+                        if tx.send((i, result)).is_err() {
+                            break;
+                        }
                     }
-                }
-            });
+                })
+                .unwrap();
         }
         drop(tx); // 关闭发送端，使主线程循环终止
         let mut results: Vec<Option<TestCaseResult>> = (0..n).map(|_| None).collect();
