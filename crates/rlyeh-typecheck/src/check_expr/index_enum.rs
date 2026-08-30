@@ -85,6 +85,25 @@ pub(super) fn check_index(
             },
             Type::Char,
         )),
+        // S2 切片索引 `s[i]`：切片胖指针 `{data, len}` 的槽 0 即 data 指针，
+        // 取槽 0 后按元素步长 GEP（同 Vec / &str 索引）；`&[u8]` 按字节步长 1。
+        Type::Slice(elem_ty) => {
+            let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
+            let is_byte = matches!(elem_sub, Type::U8);
+            Ok((
+                HirExpr::Index {
+                    base: Box::new(HirExpr::FieldGet {
+                        base: Box::new(b_hir),
+                        index: 0,
+                        ty: FieldScalar::Ptr,
+                    }),
+                    index: Box::new(i_hir),
+                    elem: field_scalar_of(&elem_sub),
+                    is_str: is_byte,
+                },
+                elem_sub,
+            ))
+        }
         Type::RawPtr(elem_ty, _) => {
             // 裸指针索引 `p[i]`：对 base 指针做 GEP 到元素 i（base 即元素 0 地址），
             // 返回元素类型。与数组/Vec 索引同构（codegen 对 base 做 GEP），支持
@@ -118,10 +137,13 @@ pub(super) fn check_index(
                     Type::U8,
                 ))
             } else if full == "Vec" && ctx.lookup_struct(&full).is_some() {
-                // `v[i]`：Vec 动态数组按元素索引（步长 8），base 取槽 0 的 data 指针；
-                // 元素类型取 `Vec<T>` 的类型参数并经泛型替换
+                // `v[i]`：Vec 动态数组按元素索引，base 取槽 0 的 data 指针；
+                // 元素类型取 `Vec<T>` 的类型参数并经泛型替换。
+                // 步长按元素类型：`Vec<u8>` 为紧凑字节存储（步长 1），与数组
+                // `[u8; N]` / 切片 `&[u8]` 一致（原固定步长 8，与紧凑存储不符）。
                 let elem_ty = args.first().cloned().unwrap_or(Type::Infer);
                 let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
+                let is_byte = matches!(elem_sub, Type::U8);
                 Ok((
                     HirExpr::Index {
                         base: Box::new(HirExpr::FieldGet {
@@ -131,7 +153,7 @@ pub(super) fn check_index(
                         }),
                         index: Box::new(i_hir),
                         elem: field_scalar_of(&elem_sub),
-                        is_str: false,
+                        is_str: is_byte,
                     },
                     elem_sub,
                 ))

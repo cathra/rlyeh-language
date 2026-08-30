@@ -283,6 +283,181 @@ pub(super) fn check_method_call(
     // 与定义侧 parse_fn 归一化（`r#send` → `send`）保持一致。
     let method = method.strip_prefix("r#").unwrap_or(method);
     let (mut recv_hir, mut recv_ty) = infer_expr(ctx, receiver)?;
+    // S3：切片胖指针 `&[T]` / `&mut [T]` 的内建方法（`len` / `first` / `last`）。
+    // 切片在 core.rl 无对应 impl（无法为 `[T]` 写 impl），故在 impl 分派前特判，
+    // 避免落入 impl 查找报「无此方法」。布局与 StrFat 同为 `{data, len}`：
+    // 槽 0 = data 指针、槽 1 = 长度。
+    if args.is_empty()
+        && matches!(&recv_ty, Type::Ref(inner, _) if matches!(&**inner, Type::Slice(_)))
+    {
+        let elem_ty = match &recv_ty {
+            Type::Ref(inner, _) => match &**inner {
+                Type::Slice(e) => (**e).clone(),
+                _ => unreachable!("已由守卫确认接收者为切片引用"),
+            },
+            _ => unreachable!("已由守卫确认接收者为切片引用"),
+        };
+        match method {
+            "len" => {
+                return Ok((
+                    HirExpr::FieldGet {
+                        base: Box::new(recv_hir),
+                        index: 1,
+                        ty: FieldScalar::Int,
+                    },
+                    Type::I64,
+                ));
+            }
+            // `first()` / `last()` ≡ `s[0]` / `s[len - 1]`（复用索引语义与元素
+            // 步长；空切片取元素属越界读，MVP 不额外检查，与数组索引行为一致）
+            "first" | "last" => {
+                let idx: HirExpr = if method == "first" {
+                    HirExpr::IntLiteral(0)
+                } else {
+                    HirExpr::Binary(
+                        HirBinaryOp::Sub,
+                        Box::new(HirExpr::FieldGet {
+                            base: Box::new(recv_hir.clone()),
+                            index: 1,
+                            ty: FieldScalar::Int,
+                        }),
+                        Box::new(HirExpr::IntLiteral(1)),
+                    )
+                };
+                let is_byte = matches!(elem_ty, Type::U8);
+                return Ok((
+                    HirExpr::Index {
+                        base: Box::new(HirExpr::FieldGet {
+                            base: Box::new(recv_hir),
+                            index: 0,
+                            ty: FieldScalar::Ptr,
+                        }),
+                        index: Box::new(idx),
+                        elem: field_scalar_of(&elem_ty),
+                        is_str: is_byte,
+                    },
+                    elem_ty,
+                ));
+            }
+            // `iter()` → `IterRef<T>`：复用 V3 引用迭代器（2 槽 `{data, len}`）。
+            // 切片胖指针与 IterRef 布局同构，可零拷贝构造；此处绕过
+            // `IterRef::new` 的实参类型检查（其要求 data 为 `RawPtr`，
+            // 而切片槽 0 是 `Ptr`），直接按同一布局落槽。
+            "iter" => {
+                let base = ctx.fresh_temp();
+                let stmts = vec![
+                    HirStmt::Let {
+                        name: base.clone(),
+                        init: HirExpr::Alloc {
+                            slots: 2,
+                            by_value: false,
+                            is_strfat: false,
+                        },
+                        mutable: false,
+                    },
+                    HirStmt::Semi(HirExpr::FieldSet {
+                        base: Box::new(HirExpr::Variable(base.clone())),
+                        index: 0,
+                        value: Box::new(HirExpr::FieldGet {
+                            base: Box::new(recv_hir.clone()),
+                            index: 0,
+                            ty: FieldScalar::Ptr,
+                        }),
+                        ty: FieldScalar::Ptr,
+                    }),
+                    HirStmt::Semi(HirExpr::FieldSet {
+                        base: Box::new(HirExpr::Variable(base.clone())),
+                        index: 1,
+                        value: Box::new(HirExpr::FieldGet {
+                            base: Box::new(recv_hir),
+                            index: 1,
+                            ty: FieldScalar::Int,
+                        }),
+                        ty: FieldScalar::Int,
+                    }),
+                ];
+                return Ok((
+                    HirExpr::Block(Box::new(HirBlock {
+                        stmts,
+                        final_expr: Some(HirExpr::Variable(base)),
+                    })),
+                    Type::Named("IterRef".to_string(), vec![elem_ty]),
+                ));
+            }
+            // `as_ptr()` / `as_mut_ptr()` → `*const T` / `*mut T`：取胖指针槽 0 的
+            // data 指针（供 extern / FFI 场景传递缓冲区首地址）
+            "as_ptr" | "as_mut_ptr" => {
+                return Ok((
+                    HirExpr::FieldGet {
+                        base: Box::new(recv_hir),
+                        index: 0,
+                        ty: FieldScalar::Ptr,
+                    },
+                    Type::RawPtr(Box::new(elem_ty), method == "as_mut_ptr"),
+                ));
+            }
+            _ => {}
+        }
+    }
+    // S3：`Vec<T>` 的 `as_slice()` / `as_mut_slice()` → `&[T]` / `&mut [T]` 零拷贝
+    // 切片视图（Vec 槽 0 = data、槽 1 = len，与切片胖指针 `{data, len}` 同构）。
+    // 这是 `File::read(&mut [u8])` 等二进制 API 的前提——`Vec<u8>` 是紧凑字节缓冲，
+    // 而 `[u8; N]` 数组非紧凑（每元素 8 字节），不宜作为字节切片来源。
+    if (method == "as_slice" || method == "as_mut_slice") && args.is_empty() {
+        let vec_ty = match &recv_ty {
+            Type::Ref(inner, _) => &**inner,
+            other => other,
+        };
+        if let Type::Named(n, targs) = vec_ty {
+            if n == "Vec" && targs.len() == 1 && ctx.lookup_struct("Vec").is_some() {
+                let elem_sub = substitute(&targs[0], &ctx.generic_subst);
+                let base = ctx.fresh_temp();
+                let stmts = vec![
+                    HirStmt::Let {
+                        name: base.clone(),
+                        init: HirExpr::Alloc {
+                            slots: 2,
+                            by_value: true,
+                            is_strfat: true,
+                        },
+                        mutable: false,
+                    },
+                    HirStmt::Semi(HirExpr::FieldSet {
+                        base: Box::new(HirExpr::Variable(base.clone())),
+                        index: 0,
+                        value: Box::new(HirExpr::FieldGet {
+                            base: Box::new(recv_hir.clone()),
+                            index: 0,
+                            ty: FieldScalar::Ptr,
+                        }),
+                        ty: FieldScalar::Ptr,
+                    }),
+                    HirStmt::Semi(HirExpr::FieldSet {
+                        base: Box::new(HirExpr::Variable(base.clone())),
+                        index: 1,
+                        value: Box::new(HirExpr::FieldGet {
+                            base: Box::new(recv_hir),
+                            index: 1,
+                            ty: FieldScalar::Int,
+                        }),
+                        ty: FieldScalar::Int,
+                    }),
+                ];
+                let m = if method == "as_mut_slice" {
+                    Mutability::Mutable
+                } else {
+                    Mutability::Immutable
+                };
+                return Ok((
+                    HirExpr::Block(Box::new(HirBlock {
+                        stmts,
+                        final_expr: Some(HirExpr::Variable(base)),
+                    })),
+                    Type::Ref(Box::new(Type::Slice(Box::new(elem_sub))), m),
+                ));
+            }
+        }
+    }
     // V2-B：`&str`（StrFat）接收者调 String 方法时，先深拷贝为临时 String 对象。
     // StrFat 是 by_value `{data,len}`，而 String 方法 self 期望 String 对象指针（Ptr）；
     // 直接传 StrFat 会污染 LIR param_types 传播（同一方法被 String receiver 调用时

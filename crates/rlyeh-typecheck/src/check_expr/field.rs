@@ -113,9 +113,17 @@ pub(super) fn check_slice(
     let is_arr = matches!(&b_ty, Type::Array(_, _));
     let is_str_view =
         matches!(&b_ty, Type::Ref(inner, _) if matches!(**inner, Type::Str));
-    if !comparison::is_string_type(ctx, &b_ty) && !is_str_view && !is_vec && !is_arr {
+    // S2：切片胖指针 `&[T]` / `&mut [T]` 亦支持再切片（零拷贝子区间视图）
+    let is_slice_view =
+        matches!(&b_ty, Type::Ref(inner, _) if matches!(**inner, Type::Slice(_)));
+    if !comparison::is_string_type(ctx, &b_ty)
+        && !is_str_view
+        && !is_slice_view
+        && !is_vec
+        && !is_arr
+    {
         return Err(TypeError::Unsupported {
-            what: "范围切片（`s[lo..<hi]`）暂仅支持 String / &str / Vec / 数组对象".to_string(),
+            what: "范围切片（`s[lo..<hi]`）暂仅支持 String / &str / 切片 / Vec / 数组对象".to_string(),
             span,
         });
     }
@@ -166,6 +174,146 @@ pub(super) fn check_slice(
     } else {
         hi_hir
     };
+    // S2 切片再切片 `s[lo..<hi]`：零拷贝子区间视图——
+    //   `{ data + lo * sizeof(T), clamp(hi) - lo }`，边界 clamp 到 `[0, len]`。
+    // 展开为 Block：先绑定 base/len/start/end 四个临时（避免 clamp 条件中
+    // 重复求值含副作用的边界表达式），再 clamp、算 data 偏移、构造胖指针。
+    if let Type::Ref(inner, _) = &b_ty {
+        if let Type::Slice(elem_box) = &**inner {
+            let elem_sub = substitute(elem_box, &ctx.generic_subst);
+            let elem_scalar = field_scalar_of(&elem_sub);
+            // `PtrAdd` 仅 `elem: Str` 走 1 字节步长（见 `rlyeh-mir/src/lower.rs`），
+            // 故 `&[u8]` 的字节偏移须传 `Str`，其余元素按 8 字节步长。
+            let is_byte = matches!(elem_sub, Type::U8);
+            let ptr_elem = if is_byte { FieldScalar::Str } else { elem_scalar };
+
+            let len = ctx.fresh_temp();
+            let st = ctx.fresh_temp();
+            let en = ctx.fresh_temp();
+            let st2 = ctx.fresh_temp();
+            let en2 = ctx.fresh_temp();
+            let en3 = ctx.fresh_temp();
+            let data = ctx.fresh_temp();
+            let ptr = ctx.fresh_temp();
+            let out = ctx.fresh_temp();
+            let v = |n: &String| HirExpr::Variable(n.clone());
+            let lit = HirExpr::IntLiteral(0);
+            let clamp = |cond: HirExpr, t: HirExpr, e: HirExpr| HirExpr::If {
+                cond: Box::new(cond),
+                then_block: Box::new(HirBlock {
+                    stmts: vec![],
+                    final_expr: Some(t),
+                }),
+                else_block: Some(Box::new(HirBlock {
+                    stmts: vec![],
+                    final_expr: Some(e),
+                })),
+            };
+            let stmts = vec![
+                // 直接以 `b_hir` 为接收者（不经 `let` 绑定）：LIR 的 `Assign`
+                // 不传播类型，中间绑定会把胖指针落成默认 `i64` 槽而破坏布局
+                HirStmt::Let {
+                    name: len.clone(),
+                    init: HirExpr::FieldGet {
+                        base: Box::new(b_hir.clone()),
+                        index: 1,
+                        ty: FieldScalar::Int,
+                    },
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: st.clone(),
+                    init: start,
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: en.clone(),
+                    init: end,
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: st2.clone(),
+                    init: clamp(
+                        HirExpr::Binary(HirBinaryOp::Lt, Box::new(v(&st)), Box::new(lit.clone())),
+                        lit.clone(),
+                        v(&st),
+                    ),
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: en2.clone(),
+                    init: clamp(
+                        HirExpr::Binary(HirBinaryOp::Gt, Box::new(v(&en)), Box::new(v(&len))),
+                        v(&len),
+                        v(&en),
+                    ),
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: en3.clone(),
+                    init: clamp(
+                        HirExpr::Binary(HirBinaryOp::Lt, Box::new(v(&en2)), Box::new(v(&st2))),
+                        v(&st2),
+                        v(&en2),
+                    ),
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: data.clone(),
+                    init: HirExpr::FieldGet {
+                        base: Box::new(b_hir),
+                        index: 0,
+                        ty: FieldScalar::Ptr,
+                    },
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: ptr.clone(),
+                    init: HirExpr::PtrAdd {
+                        base: Box::new(v(&data)),
+                        offset: Box::new(v(&st2)),
+                        elem: ptr_elem,
+                    },
+                    mutable: false,
+                },
+                HirStmt::Let {
+                    name: out.clone(),
+                    init: HirExpr::Alloc {
+                        slots: 2,
+                        by_value: true,
+                        is_strfat: true,
+                    },
+                    mutable: false,
+                },
+                HirStmt::Semi(HirExpr::FieldSet {
+                    base: Box::new(v(&out)),
+                    index: 0,
+                    value: Box::new(v(&ptr)),
+                    ty: FieldScalar::Ptr,
+                }),
+                HirStmt::Semi(HirExpr::FieldSet {
+                    base: Box::new(v(&out)),
+                    index: 1,
+                    value: Box::new(HirExpr::Binary(
+                        HirBinaryOp::Sub,
+                        Box::new(v(&en3)),
+                        Box::new(v(&st2)),
+                    )),
+                    ty: FieldScalar::Int,
+                }),
+            ];
+            return Ok((
+                HirExpr::Block(Box::new(HirBlock {
+                    stmts,
+                    final_expr: Some(v(&out)),
+                })),
+                Type::Ref(
+                    Box::new(Type::Slice(Box::new(elem_sub))),
+                    Mutability::Immutable,
+                ),
+            ));
+        }
+    }
     if comparison::is_string_type(ctx, &b_ty) || is_str_view {
         // String / &str → substring（非泛型，subst 为空；&str 接收者 &self，
         // 方法体对 self.data/self.len 的 FieldGet 经对象指针生效）

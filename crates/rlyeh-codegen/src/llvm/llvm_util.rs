@@ -586,6 +586,8 @@ pub(crate) fn field_scalar_llvm(ty: FieldScalar) -> Result<&'static str, Codegen
         FieldScalar::Str => "i8*",
         // &str 胖指针：`{ i8*, i64 }`（data 指针 + 长度）双槽
         FieldScalar::StrFat => "{ i8*, i64 }",
+        // 切片胖指针：`&[T]`（data 指针 + 长度）双槽，与 StrFat 同布局
+        FieldScalar::SliceFat => "{ i8*, i64 }",
         FieldScalar::Ptr => "i8*",
     })
 }
@@ -598,6 +600,7 @@ pub(crate) fn field_scalar_lir(ty: FieldScalar) -> LirType {
         FieldScalar::Char => LirType::Char,
         FieldScalar::Str => LirType::Str,
         FieldScalar::StrFat => LirType::StrFat,
+        FieldScalar::SliceFat => LirType::SliceFat,
         FieldScalar::Ptr => LirType::Ptr,
     }
 }
@@ -611,6 +614,8 @@ pub(crate) fn llvm_type(ty: LirType) -> Result<&'static str, CodegenError> {
         LirType::Str => Ok("i8*"),
         // &str 胖指针：`{ i8*, i64 }`（data 指针 + 长度）双槽
         LirType::StrFat => Ok("{ i8*, i64 }"),
+        // 切片胖指针：与 StrFat 同布局
+        LirType::SliceFat => Ok("{ i8*, i64 }"),
         LirType::Ptr => Ok("i8*"),
         LirType::Unit => Err(CodegenError::UnsupportedType {
             ty,
@@ -679,6 +684,8 @@ pub(crate) fn builtin_fmt(ty: LirType, newline: bool) -> String {
     let base = match ty {
         LirType::Str => "%s",
         LirType::StrFat => "%p",
+        // 切片 MVP 不直接打印（与 Unit 同处理：空格式串）
+        LirType::SliceFat => "",
         LirType::I64 => "%lld",
         LirType::F64 => "%f",
         LirType::Char => "%c",

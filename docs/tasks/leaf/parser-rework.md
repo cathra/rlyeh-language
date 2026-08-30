@@ -1,7 +1,7 @@
 # 内建解析器重构专项（Parser Rework）
 
 > **所属阶段**：阶段 X（专项跟踪文档，非独立阶段）
-> **状态**：📋 待办（集中登记所有涉及内建解析器重构的内容，最后统一修改）
+> **状态**：✅ 核心完成（`json::try_parse`/`toml::try_parse` Err 路径 + `parse_int_strict`/`json_unescape_checked`/`parse_float_strict` helper 落地，2026-08-28/30；#3 结构化错误信息规范预留）
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
 ## 目标
@@ -36,7 +36,7 @@
 
 ## 技术细节与已登记项
 
-### 1. `json::parse` 非法输入改返回 `Result<T, JsonError>`（源自 X3）
+### 1. `json::parse` 非法输入改返回 `Result<T, JsonError>`（源自 X3）—— ✅ 已落地（2026-08-28，见 `json.rs` `check_json_try_parse`）
 
 - **目标**：`json::parse::<T>(s)` 返回 `Result<T, JsonError>`（当前返回 T）。`try_parse` 语义即此；`parse` 名义上仍可保留返回 T（unwrap 语义），故采用**新增 `json::try_parse::<T>(s) -> Result<T, JsonError>` + `parse` 退化为 `try_parse(...).unwrap()`** 的双入口方案，向后兼容破坏面最小。
 
@@ -74,7 +74,7 @@
 
 - **风险**：中。**依赖**：`JsonError` 已存在 ✅。
 
-### 2. `toml::from_str` 反序列化错误路径返回 `Result<T, TomlError>`
+### 2. `toml::from_str` 反序列化错误路径返回 `Result<T, TomlError>` —— ✅ 已落地（2026-08-28，见 `toml.rs` `check_toml_try_parse`）
 
 - **目标**：`toml::parse::<T>(s)` / `toml::from_str::<T>(s)` 返回 `Result<T, TomlError>`（当前返回 T）。与 #1 同构：新增 `toml::try_parse::<T>(s) -> Result<T, TomlError>`，`parse`/`from_str` 退化为 `try_parse(...).unwrap()`。
 

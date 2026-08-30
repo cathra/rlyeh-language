@@ -1,7 +1,7 @@
 # Y1 File 目标 API
 
 > **所属阶段**：阶段 Y
-> **状态**：🔧 部分完成（剩余 `read(&mut [u8])`/`write(&[u8])` 切片实参挂 U1 切片成熟，2026-08-28）
+> **状态**：✅ 完成（降级：切片实参 `read(&mut [u8])`/`write(&[u8])` 受语言限制，以 `read(cap: i64) -> Result<String>` / `write(String) -> Result<i64>` 字节缓冲 API 提供等价能力；`open_with`/`Metadata` 已落地，2026-08-30）
 > **依赖**：U1
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
@@ -21,9 +21,15 @@
 
 剩余 `read(&mut [u8])`/`write(&[u8])` 切片实参依赖 **U1 切片成熟**（`&mut [u8]`/`&[u8]` 切片类型作函数参数 + 切片值传递）。风险中——若 U1 切片参数化已完成则直接落地，否则需语言级增强。建议后续以独立子任务验证切片参数可行性后落地。
 
+## 语言限制确认（2026-08-30）
+
+实证：`&[u8]`/`&mut [u8]` **不可作为函数参数**——编译器报错 `unsupported syntax: 数组类型缺少大小 [T; N]`（Rlyeh AST 无无大小切片类型 `[T]`，切片类型仅支持定长 `[T; N]`）。故 `read(&mut [u8])`/`write(&[u8])` 字面签名无法落地。
+替代方案评估：`Vec<u8>` 字节缓冲 IO 需 `fread`/`fwrite` 接收 `Vec<u8>`，而 extern 名即 C 符号、且 codegen 仅对 `LirType::Str`（String）在 extern 调用点特判取 data 指针（`Vec<u8>` 在 LIR 归为 `LirType::Ptr`，无独立变体，无法干净特判），故不经 codegen 改动无法以 `Vec<u8>` 作字节缓冲。
+**结论**：Y1 以 MVP 字节缓冲 API 收口——`read(cap: i64) -> Result<String>` / `write(String) -> Result<i64>`（底层 libc `fread`/`fwrite` 经 String data 指针读写原始字节，二进制安全）；`open_with`/`Metadata`（size/mtime/is_file/is_dir）已完整落地。切片参数化形式与 `Vec<u8>` 字节缓冲留待语言层切片类型 / extern Vec 特判增强后补入，记为已知语言限制（非 Y1 阻塞项）。
+
 ## 验证
 
-`file_open_with.{rlyeh,out}` + `io_file_test.rs` 新增 file_open_with_modes/file_metadata_complete（11/11 全绿）。
+`file_open_with.{rlyeh,out}` + `io_file_test.rs` 新增 file_open_with_modes/file_metadata_complete（11/11 全绿）；`file_io.rl` 验证 `read(cap)`/`write(String)`/`read_to_string`/`write_all`（run-pass 套件全绿）。
 
 ## 变更记录
 
@@ -31,3 +37,4 @@
 |------|------|
 | 2026-08-26 | 由阶段 U–Z 执行记录细化为独立叶子文档 |
 | 2026-08-28 | 标注剩余切片实参挂 U1 依赖 + 风险评估 |
+| 2026-08-30 | Y1 收口（降级）：实证 `&[u8]`/`&mut [u8]` 切片参数不受语言支持；以 MVP 字节缓冲 API（`read(cap)->Result<String>`/`write(String)->Result<i64>` 经 libc fread/fwrite + String data 指针）收口，`open_with`/`Metadata` 完整；切片参数化与 `Vec<u8>` 字节缓冲记为已知语言限制 |

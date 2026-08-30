@@ -173,25 +173,18 @@ pub(crate) fn resolve_ast_type(
         }
         AstType::Array(inner, size) => {
             let inner = resolve_ast_type(ctx, inner, span)?;
-            // MVP：数组大小仅支持整数字面量（`[T; N]`）
-            let n = match size {
+            match size {
+                // 定长数组 `[T; N]`：大小仅支持整数字面量（MVP）
                 Some(e) => match *e.kind {
-                    ExprKind::IntLiteral(v) if v >= 0 => v as usize,
-                    _ => {
-                        return Err(TypeError::Unsupported {
-                            what: "数组大小非常量整数字面量在 MVP 阶段".to_string(),
-                            span,
-                        })
-                    }
-                },
-                None => {
-                    return Err(TypeError::Unsupported {
-                        what: "数组类型缺少大小 `[T; N]`".to_string(),
+                    ExprKind::IntLiteral(v) if v >= 0 => Ok(Type::Array(Box::new(inner), v as usize)),
+                    _ => Err(TypeError::Unsupported {
+                        what: "数组大小非常量整数字面量在 MVP 阶段".to_string(),
                         span,
-                    })
-                }
-            };
-            Ok(Type::Array(Box::new(inner), n))
+                    }),
+                },
+                // 切片 `[T]`（无大小）→ 切片类型 `&[T]` / `&mut [T]` 的元素类型
+                None => Ok(Type::Slice(Box::new(inner))),
+            }
         }
         AstType::Fn(params, ret) => {
             let params = params

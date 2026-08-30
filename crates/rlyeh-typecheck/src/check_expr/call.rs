@@ -5,6 +5,42 @@ use super::*;
 use std::collections::HashMap;
 use crate::context::type_matches;
 
+/// S2：构造切片胖指针 `{data, len}`（`&[T]` / `&mut [T]` 的 unsize coercion 结果）。
+///
+/// HIR 层与 `&str` 的 StrFat **同构**（布局同为 `{i8*, i64}` 双槽）：
+/// `Alloc{slots:2, by_value:true, is_strfat:true}` 后 `FieldSet` 槽 0 = 数据指针、
+/// 槽 1 = 长度。整块包在 `Block` 中返回临时变量。
+pub(super) fn make_slice_fat(ctx: &mut TypeContext, data: HirExpr, len: i128) -> HirExpr {
+    let sf = ctx.fresh_temp();
+    let stmts = vec![
+        HirStmt::Let {
+            name: sf.clone(),
+            init: HirExpr::Alloc {
+                slots: 2,
+                by_value: true,
+                is_strfat: true,
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(sf.clone())),
+            index: 0,
+            value: Box::new(data),
+            ty: FieldScalar::Ptr,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(sf.clone())),
+            index: 1,
+            value: Box::new(HirExpr::IntLiteral(len)),
+            ty: FieldScalar::Int,
+        }),
+    ];
+    HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(sf)),
+    }))
+}
+
 /// P6c（2026-08-29）：trait 关联函数调用（`From::from` / `Into::into` 等）。
 ///
 /// 查找并实例化 `impl Trait<Args> for Self` 中的关联方法；Self 可由 `self_target`
@@ -753,6 +789,14 @@ pub(super) fn check_call(
                 found: ty.to_string(),
                 span: arg.span,
             });
+        }
+        // S2 unsize coercion：`&[T; N]` 实参传给 `&[T]` / `&mut [T]` 形参时构造
+        // 切片胖指针 `{data, len}`（len 为编译期数组长度，data 为数组首元素指针）
+        let mut hir = hir;
+        if let (Type::Ref(ia, _), Type::Ref(ib, _)) = (&ty, param_ty) {
+            if let (Type::Array(_, n), Type::Slice(_)) = (&**ia, &**ib) {
+                hir = make_slice_fat(ctx, hir, *n as i128);
+            }
         }
         hir_args.push(hir);
     }

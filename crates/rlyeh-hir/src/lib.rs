@@ -359,6 +359,8 @@ pub enum FieldScalar {
     Str,
     /// &str 胖指针（data 指针 + 长度双槽；V2 子区间视图，对齐 Rust fat pointer）
     StrFat,
+    /// 切片胖指针（data 指针 + 长度双槽；`&[T]` / `&mut [T]`，与 StrFat 同布局 `{i8*, i64}`）
+    SliceFat,
     /// 聚合对象 / 引用指针
     Ptr,
 }

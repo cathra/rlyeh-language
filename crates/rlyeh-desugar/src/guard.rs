@@ -1,8 +1,9 @@
 //! # P2 MutexGuard 作用域守卫自动解锁注入（2026-08）
 //!
 //! 对程序 AST 后序遍历所有函数体块：块内 `let <var> = <expr>.lock_guard();`
-//! （方法名 `lock_guard` 特判，与 std `sync::Mutex::lock_guard` 对应）在
-//! 所在块尾（`final_expr` 之前）自动追加 `<var>.unlock();`。
+//! / `read_guard()` / `write_guard()`（方法名特判，与 std `sync::Mutex::lock_guard`、
+//! `sync::RwLock::read_guard`/`write_guard` 对应）在所在块尾（`final_expr` 之前）
+//! 自动追加 `<var>.unlock();`。
 //!
 //! MVP 限制：
 //! - 仅识别 `let` 绑定为简单标识符的守卫变量（`let _ = ...` / 结构体模式不注入）；
@@ -199,11 +200,14 @@ fn walk_expr(e: &mut AstExpr) {
     }
 }
 
-/// `let g = x.lock_guard();` 判定（AST 级方法名特判）。
+/// `let g = x.lock_guard();` / `read_guard()` / `write_guard()` 判定（AST 级方法名特判）。
 fn is_lock_guard_call(init: &AstExpr) -> bool {
     matches!(
         &*init.kind,
-        ExprKind::MethodCall { method, .. } if method == "lock_guard"
+        ExprKind::MethodCall { method, .. }
+            if method == "lock_guard"
+                || method == "read_guard"
+                || method == "write_guard"
     )
 }
 

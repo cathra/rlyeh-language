@@ -406,6 +406,10 @@ impl LlvmEmitter {
                 let fmt = self.emit_fmt_global(&format!("%.*s{nl}"))?;
                 emit_out(body, &fmt, &format!(", i32 %{len32}, i8* %{data_v}"));
             }
+            // 切片胖指针（data 指针 + 长度双槽）：MVP 不直接打印，输出空。
+            LirType::SliceFat => {
+                emit_out(body, &fmt, "");
+            }
             LirType::Str | LirType::I64 | LirType::F64 | LirType::Ptr => {
                 let v = self.operand_value(&LirOperand::Local(arg.clone()), aty, body, f)?;
                 emit_out(body, &fmt, &format!(", {} {v}", llvm_type(aty)?));

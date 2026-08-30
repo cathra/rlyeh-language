@@ -34,8 +34,16 @@ impl<T> MutexGuard<T> {
     fn get(&self) -> &T {
         self.value
     }
+    // Deref 分发：`*g` 生成 `g.deref()` 返回 T（Copy 类型按值拷贝，约定同 y4b_deref）
+    fn deref(&self) -> T {
+        *self.value
+    }
     // 写被锁值（可变引用写回原 Mutex.value）
     fn get_mut(&mut self) -> &mut T {
+        self.value
+    }
+    // Y4b-4（2026-08-30）：DerefMut 分发——`*g = x` 经 `g.deref_mut()` 返回 &mut T
+    fn deref_mut(&mut self) -> &mut T {
         self.value
     }
 }
@@ -75,32 +83,85 @@ impl<T> Mutex<T> {
 // 读写锁（读-读共享，写-写/读-写互斥；p 为 pthread_rwlock_t*）。
 // macOS pthread_rwlock_t = 200 字节（__opaque[192] + __sig），Linux glibc = 56 字节，
 // calloc(1, 256) 双平台安全。
-struct RwLock { p: i64 }
+// Y4b-3（2026-08-30）：`RwLock<T>` 带值锁——`value: T` 数据载荷，`new(v: T)` 初始化；
+// `read_guard`/`write_guard` 返回读/写守卫（作用域结束自动解锁，desugar 特判
+// read_guard/write_guard，见 rlyeh-desugar/src/guard.rs），`*guard` 经 Deref 分发
+// （typecheck UnaryOp::Deref 查 guard 的 `deref` 方法，返回 T 拷贝，约定同 y4b_deref）。
+struct RwLock<T> { p: i64, value: T }
 
-impl RwLock {
-    fn new() -> sync::RwLock {
+impl<T> RwLock<T> {
+    fn new(v: T) -> sync::RwLock<T> {
         let p = calloc(1, 256);
         let _ = pthread_rwlock_init(p, 0);
-        sync::RwLock { p: p }
+        sync::RwLock { p: p, value: v }
     }
     // 读锁（可多个读者并发持有）
-    fn read_lock(self) {
+    fn read_lock(&self) {
         let _ = pthread_rwlock_rdlock(self.p);
     }
     // 写锁（与任何其他锁互斥）
-    fn write_lock(self) {
+    fn write_lock(&self) {
         let _ = pthread_rwlock_wrlock(self.p);
     }
-    fn unlock(self) {
+    fn unlock(&self) {
         let _ = pthread_rwlock_unlock(self.p);
     }
-    fn try_read_lock(self) -> bool {
+    fn try_read_lock(&self) -> bool {
         let r = pthread_rwlock_tryrdlock(self.p);
         r == 0
     }
-    fn try_write_lock(self) -> bool {
+    fn try_write_lock(&self) -> bool {
         let r = pthread_rwlock_trywrlock(self.p);
         r == 0
+    }
+    // Y4b-3：读守卫（作用域结束自动解锁）
+    fn read_guard(&self) -> sync::RwLockReadGuard<T> {
+        self.read_lock();
+        sync::RwLockReadGuard { p: self.p, value: &self.value }
+    }
+    // Y4b-3：写守卫（作用域结束自动解锁）
+    fn write_guard(&mut self) -> sync::RwLockWriteGuard<T> {
+        self.write_lock();
+        sync::RwLockWriteGuard { p: self.p, value: &mut self.value }
+    }
+}
+
+// Y4b-3：读守卫——`value: &T` 被锁值引用，`get`/`deref` 经引用读。
+struct RwLockReadGuard<T> { p: i64, value: &T }
+
+impl<T> RwLockReadGuard<T> {
+    fn unlock(self) {
+        let _ = pthread_rwlock_unlock(self.p);
+    }
+    fn get(&self) -> &T {
+        self.value
+    }
+    // Deref 分发：`*g` 生成 `g.deref()` 返回 T（Copy 类型按值拷贝）
+    fn deref(&self) -> T {
+        *self.value
+    }
+}
+
+// Y4b-3：写守卫——`value: &mut T` 被锁值可变引用，`get`/`get_mut` 读写。
+struct RwLockWriteGuard<T> { p: i64, value: &mut T }
+
+impl<T> RwLockWriteGuard<T> {
+    fn unlock(self) {
+        let _ = pthread_rwlock_unlock(self.p);
+    }
+    fn get(&self) -> &T {
+        self.value
+    }
+    fn get_mut(&mut self) -> &mut T {
+        self.value
+    }
+    // Deref 分发：`*g` 生成 `g.deref()` 返回 T（Copy 类型按值拷贝）
+    fn deref(&self) -> T {
+        *self.value
+    }
+    // Y4b-4（2026-08-30）：DerefMut 分发——`*g = x` 经 `g.deref_mut()` 返回 &mut T
+    fn deref_mut(&mut self) -> &mut T {
+        self.value
     }
 }
 
@@ -152,7 +213,7 @@ impl Barrier {
 
 // ===== Channel（P1，2026-08）：无界并发队列 =====
 // P7c（2026-08-29）：元素类型参数化 `Channel<T>`（此前 MVP 限 i64）。
-// 队列状态经 Rc<Channel<T>> 共享（Sender/Receiver 各自持有 clone）。
+// 队列状态经 Arc<Channel<T>> 共享（Sender/Receiver 各自持有 clone；原子引用计数，可跨线程安全共享）。
 // recv 空队列挂起（Condvar wait），send 后 notify_one 唤醒；
 // close 后队列耗尽 recv 返回 None（try_recv 空返回 None，不阻塞）。
 // 注意：queue 只增（head 单调推进，无元素移除的 MVP 简化）。
@@ -167,12 +228,20 @@ struct Channel<T> {
     queue: Vec<T>,
     wake_r: i64,
     wake_w: i64,
+    capacity: i64,   // 0 = 无界；>0 = 有界容量（满则 send 阻塞）
 }
 
-struct Sender<T> { ch: Rc<sync::Channel<T>> }
-struct Receiver<T> { ch: Rc<sync::Channel<T>> }
+struct Sender<T> { ch: Arc<sync::Channel<T>> }
+struct Receiver<T> { ch: Arc<sync::Channel<T>> }
 // 元组返回类型 MVP 未实现（(1, 2) 被解析为集合），channel() 返回结构体对。
 struct ChannelPair<T> { tx: sync::Sender<T>, rx: sync::Receiver<T> }
+
+// Y4c（2026-08-30）：通道错误类型——`Result` 语义（替代 MVP `Option` 退化）。
+// `recv`/`try_recv`/`send` 既有的 `Option`/`()` 便捷 API 保留以兼容既有用例；
+// 错误类型经 `recv_result`/`try_recv_result`/`send_result` 暴露。
+struct SendError<T> { val: T }             // send 失败：通道已关闭（无接收方）
+struct RecvError { disconnected: i64 }     // recv 失败：通道已关闭且队列空
+struct TryRecvError { kind: i64 }          // 0 = 空（Empty），1 = 已断开（Disconnected）
 
 // W5（2026-08-25）：异步接收 future（`Receiver::recv_async` 返回值）。
 // poll：先消费唤醒字节（避免 fd 永久就绪忙等），try_recv 非阻塞取消息——
@@ -181,7 +250,7 @@ struct ChannelPair<T> { tx: sync::Sender<T>, rx: sync::Receiver<T> }
 // P7c：`Output = Option<T>`——close 且空返回 `None`（替代 MVP 哨兵 `-1`，
 // 哨兵仅对 i64 有效，泛型化后改用 Option 表达「关闭且空」）。
 struct RecvAsync<T> {
-    ch: Rc<sync::Channel<T>>,
+    ch: Arc<sync::Channel<T>>,
 }
 
 impl<T> Future for RecvAsync<T> {
@@ -215,8 +284,8 @@ fn channel<T>() -> sync::ChannelPair<T> {
     let wake_r = net::fd_at(sp, 0);
     let wake_w = net::fd_at(sp, 1);
     // P7c：构造显式带泛型实参（`sync::Channel<T>` / `Sender<T>` / `Receiver<T>`）——
-    // Rc 嵌套（`Rc<Channel<T>>`）时字段推断无法反推外层 T，须显式给出。
-    let ch = Rc::new(sync::Channel<T> {
+    // Arc 嵌套（`Arc<Channel<T>>`）时字段推断无法反推外层 T，须显式给出。
+    let ch = Arc::new(sync::Channel<T> {
         m: Mutex::new(0),
         cv: Condvar::new(),
         closed: 0,
@@ -224,6 +293,29 @@ fn channel<T>() -> sync::ChannelPair<T> {
         queue: Vec::with_capacity(8),
         wake_r: wake_r,
         wake_w: wake_w,
+        capacity: 0,   // 无界
+    });
+    sync::ChannelPair<T> {
+        tx: sync::Sender<T> { ch: ch.clone() },
+        rx: sync::Receiver<T> { ch: ch },
+    }
+}
+
+// Y4c（2026-08-30）：有界通道构造——`capacity > 0` 限制在途元素数，
+// 满则 `send` 经 condvar 挂起阻塞（消费者腾出空间后唤醒），提供背压。
+fn bounded_channel<T>(capacity: i64) -> sync::ChannelPair<T> {
+    let sp = net::socketpair_stream();
+    let wake_r = net::fd_at(sp, 0);
+    let wake_w = net::fd_at(sp, 1);
+    let ch = Arc::new(sync::Channel<T> {
+        m: Mutex::new(0),
+        cv: Condvar::new(),
+        closed: 0,
+        head: 0,
+        queue: Vec::with_capacity(8),
+        wake_r: wake_r,
+        wake_w: wake_w,
+        capacity: capacity,
     });
     sync::ChannelPair<T> {
         tx: sync::Sender<T> { ch: ch.clone() },
@@ -238,15 +330,35 @@ impl<T> Sender<T> {
     // P7c：元素类型参数化（`val: T`）
     fn r#send(&mut self, val: T) {
         self.ch.m.lock();
+        // 有界：队列满（len - head >= capacity）则挂起等待消费者腾出空间
+        while self.ch.capacity > 0 && (self.ch.queue.len() - self.ch.head) >= self.ch.capacity {
+            self.ch.cv.wait(self.ch.m);
+        }
         self.ch.queue.push(val);
         self.ch.cv.notify_one();
         let _ = net::send_all(self.ch.wake_w, String::from("x"));
         self.ch.m.unlock();
     }
-    // 尝试发送：无界队列恒成功，返回 true
+    // 尝试发送：有界队列满则返回 false；无界恒成功
     fn try_send(&mut self, val: T) -> bool {
-        self.r#send(val);
+        self.ch.m.lock();
+        if self.ch.capacity > 0 && (self.ch.queue.len() - self.ch.head) >= self.ch.capacity {
+            self.ch.m.unlock();
+            return false;
+        }
+        self.ch.queue.push(val);
+        self.ch.cv.notify_one();
+        let _ = net::send_all(self.ch.wake_w, String::from("x"));
+        self.ch.m.unlock();
         true
+    }
+    // send_result：Result 语义发送——通道已关闭返回 Err(SendError{val})，否则阻塞发送成功
+    fn send_result(&mut self, val: T) -> Result<i64, sync::SendError<T>> {
+        if self.ch.closed != 0 {
+            return Result::Err(sync::SendError<T> { val: val });
+        }
+        self.r#send(val);
+        Result::Ok(0)
     }
     // 关闭通道：广播唤醒等待者，队列耗尽后所有 Receiver recv 返回 None
     // W5：写唤醒字节，使 recv_async 挂起被唤醒（读到 close 标记）。
@@ -257,7 +369,7 @@ impl<T> Sender<T> {
         let _ = net::send_all(self.ch.wake_w, String::from("x"));
         self.ch.m.unlock();
     }
-    // 多 Sender 共享同一队列（Rc clone）
+    // 多 Sender 共享同一队列（Arc clone）
     fn clone(self) -> sync::Sender<T> {
         sync::Sender { ch: self.ch.clone() }
     }
@@ -271,6 +383,7 @@ impl<T> Receiver<T> {
             if self.ch.queue.len() > self.ch.head {
                 let v = self.ch.queue[self.ch.head];
                 self.ch.head += 1;
+                self.ch.cv.notify_one();   // 唤醒阻塞中的发送者（有界队列满）
                 self.ch.m.unlock();
                 return Option::Some(v);
             }
@@ -288,11 +401,36 @@ impl<T> Receiver<T> {
         if self.ch.queue.len() > self.ch.head {
             let v = self.ch.queue[self.ch.head];
             self.ch.head += 1;
+            self.ch.cv.notify_one();   // 唤醒阻塞中的发送者（有界队列满）
             self.ch.m.unlock();
             return Option::Some(v);
         }
         self.ch.m.unlock();
         Option::None
+    }
+    // recv_result：阻塞接收 Result 语义——关闭且空返回 Err(RecvError)
+    fn recv_result(&mut self) -> Result<T, sync::RecvError> {
+        match self.r#recv() {
+            Option::Some(v) => Result::Ok(v),
+            Option::None => Result::Err(sync::RecvError { disconnected: 1 }),
+        }
+    }
+    // try_recv_result：非阻塞 Result 语义——空 Err(kind:0)，断开 Err(kind:1)
+    fn try_recv_result(&mut self) -> Result<T, sync::TryRecvError> {
+        self.ch.m.lock();
+        if self.ch.queue.len() > self.ch.head {
+            let v = self.ch.queue[self.ch.head];
+            self.ch.head += 1;
+            self.ch.cv.notify_one();   // 唤醒阻塞中的发送者（有界队列满）
+            self.ch.m.unlock();
+            Result::Ok(v)
+        } else if self.ch.closed != 0 {
+            self.ch.m.unlock();
+            Result::Err(sync::TryRecvError { kind: 1 })
+        } else {
+            self.ch.m.unlock();
+            Result::Err(sync::TryRecvError { kind: 0 })
+        }
     }
     // S3a/W5：异步接收——返回 `RecvAsync<T>` future，`async fn` 内经
     // `let r: sync::RecvAsync<T> = rx.recv_async(); r.await` 挂起（不阻塞线程）。
@@ -306,7 +444,7 @@ impl<T> Receiver<T> {
     fn next(&mut self) -> Option<T> {
         self.try_recv()
     }
-    // 多 Receiver 共享同一队列（Rc clone）
+    // 多 Receiver 共享同一队列（Arc clone）
     fn clone(self) -> sync::Receiver<T> {
         sync::Receiver { ch: self.ch.clone() }
     }

@@ -54,10 +54,9 @@ impl LlvmEmitter {
                         ..
                     } = s
                     {
-                        let is_strfat = f
-                            .locals
-                            .iter()
-                            .any(|(n, t)| n == target && *t == LirType::StrFat);
+                        let is_strfat = f.locals.iter().any(|(n, t)| {
+                            n == target && (*t == LirType::StrFat || *t == LirType::SliceFat)
+                        });
                         if !is_strfat {
                             bvs.insert(target.clone());
                         }

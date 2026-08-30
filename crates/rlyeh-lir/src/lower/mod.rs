@@ -117,9 +117,15 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
                         }
                         if let Some(pt) = param_types.get_mut(callee) {
                             for (i, arg) in args.iter().enumerate() {
-                                if i < pt.len() && ty.get(arg) == Some(&LirType::StrFat) {
-                                    if pt[i] != LirType::StrFat {
-                                        pt[i] = LirType::StrFat;
+                                // S2：切片胖指针 `&[T]`（SliceFat）与 `&str`（StrFat）
+                                // 同为 `{data, len}` 双字，均须跨函数传播到被调函数参数
+                                let want = ty.get(arg).copied();
+                                if i < pt.len()
+                                    && matches!(want, Some(LirType::StrFat | LirType::SliceFat))
+                                {
+                                    let w = want.unwrap();
+                                    if pt[i] != w {
+                                        pt[i] = w;
                                         changed = true;
                                     }
                                 }
@@ -485,6 +491,7 @@ fn field_scalar_to_lir(ty: FieldScalar) -> LirType {
         FieldScalar::Char => LirType::Char,
         FieldScalar::Str => LirType::Str,
         FieldScalar::StrFat => LirType::StrFat,
+        FieldScalar::SliceFat => LirType::SliceFat,
         FieldScalar::Ptr => LirType::Ptr,
     }
 }

@@ -122,7 +122,7 @@ fn rwlock_read_read_not_exclusive() {
     let out = run(
         r#"
 fn main() {
-    let r = RwLock::new();
+    let r = RwLock::new(0);
     // 第一个读锁：成功
     if r.try_read_lock() { println(1); } else { println(0); }   // 1
     // 读锁下再取读锁：读读共享，仍成功
@@ -146,7 +146,7 @@ fn rwlock_write_exclusive() {
     let out = run(
         r#"
 fn main() {
-    let r = RwLock::new();
+    let r = RwLock::new(0);
     // 第一个写锁：成功
     if r.try_write_lock() { println(1); } else { println(0); }  // 1
     // 写锁下再取写锁：互斥，失败
@@ -169,7 +169,7 @@ fn rwlock_read_write_loop() {
     let out = run(
         r#"
 fn main() {
-    let r = RwLock::new();
+    let r = RwLock::new(0);
     let mut i = 0;
     while i < 5 {
         r.read_lock();

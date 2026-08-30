@@ -42,6 +42,8 @@ pub enum LirType {
     Str,
     /// &str 胖指针（data 指针 + 长度双槽；V2 子区间视图）
     StrFat,
+    /// 切片胖指针（data 指针 + 长度双槽；`&[T]` / `&mut [T]`，与 StrFat 同布局 `{i8*, i64}`）
+    SliceFat,
     /// 聚合对象指针（i8*；枚举 / 结构体等堆对象）
     Ptr,
     /// 单元类型（void）
@@ -69,6 +71,7 @@ impl std::fmt::Display for LirType {
             LirType::Char => write!(f, "char"),
             LirType::Str => write!(f, "string"),
             LirType::StrFat => write!(f, "strfat"),
+            LirType::SliceFat => write!(f, "slicefat"),
             LirType::Ptr => write!(f, "ptr"),
             LirType::Unit => write!(f, "()"),
         }

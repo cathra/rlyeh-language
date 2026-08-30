@@ -1677,6 +1677,119 @@ fn string_to_int(s: String) -> i64 {
     result
 }
 
+// X2（2026-08-30）：f64 <-> String 转换（TOML f64 序列化/反序列化用）。
+// 手写十进制格式化：符号 + 整数部分（复用 int_to_string）+ 最多 6 位小数（去尾随零）。
+fn float_to_string(f: f64) -> String {
+    let neg = f < 0.0;
+    let v = if neg { 0.0 - f } else { f };
+    let intpart = v as i64;
+    let mut buf = int_to_string(intpart);
+    let mut frac = v - (intpart as f64);
+    if frac > 0.0 {
+        buf.push_str(".");
+        let mut i = 0;
+        while i < 6 {
+            frac = frac * 10.0;
+            let d = frac as i64;
+            buf.push_str(int_to_string(d));
+            frac = frac - (d as f64);
+            i = i + 1;
+        }
+    }
+    if neg {
+        let mut nb = String::from("-");
+        nb.push_str(buf);
+        nb
+    } else {
+        buf
+    }
+}
+
+// X2（2026-08-30）：String -> f64 解析（支持可选负号 + 整数/小数部分，MVP 不支持指数）。
+fn string_to_float(s: String) -> f64 {
+    let mut i = 0;
+    let mut neg = 0;
+    if s.len > 0 {
+        if s.get(0) == 45 {
+            neg = 1;
+            i = 1;
+        }
+    }
+    let mut intval = 0.0;
+    let mut dot_seen = 0;
+    let mut stop = 0;
+    while i < s.len && stop == 0 {
+        let c = s.get(i);
+        if c == 46 {
+            dot_seen = 1;
+            stop = 1;
+        } else if c < 48 || c > 57 {
+            stop = 1;
+        } else {
+            intval = intval * 10.0 + (c - 48) as f64;
+            i = i + 1;
+        }
+    }
+    let mut frac = 0.0;
+    let mut divisor = 1.0;
+    if dot_seen == 1 {
+        i = i + 1;
+        let mut fstop = 0;
+        while i < s.len && fstop == 0 {
+            let c = s.get(i);
+            if c < 48 || c > 57 {
+                fstop = 1;
+            } else {
+                frac = frac * 10.0 + (c - 48) as f64;
+                divisor = divisor * 10.0;
+                i = i + 1;
+            }
+        }
+    }
+    let mut result = intval + (frac / divisor);
+    if neg == 1 {
+        result = 0.0 - result;
+    }
+    result
+}
+
+// X2（2026-08-30）：严格 f64 解析（`toml.try_parse` 用）——合法十进制浮点返回
+// `Ok`，含非数字字符（除可选负号 / 小数点）或空 / 无数字返回 `Err`。
+fn parse_float_strict(s: String) -> Result<f64, String> {
+    let mut i = 0;
+    let mut neg = 0;
+    if s.len > 0 {
+        if s.get(0) == 45 {
+            neg = 1;
+            i = 1;
+        }
+    }
+    if i >= s.len {
+        return Result::Err(String::from("invalid float"));
+    }
+    let mut seen_dot = 0;
+    let mut seen_digit = 0;
+    while i < s.len {
+        let c = s.get(i);
+        if 48 <= c <= 57 {
+            seen_digit = 1;
+            i = i + 1;
+        } else if c == 46 {
+            if seen_dot == 1 {
+                return Result::Err(String::from("invalid float"));
+            }
+            seen_dot = 1;
+            i = i + 1;
+        } else {
+            return Result::Err(String::from("invalid float"));
+        }
+    }
+    if seen_digit == 0 {
+        return Result::Err(String::from("invalid float"));
+    }
+    Result::Ok(string_to_float(s))
+}
+
 // P2（2026-08-28）：严格整数解析（`json.try_parse`/`toml.try_parse` 用）——
 // 全数字 + 可选负号，非法/部分合法输入返回 Err（替代 string_to_int 的宽松停止解析）。
 fn parse_int_strict(s: String) -> Result<i64, String> {
@@ -1748,25 +1861,34 @@ fn json_unescape_checked(s: String) -> Result<String, String> {
 
 // X2（2026-08-27）：引号感知分段——按分隔符分割，但跳过双引号字符串内的分隔符
 //（值含逗号的 TOML 内联表/数组）。返回段（含原空格，调用方自行 trim）。
+// X2（2026-08-30）：增强——跟踪 `[`/`{`/`"` 嵌套深度，仅当不在引号内且括号深度为 0
+// 时逗号才作分隔符（嵌套数组/内联表/HashMap 正确分段）；每段 trim 去除首尾空白。
 fn split_quoted(s: String, delim: i64) -> Vec<String> {
     let mut parts: Vec<String> = Vec::new();
     let mut start = 0;
     let mut in_str = false;
+    let mut depth = 0;
     let mut i = 0;
     while i < s.len {
         let c = s.get(i);
         if c == 34 {
             // 双引号切换字符串状态
             in_str = !in_str;
-        } else if c == delim && !in_str {
+        } else if c == 91 || c == 123 {
+            // '[' / '{'：进入嵌套（不在引号内才计数）
+            if !in_str { depth = depth + 1; }
+        } else if c == 93 || c == 125 {
+            // ']' / '}'：离开嵌套
+            if !in_str { depth = depth - 1; }
+        } else if c == delim && !in_str && depth == 0 {
             let part = s.substring(start, i);
-            parts.push(part);
+            parts.push(String::from(part.trim()));
             start = i + 1;
         }
         i = i + 1;
     }
     let last = s.substring(start, s.len);
-    parts.push(last);
+    parts.push(String::from(last.trim()));
     parts
 }
 

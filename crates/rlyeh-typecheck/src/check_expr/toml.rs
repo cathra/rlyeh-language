@@ -211,6 +211,133 @@ fn build_section_branches(
     else_chain
 }
 
+/// X2（2026-08-30）：TOML 字符串值反序列化 AST——多行字符串 `"""..."""` 走原始
+/// 剥离（首 3 字节与末 3 字节均为 `"`(34) 且长度 ≥ 6 时 `substring(3, len-3)`），
+/// 否则走 `json_unescape`（JSON 风格单引号 + 转义还原）。
+fn toml_string_value_ast(s: &AstExpr, span: Span) -> AstExpr {
+    // X2（2026-08-30）：先 trim 去除首尾空白（struct 字段 `key = """...""` 值含前导空格），
+    // 再判定多行字符串 `"""..."""` 或 JSON 风格转义字符串。
+    let st = mk_path_call(
+        vec!["String".to_string(), "from".to_string()],
+        vec![AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: s.clone(),
+                method: "trim".to_string(),
+                args: Vec::new(),
+                trait_hint: None,
+            },
+            span,
+        )],
+        span,
+    );
+    let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+        AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: recv,
+                method: method.to_string(),
+                args,
+                trait_hint: None,
+            },
+            span,
+        )
+    };
+    let eq = |e: AstExpr| {
+        AstExpr::new(
+            ExprKind::ComparisonChain {
+                elements: vec![e, AstExpr::new(ExprKind::IntLiteral(34), span)],
+                operators: vec![CompareOp::Eq],
+            },
+            span,
+        )
+    };
+    let len = mcall(st.clone(), "len", Vec::new());
+    let get = |idx: AstExpr| mcall(st.clone(), "get", vec![idx]);
+    let off = |o: i64| {
+        AstExpr::new(
+            ExprKind::Binary {
+                op: BinaryOp::Sub,
+                left: len.clone(),
+                right: AstExpr::new(ExprKind::IntLiteral(o as i128), span),
+            },
+            span,
+        )
+    };
+    let first3 = AstExpr::new(
+        ExprKind::Binary {
+            op: BinaryOp::And,
+            left: AstExpr::new(
+                ExprKind::Binary {
+                    op: BinaryOp::And,
+                    left: eq(get(AstExpr::new(ExprKind::IntLiteral(0), span))),
+                    right: eq(get(AstExpr::new(ExprKind::IntLiteral(1), span))),
+                },
+                span,
+            ),
+            right: eq(get(AstExpr::new(ExprKind::IntLiteral(2), span))),
+        },
+        span,
+    );
+    let last3 = AstExpr::new(
+        ExprKind::Binary {
+            op: BinaryOp::And,
+            left: AstExpr::new(
+                ExprKind::Binary {
+                    op: BinaryOp::And,
+                    left: eq(get(off(3))),
+                    right: eq(get(off(2))),
+                },
+                span,
+            ),
+            right: eq(get(off(1))),
+        },
+        span,
+    );
+    let ge6 = AstExpr::new(
+        ExprKind::ComparisonChain {
+            elements: vec![len.clone(), AstExpr::new(ExprKind::IntLiteral(6), span)],
+            operators: vec![CompareOp::Ge],
+        },
+        span,
+    );
+    let is_ml = AstExpr::new(
+        ExprKind::Binary {
+            op: BinaryOp::And,
+            left: AstExpr::new(
+                ExprKind::Binary {
+                    op: BinaryOp::And,
+                    left: first3,
+                    right: last3,
+                },
+                span,
+            ),
+            right: ge6,
+        },
+        span,
+    );
+    let raw = mcall(
+        st.clone(),
+        "substring",
+        vec![AstExpr::new(ExprKind::IntLiteral(3), span), off(3)],
+    );
+    let esc = mk_ident_call("json_unescape".to_string(), vec![st.clone()], span);
+    AstExpr::new(
+        ExprKind::If {
+            cond: is_ml,
+            then_block: AstBlock {
+                stmts: Vec::new(),
+                final_expr: Some(raw),
+                span,
+            },
+            else_block: Some(AstBlock {
+                stmts: Vec::new(),
+                final_expr: Some(esc),
+                span,
+            }),
+        },
+        span,
+    )
+}
+
 pub(crate) fn toml_parse_ast(
     ctx: &mut TypeContext,
     ty: &Type,
@@ -258,11 +385,101 @@ pub(crate) fn toml_parse_ast(
             ))
         }
         // String → `json_unescape(s)`（引号剥离 + 转义还原，core.rl）
-        Type::Named(n, _) if n == "String" => Ok(mk_ident_call(
-            "json_unescape".to_string(),
-            vec![s],
-            span,
-        )),
+        // 字符串 → 多行字符串 `"""` 感知（`toml_string_value_ast`）
+        Type::Named(n, _) if n == "String" => Ok(toml_string_value_ast(&s, span)),
+        // X2（2026-08-30）：f64 → `string_to_float(s)`
+        Type::F64 => Ok(mk_ident_call("string_to_float".to_string(), vec![s], span)),
+        // X2（2026-08-30）：固定数组 `[T; N]` → 生成 `[parse(parts[0]), ..., parse(parts[N-1])]`
+        // （N 编译期已知；parts = 剥 `[]` 后引号感知分段，复用 split_quoted 处理元素含逗号字符串）
+        Type::Array(elem_ty, n) => {
+            let elem_ty = substitute(&elem_ty, &ctx.generic_subst);
+            if matches!(elem_ty, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "toml.parse：固定数组元素类型未确定（如 `toml::from_str::<[i64; 3]>(s)` 需标注类型）".to_string(),
+                    span,
+                });
+            }
+            if *n == 0 {
+                return Err(TypeError::Unsupported {
+                    what: "toml.parse：空固定数组 `[T; 0]` 反序列化未支持".to_string(),
+                    span,
+                });
+            }
+            let s_name = ctx.fresh_temp();
+            let body_name = ctx.fresh_temp();
+            let parts_name = ctx.fresh_temp();
+            let s_id = AstExpr::new(ExprKind::Ident(s_name.clone()), span);
+            let body_id = AstExpr::new(ExprKind::Ident(body_name.clone()), span);
+            let parts_id = AstExpr::new(ExprKind::Ident(parts_name.clone()), span);
+            let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: method.to_string(),
+                        args,
+                        trait_hint: None,
+                    },
+                    span,
+                )
+            };
+            let mut elems: Vec<AstExpr> = Vec::with_capacity(*n);
+            for i in 0..*n {
+                let part_i = AstExpr::new(
+                    ExprKind::Index {
+                        expr: parts_id.clone(),
+                        index: AstExpr::new(ExprKind::IntLiteral(i as i128), span),
+                    },
+                    span,
+                );
+                let elem_ast = toml_parse_ast(ctx, &elem_ty, &part_i, span, false)?;
+                elems.push(elem_ast);
+            }
+            Ok(AstExpr::new(
+                ExprKind::Block(AstBlock {
+                    stmts: vec![
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(s_name),
+                            type_anno: None,
+                            init: s,
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(body_name),
+                            type_anno: None,
+                            init: mcall(
+                                s_id.clone(),
+                                "substring",
+                                vec![
+                                    AstExpr::new(ExprKind::IntLiteral(1), span),
+                                    AstExpr::new(
+                                        ExprKind::Binary {
+                                            op: BinaryOp::Sub,
+                                            left: mcall(s_id.clone(), "len", Vec::new()),
+                                            right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                        },
+                                        span,
+                                    ),
+                                ],
+                            ),
+                            mutable: false,
+                        },
+                        AstStmt::Let {
+                            pattern: AstPattern::Ident(parts_name),
+                            type_anno: None,
+                            init: mk_ident_call(
+                                "split_quoted".to_string(),
+                                vec![body_id, AstExpr::new(ExprKind::IntLiteral(44), span)],
+                                span,
+                            ),
+                            mutable: false,
+                        },
+                    ],
+                    final_expr: Some(AstExpr::new(ExprKind::ArrayLit(elems), span)),
+                    span,
+                }),
+                span,
+            ))
+        }
         // Vec<T> → 数组 `[e1,e2]` 反序列化（元素限标量 i64 / bool / String）。
         // desugar 为块表达式 + `for x in vec`：
         // `{ let __s = String::from(<arg>);                 // TOML 文本
@@ -1153,6 +1370,17 @@ pub(crate) fn toml_try_parse_ast(
         Type::Named(n, _) if n == "Vec" => brace_check(91, "invalid array"),
         // HashMap / struct → 首尾 `{}`（123 / 125）闭合校验
         Type::Named(..) => brace_check(123, "invalid object"),
+        // X2（2026-08-30）：f64 → `parse_float_strict` 严格校验（合法十进制浮点 Ok，否则 Err）
+        Type::F64 => {
+            let call = mk_ident_call("parse_float_strict".to_string(), vec![s_id.clone()], span);
+            let isok = mcall(call, "is_ok", Vec::new());
+            (
+                cmp(isok, AstExpr::new(ExprKind::IntLiteral(1), span)),
+                "invalid float",
+            )
+        }
+        // X2（2026-08-30）：固定数组 `[T; N]` → 首尾 `[]` 闭合校验（与 Vec 同）
+        Type::Array(..) => brace_check(91, "invalid array"),
         other => {
             return Err(TypeError::Unsupported {
                 what: format!("toml.try_parse：类型 `{other}` 反序列化"),

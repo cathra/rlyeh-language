@@ -399,6 +399,43 @@ pub(crate) fn infer_expr(
         }
 
         ExprKind::Assign { target, op, value } => {
+            // Y4b-4（2026-08-30）：DerefMut 分发——`*guard = v` 经守卫的 `deref_mut`
+            // 方法（返回 &mut T）生成 `*(guard.deref_mut()) = v`，复用 DerefSet；
+            // 仅纯赋值（`=`）支持，复合赋值 `*g += v` 回落至既有无 Unsupported 路径。
+            if matches!(op, AssignOp::Assign) {
+                if let ExprKind::Unary {
+                    op: UnaryOp::Deref,
+                    operand,
+                } = &*target.kind
+                {
+                    let (_, o_ty) = infer_expr(ctx, operand)?;
+                    if ctx.find_impl_for_method(&o_ty, "deref_mut").is_some() {
+                        let (dm_hir, dm_ty) =
+                            check_method_call(ctx, operand, "deref_mut", &[], None, span)?;
+                        let (v_hir, v_ty) = infer_expr(ctx, value)?;
+                        let inner = match &dm_ty {
+                            Type::Ref(inner, _) => (**inner).clone(),
+                            _ => dm_ty.clone(),
+                        };
+                        if !inner.compatible_with(&v_ty) {
+                            return Err(TypeError::WrongType {
+                                expected: inner.to_string(),
+                                found: v_ty.to_string(),
+                                span,
+                            });
+                        }
+                        let ty = field_scalar_of(&inner);
+                        return Ok((
+                            HirExpr::DerefSet {
+                                base: Box::new(dm_hir),
+                                value: Box::new(v_hir),
+                                ty,
+                            },
+                            Type::Unit,
+                        ));
+                    }
+                }
+            }
             let (t_hir, t_ty) = infer_expr(ctx, target)?;
             // H4 去虚拟化失效：dyn 变量被重新赋值后绑定源具体类型不再成立，
             // 后续调用回退 vtable 间接分派

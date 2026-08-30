@@ -1,7 +1,7 @@
 # X2 标准 TOML + 解析鲁棒性
 
 > **所属阶段**：阶段 X
-> **状态**：🔧 核心完成（`key = value` 空格 + round-trip + 整行注释 + 引号感知 + `[section]` 行式（含多级 `[a.b]`）✅，2026-08-27；多行字符串 / `[T; N]` / f64 待办）
+> **状态**：✅ 已完成（`key = value` 空格 + round-trip + 整行注释 + 引号感知 + `[section]` 行式（含多级 `[a.b]`）+ f64 + `[T; N]` 数组 + 多行字符串 `"""` 全部落地，2026-08-30）
 > **依赖**：U3/U4、Q4
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
@@ -30,6 +30,25 @@
   - round-trip 正常（`x2_toml_section.rl` 单级 3+4、`x2_toml_section_multi.rl` 多级 16 + 直接 `[inner.p]` 输入）。
 - 测试：`x2_toml_standard.rl`（标准空格 round-trip）、`x2_toml_comments.rl`（整行注释）、`x2_toml_quoted.rl`（引号感知）、`x2_toml_section.rl`（单级 [section]）、`x2_toml_section_multi.rl`（多级 [a.b]）。
 
+## 实施情况（2026-08-30，全部完成）
+
+- **f64 序列化 / 反序列化**（`toml_ser.rs` / `toml.rs`）：
+  - 序列化：`Type::F64` → `float_to_string(arg)`（裸浮点值，无引号，`3.5`）。
+  - 反序列化：`Type::F64` → `string_to_float(s)`；`try_parse` 严格校验走 `parse_float_strict`（合法十进制浮点 Ok，否则 Err）。
+  - round-trip 正常（`x2_toml_f64.rl`：裸 `3.5` 反序列化、`to_string` 后再反序列化均得 3.5）。
+- **固定数组 `[T; N]` 反序列化**（`toml.rs`）：
+  - `Type::Array(elem_ty, n)` → 剥 `[]` 后 `split_quoted` 引号感知分段（元素含逗号字符串安全），静态展开 `[parse(parts[0]), ..., parse(parts[N-1])]`（N 编译期已知）。
+  - 嵌套 `[[i64; 2]; 2]` 经 elem 类型递归展开为多级数组字面量。
+  - `try_parse` 闭合校验同 `Vec`：首尾 `[]`（91 / 93）。
+  - 序列化（`toml_ser.rs`）：`Type::Array(elem, len)` 静态展开 `[e0, e1, ...]`（长度编译期已知）。
+  - round-trip 正常（`x2_toml_array.rl`：扁平 `[i64; 3]` = 6、嵌套 `[[i64; 2]; 2]` = 10）。
+- **多行字符串 `"""..."""` 反序列化**（`toml.rs` 的 `toml_string_value_ast`）：
+  - 先 `trim` 去除首尾空白（struct 字段 `key = """...""` 值含前导空格），再判定多行字符串。
+  - 首尾各 3 字节均为 `"`（ASCII 34）且长度 ≥ 6 时 `substring(3, len-3)` 剥离 `"""` 定界得原始内容；否则走 `json_unescape`（JSON 风格转义还原）。
+  - 序列化（`toml_ser.rs`）：String 含换行（10）序列化为 TOML 多行字符串 `"""...""`（原始不转义），否则 `"` + `json_escape(s)` + `"`（复用 JSON 转义）。
+  - round-trip 正常（`x2_toml_multiline.rl`：顶层 `"""hello world"""`、section 内 `desc = """multi line"""`）。
+- 新增测试：`x2_toml_f64.rl`、`x2_toml_array.rl`、`x2_toml_multiline.rl`（均位于 `tests/run-pass/`）。
+
 ## 验证
 
 - [x] 标准 `key = value` 输出 + round-trip（`x2_toml_standard.rl`）。
@@ -37,7 +56,9 @@
 - [x] 引号感知解析（值含逗号）（`x2_toml_quoted.rl`）。
 - [x] `[section]` 行式子表 + round-trip（单级，`x2_toml_section.rl`）。
 - [x] 多级 `[a.b]` section 路径 + round-trip（`x2_toml_section_multi.rl`）。
-- [ ] 多行字符串 `"""`、`[T; N]` 数组、f64——待办（剩余增强）。
+- [x] f64 序列化 / 反序列化 round-trip（`x2_toml_f64.rl`）。
+- [x] `[T; N]` 固定数组反序列化（扁平 + 嵌套）+ round-trip（`x2_toml_array.rl`）。
+- [x] 多行字符串 `"""` 反序列化（顶层 + section 内）（`x2_toml_multiline.rl`）。
 
 ## 变更记录
 
@@ -45,3 +66,4 @@
 |------|------|
 | 2026-08-26 | 由阶段 U–Z 执行记录细化为独立叶子文档 |
 | 2026-08-27 | `key = value` 空格 + round-trip trim + 整行注释 + CACHE_VERSION 递增 |
+| 2026-08-30 | f64 序列化/反序列化 + `[T; N]` 固定数组反序列化 + 多行字符串 `"""` 反序列化全部落地；状态置 ✅ |

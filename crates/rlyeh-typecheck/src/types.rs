@@ -67,6 +67,8 @@ pub enum Type {
     Dyn(String),
     /// 数组类型
     Array(Box<Type>, usize),
+    /// 切片类型（运行时长度未知；`&[T]` / `&mut [T]` 的元素类型，见切片类型系统规划）
+    Slice(Box<Type>),
     /// 元组类型
     Tuple(Vec<Type>),
     /// 具名类型（结构体 / 枚举 / trait 等）
@@ -180,7 +182,13 @@ impl Type {
                     // String 对象的借用），内层类型可互视
                     let inner_ok = a.compatible_with(b)
                         || (matches!(**a, Type::Str) && is_named_string(b))
-                        || (is_named_string(a) && matches!(**b, Type::Str));
+                        || (is_named_string(a) && matches!(**b, Type::Str))
+                        // S2 unsize coercion：`&[T; N]` → `&[T]`（数组引用可降级为
+                        // 切片胖指针，元素类型须兼容；codegen 侧在调用点构造 `{data, len}`）
+                        || matches!(
+                            (&**a, &**b),
+                            (Type::Array(ae, _), Type::Slice(be)) if ae.compatible_with(be)
+                        );
                     inner_ok
                         && matches!(
                             (ma, mb),
@@ -255,6 +263,7 @@ impl fmt::Display for Type {
             }
             Type::Dyn(name) => write!(f, "dyn {name}"),
             Type::Array(t, n) => write!(f, "[{t}; {n}]"),
+            Type::Slice(t) => write!(f, "[{t}]"),
             Type::Tuple(ts) => {
                 let inner = ts
                     .iter()
@@ -412,6 +421,8 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         Type::Str => FieldScalar::Str,
         // &str：data 指针 + 长度双槽胖指针（V2 子区间视图，对齐 Rust fat pointer）
         Type::Ref(inner, _) if matches!(&**inner, Type::Str) => FieldScalar::StrFat,
+        // &[T] / &mut [T]：切片胖指针（data 指针 + 长度双槽，与 StrFat 同布局）
+        Type::Ref(inner, _) if matches!(&**inner, Type::Slice(_)) => FieldScalar::SliceFat,
         // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象 / 闭包值均以指针形式存储；函数指针为指针
         Type::Ref(..)
         | Type::RawPtr(..)

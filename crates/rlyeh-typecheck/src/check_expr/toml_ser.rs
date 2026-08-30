@@ -90,11 +90,63 @@ pub(crate) fn toml_serialize_ast_path(
                 span,
             ))
         }
-        // String → `"` + json_escape(s) + `"`（TOML 基本转义与 JSON 一致，复用）
+        // X2（2026-08-30）：f64 → `float_to_string(arg)`（裸浮点，无引号）
+        Type::F64 => Ok(mk_ident_call("float_to_string".to_string(), vec![arg.clone()], span)),
+        // String → 含换行(10)序列化为 TOML 多行字符串 `"""...""`（原始，不转义），
+        // 否则 `"` + json_escape(s) + `"`（TOML 基本转义与 JSON 一致，复用）
         Type::Named(n, _) if n == "String" => {
             let quote = |s: &str| string_from_lit_ast(s.to_string(), span);
-            let esc = mk_ident_call("json_escape".to_string(), vec![arg.clone()], span);
-            Ok(fold_add(vec![quote("\""), esc, quote("\"")], span))
+            let escaped = fold_add(
+                vec![
+                    quote("\""),
+                    mk_ident_call("json_escape".to_string(), vec![arg.clone()], span),
+                    quote("\""),
+                ],
+                span,
+            );
+            let raw = fold_add(
+                vec![quote("\"\"\""), arg.clone(), quote("\"\"\"")],
+                span,
+            );
+            let mcall = |recv: AstExpr, method: &str, args: Vec<AstExpr>| {
+                AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: method.to_string(),
+                        args,
+                        trait_hint: None,
+                    },
+                    span,
+                )
+            };
+            let has_nl = mcall(
+                arg.clone(),
+                "find",
+                vec![string_from_lit_ast("\n".to_string(), span)],
+            );
+            let cond = AstExpr::new(
+                ExprKind::ComparisonChain {
+                    elements: vec![has_nl, AstExpr::new(ExprKind::IntLiteral(0), span)],
+                    operators: vec![CompareOp::Ge],
+                },
+                span,
+            );
+            Ok(AstExpr::new(
+                ExprKind::If {
+                    cond,
+                    then_block: AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(raw),
+                        span,
+                    },
+                    else_block: Some(AstBlock {
+                        stmts: Vec::new(),
+                        final_expr: Some(escaped),
+                        span,
+                    }),
+                },
+                span,
+            ))
         }
         // &str / 字符串字面量 → `"` + json_escape(String::from(arg)) + `"`
         Type::Str => {
