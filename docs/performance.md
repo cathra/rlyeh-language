@@ -137,17 +137,17 @@ Rlyeh 的设计目标是：**Rust 的安全性 + Go 的编译速度 + Erlang 的
 
 ## 5. Region 内存策略对比（Rlyeh 内部，同机同构 100 万次 32B 对象）
 
-> 该表为 Rlyeh 自身不同 region 策略的横向对比（不涉及跨语言），数据来自 `benchmarks/README.md`，可与 §2 的 `region_*` 跨语言项互参。
+> 该表为 Rlyeh 自身不同 region 策略的横向对比（不涉及跨语言），数据于 **2026-08-31 本机重测**（warmup 12 + 40 次取中位数），可与 §2 的 `region_*` 跨语言项互参。
 
 | 策略 | 语法 | 块数（扩容次数） | 内存峰值 | 耗时 (ms) | 较最优 |
 |------|------|:---:|:---:|-----:|:---:|
-| plain（默认 bump ×2） | `region 'r {}` | 14（13 次） | 17.5MB | 5.512 | +3.4% |
-| adaptive（EWMA 画像） | `region 'r adaptive {}` | 21（20 次） | ~17.5MB | 5.558 | +4.3% |
-| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 1（0 次） | 32MB | **5.331** | — |
-| `with_size (4KB)` | `region 'r with_size (4096) {}` | 9（8 次） | 26.8MB | 5.434 | +1.9% |
-| `strategy (bump)` | `region 'r strategy (bump) {}` | 14（13 次） | 17.5MB | 5.420 | +1.7% |
+| plain（默认 bump ×2） | `region 'r {}` | 14（13 次） | 17.5MB | 4.644 | +0.4% |
+| adaptive（EWMA 画像） | `region 'r adaptive {}` | 21（20 次） | ~17.5MB | 4.698 | +1.6% |
+| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 1（0 次） | 32MB | 4.780 | +3.3% |
+| `with_size (4KB)` | `region 'r with_size (4096) {}` | 9（8 次） | 26.8MB | 4.907 | +6.1% |
+| `strategy (bump)` | `region 'r strategy (bump) {}` | 14（13 次） | 17.5MB | **4.625** | — |
 
-**洞察**：五种策略耗时全部落在 5.33–5.56ms（~4% 内），热循环分配为纯寄存器 bump（约 2.8 ns/次），策略差异只作用于慢路径扩容次数。日常代码放心使用默认 `region`；仅在已知精确上限时用 `with_size (N)` 规避全部扩容。
+**洞察**：五种策略耗时全部落在 4.6–4.9ms，且 run-to-run 中位数排序在噪声内翻转（strategy_bump / with_size_32MB / plain 逐次成为"最快"）——即策略间**无统计学显著差异**；热循环分配为纯寄存器 bump（约 2.6 ns/次：扣除 2.06ms 空循环基线，1M 次分配仅 ~2.58ms），策略差异只作用于慢路径扩容次数。对照：**无 region 逐次堆分配 9.77ms，region 分配约为其 1/2**。日常代码放心使用默认 `region`；仅在已知精确上限时用 `with_size (N)` 规避全部扩容。
 
 ---
 

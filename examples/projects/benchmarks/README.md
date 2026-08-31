@@ -105,18 +105,18 @@ python3 run.py --skip-rlyeh-build   # 跳过 Rlyeh 重编译（复用已有二�
 
 | 策略 | 语法 | 块数（扩容次数） | 内存峰值 | 耗时 (ms) | 较最优 |
 |------|------|:---:|:---:|-----:|:---:|
-| plain（默认 bump ×2） | `region 'r {}` | 14（13 次，1B→17.5MB） | 17.5MB | 5.512 | +3.4% |
-| adaptive（EWMA 画像） | `region 'r adaptive {}` | 21（20 次，调优初值） | ~17.5MB | 5.558 | +4.3% |
-| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 1（0 次） | 32MB | **5.331** | — |
-| `with_size (4KB)` | `region 'r with_size (4096) {}` | 9（8 次） | 26.8MB | 5.434 | +1.9% |
-| `strategy (bump)`（显式 bump） | `region 'r strategy (bump) {}` | 14（13 次） | 17.5MB | 5.420 | +1.7% |
+| plain（默认 bump ×2） | `region 'r {}` | 14（13 次，1B→17.5MB） | 17.5MB | 4.644 | +0.4% |
+| adaptive（EWMA 画像） | `region 'r adaptive {}` | 21（20 次，调优初值） | ~17.5MB | 4.698 | +1.6% |
+| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 1（0 次） | 32MB | 4.780 | +3.3% |
+| `with_size (4KB)` | `region 'r with_size (4096) {}` | 9（8 次） | 26.8MB | 4.907 | +6.1% |
+| `strategy (bump)`（显式 bump） | `region 'r strategy (bump) {}` | 14（13 次） | 17.5MB | **4.625** | — |
 
-对照基线：空进程（无 region）2.755ms、空 `region` 3.202ms、空 `with_size(32MB)` 2.993ms——region 进出开销 < 0.5ms。
+对照基线：空进程（无 region 空循环）2.06ms、空 `region` 2.43ms、空 `with_size(32MB)` 2.43ms——region 进出开销 0.37ms（< 0.5ms，与旧结论一致）；**无 region 逐次堆分配 9.77ms，region 分配约为其 1/2**，凸显 region 对分配密集循环的价值。
 
 **洞察**：
 
-1. **五种策略耗时全部落在 5.33–5.56ms（~4% 内）**——循环级 region 状态提升后，热循环分配为纯寄存器 bump（约 **2.8 ns/次**：扣除 2.755ms 进程基线，1M 次分配仅 ~2.76ms），策略差异只作用于慢路径扩容次数，被热路径完全掩盖。
-2. `with_size (32MB)` 零扩容，最快；`adaptive` 因慢路径的 EWMA 记账略慢于 plain（20 次 vs 13 次扩容），但差距 < 0.3ms——**扩容次数在提升后不再是性能敏感项**。
+1. **五种策略耗时全部落在 4.6–4.9ms，且 run-to-run 中位数排序在噪声内翻转（strategy_bump / with_size_32MB / plain 逐次成为"最快"）**——即策略间**无统计学显著差异**；循环级 region 状态提升后，热循环分配为纯寄存器 bump（约 **2.6 ns/次**：扣除 2.06ms 空循环基线，1M 次分配仅 ~2.58ms），策略差异只作用于慢路径扩容次数，被热路径完全掩盖；**无 region 逐次堆分配 9.77ms，region 分配约为其 1/2**。
+2. `with_size (32MB)` 结构上零扩容（扩容次数最少），但重测显示其耗时与 strategy_bump / plain 在噪声内互有胜负，已无可靠"最快"项；`adaptive` 慢路径 EWMA 记账带来 20 次 vs 13 次扩容，但差距 < 0.3ms——**扩容次数在提升后不再是性能敏感项**。
 3. `with_size (4KB)` 以最小预分配（4KB）实现 8 次快速扩容，峰值 26.8MB，耗时仍居中——印证"预分配越大越好"的传统直觉在提升后不成立。
 4. 结论：日常代码可放心使用默认 `region`；仅在已知精确上限（如缓冲池大小）时用 `with_size (N)` 规避全部扩容；`adaptive` 适合对象尺寸分布不均的场景（画像回灌编译器后可按需精确预分配）。
 
