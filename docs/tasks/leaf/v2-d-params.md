@@ -3,7 +3,7 @@
 > **所属任务**：[V2 String 引用视图完整化](../v2-str-view.md)
 > **状态**：✅ 已完成（`&str` 函数参数 ✅；返回值 borrowck ✅；`String::from(&str)` 深拷贝 ✅；`&String`↔`&str` 隐式转换 ✅）
 > **依赖**：V2-A
-> **权威来源**：`rlyeh-lir/lower.rs`（`param_types`）、`rlyeh-borrowck/checker.rs`（`check_dangling_strfat_block`）、`guide.md` §10.2
+> **权威来源**：`rlyeh-lir/lower.rs`（`param_types`）、`rlyeh-borrowck/checker.rs`（`check_dangling_strfat_block`）、`guide/10-stdlib.md` §10.2
 
 ## 目标
 
@@ -11,7 +11,7 @@
 
 ## 背景
 
-guide.md 990 声称已支持参数/返回/索引/深拷贝，但 StrFat 双槽化后需重新验证借用与跨函数传递。
+guide/10-stdlib.md 990 声称已支持参数/返回/索引/深拷贝，但 StrFat 双槽化后需重新验证借用与跨函数传递。
 
 ## 实施情况
 

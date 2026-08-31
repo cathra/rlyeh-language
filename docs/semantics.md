@@ -6,7 +6,7 @@
 > **⚠️ 实现状态**：本文为**目标语义规范**。所有权/借用（§1）、`?` 运算符（§6）、闭包（§10）、
 > 引用类型等均已实现（G1 引用与借用 / G2 `&str` / G3 裸指针 / H1–H5 闭包与一等函数 / K1 `?`）。
 > `Copy` trait 与生命周期严格验证仍为规划（MVP：值拷贝/移动语义 + 宽松借用检查，`'a` 语法接受后丢弃）。
-> 已实现语义的教程见 [`guide.md`](./guide.md)，已知限制见其 §13。
+> 已实现语义的教程见 [`guide/index.md`](./guide/index.md)，已知限制见 [`guide/13-references-limits.md`](./guide/13-references-limits.md) §13。
 
 ## 相关文档
 
@@ -633,7 +633,7 @@ struct RawPointer(*mut u8);  // 不实现 Send 和 Sync
 > **MVP 状态**：普通 `async fn` 已实现（S1 ✅：`Future`/`Poll`/`block_on` + 状态机 desugar + `.await`
 > 挂起/恢复，参数 `i64`、返回 `i64`/`()`）；`join_all`/`timeout`/`sleep` 已实现（S2 ✅）。事件驱动执行器与
 > 泛型 `Future` 关联输出（`Output` 固定 `i64`、`Pin`/`Context`）规划中。actor 方法的 `async` + `.await`/
-> `send` 为独立机制（消息往返，见 [`guide.md`](./guide.md) §9）。
+> `send` 为独立机制（消息往返，见 [`guide/09-actors.md`](./guide/09-actors.md) §9）。
 
 `async fn` 返回 `Future`，由执行器（executor）调度：
 

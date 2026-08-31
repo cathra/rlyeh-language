@@ -197,7 +197,7 @@ cargo test --workspace        # 全部通过（当前 111 套件）
 | 项目总纲 | [../CODEBUDDY.md](../../../CODEBUDDY.md) | 项目全景 + 工具链命令 + 特性速览 |
 | 文档导航（docs 入口） | [../docs/README.md](../../README.md) | docs/ 文档地图 + 阅读顺序 + 一致性规则 |
 | 开发计划（阶段 A–Z） | [../docs/development-plan.md](../../development-plan.md) | 阶段 A–F 已完成 + §6 剩余任务消解 G–L / M–T / U–Z |
-| 语言教程 | [../docs/guide.md](../../guide.md) | 面向读者（示例均可运行） |
+| 语言教程 | [../docs/guide/index.md](../../guide/index.md) | 面向读者（示例均可运行） |
 | 语法规范 | [../docs/grammar.md](../../grammar.md) | EBNF 语法（含规划） |
 | 语义规则 | [../docs/semantics.md](../../semantics.md) | 类型/求值规则 |
 | 内存模型 | [../docs/memory-model.md](../../memory-model.md) | 分层内存 |

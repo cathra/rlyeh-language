@@ -55,7 +55,7 @@
 
 #### 6.1.1 规划中 / 未实现特性（7 项）
 
-| # | 限制（guide.md §13） | 编译器现状依据 | 归属阶段 |
+| # | 限制（guide/13-references-limits.md §13） | 编译器现状依据 | 归属阶段 |
 |---|---------------------|---------------|---------|
 | 1 | **宏系统**：✅ 已解决——I1 声明式宏 / I2 内置格式化宏 / I3 集合宏均已实现 | grammar.md §2.14 `macro_rules!` EBNF（新 crate `rlyeh-macro`）；std-lib.md §8 `Display`/`Debug` 仍为规划 API | **I**（I1/I2/I3 ✅） |
 | 2 | **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 | grammar.md Type 规则含 `'&' Lifetime? 'mut'? Type`、UnaryExpr 含 `'*' | '&' 'mut'?`、Pattern 含 `'ref'`（均已定义未实现）；typecheck `UnaryOp::Deref/AddrOf/AddrOfMut` → Unsupported（check_expr.rs）；borrowck crate 仅服务 `&self` 接收者 | **G**（G1–G4 ✅） |
@@ -67,7 +67,7 @@
 
 #### 6.1.2 实现约束（5 项）
 
-| # | 约束（guide.md §13） | 现状 | 处置 |
+| # | 约束（guide/13-references-limits.md §13） | 现状 | 处置 |
 |---|---------------------|------|------|
 | 1 | std 模块化（core.rl + time/io/net/sync 子模块） | ✅ 已完成 | 说明性，不纳入计划 |
 | 2 | net：`tcp_connect` 依赖平台 `sockaddr_in4` 布局（已双布局化）；WASI 下网络不可用 | 平台约束 | ✅ 已解决（L4：WASI 下 net 明确禁用文档化；执行情况见 [`l4-platform.md`](../tasks/leaf/l4-platform.md)） |

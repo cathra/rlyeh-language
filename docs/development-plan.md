@@ -145,7 +145,7 @@
 
 #### 6.1.1 规划中 / 未实现特性（7 项）
 
-| # | 限制（guide.md §13） | 编译器现状依据 | 归属阶段 |
+| # | 限制（guide/13-references-limits.md §13） | 编译器现状依据 | 归属阶段 |
 |---|---------------------|---------------|---------|
 | 1 | **宏系统**：✅ 已解决——I1 声明式宏 / I2 内置格式化宏 / I3 集合宏均已实现 | grammar.md §2.14 `macro_rules!` EBNF（新 crate `rlyeh-macro`）；std-lib.md §8 `Display`/`Debug` 仍为规划 API | **I**（I1/I2/I3 ✅） |
 | 2 | **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 | grammar.md Type 规则含 `'&' Lifetime? 'mut'? Type`、UnaryExpr 含 `'*' | '&' 'mut'?`、Pattern 含 `'ref'`（均已定义未实现）；typecheck `UnaryOp::Deref/AddrOf/AddrOfMut` → Unsupported（check_expr.rs）；borrowck crate 仅服务 `&self` 接收者 | **G**（G1–G4 ✅） |
@@ -157,7 +157,7 @@
 
 #### 6.1.2 实现约束（5 项）
 
-| # | 约束（guide.md §13） | 现状 | 处置 |
+| # | 约束（guide/13-references-limits.md §13） | 现状 | 处置 |
 |---|---------------------|------|------|
 | 1 | std 模块化（core.rl + time/io/net/sync 子模块） | ✅ 已完成 | 说明性，不纳入计划 |
 | 2 | net：`tcp_connect` 依赖平台 `sockaddr_in4` 布局（已双布局化）；WASI 下网络不可用 | 平台约束 | ✅ 已解决（L4：WASI 下 net 明确禁用文档化；执行情况见 [`l4-platform.md`](tasks/leaf/l4-platform.md)） |
@@ -246,7 +246,7 @@
 
 1. 每个阶段/任务完成须满足：`cargo test --workspace` 全绿 + `cargo clippy --workspace --all-targets` 0 警告。
 2. 涉及运行时/并发类测试（Actor、通道、锁、join、GC 周期）须按 `design/00_项目总览.md` 硬性规则带超时保护，挂起即视为失败。
-3. 任务完成后同步更新：本文档状态标识 + 任务树（`tasks/` 阶段索引进度与叶子文档）+ `guide.md` §13（勾销对应限制条目，并更新 `grammar.md` 顶部实现状态标注）。
+3. 任务完成后同步更新：本文档状态标识 + 任务树（`tasks/` 阶段索引进度与叶子文档）+ `guide/13-references-limits.md` §13（勾销对应限制条目，并更新 `grammar.md` 顶部实现状态标注）。
 4. 每个阶段产出对应的集成测试（仿 development-plan.md 各阶段 `*_test.rs` 用例并全量回归）。
 5. 优先交付顺序建议：G1/G2（引用地基 + str）→ I1/I2（宏 + 格式化）→ H1/H2（函数指针 + 无捕获闭包）→ K1（`?`）→ J 全阶段 → 其余。
 

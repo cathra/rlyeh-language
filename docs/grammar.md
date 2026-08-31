@@ -6,11 +6,11 @@
 > **⚠️ 实现状态**：本文为**目标语法规范**（EBNF），其中部分语法为规划特性，MVP 编译器尚未实现：
 > 宏系统（§2.14 `macro_rules!` 已实现：`$x:expr`/`ident`/`ty`/`tt` + `$(`...`)` 重复，parse 期 AST 展开；
 > 内置格式化宏 `println!`/`print!`/`format!`/`dbg!` 与集合宏 `arr!`/`vec!`/`map!` 均已实现（I3 ✅，parse 期 desugar，见 §2.14 下方说明）、
-> 闭包 `|x| ...`（H2/H3/H5 ✅ 已实现，见 guide.md §3.8；typecheck 按预期 fn 签名/捕获检查）、引用类型 `&T` 已实现
+> 闭包 `|x| ...`（H2/H3/H5 ✅ 已实现，见 guide/03-basic-syntax.md §3.8；typecheck 按预期 fn 签名/捕获检查）、引用类型 `&T` 已实现
 > （G1 ✅：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、`*` 解引用；`&str` 只读借用视图已实现
 > （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*const T`/`*mut T` 已实现（G3 ✅））、
 > `dyn Trait`（H4 ✅）、`?` 运算符（K1 ✅）、`expr as T` 数值转换（U6 ✅：≤64 位整族 + 浮点 + bool + char
-> 间转换，`fptosi`/`sitofp`/`trunc`/`sext`/`zext`/`icmp ne 0` 等，见 guide.md §3.2）、生命周期参数 `'a` 等。
+> 间转换，`fptosi`/`sitofp`/`trunc`/`sext`/`zext`/`icmp ne 0` 等，见 guide/03-basic-syntax.md §3.2）、生命周期参数 `'a` 等。
 > 普通函数 `async fn`/`await` 已实现（S1c ✅：`FnDecl`/`ActorMethod` 的 `async?` 与 `expr.await` 语法全程接受，
 > 状态机 desugar——`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，
 > 支持 `Poll::Pending` 挂起/恢复与跨 await 变量提升；参数 `i64`、返回 `i64`/`()`；控制流块内 / 表达式嵌套 await 规划）。
@@ -20,8 +20,8 @@
 > HashMap 序列化（L2f）与 i64/bool/String/HashMap 反序列化（L2g）；自定义 `Serialize`/`Deserialize` 仍规划）。
 > 平台加固已实现（L4 ✅：WASI（`__rlyeh_target_os` 码 5）下 net 模块网络函数明确禁用短路返回；actor 交叉编译 /
 > WASM 支持——`wasm32-wasip1` 目标下 driver 注入静态 `rlyeh_actor_resolve` 符号表替代 dlsym，actor 语法
-> （§2.7）与受监督语义全程可用，详见 guide.md §11.3）。
-> **已实现子集的教程与可运行示例见 [`guide.md`](./guide.md)，已知限制见其 §13。**
+> （§2.7）与受监督语义全程可用，详见 guide/11-targets-toolchain.md §11.3）。
+> **已实现子集的教程与可运行示例见 [`guide/index.md`](./guide/index.md)，已知限制见 [`guide/13-references-limits.md`](./guide/13-references-limits.md) §13。**
 
 ## 相关文档
 

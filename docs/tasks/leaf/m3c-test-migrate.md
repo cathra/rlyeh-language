@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-同步更新全部受影响的 run-pass/compile-fail 用例与 guide.md/std-lib.md 示例；`?` 运算符在 std 内部使用。
+同步更新全部受影响的 run-pass/compile-fail 用例与 guide/index.md/std-lib.md 示例；`?` 运算符在 std 内部使用。
 
 ## 验证
 

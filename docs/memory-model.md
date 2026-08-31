@@ -10,7 +10,7 @@
 > L0（§2）已实现（值拷贝/移动语义 + 方法接收者 + `&`/`&mut` 引用与宽松借用检查 G1 ✅ + `Box` K2 ✅；
 > `Copy` trait 规划中）；L2 引用计数（§4）已实现（K3 ✅：`Rc`/`Arc`/`Weak`，含 `strong_count`/`downgrade`/
 > `try_unwrap`）；L3 可选 GC（§5）已实现（K4 ✅：保守标记-清除 `Gc<T>`，多线程/增量回收规划中）。
-> 区域用法见 [`guide.md`](./guide.md) §8。
+> 区域用法见 [`guide/08-memory.md`](./guide/08-memory.md) §8。
 
 ## 相关文档
 

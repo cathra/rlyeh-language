@@ -3,7 +3,7 @@
 > **所属任务**：[V2 String 引用视图完整化](../v2-str-view.md)
 > **状态**：✅ 已完成（审计 + 文档澄清，2026-08-26）
 > **依赖**：无
-> **权威来源**：`guide.md` §10.2、`std-lib.md` §6.3.3、`rlyeh-typecheck/types.rs` 406
+> **权威来源**：`guide/10-stdlib.md` §10.2、`std-lib.md` §6.3.3、`rlyeh-typecheck/types.rs` 406
 
 ## 目标
 
@@ -11,7 +11,7 @@
 
 ## 背景
 
-当前 `&str`（`Type::Ref(Str)`）在 typecheck 中 `FieldScalar` 为 `StrFat`（types.rs 406），但 guide.md 与多处打印路径仍按瘦指针处理，导致语义分裂。
+当前 `&str`（`Type::Ref(Str)`）在 typecheck 中 `FieldScalar` 为 `StrFat`（types.rs 406），但 guide/10-stdlib.md 与多处打印路径仍按瘦指针处理，导致语义分裂。
 
 ## 实施情况
 
@@ -25,7 +25,7 @@
 
 ### 本阶段改动
 
-- 文档（guide.md §10.2、std-lib.md §6.3.3）：澄清 `&str` = StrFat 双槽 `{data, len}`；瘦指针仅适用于字符串字面量 `str` 值。
+- 文档（guide/10-stdlib.md §10.2、std-lib.md §6.3.3）：澄清 `&str` = StrFat 双槽 `{data, len}`；瘦指针仅适用于字符串字面量 `str` 值。
 - 确认 `field_scalar_of(Type::Str)`（瘦指针）与 `Ref(Str)`（StrFat）的区分在所有构造点一致。
 
 ### 移交 V2-C 的发现

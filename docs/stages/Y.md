@@ -45,7 +45,7 @@
 
 1. 每个阶段/任务完成须满足：`cargo test --workspace` 全绿 + `cargo clippy --workspace --all-targets` 0 警告。
 2. 涉及运行时/并发类测试（Actor、通道、锁、join、GC 周期）须按 `design/00_项目总览.md` 硬性规则带超时保护，挂起即视为失败。
-3. 任务完成后同步更新：本文档状态标识 + 任务树（`tasks/` 阶段索引进度与叶子文档）+ `guide.md` §13（勾销对应限制条目，并更新 `grammar.md` 顶部实现状态标注）。
+3. 任务完成后同步更新：本文档状态标识 + 任务树（`tasks/` 阶段索引进度与叶子文档）+ `guide/13-references-limits.md` §13（勾销对应限制条目，并更新 `grammar.md` 顶部实现状态标注）。
 4. 每个阶段产出对应的集成测试（仿 development-plan.md 各阶段 `*_test.rs` 用例并全量回归）。
 5. 优先交付顺序建议：G1/G2（引用地基 + str）→ I1/I2（宏 + 格式化）→ H1/H2（函数指针 + 无捕获闭包）→ K1（`?`）→ J 全阶段 → 其余。
 

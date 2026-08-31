@@ -15,6 +15,6 @@
 | M2B | **错误转换约定**（`From`/`Into` 泛型 trait 验证）：验证结论——泛型 trait 声明可解析（`trait From<T>`），但 trait 方法返回 `Self` 未支持（typecheck `undefined type Self`），且 parser 无 where 子句（blanket impl `impl<T, U> Into<U> for T where U: From<T>` 不可行）。**MVP 回退**：`IoError::from_kind(kind)` 窄化转换入口（kind → 默认 message），语义等同 `From::from` | 已完成 | [`m2b-error-convert.md`](../tasks/leaf/m2b-error-convert.md) |
 | M3A | **io 自由函数 Result 化**：`read_file`/`write_file`/`append_file`/`read_line` 从"空串/-1"升级为 `Result<T, IoError>`（io.rl + 绑定层返回码映射） | ✅ 已完成 | [`m3a-io-result.md`](../tasks/leaf/m3a-io-result.md) |
 | M3B | **net 自由函数 Result 化**：`tcp_connect`/`send_all`/`recv_some`/`hostname` 同步升级（net.rl） | ✅ 已完成 | [`m3b-net-result.md`](../tasks/leaf/m3b-net-result.md) |
-| M3C | **测试与示例迁移**：破坏性变更——同步更新全部受影响的 run-pass/compile-fail 用例与 guide.md/std-lib.md 示例；`?` 运算符在 std 内部使用 | ✅ 已完成 | [`m3c-test-migrate.md`](../tasks/leaf/m3c-test-migrate.md) |
+| M3C | **测试与示例迁移**：破坏性变更——同步更新全部受影响的 run-pass/compile-fail 用例与 guide/index.md/std-lib.md 示例；`?` 运算符在 std 内部使用 | ✅ 已完成 | [`m3c-test-migrate.md`](../tasks/leaf/m3c-test-migrate.md) |
 
 **验收**：见任务树 [`stage-m-t.md`](../tasks/stage-m-t.md) 各子任务叶子的「验证」字段；全量回归通过。

@@ -1,6 +1,6 @@
 # 10 · 异步运行时
 
-> 规范：docs/std-lib.md §10（异步运行时）/ docs/guide.md §9.3
+> 规范：docs/std-lib.md §10（异步运行时）/ docs/guide/09-actors.md §9.3
 > 来源：复用 tests/run-pass 已通过回归的用例
 
 ## 功能点

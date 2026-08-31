@@ -8,7 +8,7 @@
 > AllForOne/RestartForOne）、方法调用 `.await`（ask 往返）、`send`（fire-and-forget）、返回 -1 触发
 > 崩溃协议（无监督停止 / 监督重启）。内置格式化宏 `println!`/`format!` 等已实现（I2 ✅，`!` 为 `not`
 > 运算符）；`sync::Channel` 已实现（P1 ✅，`recv_async` S3a ✅）。**未实现（规划）**：`supervisor {}` 块、
-> `ActorRef<T>`、`panic!` 宏、`dyn Trait` actor 字段、`ExitSignal` 监控 API。可运行示例见 [`guide.md`](./guide.md) §9。
+> `ActorRef<T>`、`panic!` 宏、`dyn Trait` actor 字段、`ExitSignal` 监控 API。可运行示例见 [`guide/09-actors.md`](./guide/09-actors.md) §9。
 
 ## 相关文档
 
@@ -402,7 +402,7 @@ actor FileWriter {
 ## 10. 完整示例（目标示例，含规划语法）
 
 > 下述 `ActorRef`/`supervisor {}`/`format!` 等为规划语法；MVP 可运行版本见
-> [`guide.md`](./guide.md) §9.2（监督计数示例）。
+> [`guide/09-actors.md`](./guide/09-actors.md) §9.2（监督计数示例）。
 
 ```rlyeh
 // Chat Room 示例
