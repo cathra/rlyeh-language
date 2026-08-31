@@ -8,13 +8,14 @@ use super::*;
 pub(crate) fn platform_builtin_ir(target: Option<&str>) -> String {
     let os = target_os_code(target);
     format!(
-        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n{}\n",
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         os,
         sendfile_builtin_ir(os),
         thread_builtin_ir(os),
         time_builtin_ir(os),
         file_stat_builtin_ir(os),
-        kqueue_builtin_ir(os)
+        kqueue_builtin_ir(os),
+        slice_io_builtin_ir()
     )
 }
 
@@ -462,4 +463,31 @@ entry:
 "#
         .to_string(),
     }
+}
+
+/// S3（2026-08-30）：切片 IO 转发内建（`File::read_slice` / `write_slice` 的底层）。
+///
+/// core.rl 中 `fread`/`fwrite` 的 extern 签名第一参为 `String`——codegen 对
+/// `LirType::Str` 在 extern 调用点特判取 data 指针，故无法直接接收切片的裸指针
+/// 实参（`RawPtr` → `LirType::Ptr`，与 `String` 形参类型检查不兼容）。
+/// 这里注入 `__rlyeh_fread_ptr` / `__rlyeh_fwrite_ptr` 两个转发入口：首参为
+/// `i8*`，直接透传给 C `fread` / `fwrite`。
+///
+/// 签名须与 codegen 生成的 `@fread` declare 一致（`i8*, i64, i64, i64`——
+/// `String` → `i8*`，句柄 `i64` → `i64`），故不再自行 declare 以免签名冲突。
+fn slice_io_builtin_ir() -> String {
+    r#"
+; --- S3 切片 IO 转发（切片 data 指针 → libc fread/fwrite）---
+define internal i64 @__rlyeh_fread_ptr(i8* %ptr, i64 %size, i64 %nmemb, i64 %f) {
+entry:
+  %r = call i64 @fread(i8* %ptr, i64 %size, i64 %nmemb, i64 %f)
+  ret i64 %r
+}
+define internal i64 @__rlyeh_fwrite_ptr(i8* %ptr, i64 %size, i64 %nmemb, i64 %f) {
+entry:
+  %r = call i64 @fwrite(i8* %ptr, i64 %size, i64 %nmemb, i64 %f)
+  ret i64 %r
+}
+"#
+    .to_string()
 }

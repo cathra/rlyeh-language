@@ -238,6 +238,30 @@ let a = arr[1..<3];            // 半开 [1,3)：[20, 30]
 let b = arr[lo...hi];          // 双闭；c = arr[lo<..hi] 不含下界
 let c = v[lo..<hi];            // Vec 切片（std Vec::slice 泛型方法）
 // 越界自动 clamp 到 [0, len]，start >= end 返回空
+
+// 切片引用 `&[T]` / `&mut [T]`（S1/S2/S3 ✅，2026-08-30）：零拷贝**胖指针**
+// （2 槽 {data 指针, 长度}，布局同 `&str` 的 StrFat）；`[T]` 为 DST，不能独立存储。
+fn sub_len(xs: &[i64]) -> i64 { let sub = xs[1..<3]; sub.len() }
+let xs = [10, 20, 30, 40, 50];
+sub_len(&xs);                  // 2：&[i64; 5] 经 unsize coercion → &[i64]，再切片长 2
+// 切片方法：.len() .first() .last() .iter() .as_ptr() .as_mut_ptr()
+let bp = v.as_slice();         // Vec<u8> → &[u8]（紧凑字节，步长 1）
+let bm = v.as_mut_slice();     // → &mut [u8]，写回原缓冲（零拷贝）
+// 注：数组 `arr` 的范围切片按值拷贝返回 Vec；切片接收者的范围切片返回零拷贝子区间。
+
+// 类型联合 `A | B`（U1/U2 ✅，2026-08-30）：成员须**两两互不相交**，
+// 运行时为匿名 enum（槽 0 = tag、槽 1 = payload），复用现有 enum codegen。
+let x: i64 | String = 5;            // 成员值直接构造联合（协变）
+match x {
+    i64 => println(i64),            // 类型臂：payload 绑定到类型名同名变量
+    String => println(String.len()),
+}
+// 非法（报 UnionMembersNotDisjoint）：i64 | i64、&i64 | &mut i64、i64 | isize
+// 优先级：`&T | &mut U` = (&T) | (&mut U)；闭包注解 `|x: i64| ..` 的 `|` 非联合运算符。
+// 未收窄的联合禁止直接运算 / 方法调用（`compatible_with` 单向：成员 → 联合）。
+
+// 枚举显式判别式（U3，2026-08-30）：判别值即该变体的 tag，构造与 match 均复用。
+enum Code { Ok = 200, NotFound = 404, Error = 500 }
 ```
 
 ### 3.8 函数一等值（函数指针）

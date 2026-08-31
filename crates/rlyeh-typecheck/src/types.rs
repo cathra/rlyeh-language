@@ -69,10 +69,20 @@ pub enum Type {
     Array(Box<Type>, usize),
     /// 切片类型（运行时长度未知；`&[T]` / `&mut [T]` 的元素类型，见切片类型系统规划）
     Slice(Box<Type>),
+    /// 类型联合 `A | B | ...`（U1 受限制的类型联合）
+    ///
+    /// 成员**两两互不相交**（disjoint，构建时校验，见 `resolve_ast_type`），
+    /// 保证 tag 判别无歧义、收窄安全。构造由任一成员值直接赋值（成员 ⊆ 联合）；
+    /// 使用须先 `match` 收窄（U2 落地），未收窄禁止直接运算 / 方法调用。
+    Union(Vec<Type>),
     /// 元组类型
     Tuple(Vec<Type>),
     /// 具名类型（结构体 / 枚举 / trait 等）
     Named(String, Vec<Type>),
+    /// 受限标量枚举（U3 核心项，2026-08-30）：全单元变体、无泛型参数的枚举，
+    /// 紧凑为单标量存储，值即 tag（与 `Named` 区分以便 `field_scalar_of` 等无
+    /// `TypeContext` 的纯函数判定布局）。Display 与同名 `Named` 相同。
+    ScalarEnum(String),
     /// 函数类型（`fn(A, B) -> C`），即函数指针类型
     Fn(Box<FnSignature>),
     /// 闭包值对象：捕获字段 + 参数 + 返回类型 + 生成的匿名函数名。
@@ -217,6 +227,29 @@ impl Type {
                             .all(|(x, y)| x.compatible_with(y))
                         && a.return_type.compatible_with(&b.return_type)
                 }
+                // U2：成员 → 联合的**向上转换**（构造；成员 ⊆ 联合，协变）。
+                // 反向（联合 → 成员）不落此分支，须先 `match` 收窄才可用。
+                (s, Type::Union(us)) if !matches!(s, Type::Union(_)) => {
+                    us.iter().any(|u| s.compatible_with(u))
+                }
+                // U2：联合 → 联合——成员集合相同（顺序无关）即兼容
+                (Type::Union(as_), Type::Union(bs)) => {
+                    as_.len() == bs.len() && as_.iter().all(|a| bs.contains(a))
+                }
+                // U3 核心项（2026-08-30）：标量枚举 → 整数单向兼容——枚举值（即 tag）
+                // 可用于「期望整数」的上下文（赋值 / 比较 / 索引 / 位运算），读取其 tag。
+                // 反向（整数 → 枚举）禁止，避免构造出无对应判别式的非法值。
+                // 覆盖方向：期望类型为整数、实参为标量枚举（`expected.compatible_with(found)`）。
+                (Type::I8, Type::ScalarEnum(_))
+                | (Type::I16, Type::ScalarEnum(_))
+                | (Type::I32, Type::ScalarEnum(_))
+                | (Type::I64, Type::ScalarEnum(_))
+                | (Type::ISize, Type::ScalarEnum(_))
+                | (Type::U8, Type::ScalarEnum(_))
+                | (Type::U16, Type::ScalarEnum(_))
+                | (Type::U32, Type::ScalarEnum(_))
+                | (Type::U64, Type::ScalarEnum(_))
+                | (Type::USize, Type::ScalarEnum(_)) => true,
                 _ => self == other,
             }
     }
@@ -264,6 +297,14 @@ impl fmt::Display for Type {
             Type::Dyn(name) => write!(f, "dyn {name}"),
             Type::Array(t, n) => write!(f, "[{t}; {n}]"),
             Type::Slice(t) => write!(f, "[{t}]"),
+            Type::Union(ts) => {
+                let inner = ts
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                write!(f, "{inner}")
+            }
             Type::Tuple(ts) => {
                 let inner = ts
                     .iter()
@@ -284,6 +325,7 @@ impl fmt::Display for Type {
                     write!(f, "{name}<{inner}>")
                 }
             }
+            Type::ScalarEnum(name) => write!(f, "{name}"),
             Type::Generic(name) => write!(f, "{name}"),
             Type::AssocProjection { base, assoc } => write!(f, "{base}::{assoc}"),
             Type::Fn(sig) => {
@@ -423,6 +465,8 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         Type::Ref(inner, _) if matches!(&**inner, Type::Str) => FieldScalar::StrFat,
         // &[T] / &mut [T]：切片胖指针（data 指针 + 长度双槽，与 StrFat 同布局）
         Type::Ref(inner, _) if matches!(&**inner, Type::Slice(_)) => FieldScalar::SliceFat,
+        // U3 核心项（2026-08-30）：受限标量枚举紧凑为单标量存储，值即 tag。
+        Type::ScalarEnum(_) => FieldScalar::Int,
         // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象 / 闭包值均以指针形式存储；函数指针为指针
         Type::Ref(..)
         | Type::RawPtr(..)
@@ -432,6 +476,9 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         | Type::Dyn(..)
         | Type::Fn(..)
         | Type::Closure { .. } => FieldScalar::Ptr,
+        // U2：联合值的运行时表示是**匿名 enum 对象**（槽 0 = tag、槽 1 = payload），
+        // 故按聚合对象指针存储（与具名 enum 一致），复用现有 enum codegen 通道。
+        Type::Union(_) => FieldScalar::Ptr,
         Type::Unit => FieldScalar::Int,
         _ => FieldScalar::Int,
     }

@@ -11,7 +11,12 @@ use sha2::{Digest, Sha256};
 use crate::error::DriverError;
 
 /// 模块接口版本号：接口提取逻辑变化时应递增，使旧缓存失效。
-pub const INTERFACE_VERSION: u32 = 1;
+///
+/// 2026-08-30 递增至 2：U3 核心项使 fieldless / 全单元变体枚举紧凑为单标量
+/// 存储（`Type::ScalarEnum`，值即 tag）。`compute_interface_hash` 经 `Type::to_string()`
+/// 序列化签名，而 `Named` 与 `ScalarEnum` 的 Display 相同，故接口哈希对表示变更
+/// 「不可见」——仅 bump 本版本号可强制旧缓存失效，避免复用改动前编译的 LLVM。
+pub const INTERFACE_VERSION: u32 = 2;
 
 /// 模块接口：公开函数签名列表（按名称排序，保证表示稳定）。
 #[derive(Debug, Clone, PartialEq, Eq)]

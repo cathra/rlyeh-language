@@ -36,7 +36,8 @@ pub(super) fn check_index(
     // `T`（数组 / String / Vec）走既有索引分支
     let b_hir = heap_ptr_hir(b_hir, &b_ty);
     let (i_hir, i_ty) = infer_expr(ctx, index)?;
-    if !i_ty.is_integer() {
+    // U3 核心项（2026-08-30）：标量枚举值即 tag（整数），可作数组索引。
+    if !i_ty.is_integer() && !matches!(&i_ty, Type::ScalarEnum(_)) {
         return Err(TypeError::ExpectedInt {
             found: i_ty.to_string(),
             span: index.span,
@@ -283,6 +284,16 @@ pub(super) fn check_variant_construct(
             found: args.len(),
             span,
         });
+    }
+
+    // U3 核心项（2026-08-30）：受限标量枚举紧凑为单标量存储——构造直接产出
+    // `IntLiteral(tag)`，值即 tag 本身（不再 Alloc 对象指针）；类型记为
+    // `ScalarEnum` 以便 `field_scalar_of` 等按 Int 布局处理。
+    if ctx.is_scalar_enum(&enum_name) {
+        return Ok((
+            HirExpr::IntLiteral(variant.tag as i128),
+            Type::ScalarEnum(enum_name.to_string()),
+        ));
     }
 
     // 由实参类型推断枚举泛型参数（如 `Option::Some(x: i64)` → `Option<i64>`）
@@ -576,6 +587,42 @@ pub(super) fn check_pattern(
     use rlyeh_ast::AstPattern;
     match pat {
         AstPattern::Ident(name) => {
+            // U2：**类型臂收窄**——`pat_ty` 为联合且 `name` 恰为某成员的类型名时，
+            // 按该成员收窄：`cond` = `tag == 成员下标`，并把 payload（槽 1）按成员
+            // 类型绑定到**同名变量**（MVP 约定：`match x { i64 => println(i64) }`；
+            // 后续可引入 `x @ T` 绑定语法以免类型名 / 变量名混用）。
+            // 联合的运行时表示即匿名 enum（槽 0 tag + 槽 1 payload），故与
+            // `AstPattern::Enum` 分支同构，复用现有 tag 比较与 FieldGet 通道。
+            if let Type::Union(us) = pat_ty {
+                if let Some(idx) = us.iter().position(|u| u.to_string() == *name) {
+                    let member_ty = us[idx].clone();
+                    let slot = ctx.insert_variable(name.clone(), member_ty.clone());
+                    let tag_cond = HirExpr::Binary(
+                        HirBinaryOp::Eq,
+                        Box::new(HirExpr::FieldGet {
+                            base: Box::new(scrutinee.clone()),
+                            index: 0,
+                            ty: FieldScalar::Int,
+                        }),
+                        Box::new(HirExpr::IntLiteral(idx as i128)),
+                    );
+                    let payload = HirExpr::FieldGet {
+                        base: Box::new(scrutinee),
+                        index: 1,
+                        ty: field_scalar_of(&member_ty),
+                    };
+                    return Ok((
+                        Some(tag_cond),
+                        vec![HirStmt::Let {
+                            name: slot,
+                            init: payload,
+                            mutable: false,
+                        }],
+                        false,
+                        vec![(name.clone(), member_ty)],
+                    ));
+                }
+            }
             // U1：绑定变量在臂作用域内注册（遮蔽时 mangle 存储槽名）。
             // Let 绑定、引用解析、类型表全部使用槽名。
             let slot = ctx.insert_variable(name.clone(), pat_ty.clone());
@@ -601,19 +648,23 @@ pub(super) fn check_pattern(
             Ok((Some(cond), Vec::new(), false, Vec::new()))
         }
         AstPattern::Enum(variant, sub_pats) => {
-            let Type::Named(en, _) = pat_ty else {
-                return Err(TypeError::Unsupported {
-                    what: format!("对非枚举类型 `{pat_ty}` 使用枚举模式 `{variant}`"),
-                    span,
-                });
+            let en = match pat_ty {
+                Type::Named(en, _) => en.clone(),
+                Type::ScalarEnum(en) => en.clone(),
+                _ => {
+                    return Err(TypeError::Unsupported {
+                        what: format!("对非枚举类型 `{pat_ty}` 使用枚举模式 `{variant}`"),
+                        span,
+                    });
+                }
             };
             // 枚举名可能为 use 导入的本地名（`use protocol::Msg` 后裸名 `Msg`），
             // 裸名未注册时回退经 resolve_full_name 解析完整符号名（模块前缀 / use 别名）。
             let enum_def = ctx
-                .lookup_enum(en)
+                .lookup_enum(&en)
                 .cloned()
                 .or_else(|| {
-                    ctx.resolve_full_name(en)
+                    ctx.resolve_full_name(&en)
                         .and_then(|full| ctx.lookup_enum(&full).cloned())
                 })
                 .ok_or_else(|| {
@@ -639,16 +690,25 @@ pub(super) fn check_pattern(
                     span,
                 });
             }
-            // 主条件：tag == 变体序号
-            let tag_cond = HirExpr::Binary(
-                HirBinaryOp::Eq,
-                Box::new(HirExpr::FieldGet {
-                    base: Box::new(scrutinee.clone()),
-                    index: 0,
-                    ty: FieldScalar::Int,
-                }),
-                Box::new(HirExpr::IntLiteral(variant_def.tag as i128)),
-            );
+            // 主条件：标量枚举直接整数比较（`scrutinee == tag`，值即 tag 本身），
+            // 非标量枚举取对象槽 0 的 tag 比较。
+            let tag_cond = if matches!(pat_ty, Type::ScalarEnum(_)) {
+                HirExpr::Binary(
+                    HirBinaryOp::Eq,
+                    Box::new(scrutinee.clone()),
+                    Box::new(HirExpr::IntLiteral(variant_def.tag as i128)),
+                )
+            } else {
+                HirExpr::Binary(
+                    HirBinaryOp::Eq,
+                    Box::new(HirExpr::FieldGet {
+                        base: Box::new(scrutinee.clone()),
+                        index: 0,
+                        ty: FieldScalar::Int,
+                    }),
+                    Box::new(HirExpr::IntLiteral(variant_def.tag as i128)),
+                )
+            };
             // 子模式：字段槽 1+i，条件用 And 合并。
             // 字段类型经泛型替换：优先合并当前 generic_subst（泛型方法体内
             // `T` → 具体类型）；再从具体实例化 `pat_ty` 的类型参数推导枚举

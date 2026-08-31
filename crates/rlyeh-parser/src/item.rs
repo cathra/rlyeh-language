@@ -134,6 +134,11 @@ impl<'src> Parser<'src> {
                 .map(Self::ast_type_bound_name)
                 .unwrap_or_else(|| "Tuple".to_string()),
             AstType::Fn(_, ret) => Self::ast_type_bound_name(ret),
+            // U1：联合作为 bound 时取首个成员名（MVP：联合 bound 不参与约束校验）
+            AstType::Union(ts) => ts
+                .first()
+                .map(Self::ast_type_bound_name)
+                .unwrap_or_else(|| "Union".to_string()),
             AstType::Infer => "_".to_string(),
         }
     }
@@ -335,10 +340,24 @@ impl<'src> Parser<'src> {
                 }
                 self.expect(&Token::RBrace, "'}'")?;
             }
+            // U3：显式判别式 `Variant = 42`（受限标量枚举）。未标注时按声明序号，
+            // 判别值由收集阶段写入 `VariantDef::tag`（构造 / match 均复用该值）。
+            let discriminant = if self.eat(&Token::Assign) {
+                match self.current().cloned() {
+                    Some(Token::IntLiteral(v)) => {
+                        self.bump();
+                        Some(v as i64)
+                    }
+                    _ => return Err(self.unexpected("判别式整数字面量")),
+                }
+            } else {
+                None
+            };
             variants.push(AstEnumVariant {
                 name: vname,
                 tuple_fields,
                 struct_fields,
+                discriminant,
                 span: self.span_until_current(vstart),
             });
             if !self.eat(&Token::Comma) {

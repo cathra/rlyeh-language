@@ -1,7 +1,7 @@
 //! 语句类型检查。
 
 use rlyeh_ast::{AstPattern, AstStmt, ExprKind};
-use rlyeh_hir::{HirExpr, HirStmt};
+use rlyeh_hir::{FieldScalar, HirBlock, HirExpr, HirStmt};
 
 use crate::check_expr::{
     check_closure_expected, check_closure_value_binding, check_deferred_closure_binding, coerce_to_dyn,
@@ -10,6 +10,53 @@ use crate::check_expr::{
 use crate::context::TypeContext;
 use crate::error::TypeError;
 use crate::types::{field_scalar_of, Mutability, Type};
+
+/// U2：构造联合值——匿名 enum 布局（槽 0 = tag、槽 1 = payload）。
+///
+/// 联合的运行时表示即**匿名 enum**：不注册 `EnumDef`（避免污染全局变体名空间），
+/// 直接内联生成与 `check_variant_construct` 同构的 HIR——`Alloc(2)` +
+/// `FieldSet(0, tag)` + `FieldSet(1, value)`。布局与具名 enum 一致，故完全
+/// 复用现有 enum codegen 通道，无新增 codegen 逻辑。
+///
+/// 分配方式统一走 **calloc 堆对象**（`by_value: false`）：联合的不同成员可能
+/// 分别是标量（`i64`）与聚合（`String`），若按成员分别决定栈槽 / 堆分配，
+/// 同一联合的各构造路径判定会不一致（`check_variant_construct` 明确要求一致），
+/// 且栈槽地址存入联合值后传出函数会悬垂。统一堆分配规避这两类问题。
+pub(crate) fn make_union_ctor(
+    ctx: &mut TypeContext,
+    value: HirExpr,
+    tag: usize,
+    member_ty: &Type,
+) -> HirExpr {
+    let base = ctx.fresh_temp();
+    let stmts = vec![
+        HirStmt::Let {
+            name: base.clone(),
+            init: HirExpr::Alloc {
+                slots: 2,
+                by_value: false,
+                is_strfat: false,
+            },
+            mutable: false,
+        },
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 0,
+            value: Box::new(HirExpr::IntLiteral(tag as i128)),
+            ty: FieldScalar::Int,
+        }),
+        HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(value),
+            ty: field_scalar_of(member_ty),
+        }),
+    ];
+    HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(base)),
+    }))
+}
 
 /// 检查语句并生成 HIR 语句。
 pub(crate) fn check_stmt(
@@ -90,6 +137,17 @@ pub(crate) fn check_stmt(
                                 ty = at.clone();
                                 pending_dyn_concrete = Some(concrete);
                             }
+                        }
+                    }
+                    // U2：联合构造——注解为 `A | B`、init 为其中某成员类型的值时，
+                    // desugar 为匿名 enum 构造（槽 0 = tag、槽 1 = payload），
+                    // 运行时表示与具名 enum 一致，复用现有 enum codegen 通道。
+                    // （成员下标即 tag，由成员在联合中的声明顺序决定）
+                    if let Type::Union(us) = &at {
+                        if let Some(idx) = us.iter().position(|u| ty.compatible_with(u)) {
+                            let member_ty = us[idx].clone();
+                            h_init = make_union_ctor(ctx, h_init, idx, &member_ty);
+                            ty = at.clone();
                         }
                     }
                     if !at.compatible_with(&ty) {

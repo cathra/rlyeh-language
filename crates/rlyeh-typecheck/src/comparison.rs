@@ -176,7 +176,10 @@ fn chain_direction(operators: &[CompareOp], span: Span) -> Result<ChainDirection
 
 /// 检查两个操作数在给定运算符下的类型兼容性。
 fn check_comparison(left: &Type, right: &Type, op: CompareOp, span: Span) -> Result<(), TypeError> {
-    if !left.compatible_with(right) {
+    // U3 核心项（2026-08-30）：比较对称——标量枚举值即 tag，可与整数双向比较
+    // （`c == 1` 与 `1 == c` 均允许）。注意赋值仍由 `check_stmt` 单向判定
+    // （`let c: Color = 1` 禁止），此处对称性不影响之。
+    if !left.compatible_with(right) && !right.compatible_with(left) {
         return Err(TypeError::ChainTypeMismatch { span });
     }
     match op {

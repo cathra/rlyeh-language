@@ -981,6 +981,12 @@ fn fmt_type(t: &AstType) -> String {
             params.iter().map(fmt_type).collect::<Vec<_>>().join(", "),
             fmt_type(ret)
         ),
+        // U1：类型联合 `A | B | ...`
+        AstType::Union(ts) => ts
+            .iter()
+            .map(fmt_type)
+            .collect::<Vec<_>>()
+            .join(" | "),
         AstType::Infer => "_".to_string(),
     }
 }

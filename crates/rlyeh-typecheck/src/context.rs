@@ -437,7 +437,15 @@ impl TypeContext {
             return Ok(Type::Named(name.to_string(), Vec::new()));
         }
         if self.enum_defs.contains_key(name) {
-            return Ok(Type::Named(name.to_string(), Vec::new()));
+            let full = name.to_string();
+            // U3 核心项（2026-08-30）：受限标量枚举（全单元变体、无泛型）紧凑为
+            // 单标量存储，值即 tag。此处即唯一判定点——收集阶段 enum 已注册，
+            // 故 `is_scalar_enum` 时序正确；主 ctx 与 `collect_fn_signatures` 接口路径
+            // 共用本函数，保证两种路径产出的类型表示一致。
+            if self.is_scalar_enum(&full) {
+                return Ok(Type::ScalarEnum(full));
+            }
+            return Ok(Type::Named(full, Vec::new()));
         }
         // 模块路径（如 `math::Point`）或 use 导入的别名
         if let Some(full) = self.resolve_full_name(name) {
@@ -445,6 +453,9 @@ impl TypeContext {
                 return Ok(Type::Named(full, Vec::new()));
             }
             if self.enum_defs.contains_key(&full) {
+                if self.is_scalar_enum(&full) {
+                    return Ok(Type::ScalarEnum(full));
+                }
                 return Ok(Type::Named(full, Vec::new()));
             }
         }
@@ -466,6 +477,19 @@ impl TypeContext {
     /// 查找枚举定义。
     pub fn lookup_enum(&self, name: &str) -> Option<&EnumDef> {
         self.enum_defs.get(name)
+    }
+
+    /// U3（2026-08-30）：判定具名枚举是否为**受限标量枚举**——无泛型参数，
+    /// 且所有变体均为单元变体（不携带负载）。
+    ///
+    /// 收集阶段 enum 已注册，故本判定在 `resolve_named_type` 解析类型时
+    /// 时序正确；主类型检查 ctx 与 `collect_fn_signatures` 接口路径共用同一
+    /// `resolve_named_type`，保证两种路径产出的类型表示一致（均为 `Type::ScalarEnum`）。
+    pub fn is_scalar_enum(&self, name: &str) -> bool {
+        let Some(def) = self.enum_defs.get(name) else {
+            return false;
+        };
+        def.type_params.is_empty() && def.variants.iter().all(|v| v.fields.is_empty())
     }
 
     /// 记录一个 trait 定义。

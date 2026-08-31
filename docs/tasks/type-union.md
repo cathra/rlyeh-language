@@ -85,8 +85,8 @@
   - `Type::Union(Vec<Type>)`；`parser/src/ty.rs` 支持 `|` 链（primary 类型后遇 `|` 合并为 `Union`）。
   - `resolve_ast_type` 构建 `Union` + disjoint 校验；`Display` / `compatible_with`（收窄前不允许运算）/ `field_scalar_of`（按最大成员尺寸）。
 - **U2 desugar + match 收窄**：联合 → 匿名 `EnumDef` 注入；`check_match` 支持类型臂（type arm）收窄；`x is T` 守卫（可选）。
-- **U3 受限标量枚举**：enum 变体全标量/单元时 `slot_count = 1` + 标量存储 + 放宽到整数上下文。
-- **U4 字段级联合**：`struct` 字段类型解析支持 `Union` + 读写收窄。
+- **U3 受限标量枚举**：enum 变体全标量/单元时 `slot_count = 1` + 标量存储 + 放宽到整数上下文。**✅ 已完成（2026-08-30；`Type::ScalarEnum` + 4 联动 + 缓存键 bump + 整数上下文放宽 + 比较对称；`enum_scalar_context` / `enum_scalar_storage` 用例 + `compile-fail/enum_scalar_no_int_to_enum`；191 用例全绿）**。
+- **U4 字段级联合**：`struct` 字段类型解析支持 `Union` + 读写收窄。**✅ 已完成（2026-08-31；复用 U1/U2 匿名联合 machinery——`struct S { id: i64 | String }` 字面量构造与字段赋值 desugar 为匿名 enum 构造、字段读取须 `match` 收窄、disjoint 校验与值级一致；`struct_field_union` + 两个 compile-fail 用例；194 用例全绿）**。
 - **U5 测试与文档**：`tests/run-pass` 联合用例；`grammar.md`/`semantics.md` 补联合章节。
 
 ## 9. 风险与开放问题

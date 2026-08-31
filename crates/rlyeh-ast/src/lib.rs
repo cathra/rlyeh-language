@@ -179,6 +179,10 @@ pub struct AstEnumVariant {
     pub tuple_fields: Vec<AstType>,
     /// 命名负载字段（`Variant { x: u32 }`）
     pub struct_fields: Vec<AstStructField>,
+    /// 显式判别值（`Variant = 42`，U3 受限标量枚举）
+    ///
+    /// 未标注时为 `None`，判别值按变体声明序号（既有行为）。
+    pub discriminant: Option<i64>,
     /// 源码位置
     pub span: Span,
 }
@@ -834,6 +838,9 @@ pub enum AstType {
     Array(Box<AstType>, Option<Box<AstExpr>>),
     /// 函数类型 `fn(A) -> B`
     Fn(Vec<AstType>, Box<AstType>),
+    /// 类型联合 `A | B | ...`（U1 受限制的类型联合；成员须两两互不相交，
+    /// 校验在 `resolve_ast_type` 阶段进行）
+    Union(Vec<AstType>),
     /// 推断类型 `_`
     Infer,
 }

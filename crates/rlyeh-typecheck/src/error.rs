@@ -190,6 +190,21 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 类型联合成员不互不相交（U1 受限制的类型联合）
+    ///
+    /// "受限制"的核心约束：联合成员必须两两互不相交，保证 tag 判别无歧义、
+    /// 收窄安全。重复成员（`i64 | i64`）与可重叠成员（`&T | &mut T`、
+    /// `i64 | isize`）均触发本错误。
+    UnionMembersNotDisjoint {
+        /// 冲突的第一个成员
+        first: String,
+        /// 冲突的第二个成员
+        second: String,
+        /// 描述（冲突原因）
+        why: String,
+        /// 源码位置
+        span: Span,
+    },
     /// 泛型实参不满足 trait bound（U3）
     GenericBoundMismatch {
         /// 泛型参数名
@@ -251,6 +266,7 @@ impl TypeError {
             | TypeError::InSetTypeMismatch { span, .. }
             | TypeError::NonConstantBound { span }
             | TypeError::Unsupported { span, .. }
+            | TypeError::UnionMembersNotDisjoint { span, .. }
             | TypeError::GenericBoundMismatch { span, .. }
             | TypeError::GenericArityMismatch { span, .. } => *span,
         }
@@ -362,6 +378,15 @@ impl fmt::Display for TypeError {
             TypeError::Unsupported { what, .. } => {
                 write!(f, "{loc}: error: unsupported syntax: {what}")
             }
+            TypeError::UnionMembersNotDisjoint {
+                first,
+                second,
+                why,
+                ..
+            } => write!(
+                f,
+                "{loc}: error: union members `{first}` and `{second}` are not disjoint ({why})"
+            ),
             TypeError::GenericBoundMismatch {
                 param,
                 bound,

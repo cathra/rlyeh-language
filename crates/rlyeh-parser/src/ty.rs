@@ -9,8 +9,30 @@ impl<'src> Parser<'src> {
     /// 解析类型
     ///
     /// 支持：路径类型（含泛型参数）、引用 `&T` / `&mut T`、元组、
-    /// 数组 `[T; N]`、函数类型 `fn(A) -> B`、推断类型 `_`。
+    /// 数组 `[T; N]`、函数类型 `fn(A) -> B`、推断类型 `_`、
+    /// 类型联合 `A | B | ...`（U1）。
     pub(crate) fn parse_type(&mut self) -> Result<AstType, ParseError> {
+        let first = self.parse_primary_type()?;
+        // U1：类型联合 `A | B | ...`——primary 类型后遇 `|` 合并为联合
+        // （类型上下文无歧义：闭包 `|x|` 与位或均不出现于类型位置）。
+        // 成员「互不相交」的校验在 `resolve_ast_type` 阶段进行。
+        if !self.check(&Token::BitOr) {
+            return Ok(first);
+        }
+        let mut members = vec![first];
+        while self.eat(&Token::BitOr) {
+            members.push(self.parse_primary_type()?);
+        }
+        Ok(AstType::Union(members))
+    }
+
+    /// primary 类型（**不含** `|` 联合）。
+    ///
+    /// 前缀构造（`&` / `*`）的内层类型也走本函数，保证优先级正确——
+    /// `&T | &mut U` 解析为 `(&T) | (&mut U)` 而非 `&(T | &mut U)`。
+    /// 括号 / 方括号内的类型（泛型实参、元组、数组、fn 签名）仍走
+    /// `parse_type`，故 `Vec<i64 | String>` 等嵌套联合可正常表达。
+    pub(crate) fn parse_primary_type(&mut self) -> Result<AstType, ParseError> {
         match self.current().cloned() {
             Some(Token::BitAnd) => {
                 self.bump();
@@ -19,7 +41,7 @@ impl<'src> Parser<'src> {
                     self.bump();
                 }
                 let is_mut = self.eat(&Token::Mut);
-                let inner = self.parse_type()?;
+                let inner = self.parse_primary_type()?;
                 Ok(AstType::Ref(Box::new(inner), is_mut))
             }
             // 裸指针 `*const T` / `*mut T`
@@ -29,7 +51,7 @@ impl<'src> Parser<'src> {
                 if !is_mut {
                     self.expect(&Token::Const, "'const'")?;
                 }
-                let inner = self.parse_type()?;
+                let inner = self.parse_primary_type()?;
                 Ok(AstType::RawPtr(Box::new(inner), is_mut))
             }
             Some(Token::LParen) => self.parse_tuple_type(),

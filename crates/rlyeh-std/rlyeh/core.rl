@@ -2603,6 +2603,11 @@ extern fn __rlyeh_clock_realtime() -> i64;
 extern fn fopen(path: String, mode: String) -> i64;
 extern fn fread(buf: String, size: i64, nmemb: i64, f: i64) -> i64;
 extern fn fwrite(buf: String, size: i64, nmemb: i64, f: i64) -> i64;
+// S3（2026-08-30）：切片 IO 转发——首参为裸指针，供 `&[u8]` / `&mut [u8]` 缓冲
+// 直传 data 指针（上者 `String` 版经 codegen 特判取 data 指针，无法接收裸指针）。
+// driver 注入 define 转发到 libc fread/fwrite（见 rlyeh-driver platform_ir.rs）。
+extern fn __rlyeh_fread_ptr(ptr: *mut u8, size: i64, nmemb: i64, f: i64) -> i64;
+extern fn __rlyeh_fwrite_ptr(ptr: *const u8, size: i64, nmemb: i64, f: i64) -> i64;
 extern fn fclose(f: i64) -> i64;
 extern fn fseek(f: i64, offset: i64, whence: i64) -> i64;
 extern fn ftell(f: i64) -> i64;

@@ -120,7 +120,18 @@ pub(super) fn check_struct_construct(
                 span,
             });
         };
-        let (hir, arg_ty) = infer_expr(ctx, init)?;
+        let (mut hir, mut arg_ty) = infer_expr(ctx, init)?;
+        // U4：字段级联合——字段类型为 `A | B`、实参为其中某成员类型的值时，
+        // desugar 为匿名 enum 构造（复用 U2 的 `make_union_ctor`），使字段槽存的
+        // 是联合值（匿名 enum 对象指针）而非裸成员值；否则后续按联合收窄会读到
+        // 错误布局。构造后 `arg_ty` 记为联合类型，与字段类型一致。
+        if let Type::Union(us) = &field_fty {
+            if let Some(idx) = us.iter().position(|u| arg_ty.compatible_with(u)) {
+                let member_ty = us[idx].clone();
+                hir = crate::check_stmt::make_union_ctor(ctx, hir, idx, &member_ty);
+                arg_ty = field_fty.clone();
+            }
+        }
         if !arg_ty.compatible_with(&field_fty) {
             return Err(TypeError::ArgumentTypeMismatch {
                 name: format!("struct `{struct_name}` field `{fname}`"),

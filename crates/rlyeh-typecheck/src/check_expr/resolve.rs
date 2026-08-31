@@ -197,8 +197,69 @@ pub(crate) fn resolve_ast_type(
                 return_type: ret,
             })))
         }
+        // U1：类型联合 `A | B | ...`——解析各成员后校验两两互不相交
+        AstType::Union(members) => {
+            let resolved = members
+                .iter()
+                .map(|m| resolve_ast_type(ctx, m, span))
+                .collect::<Result<Vec<_>, _>>()?;
+            check_union_disjoint(&resolved, span)?;
+            Ok(Type::Union(resolved))
+        }
         AstType::Infer => Ok(Type::Infer),
     }
+}
+
+/// U1：校验类型联合成员**两两互不相交**（"受限制"的核心约束）。
+///
+/// 互不相交保证 tag 判别无歧义、`match` 收窄安全。不同具名类型 / 枚举成员
+/// 视为不相交（MVP 不引入子类型）。冲突时报 `UnionMembersNotDisjoint`。
+fn check_union_disjoint(members: &[Type], span: Span) -> Result<(), TypeError> {
+    for (i, a) in members.iter().enumerate() {
+        for b in &members[i + 1..] {
+            if let Some(why) = union_overlap_reason(a, b) {
+                return Err(TypeError::UnionMembersNotDisjoint {
+                    first: a.to_string(),
+                    second: b.to_string(),
+                    why,
+                    span,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 判定两个联合成员是否重叠：返回 `Some(冲突原因)` 表示重叠（不相交返回 `None`）。
+fn union_overlap_reason(a: &Type, b: &Type) -> Option<String> {
+    if a == b {
+        return Some("重复成员".to_string());
+    }
+    // 数值类型互通（`is_numeric()` 双向兼容；含 `i64 | isize` 的平台相关重叠）
+    if a.is_numeric() && b.is_numeric() {
+        return Some("数值类型互通（宽度 / 平台相关重叠）".to_string());
+    }
+    // 引用可变性重叠：`&T | &mut T`（`&mut T` 可降级为 `&T`，判别有歧义）
+    if let (Type::Ref(ia, _), Type::Ref(ib, _)) = (a, b) {
+        if ia == ib {
+            return Some("引用可变性重叠（`&T` 与 `&mut T`）".to_string());
+        }
+    }
+    // 裸指针可变性重叠：`*const T | *mut T`
+    if let (Type::RawPtr(ia, _), Type::RawPtr(ib, _)) = (a, b) {
+        if ia == ib {
+            return Some("裸指针可变性重叠（`*const T` 与 `*mut T`）".to_string());
+        }
+    }
+    // 嵌套联合：展开后任一成员与另一侧重叠，即视为重叠
+    if let (Type::Union(us), other) | (other, Type::Union(us)) = (a, b) {
+        for u in us {
+            if let Some(why) = union_overlap_reason(u, other) {
+                return Some(format!("嵌套联合成员重叠（{why}）"));
+            }
+        }
+    }
+    None
 }
 
 pub(super) fn resolve_assoc_projection(

@@ -444,7 +444,21 @@ pub(crate) fn infer_expr(
                     ctx.remove_dyn_concrete(var);
                 }
             }
-            let (v_hir, v_ty) = infer_expr(ctx, value)?;
+            let (mut v_hir, mut v_ty) = infer_expr(ctx, value)?;
+            // U4：字段级联合赋值——目标字段类型为 `A | B`、右值为其中某成员类型时，
+            // desugar 为匿名 enum 构造（复用 U2 的 `make_union_ctor`），与结构体
+            // 字面量构造（`check_struct_construct`）保持同一语义。仅 `=` 适用：
+            // 复合赋值（`obj.field += v`）对联合无意义，不做构造（其操作数
+            // 类型检查会在下方自然报错）。
+            if matches!(op, AssignOp::Assign) {
+                if let Type::Union(us) = &t_ty {
+                    if let Some(idx) = us.iter().position(|u| v_ty.compatible_with(u)) {
+                        let member_ty = us[idx].clone();
+                        v_hir = crate::check_stmt::make_union_ctor(ctx, v_hir, idx, &member_ty);
+                        v_ty = t_ty.clone();
+                    }
+                }
+            }
             if !t_ty.compatible_with(&v_ty) {
                 return Err(TypeError::WrongType {
                     expected: t_ty.to_string(),

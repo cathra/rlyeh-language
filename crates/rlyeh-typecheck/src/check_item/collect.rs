@@ -75,7 +75,7 @@ pub(crate) fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str)
 
     let mut variants = Vec::with_capacity(e.variants.len());
     let mut max_fields = 0usize;
-    for (tag, v) in e.variants.iter().enumerate() {
+    for (idx, v) in e.variants.iter().enumerate() {
         let mut fields = Vec::new();
         // 元组负载字段（`Some(T)`）以 `f0/f1/...` 命名
         for (i, t) in v.tuple_fields.iter().enumerate() {
@@ -88,6 +88,9 @@ pub(crate) fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str)
             fields.push((sf.name.clone(), ty));
         }
         max_fields = max_fields.max(fields.len());
+        // U3：显式判别式优先（`Variant = 42`），未标注时按变体声明序号。
+        // 构造与 `match` 的 tag 比较均复用该值，故显式判别式自动生效。
+        let tag = v.discriminant.unwrap_or(idx as i64) as usize;
         variants.push(VariantDef {
             name: v.name.clone(),
             fields,

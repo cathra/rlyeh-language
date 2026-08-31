@@ -30,8 +30,11 @@ pub(super) fn check_binary(
             return Ok((hir_op, Type::Bool));
         }
         BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
-            // 位运算：要求整数操作数，结果为整数
-            if !left.is_integer() || !right.is_integer() {
+            // 位运算：要求整数操作数，结果为整数。U3 核心项（2026-08-30）：
+            // 标量枚举值即 tag（整数），可作位运算操作数；结果按整数（i64）处理
+            // （位掩码 / 移位结果未必对应合法枚举变体）。
+            let is_int_like = |t: &Type| t.is_integer() || matches!(t, Type::ScalarEnum(_));
+            if !is_int_like(left) || !is_int_like(right) {
                 return Err(TypeError::ExpectedInt {
                     found: left.to_string(),
                     span,
@@ -44,7 +47,14 @@ pub(super) fn check_binary(
                 BinaryOp::Shl => HirBinaryOp::Shl,
                 _ => HirBinaryOp::Shr,
             };
-            return Ok((hir_op, left.clone()));
+            let result_ty = if matches!(left, Type::ScalarEnum(_))
+                || matches!(right, Type::ScalarEnum(_))
+            {
+                Type::I64
+            } else {
+                left.clone()
+            };
+            return Ok((hir_op, result_ty));
         }
     };
 

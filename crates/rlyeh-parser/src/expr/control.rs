@@ -147,9 +147,12 @@ impl <'src> Parser<'src> {
                     return Err(self.unexpected("'|'"));
                 }
                 let pat = self.parse_pattern()?;
-                // 闭包参数类型注解 `|x: i64, y: String|`（与 Rust 兼容）
+                // 闭包参数类型注解 `|x: i64, y: String|`（与 Rust 兼容）。
+                // U1：此处**不收集 `|` 联合**——注解后的 `|` 是参数列表结束符，
+                // 若按联合解析会误吞该 `|`（`|x: i64| x + 1` 报 `expected '|', found Plus`）。
+                // 需联合类型时用括号：`|x: (i64 | String)| ..`（括号内仍走 `parse_type`）。
                 let anno = if self.eat(&Token::Colon) {
-                    Some(self.parse_type()?)
+                    Some(self.parse_primary_type()?)
                 } else {
                     None
                 };

@@ -122,6 +122,27 @@ impl File {
         let n = fwrite(buf, 1, buf.len, self.handle);
         Result::Ok(n)
     }
+    // S3（2026-08-30）：切片形参的二进制安全读写——`&mut [u8]` / `&[u8]`。
+    // 原名 `read` / `write` 已被 `cap: i64` / `String` 版占用（Rlyeh 方法不支持
+    // 重载，同签名只能有一个），故切片版以 `read_slice` / `write_slice` 提供；
+    // 底层经 `__rlyeh_fread_ptr` / `__rlyeh_fwrite_ptr` 直传切片 data 指针
+    // （driver 注入 define 转发到 libc fread / fwrite）。
+    fn read_slice(&mut self, buf: &mut [u8]) -> Result<i64, io::error::IoError> {
+        let _ = fseek(self.handle, 0, 1);   // SEEK_CUR：写→读切换定位
+        let n = __rlyeh_fread_ptr(buf.as_mut_ptr(), 1, buf.len(), self.handle);
+        if n < 0 {
+            return Result::Err(IoError::new(
+                io::error::IoErrorKind::Other,
+                String::from("read_slice failed"),
+            ));
+        }
+        Result::Ok(n)
+    }
+    fn write_slice(&mut self, buf: &[u8]) -> Result<i64, io::error::IoError> {
+        let _ = fseek(self.handle, 0, 1);   // SEEK_CUR：读→写切换定位
+        let n = __rlyeh_fwrite_ptr(buf.as_ptr(), 1, buf.len(), self.handle);
+        Result::Ok(n)
+    }
     // 写满全部内容（MVP 单次 fwrite 即全量，语义等同 write）。
     fn write_all(&mut self, buf: String) -> Result<i64, io::error::IoError> {
         let _ = fseek(self.handle, 0, 1);   // SEEK_CUR：读→写切换定位
