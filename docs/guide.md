@@ -1,6 +1,7 @@
 # Rlyeh 编程语言指南
 
 > 版本：0.1.0（MVP）
+> 最后更新：2026-08-31
 > 本文为面向读者的**语言教程**（主文档）。所有示例均为 `examples/`、`tests/run-pass/` 中可编译运行的已验证代码（或其简化）。
 > 新手入门（安装 → 第一个程序 → 实战）见 [tutorial.md](./tutorial.md)；语言速查 / 命令参考见 [manual.md](./manual.md)。
 > 权威规范见：[grammar.md](./grammar.md)（EBNF）、[semantics.md](./semantics.md)（语义）、[memory-model.md](./memory-model.md)、[actor-model.md](./actor-model.md)、[std-lib.md](./std-lib.md)。
@@ -557,7 +558,7 @@ println(b.get());              // 99
 
 MVP 限制：关联类型仅支持非泛型 trait（`impl<T> ... { type Item = T; }` 泛型化规划中）；含关联类型签名的方法经 `dyn` vtable 分派报 Unsupported（H4 dyn 局部变量去虚拟化场景可用，静态分派到具体 impl）；std `Iterator::Item` / `Future::Output` 泛型化留待 V 阶段。
 
-**泛型 trait 约束（bound / where，U3 ✅）**：泛型参数可声明 trait bound——调用点宽松校验实参已实现 bound trait（不推导）：
+**泛型 trait 约束（bound / where，✅）**：泛型参数可声明 trait bound——调用点宽松校验实参已实现 bound trait（不推导）：
 
 ```rlyeh
 trait HasArea { fn area(&self) -> f64; }
@@ -606,6 +607,36 @@ println(p.doubled().sum()); // 返回 Self 后链式调用
 
 泛型 impl 单态化后 `Self` 替换为具体类型（`Wrapper<i64>::new(v) -> Self` → `Wrapper<i64>`）。MVP 限制：`Self` 仅支持**返回位置**——参数位置（关联返回）保持禁止；dyn 场景含 `Self` 签名方法不可经 vtable 调用（H4 既有限制）；`From::from(v) -> Self` / `Into::into() -> Self` / `Deserialize::from_json(s) -> Self` 落地待 std trait 声明。
 
+### 5.4 类型联合 `A | B`（U1 / U2 ✅，2026-08-30）
+
+类型联合 `A | B` 表示「值为 A 或 B」，运行时为匿名 enum（槽 0 = tag、槽 1 = payload），复用现有 enum codegen：
+
+```rlyeh
+let x: i64 | String = 5;            // 成员值直接构造联合（协变）
+match x {
+    i64 => println(i64),            // 类型臂：payload 绑定到类型名同名变量
+    String => println(String.len()),
+}
+```
+
+- 成员须**两两互不相交**：`i64 | i64`、`&i64 | &mut i64`、`i64 | isize` 报 `UnionMembersNotDisjoint`。
+- 优先级：`&T | &mut U` = `(&T) | (&mut U)`；闭包注解 `|x: i64| ..` 的 `|` 非联合运算符。
+- 未收窄的联合禁止直接运算 / 方法调用（`compatible_with` 单向：成员 → 联合）。
+
+### 5.5 枚举显式判别式（U3 ✅，2026-08-30）
+
+枚举变体可带显式判别式，判别值即该变体的 tag，构造与 `match` 均复用：
+
+```rlyeh
+enum Code { Ok = 200, NotFound = 404, Error = 500 }
+let c = Code::Ok;
+match c {
+    Code::Ok => println(200),
+    Code::NotFound => println(404),
+    Code::Error => println(500),
+}
+```
+
 ---
 
 ## 6. 数组与索引
@@ -617,6 +648,24 @@ let x = arr[0];                         // 索引读取（越界编译期可查�
 arr[1] = 99;                            // 索引写入（别名共享，互相可见）
 let ch = s[0];                          // 字符串按字符索引（步长 1 字节）
 ```
+
+### 6.1 切片与切片引用 `&[T]` / `&mut [T]`（S1 / S2 / S3 ✅，2026-08-30）
+
+切片引用是零拷贝**胖指针**（2 槽 `{ data 指针, 长度 }`，布局同 `&str` 的 StrFat）；`[T]` 为 DST，不能独立存储：
+
+```rlyeh
+fn sub_len(xs: &[i64]) -> i64 { let sub = xs[1..<3]; sub.len() }
+let xs = [10, 20, 30, 40, 50];
+sub_len(&xs);                  // 2：&[i64; 5] 经 unsize coercion → &[i64]，再切片长 2
+
+let v: Vec<i64> = vec![10, 20, 30];
+let bp = v.as_slice();         // Vec<i64> → &[i64]（紧凑字节，步长 1）
+let bm = v.as_mut_slice();     // → &mut [i64]，写回原缓冲（零拷贝）
+```
+
+- 切片方法：`.len()` / `.first()` / `.last()` / `.iter()` / `.as_ptr()` / `.as_mut_ptr()`。
+- 数组 `arr` 的范围切片 `arr[1..<3]` 按值拷贝返回全新 `Vec`；**切片接收者**的范围切片 `xs[1..<3]`（其中 `xs: &[T]`）返回零拷贝子区间。
+- 区分：动态切片 `v[lo..<hi]`（返回全新缓冲、值拷贝）与切片引用 `&[T]`（零拷贝视图）语义不同。
 
 ---
 
@@ -920,7 +969,7 @@ fn main() {
 - **W6 ✅（2026-08-26）递归 async fn**：desugar 拓扑排序打破依赖环 + 递归环内子 future 槽用 `Box<__Fut_>` 打破无限大小（类型层两遍收集地基支持 `struct __Fut_f { sub: Box<__Fut_f> }` 自引用）；自递归与多函数依赖环均支持，见 `tests/run-pass/async_rec_probe.rl`。
 - 与 actor 机制分工：actor 方法 `.await` = ask 同步往返（§9.1）；普通 `async fn` 为独立状态机（与 actor 互不相关）。
 
-> **规划中**：泛型 `join_all`（Future 版）/ `timeout`（Result 版）；await 位于控制流块 / 表达式中间、按引用捕获（std-lib §10.3）。`sync` 并发原语（Mutex/RwLock/Condvar/Barrier/Channel，P1–P3 ✅）已实现。
+> **规划中**：await 位于控制流块 / 表达式中间、按引用捕获（std-lib §10.3）。`sync` 并发原语（Mutex/RwLock/Condvar/Barrier/Channel，P1–P3 ✅）已实现；`future::join_all` + `timeout` + `TimeoutError`（W4 ✅）与 `future::sleep` / `wait_fd` 事件驱动（W3 ✅）已可用；控制流块内 await 递归展开（W2 ✅）、Future 泛型化（W1 ✅）。
 
 ---
 
@@ -966,7 +1015,26 @@ fn main() {
 
 - `json::stringify(v)`：`i64`→十进制；`bool`→`true`/`false`；`String`/`&str`→带引号 JSON 字符串（`"` `\` 换行 制表 转义为 `\"` `\\` `\n` `\t`）；数组→`[e0,e1,...]`（静态展开）；struct→`{"f":v,...}`（字段序 = 定义序，嵌套递归）；`Vec<T>`→`[e0,e1,...]`（while 循环）；`HashMap<K,V>`→`{"k":v,...}`（L2f，i64/String 键，键序确定性，值递归）。
 - `json::parse::<T>(s)`：turbofish 泛型实参（`::<T>`，parser 三 token 前瞻检测；嵌套泛型 `>>` 拆分层）；支持 `i64` / `bool` / `String` / `HashMap<K,V>`（L2g：i64/String 键 + 标量值 i64/bool/String）；**MVP 语义直接返回 `T`**——非法输入给默认值（`0` / `false` / 空串 / 空 map），非 Result 包装。
-- MVP 限制：`map![...]` 绑定后 K/V 为 `Infer`，须 `let m: HashMap<i64, i64>` 注解（与 `vec![...]` 一致）；`HashMap` parse 的键/值含逗号或冒号时经 `split(",")` / `find(":")` 分段不可靠；嵌套 `HashMap` 值 parse 报 Unsupported（值限标量）；自定义 `Serialize` / `Deserialize` trait 与 `#[derive]` 宏规划中（std-lib §9）。
+- MVP 限制：`map![...]` 绑定后 K/V 为 `Infer`，须 `let m: HashMap<i64, i64>` 注解（与 `vec![...]` 一致）；`HashMap` parse 的键/值含逗号或冒号时经 `split(",")` / `find(":")` 分段不可靠；嵌套 `HashMap` 值 parse 报 Unsupported（值限标量）。自定义 `Serialize` / `Deserialize` trait 与 `#[derive]` 宏已实现（Q1 ✅，§9.5）；`json::to_writer` / `json::from_reader` 亦可用（Q2 ✅）。
+
+### 9.5 TOML 序列化与 `Serialize` derive（Q1 / Q2 / Q4 ✅）
+
+除 JSON 外，TOML 序列化与 `#[derive(Serialize, Deserialize)]` 自动编解码已支持：
+
+```rlyeh
+#[derive(Serialize, Deserialize)]
+struct Config { name: String, port: i64 }
+
+fn main() {
+    let c = Config { name: String::from("svc"), port: 8080 };
+    let s = toml::to_string(c);              // TOML 文本（顶层 key=value）
+    let c2 = toml::from_str::<Config>(s);    // 反序列化（turbofish 指定目标类型）
+    let j = json::to_writer(c);              // 序列化到写入器（std-lib §9）
+}
+```
+
+- `toml::to_string(v)` / `toml::from_str::<T>(s)`（Q4 ✅）；`json::to_string`/`json::from_str`/`json::to_writer`/`json::from_reader`（Q2 ✅）为 `stringify`/`parse` 的泛型别名入口。
+- `#[derive(Serialize, Deserialize)]`（Q1 ✅）：编译器自动生成 `Serialize`/`Deserialize` 实现，免去手写 trait。
 
 ---
 
@@ -1211,7 +1279,7 @@ extern fn gethostname(name: String, len: i64) -> i64;
 | [memory-model.md](./memory-model.md) | 分层内存管理规范 |
 | [actor-model.md](./actor-model.md) | Actor 并发模型规范 |
 | [std-lib.md](./std-lib.md) | 标准库 API 规范（含规划中模块） |
-| [development-plan.md](./development-plan.md) | 开发计划（阶段 A–F 已完成；§6 剩余任务消解 G–L / M–T / U–Z） |
+| [development-plan.md](./development-plan.md) | 开发计划（阶段 A–Z 已全部完成） |
 
 ### 已知限制（MVP）
 

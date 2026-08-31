@@ -1,6 +1,7 @@
 # Rlyeh 语言手册（Language Manual）
 
 > **定位**：面向已会使用 Rlyeh 的读者的**快速参考**：词法、类型系统、运算符、控制流、标准库 API 与工具链命令速查。
+> 最后更新：2026-08-31
 > **入门**：新手请先阅读 [tutorial.md](./tutorial.md)（安装 → 第一个程序 → 发布项目）。
 > **完整教程**：渐进式语言教学（含示例讲解与已知限制）见 [guide.md](./guide.md)。
 > **权威规范**：`grammar.md`（EBNF）/ `semantics.md` / `memory-model.md` / `actor-model.md` / `std-lib.md`。
@@ -116,6 +117,7 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 |------|------|
 | `&T` / `&mut T` | 不可变 / 可变引用；`&x` / `&mut x` 表达式；`*` 解引用；字段访问/方法调用自动剥引用层 |
 | `&str` | String 只读借用视图（`s.as_str()`，零拷贝） |
+| `&[T]` / `&mut [T]` | 切片引用：零拷贝胖指针视图（`{ data, len }`）；`.len()`/`.first()`/`.last()`/`.iter()`；`&[T; N]` 经 unsize coercion → `&[T]`（S1/S2/S3 ✅） |
 | `*const T` / `*mut T` | 裸指针（与 `&T` 互视） |
 | `Box<T>` / `Rc<T>` / `Arc<T>` / `Gc<T>` | 智能指针（见 §9） |
 
@@ -124,6 +126,14 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 - `String`：堆缓冲（data/len/cap 3 槽），O(n) 扩容
 - `str`（字面量值）：运行时为指向静态数据的 `i8*`，参与操作自动升级为 String
 - `&str`：只读借用视图，支持 `len()` / `r[i]` / `substring`
+
+### 3.8 类型联合 `A | B`（U1 / U2 ✅）
+
+`A | B` 表示「值为 A 或 B」，运行时为匿名 enum（tag + payload）。成员须两两互不相交（`i64 | isize` 报 `UnionMembersNotDisjoint`）；`match` 用类型臂解构（`i64 => ...`）；未收窄的联合禁止直接运算。
+
+### 3.9 枚举显式判别式（U3 ✅）
+
+`enum Code { Ok = 200, NotFound = 404, Error = 500 }`：判别值即变体 tag，构造与 `match` 均复用。
 
 ---
 
@@ -435,10 +445,11 @@ println!("value = {}", x);      // {} 占位
 
 ### 11.9 序列化
 
-- `json::stringify(v)`：标量 / String / `&str` / 数组 / struct / Vec / HashMap（键序确定性）
-- `json::parse::<T>(s)`：`i64` / `bool` / `String` / `HashMap<K,V>`（MVP 直接返回 T，非法输入给默认值）
-- `toml` 模块（内建）
-- MVP：自定义 `Serialize`/`Deserialize` trait 与 `#[derive]` 规划中
+- `json::stringify(v)` / `json::to_string(v)`：标量 / String / `&str` / 数组 / struct / Vec / HashMap（键序确定性）
+- `json::parse::<T>(s)` / `json::from_str::<T>(s)`：`i64` / `bool` / `String` / `HashMap<K,V>`（MVP 直接返回 T，非法输入给默认值）
+- `json::to_writer(w, v)` / `json::from_reader::<T>(r)`：流式（Q2 ✅）
+- `toml::to_string(v)` / `toml::from_str::<T>(s)`（Q4 ✅）
+- `#[derive(Serialize, Deserialize)]`：自动生成编解码（Q1 ✅）
 
 ### 11.10 位运算与切片
 
@@ -505,7 +516,7 @@ extern fn fopen(path: String, mode: String) -> i64;
       编译并运行
   rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std]
               [--verbose] [--target <triple>]
-      编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）
+      编译为可执行文件（--target 交叉编译 / wasm32-wasip1 生成 .wasm）
   rlyeh test [<tests-dir>]
       运行测试目录用例（compile-pass/compile-fail/run-pass）
   rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N]

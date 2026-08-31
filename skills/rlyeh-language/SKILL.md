@@ -11,6 +11,8 @@ Rlyeh 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分�
 
 本技能使 LLM 能写出**可编译运行**的 Rlyeh 代码、准确审查既有代码、并利用工具链快速定位编译错误。MVP 有明确语法边界——不遵守会产出大量编译错误，务必先读 `references/pitfalls.md`。
 
+> 最后更新：2026-08-31（与 `CODEBUDDY.md` / `docs/` 规范同步；MVP 特性以 `CODEBUDDY.md` 为准）
+
 ## 何时使用
 
 - 用户要求编写、修改、审查、调试 `.rl` 文件或 Rlyeh 项目（`Rlyeh.toml` + `src/main.rl`）
@@ -34,7 +36,7 @@ Rlyeh 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分�
 |------|------|
 | `rlyeh new <name> [--lib]` | 创建项目（`Rlyeh.toml` + `src/main.rl` / `src/lib.rl`） |
 | `rlyeh run <file.rl>` | 编译并运行（快速验证首选） |
-| `rlyeh build <file.rl> [-o out] [--target <triple>] [--profile <pgo>]` | 编译为可执行文件；`--target` 支持交叉编译 / `wasm32-wasi` |
+| `rlyeh build <file.rl> [-o out] [--target <triple>] [--profile <pgo>]` | 编译为可执行文件；`--target` 支持交叉编译 / `wasm32-wasip1` |
 | `rlyeh check <file.rl>` | 静态分析（未使用变量 / 恒常条件 / 冗余比较 / 不可达代码） |
 | `rlyeh fmt <file.rl> [--check]` | 格式化（AST 重建） |
 | `rlyeh test` | 跑 `tests/compile-pass` `compile-fail` `run-pass` 用例 |
@@ -66,7 +68,7 @@ Skill references 是 `docs/` 权威规范的提炼速查。深度问题回源：
 
 本技能随 Rlyeh 工具链一起构建、发布与归档：
 
-- **源码位置**：仓库 `.codebuddy/skills/rlyeh-language/`（SKILL.md + `references/`）
+- **源码位置**：仓库 `skills/rlyeh-language/`（SKILL.md + `references/`）
 - **本地安装**：`toolchains/install.sh` 将整个目录复制到 `<prefix>/skills/rlyeh-language/`（默认 `~/.rl/skills/rlyeh-language/`）
 - **归档发布**：`toolchains/build.sh` 归档 `rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可被 CodeBuddy 等 IDE 作为项目级技能加载（`<prefix>/skills/rlyeh-language/SKILL.md`）
 - **版本同步**：Skill 版本与工具链发布节奏一致（当前 v0.1.0）

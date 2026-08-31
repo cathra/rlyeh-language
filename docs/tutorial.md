@@ -1,6 +1,7 @@
 # Rlyeh 教程指南（新手入门）
 
 > **定位**：本文带你完成 Rlyeh 的**安装 → 第一个程序 → 发布项目**全流程，适合第一次接触 Rlyeh 的读者。
+> 最后更新：2026-08-31
 > **学语言**：渐进式语言教程见 [guide.md](./guide.md)（完整、示例可运行）；语言速查与词法细节见 [manual.md](./manual.md)。
 > **权威规范**：`grammar.md`（EBNF）/ `semantics.md` / `memory-model.md` / `actor-model.md` / `std-lib.md`。
 
