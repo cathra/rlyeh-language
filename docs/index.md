@@ -21,6 +21,10 @@
 - [module-system.md](./module-system.md) — 模块系统规范
 - [std-lib.md](./std-lib.md) — 标准库 API 规范（含规划中模块，与 `manual/std/` 互为补充）
 
+## 性能与基准
+
+- [performance.md](./performance.md) — **与 C / C++ / Go / Swift / Rust 全方位性能对比**（13 项基准 × 6 语言：运行时 + 编译时 + region 策略，含复现方法）
+
 ## 项目总纲与进度
 
 - [../CODEBUDDY.md](../CODEBUDDY.md) — 项目总纲（架构、工具链、执行记录）
