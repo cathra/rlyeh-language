@@ -12,3 +12,8 @@ dist/
 tests/run-pass/_tmp_*
 *.dylib
 .codebuddy/
+
+# 基准测试构建产物（由 run.py / rlyeh-driver 生成，可重跑再生）
+examples/projects/benchmarks/*/bench_*
+__pycache__/
+*.pyc
