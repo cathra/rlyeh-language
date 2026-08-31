@@ -1,6 +1,6 @@
 # 受限制的类型联合（规划）
 
-> **状态**：规划中（未实现）
+> **状态**：✅ 已完成（2026-08-31；U1–U5 全部落地，全量 194 用例零回归）
 > **定位**：对现有 **enum 标签联合体系**的增强（**非新运行时类型**）
 > **核心约束（"受限制"）**：联合成员必须**两两互不相交（disjoint）**，保证 tag 无歧义、收窄安全
 
@@ -73,21 +73,21 @@
 
 ## 7. 验收标准
 
-- [ ] `let x: i64 | String` 声明 + 由 `i64`/`String` 赋值 + `match` 收窄编译通过。
-- [ ] 字段级联合 `struct S { id: i64 | String }` 可用 + 收窄。
-- [ ] 互不相交校验：重叠成员报 `UnionMembersNotDisjoint`。
-- [ ] 受限标量枚举：单标量存储 + 可作数组索引/位运算。
-- [ ] `tests/run-pass` 联合用例全绿，与现有 `enum`/`Option`/`Result` 行为无回归。
+- [x] `let x: i64 | String` 声明 + 由 `i64`/`String` 赋值 + `match` 收窄编译通过。
+- [x] 字段级联合 `struct S { id: i64 | String }` 可用 + 收窄。
+- [x] 互不相交校验：重叠成员报 `UnionMembersNotDisjoint`。
+- [x] 受限标量枚举：单标量存储 + 可作数组索引/位运算。
+- [x] `tests/run-pass` 联合用例全绿，与现有 `enum`/`Option`/`Result` 行为无回归。
 
 ## 8. 任务拆分（分阶段）
 
-- **U1 类型层**
+- **U1 类型层** **✅ 已完成（2026-08-30；`Type::Union` + parser `|` 链 + `resolve_ast_type` 构建 `Union` 并 `check_union_disjoint` + `Display`/`compatible_with`/`field_scalar_of`，见 CHANGELOG U1/U2）**。
   - `Type::Union(Vec<Type>)`；`parser/src/ty.rs` 支持 `|` 链（primary 类型后遇 `|` 合并为 `Union`）。
   - `resolve_ast_type` 构建 `Union` + disjoint 校验；`Display` / `compatible_with`（收窄前不允许运算）/ `field_scalar_of`（按最大成员尺寸）。
-- **U2 desugar + match 收窄**：联合 → 匿名 `EnumDef` 注入；`check_match` 支持类型臂（type arm）收窄；`x is T` 守卫（可选）。
+- **U2 desugar + match 收窄** **✅ 已完成（2026-08-30；联合 → 匿名 `EnumDef` 注入 + `make_union_ctor` 向上转换 + `check_match` 类型臂收窄，见 CHANGELOG U1/U2；`union_basics` 用例）**：联合 → 匿名 `EnumDef` 注入；`check_match` 支持类型臂（type arm）收窄；`x is T` 守卫（可选）。
 - **U3 受限标量枚举**：enum 变体全标量/单元时 `slot_count = 1` + 标量存储 + 放宽到整数上下文。**✅ 已完成（2026-08-30；`Type::ScalarEnum` + 4 联动 + 缓存键 bump + 整数上下文放宽 + 比较对称；`enum_scalar_context` / `enum_scalar_storage` 用例 + `compile-fail/enum_scalar_no_int_to_enum`；191 用例全绿）**。
 - **U4 字段级联合**：`struct` 字段类型解析支持 `Union` + 读写收窄。**✅ 已完成（2026-08-31；复用 U1/U2 匿名联合 machinery——`struct S { id: i64 | String }` 字面量构造与字段赋值 desugar 为匿名 enum 构造、字段读取须 `match` 收窄、disjoint 校验与值级一致；`struct_field_union` + 两个 compile-fail 用例；194 用例全绿）**。
-- **U5 测试与文档**：`tests/run-pass` 联合用例；`grammar.md`/`semantics.md` 补联合章节。
+- **U5 测试与文档** **✅ 已完成（2026-08-31；`union_basics`/`enum_discriminant`/`enum_scalar_*`/`struct_field_union`(+2 compile-fail) 用例齐备 + `grammar.md` §2.4 / `semantics.md` §8.4–§8.5 / `CODEBUDDY.md` 章节齐全，见 leaf `union-u5-tests-docs.md`）**：`tests/run-pass` 联合用例；`grammar.md`/`semantics.md` 补联合章节。
 
 ## 9. 风险与开放问题
 

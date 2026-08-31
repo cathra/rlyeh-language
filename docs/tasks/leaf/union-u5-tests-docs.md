@@ -16,7 +16,7 @@
 ## 验收
 
 - [x] **权威规范补联合章节**（`grammar.md` §2.4、`semantics.md` §8.4、`CODEBUDDY.md`）。
-- [x] 与现有 enum / `Option` / `Result` 无回归（187 用例全通过）。
+- [x] 与现有 enum / `Option` / `Result` 无回归（194 用例全通过）。
 - [x] 联合用例：`union_basics`（声明 / 构造 / `match` 类型臂收窄）、
       `enum_discriminant`（显式判别式）。
 - [x] 字段级联合用例（`struct_field_union.rl` + 两个 compile-fail，U4 已落地）。
@@ -39,6 +39,7 @@
 | `tests/run-pass/struct_field_union.{rl,out}` | U4 字段级联合：字面量构造 / 字段读取 + 类型臂收窄 / 字段赋值（`=`）/ 多字段联合，与值级联合语义一致 |
 | `tests/compile-fail/struct_field_union_disjoint.rl` | U4 字段联合成员重叠（`i64 | isize`）报 `UnionMembersNotDisjoint` |
 | `tests/compile-fail/struct_field_union_unnarrowed.rl` | U4 字段联合未收窄即运算（`s.id + 1`）报 `expected a numeric type` |
+| `tests/run-pass/union_field.rl` | U4 字段级联合同场景早期用例（2026-08-30）：字面量构造 + 字段写入（`c.id = 7` / `c.id = String`）经 `match` 类型臂收窄；与 `struct_field_union.rl` 覆盖重合，保留作回归 |
 
 ## 变更记录
 
