@@ -35,4 +35,12 @@ rlyeh test                       # 运行 tests/ 目录 compile-pass/compile-fai
 
 ---
 
+## 练习
+
+1. 用 `rlyeh new demo` 创建项目，把 [`examples/by-chapter/02-quick-start.rl`](../../examples/by-chapter/02-quick-start.rl) 的内容放进 `src/main.rl`，用 `rlyeh run` 跑起来。
+2. 用 `rlyeh check examples/by-chapter/02-quick-start.rl` 看静态分析输出（故意写一个未使用变量，观察告警）。
+3. 故意把缩进写乱，用 `rlyeh fmt --check` 检查，再用 `rlyeh fmt -w` 格式化，对比前后差异。
+
+---
+
 [← 上一章：认识 Rlyeh](./01-what-is-rlyeh.md) | [返回指南目录](./index.md) | [下一章：基础语法 →](./03-basic-syntax.md)

@@ -2,6 +2,8 @@
 
 JSON 编解码（L2 ✅ 基础；Q2 ✅ 泛型入口）。序列化规则：标量（`i64`/`bool`/`String`/`&str`）按值输出；数组/struct/`Vec`/`HashMap` 递归；`HashMap` 键序确定性（便于可重现输出）。
 
+> **C 程序员对照**：C 标准库**没有 JSON**——要么引入 cJSON/jansson，要么手写字符串拼装与解析（极易出错）。Rlyeh 的 `json::stringify`/`json::from_str::<T>` 让你**类型驱动**地序列化/反序列化：`from_str::<HashMap<String,i64>>` 直接拿到强类型结果，不用 `cJSON_GetObjectItem` 一步步取值。MVP 限制：非法 JSON 直接给默认值（不抛异常），生产环境需自行校验。
+
 ## 函数
 
 ### `json::stringify(v) -> String` / `json::to_string(v) -> String`

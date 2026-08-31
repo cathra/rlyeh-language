@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Rlyeh 编译器驱动：串联 lexer → parser → typecheck → borrowck → regionck → MIR → LIR → 代码生成，提供 rlyeh CLI"
+# 关闭 src/main.rs 的隐式默认二进制（否则会同时产出 rlyeh-driver），
+# 仅保留下方显式 [[bin]] 命名的 rlyeh。
+autobins = false
 
 [dependencies]
 rlyeh-typecheck = { workspace = true }
@@ -27,3 +30,9 @@ dagon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+
+# 将 CLI 二进制名设为 `rlyeh`（默认从包名推导为 rlyeh-driver），
+# 使文档里的 `rlyeh run/build/...` 命令可直接使用。
+[[bin]]
+name = "rlyeh"
+path = "src/main.rs"

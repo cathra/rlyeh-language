@@ -2,6 +2,8 @@
 
 异步运行时（S1 ✅ 基础；W1–W5 ✅ 泛型化 / 控制流 / timeout / 事件驱动 / 网络异步）。
 
+> **C 程序员对照**：C **没有 `async`/`await`**——你得手写回调函数（`libuv`/`libevent`）或多线程，回调地狱很难维护。Rlyeh 的 `async fn` + `.await` 相当于 **JS/C#/Rust 的 async-await**：用同步写法表达异步逻辑，**协程化**（在等待 IO 时让出 CPU，不阻塞 OS 线程）。`block_on(f)` 是"驱动这个 future 直到完成"的入口点（类似 Rust 的 `tokio::block_on` 或 C# 的 `.Result`）。
+
 ## 核心类型
 
 | 类型 | 说明 |

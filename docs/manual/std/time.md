@@ -2,6 +2,8 @@
 
 时间类型，位于 `time` 子模块（`import time::Duration;` 已在根模块重导出）。底层时间戳为微秒（`i64`，约 ±292 年）。
 
+> **C 程序员对照**：Rlyeh 的 `Duration`/`Instant`/`SystemTime` ≈ C 的 `struct timespec` + `clock_gettime`（`CLOCK_MONOTONIC`/`CLOCK_REALTIME`），或 C++ 的 `std::chrono`。关键不同：`Duration` 内部就是一个**整数微秒计数**（类似 Rust `Duration`），单位换算用构造器（`from_secs`/`from_millis`…）和读回方法（`secs()`/`millis()`…）完成，**不会像 C 那样让你纠结 `tv_sec`/`tv_nsec` 字段**。注意：**纳秒精度会截断到微秒**（底层是微秒整数）。
+
 ## Duration
 
 时间间隔。构造时按单位缩放为微秒存储；读回时按单位还原（整数截断）。

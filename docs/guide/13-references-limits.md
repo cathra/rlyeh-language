@@ -52,4 +52,12 @@
 
 ---
 
+## 练习
+
+1. 打开 `docs/grammar.md` 与 `docs/semantics.md`，对照 [`examples/by-chapter/03-basic-syntax.rl`](../../examples/by-chapter/03-basic-syntax.rl) 验证语法规则。
+2. 故意写一个 MVP 未支持的特性（如嵌套模块 `module a { module b {} }`），看 typecheck 报什么错。
+3. 用 `rlyeh check` 扫描一个文件，列出它发现的"未使用变量 / 不可达代码 / 恒常条件"等告警类型。
+
+---
+
 [← 上一章：外部函数接口](./12-ffi.md) | [返回指南目录](./index.md)

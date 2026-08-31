@@ -4,6 +4,8 @@
 > 早期设计稿按模块归档于 [`design/`](design/README.md)（不再更新，仅供追溯）。
 > 项目总纲（全景/工具链/特性速览）见 [`../CODEBUDDY.md`](../CODEBUDDY.md)。
 
+> **目标读者**：本套文档（尤其是 `tutorial/`、`guide/`、`manual/`）面向**有 C 语言基础、但 Rust 与 Rlyeh 零基础**的读者。凡是 C 里没有或行为不同的概念，文档均用 `> **C 程序员对照**` 块给出等价写法与陷阱提示；每章末尾附**练习**，可运行示例集中在 [`../examples/by-chapter/`](../examples/by-chapter/README.md)（按文档章节对应）。
+
 ---
 
 ## 1. 文档地图

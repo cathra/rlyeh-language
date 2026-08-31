@@ -2,6 +2,8 @@
 
 TOML 编解码（Q4 ✅）。与 `json` 模块对称：`toml::to_string` / `toml::from_str`，并复用 `#[derive(Serialize, Deserialize)]`（Q1 ✅）。
 
+> **C 程序员对照**：TOML 是"对人友好的配置文件格式"（比 ini 强、比 JSON 更适合手写配置）。C 里解析 TOML 通常要引入 `tomlc99` 之类的库并手写取值。Rlyeh 用 `toml::from_str::<Config>(s)` **一步反序列化成你的 `struct`**——配合 `#[derive(Serialize, Deserialize)]`，配置文件 ↔ 结构体之间零样板代码。和 `json` 模块共用同一套 derive 标注。
+
 ## 函数
 
 ### `toml::to_string(v) -> String`

@@ -2,7 +2,8 @@
 
 > 最后更新：2026-08-31
 >
-> **定位**：本文带你完成 Rlyeh 的**安装 → 第一个程序 → 发布项目**全流程，适合第一次接触 Rlyeh 的读者。
+> **定位**：本文带你完成 Rlyeh 的**安装 → 第一个程序 → 发布项目**全流程，适合第一次接触 Rlyeh 的读者（**尤其面向有 C 语言基础、Rust/Rlyeh 零基础的读者**，每章都配有"与 C 对照"的讲解）。
+> **阅读约定**：文中用 `> **C 程序员的视角**：…` 标注的引用块，专门帮你把新概念和 C 里的熟悉事物建立联系；用 `> **注意**` / `> **为什么**` 标注的，是容易踩坑或值得理解原理的地方。
 > **学语言**：渐进式语言教程见 [guide](../guide/index.md)（完整、示例可运行）；语言速查与词法细节见 [manual](../manual/index.md)。
 > **权威规范**：[grammar.md](../grammar.md)（EBNF）/ [semantics.md](../semantics.md) / [memory-model.md](../memory-model.md) / [actor-model.md](../actor-model.md) / [std-lib.md](../std-lib.md)。
 

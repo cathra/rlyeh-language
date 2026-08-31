@@ -2,6 +2,8 @@
 
 TCP / HTTP / UDP 客户端与服务端 API，位于 `net` 子模块。WASI 目标下网络禁用（L4 ✅）。
 
+> **C 程序员对照**：Rlyeh 的 `TcpStream`/`TcpListener`/`UdpSocket` ≈ C 的 Berkeley sockets（`socket`/`connect`/`bind`/`listen`/`accept`/`recv`/`send`），但**对象化 + 自动关闭**，且 `read`/`write` 直接收 `&[u8]` 切片（带长度，不用你再传 `size`/`count` 参数，也不易溢出）。`HttpClient` 则相当于 libcurl 的简化版——一行发起 HTTP 请求拿 `Response`。
+
 ## SocketAddr
 
 ### 构造

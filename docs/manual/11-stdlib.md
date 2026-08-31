@@ -66,4 +66,22 @@ Rlyeh 标准库采用模块化拆分（2026-08-22 落地）：`rlyeh-std/rlyeh/c
 
 ---
 
+## 更多示例
+
+`HashMap.get` 返回 `Option`（强制处理"无此键"）：
+
+```rlyeh
+let m: HashMap<String, i64> = HashMap::new();
+m.insert(String::from("a"), 1);
+let v = m.get(String::from("a"));
+match v {
+    Some(x) => println(x),
+    None => println(0),
+};
+```
+
+可运行版本见 [`examples/by-chapter/10-stdlib.rl`](../../examples/by-chapter/10-stdlib.rl)；各类型完整成员/方法见 [std/index.md](./std/index.md)。
+
+---
+
 [← 上一章：并发模型](./10-concurrency.md) | [返回手册目录](./index.md) | [下一章：编译器与构建 →](./12-compiler-build.md)

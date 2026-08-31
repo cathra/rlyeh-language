@@ -2,6 +2,8 @@
 
 文件与文件系统 API，位于 `io` 子模块（`import io::File;` 等已在根模块重导出）。
 
+> **C 程序员对照**：Rlyeh 的 `File` ≈ C 的 `FILE*`（`fopen`/`fread`/`fwrite`/`fclose`）或 `int fd`（`open`/`read`/`write`/`close`）。最大区别：**离开作用域自动 `close`**（RAII），不会像 C 那样忘记 `fclose` 导致句柄泄漏。`seek` 的 `whence` 语义与 C 完全一致：`0`=头(`SEEK_SET`)、`1`=当前(`SEEK_CUR`)、`2`=尾(`SEEK_END`)。
+
 ## 便捷函数
 
 ### `io::read_file(path: String) -> String`

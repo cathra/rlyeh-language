@@ -349,4 +349,12 @@ for j in 1...3 {         // 双闭区间 [1, 3]
 
 ---
 
+## 练习
+
+1. 运行 [`examples/by-chapter/03-basic-syntax.rl`](../../examples/by-chapter/03-basic-syntax.rl)，观察变量遮蔽（`let x = 10 { let x = 20 }`）的输出顺序。
+2. 写一个 `factorial(n: i64) -> i64` 函数，体会"末表达式即返回值"（不必写 `return`）。
+3. 用无捕获闭包 `apply(|a, b| a * b, 6, 7)` 替代普通函数指针调用，理解 H2 闭包的零开销本质。
+
+---
+
 [← 上一章：快速上手](./02-quick-start.md) | [返回指南目录](./index.md) | [下一章：数学式条件判断 →](./04-math-conditions.md)

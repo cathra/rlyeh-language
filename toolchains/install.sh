@@ -14,7 +14,7 @@
 #   <prefix>/
 #   ├── bin/
 #   │   ├── rlyeh              # 入口命令（可重定位 wrapper：自动注入 RLYEH_STD_PATH）
-#   │   ├── rlyeh-driver       # 真实编译器二进制
+#   │   ├── rlyeh              # 真实编译器二进制（旧名 rlyeh-driver，已由 [[bin]] 改名）
 #   │   ├── rlyeh-fmt|check|doc|bench   # 独立工具
 #   │   └── dagon               # 包管理器
 #   ├── std/                  # 标准库源码（core.rl + time/io/net/... 模块）
@@ -29,7 +29,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 PREFIX="${RLYEH_PREFIX:-$HOME/.rl}"
 RELEASE="${RLYEH_RELEASE_DIR:-$REPO/target/release}"
 
-BINARIES=(rlyeh-driver rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon)
+BINARIES=(rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon)
 STD_SRC="$REPO/crates/rlyeh-std/rlyeh"
 
 echo "==> Rlyeh 工具链本地发布"
@@ -98,7 +98,7 @@ cat > "$PREFIX/bin/rlyeh" <<EOF
 #!/usr/bin/env bash
 # Rlyeh 编译器入口（本地发布版，可重定位）
 export RLYEH_STD_PATH="\${RLYEH_STD_PATH:-\$(cd "\$(dirname "\$0")/.." && pwd)/std}"
-exec "\$(dirname "\$0")/rlyeh-driver" "\$@"
+exec "\$(dirname "\$0")/rlyeh" "\$@"
 EOF
 chmod +x "$PREFIX/bin/rlyeh"
 

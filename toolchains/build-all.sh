@@ -48,15 +48,15 @@ build_platform() {
     local stage
     stage="$(mktemp -d)"
     mkdir -p "$stage/bin"
-    for b in rlyeh-driver rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon; do
+    for b in rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon; do
         cp "$REPO/target/$target/release/$b$ext" "$stage/bin/$b$ext"
     done
 
     # 生成 rlyeh wrapper
     if [[ "$name" == *windows* ]]; then
-        printf '@echo off\r\nset RLYEH_STD_PATH=%%~dp0..\\std\r\n"%%~dp0rlyeh-driver.exe" %%*\r\n' > "$stage/bin/rlyeh.bat"
+        printf '@echo off\r\nset RLYEH_STD_PATH=%%~dp0..\\std\r\n"%%~dp0rlyeh.exe" %%*\r\n' > "$stage/bin/rlyeh.bat"
     else
-        printf '#!/usr/bin/env bash\nexport RLYEH_STD_PATH="${RLYEH_STD_PATH:-$(cd "$(dirname "$0")/.." && pwd)/std}"\nexec "$(dirname "$0")/rlyeh-driver" "$@"\n' > "$stage/bin/rlyeh"
+        printf '#!/usr/bin/env bash\nexport RLYEH_STD_PATH="${RLYEH_STD_PATH:-$(cd "$(dirname "$0")/.." && pwd)/std}"\nexec "$(dirname "$0")/rlyeh" "$@"\n' > "$stage/bin/rlyeh"
         chmod +x "$stage/bin/rlyeh"
     fi
 

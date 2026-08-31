@@ -40,4 +40,12 @@ Actor 运行时在 `wasm32-wasip1` 下由 driver 注入静态 `rlyeh_actor_resol
 
 ---
 
+## 练习
+
+1. 用 `rlyeh build examples/by-chapter/03-basic-syntax.rl --target <你的平台 triple>` 指定目标编译（如 `x86_64-apple-darwin`）。
+2. 用 `rlyeh bench` 对一个计算密集函数跑基准，观察 `--runs` / `--warmup` 参数的影响。
+3. 尝试 `rlyeh build examples/by-chapter/09-actors.rl --target wasm32-wasip1 -o app.wasm` 交叉编译到 WASM（需先装 WASI SDK）。
+
+---
+
 [← 上一章：标准库](./10-stdlib.md) | [返回指南目录](./index.md) | [下一章：外部函数接口 →](./12-ffi.md)

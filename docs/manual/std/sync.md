@@ -2,6 +2,13 @@
 
 线程同步与并发原语，位于 `sync` 子模块（P1–P3 ✅ 已实现）。底层使用 pthread 锁与条件变量。
 
+> **C 程序员对照**：
+> - `Mutex`/`RwLock`/`Condvar`/`Barrier` ≈ `pthread_mutex_t`/`pthread_rwlock_t`/`pthread_cond_t`/`pthread_barrier_t`——Rlyeh 用对象封装，离开作用域自动销毁，不用 `pthread_mutex_destroy`。
+> - `Thread::start`/`join`/`sleep` ≈ `pthread_create`/`pthread_join`/`usleep`。
+> - `Channel`（`tx.send`/`rx.recv`）≈ **Go 的 channel**，C 里没有原生对应物（你要用"互斥锁 + 条件变量 + 队列"手写）。它比共享内存 + 锁更安全（数据通过消息传递，避免竞态）。
+>
+> 详见 [../10-concurrency.md](../10-concurrency.md)：sync 是传统共享内存并发，Actor 是消息传递并发，二者可混用。
+
 ## Mutex
 
 互斥锁（独占锁）。

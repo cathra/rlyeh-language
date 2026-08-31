@@ -3,6 +3,7 @@
 > 最后更新：2026-08-31
 >
 > **定位**：面向已会使用 Rlyeh 的读者的**快速参考**：词法、类型系统、运算符、控制流、标准库 API 与工具链命令速查。
+> **读者背景**：本文档旁注 `> **C 对照**` 专门帮**有 C 基础、Rust/Rlyeh 零基础**的读者建立直觉（例如"Rlyeh 的 `char` 是 32 位码点，不是 C 的 8 位 `char`"这类易错点）。
 > **入门**：新手请先阅读 [tutorial](../tutorial/index.md)（安装 → 第一个程序 → 发布项目）。
 > **完整教程**：渐进式语言教学（含示例讲解与已知限制）见 [guide](../guide/index.md)。
 > **权威规范**：[grammar.md](../grammar.md)（EBNF）/ [semantics.md](../semantics.md) / [memory-model.md](../memory-model.md) / [actor-model.md](../actor-model.md) / [std-lib.md](../std-lib.md)。
