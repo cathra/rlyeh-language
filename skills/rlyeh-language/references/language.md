@@ -1,6 +1,6 @@
 # Rlyeh 语言语法速查（v0.1.0 MVP）
 
-> 权威规范：`docs/grammar.md`（EBNF）、`docs/guide.md`（教程）。本节是编写代码时的速查。
+> 权威规范：`docs/grammar.md`（EBNF）、`docs/guide/index.md`（教程）。本节是编写代码时的速查。
 
 ## 1. 词法
 

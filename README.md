@@ -182,9 +182,10 @@ rlyeh-language/
 
 | 文档 | 内容 |
 |------|------|
-| [docs/guide.md](docs/guide.md) | 语言教程（示例均可运行） |
-| [docs/manual.md](docs/manual.md) | 语言参考（词法/类型/运算符/标准库 API/工具链命令速查） |
-| [docs/tutorial.md](docs/tutorial.md) | 新手教程（安装 → 第一个程序 → 发布项目） |
+| [docs/guide/index.md](docs/guide/index.md) | 语言教程（每章独立文档，示例均可运行） |
+| [docs/manual/index.md](docs/manual/index.md) | 语言参考（每章独立文档：词法/类型/运算符/标准库 API/工具链命令速查） |
+| [docs/manual/std/index.md](docs/manual/std/index.md) | 标准库详述（每个类型的成员/方法/用例） |
+| [docs/tutorial/index.md](docs/tutorial/index.md) | 新手教程（安装 → 第一个程序 → 发布项目） |
 | [docs/grammar.md](docs/grammar.md) | 完整语法规范（EBNF） |
 | [docs/semantics.md](docs/semantics.md) | 语义规则 |
 | [docs/memory-model.md](docs/memory-model.md) | 分层内存管理规范 |

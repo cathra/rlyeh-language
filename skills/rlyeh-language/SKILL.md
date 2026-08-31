@@ -61,7 +61,7 @@ Rlyeh 是一门 Rust 风格的系统级编程语言：内存安全零 GC（分�
 Skill references 是 `docs/` 权威规范的提炼速查。深度问题回源：
 - 语法 EBNF：`docs/grammar.md`；语义：`docs/semantics.md`
 - 内存模型：`docs/memory-model.md`；Actor：`docs/actor-model.md`
-- 标准库规范：`docs/std-lib.md`；教程：`docs/guide.md`
+- 标准库规范：`docs/std-lib.md`；教程：`docs/guide/index.md`
 - 项目总纲与执行记录：`CODEBUDDY.md`
 
 ## 随工具链发布

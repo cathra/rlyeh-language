@@ -8,7 +8,7 @@
 > `net/`、`fs/` 子目录（`<name>/module.rl` + 类型独立文件），driver 加载时经模块展开 +
 > import 重新导出合入，用户侧裸名即用）。
 > 根模块保留 String / Vec / HashMap / Option / Result 等编译器特判类型；未实现章节属规划（详见下方总览）。
-> 教程与可运行示例见 [`guide.md`](./guide.md)；实际 API 以各模块源码为准。
+> 教程与可运行示例见 [`guide/index.md`](./guide/index.md)；标准库每个类型的成员/方法/用例见 [`manual/std/index.md`](./manual/std/index.md)；实际 API 以各模块源码为准。
 
 ## MVP 实现状态总览
 

@@ -1,6 +1,6 @@
 # Rlyeh MVP 编写陷阱清单（每次写代码前必读）
 
-> MVP（v0.1.0）语法边界严格。以下条目来自 `docs/guide.md` §13 已知限制与编译器实际行为。
+> MVP（v0.1.0）语法边界严格。以下条目来自 `docs/guide/13-references-limits.md` §13 已知限制与编译器实际行为。
 > 违反任一「语法不支持」条目 → typecheck 报 `Unsupported` 或链接失败。
 
 ## A. 程序结构（最常见错误）
