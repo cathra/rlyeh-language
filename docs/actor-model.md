@@ -1,7 +1,7 @@
 # Rlyeh Actor 并发模型规范
 
 > 版本：0.1.0  
-> 最后更新：2026-08-22
+> 最后更新：2026-08-31
 
 > **⚠️ 实现状态**：本文为**目标规范**。MVP 已实现子集：`actor` 声明（字段/默认值/方法）、
 > `Counter::new()` 普通 spawn、`Counter::new_supervised(n)` 监督 spawn（n=0/1/2 对应 OneForOne/

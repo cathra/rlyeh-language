@@ -1,6 +1,6 @@
 # 阶段 L — 生态模块与平台收尾
 
-> **所属任务树**：[任务文档导航](../tasks/README.md) → [阶段索引](../tasks/stage-*.md)
+> **所属任务树**：[任务文档导航](../tasks/README.md) → [阶段索引](../tasks/stage-g-l.md)
 > **计划总览**：[`development-plan.md`](../development-plan.md) §2（计划总览）
 
 

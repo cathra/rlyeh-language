@@ -1,6 +1,6 @@
 # 阶段 Y — IO/网络/并发/智能指针收尾
 
-> **所属任务树**：[任务文档导航](../tasks/README.md) → [阶段索引](../tasks/stage-*.md)
+> **所属任务树**：[任务文档导航](../tasks/README.md) → [阶段索引](../tasks/stage-u-z.md)
 > **计划总览**：[`development-plan.md`](../development-plan.md) §2（计划总览）
 
 

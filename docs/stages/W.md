@@ -1,6 +1,6 @@
 # 阶段 W — 异步运行时完整化
 
-> **所属任务树**：[任务文档导航](../tasks/README.md) → [阶段索引](../tasks/stage-*.md)
+> **所属任务树**：[任务文档导航](../tasks/README.md) → [阶段索引](../tasks/stage-u-z.md)
 > **计划总览**：[`development-plan.md`](../development-plan.md) §2（计划总览）
 
 

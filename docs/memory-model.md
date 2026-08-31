@@ -1,7 +1,7 @@
 # Rlyeh 内存模型规范
 
 > 版本：0.1.0  
-> 最后更新：2026-08-24
+> 最后更新：2026-08-31
 
 > **⚠️ 实现状态**：L1 区域系统（§3）**已实现**（bump 分配 + 批量释放 + `adaptive`/`with_size`/`strategy (bump)` +
 > **运行时接线（L3 ✅）**——region 指令调用 `rlyeh-region-alloc` C ABI 层（`rlyeh_region_enter`/`rlyeh_region_alloc`/
