@@ -27,7 +27,7 @@ BENCHMARKS = ["fib", "loop_sum", "matmul", "strcat", "hashmap", "sort",
               "region_alloc", "region_batch", "nqueens"]
 
 LANGS = [
-    ("Rlyeh",  "rlyeh",  "rlyeh"),
+    ("Rlyeh",  "rlyeh",  "rl"),
     ("C",     "c",     "c"),
     ("C++",   "cpp",   "cpp"),
     ("Go",    "go",    "go"),

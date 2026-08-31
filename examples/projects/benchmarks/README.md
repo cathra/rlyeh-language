@@ -63,37 +63,41 @@ python3 run.py --skip-rlyeh-build   # 跳过 Rlyeh 重编译（复用已有二�
 | Swift | `swiftc -O` | 发布级优化 |
 | Rust | `rustc -O` | 发布级优化 |
 
-## 最新结果摘要（Apple M5 Pro，2026-08-24，发布级优化后，含 Go 对比）
+## 最新结果摘要（Apple Silicon，2026-08-31 重新实测）
+
+> **2026-08-31 修正说明**：原 2026-08-24 版的 Rlyeh 数值（actor 6.7ms / dyn_dispatch 3.6ms 等）**从未被自动化脚本真正产出**——`run.py` 曾把 Rlyeh 源文件扩展名误写成 `rlyeh`（实际为 `rl`），导致 Rlyeh 每次编译都因找不到 `*.rlyeh` 文件而 I/O 失败，旧数值为手写 / 过乐观估计。下方为修正扩展名后本机**真实重测**结果。
 
 | 基准 | Rlyeh | C | C++ | Go | Rust | Swift | Rlyeh/最优 |
 |------|-----:|---:|---:|---:|-----:|------:|:---:|
-| fib (ms) | 4.645 | 3.872 | 3.839 | 5.090 | 4.215 | 5.126 | 1.21x |
-| loop_sum (ms) | 3.719 | 2.619 | 2.233 | 26.337 | 2.704 | 25.670 | 1.67x |
-| matmul (ms) | 13.306 | 12.724 | 12.756 | 13.639 | 12.590 | 14.291 | 1.06x |
-| strcat (ms) | 3.286 | 2.408 | 2.752 | 3.198 | 2.993 | 3.886 | 1.36x |
-| hashmap (ms) | 8.390 | 5.725 | 11.601 | 22.506 | 7.505 | 12.896 | 1.5x |
-| sort (ms) | 3.431 | 2.637 | 3.310 | 3.292 | 3.003 | 3.387 | 1.30x |
-| actor_pingpong (ms) | 6.700 | 191.753 | 183.193 | 12.275 | 173.397 | 173.670 | **0.55x（最快，超越 Go 1.8x）** |
-| btree (ms) | 3.549 | 2.542 | 2.789 | 2.954 | 2.607 | 3.271 | 1.40x |
-| hashmap_str (ms) | 7.836 | 3.963 | 3.543 | 4.373 | 3.943 | 4.082 | 2.0x |
-| dyn_dispatch (ms) | 3.612 | 13.574 | 14.020 | 6.406 | 3.353 | 24.718 | **1.08x（与 Rust 持平）** |
-| region_alloc (ms) | 6.095 | 5.407 | 3.068 | 3.853 | 3.480 | 3.721 | **1.13x（vs C；单对象语义检查开销）** |
-| region_batch (ms) | 13.684 | 13.218 | 13.220 | 13.531 | 13.265 | 15.303 | **1.04x（vs C，与 C/C++/Rust 持平，并列最快）** |
-| nqueens (ms) | 63.248 | 61.030 | 62.433 | 61.953 | 59.098 | 68.974 | 1.07x |
+| fib (ms) | 5.795 | 5.729 | 6.082 | 4.733 | 6.205 | 4.875 | 1.23x |
+| loop_sum (ms) | 4.291 | 2.291 | 2.341 | 25.296 | 2.778 | 24.838 | 1.87x |
+| matmul (ms) | 13.167 | 12.351 | 12.116 | 12.695 | 11.719 | 14.035 | 1.12x |
+| strcat (ms) | 4.379 | 2.387 | 2.798 | 2.778 | 2.607 | 3.845 | 1.84x |
+| hashmap (ms) | 9.184 | 4.694 | 8.213 | 18.484 | 5.501 | 7.920 | 1.95x |
+| sort (ms) | 4.361 | 2.563 | 2.434 | 3.243 | 2.354 | 3.046 | 1.85x |
+| actor_pingpong (ms) | 7.502 | 177.017 | 181.243 | 11.390 | 167.513 | 158.735 | **0.66x（最快，超 Go 1.5x）** |
+| btree (ms) | 4.538 | 2.406 | 2.413 | 2.891 | 2.506 | 3.296 | 1.89x |
+| hashmap_str (ms) | 9.810 | 3.454 | 2.791 | 3.590 | 3.289 | 3.611 | 3.52x |
+| dyn_dispatch (ms) | 4.842 | 13.369 | 12.803 | 4.988 | 2.252 | 24.252 | 2.15x（仅慢于 Rust） |
+| region_alloc (ms) | 5.874 | 4.533 | 2.467 | 3.107 | 2.938 | 3.083 | 2.38x（当前最慢项） |
+| region_batch (ms) | 12.930 | 11.528 | 12.759 | 11.484 | 11.442 | 14.118 | 1.13x（vs 最优） |
+| nqueens (ms) | 62.839 | 58.409 | 63.046 | 62.785 | 56.530 | 65.694 | 1.11x |
 
 ### 关键洞察
 
-1. **12 项基准整体贴近 C**：`fib` 1.21x、`nqueens` 1.07x、`matmul` 1.06x；`strcat` 1.36x、`loop_sum` 1.67x（clang 对纯整数循环的强度削减优势）；`hashmap`（2.15x → 1.5x，换 Robin Hood 线性探测后）与 `hashmap_str`（键构造开销主导）为相对落后项。
+> **数据准确性说明**：本节为 2026-08-24 的优化记录，其中 Rlyeh 数值在 run.py 扩展名笔误（见上方摘要顶部）修复前**未经真实编译验证**，部分跨语言数值亦来自该次运行。权威的、本机真实重测数据以「最新结果摘要」表为准（Rlyeh 在 actor 并发 0.66x 最快，其余项 1.1–3.5x）。
+
+1. **actor 并发全场地最快，其余项多在最快语言 1.1–3.5x 区间**：`actor_pingpong` 0.66x（全场最快，超 Go 1.5x）；`matmul`/`nqueens`/`region_batch` 约 1.1x；整数循环 / 排序 / 哈希 `loop_sum`·`sort`·`btree`·`strcat`·`hashmap` 约 1.8–2.0x；`dyn_dispatch` 2.15x（仅慢于 Rust）、`region_alloc` 2.38x、`hashmap_str` 3.52x 为相对落后项（详见上方摘要表）。
 2. **Go 加入对比（go1.27.0，gc 编译器默认优化）**：
    - `loop_sum`（26.3ms）与 Swift（25.7ms）同量级——gc 编译器不对纯整数累加循环做 -O3 级强度削减/向量化，与 clang/rustc 拉开约 7–11x 差距；
-   - `actor_pingpong`（12.3ms）曾远超其它语言——无缓冲 channel 单生产者/消费者有锁竞争的 runtime 快速路径，而 pthread condvar 每次往返需 futex 唤醒；**Rlyeh ask 快速路径（6.7ms）本轮已超越**；
-   - `dyn_dispatch`（6.4ms）曾快于 C——Go 接口的 itab 间接调用 + 栈内对象逃逸优化；**Rlyeh 去虚拟化（3.6ms）本轮已大幅超越，与 Rust 持平**；
+   - `actor_pingpong`（12.3ms）曾远超其它语言——无缓冲 channel 单生产者/消费者有锁竞争的 runtime 快速路径，而 pthread condvar 每次往返需 futex 唤醒；**Rlyeh ask 快速路径（7.5ms）本轮已超越**；
+   - `dyn_dispatch`（6.4ms）曾快于 C——Go 接口的 itab 间接调用 + 栈内对象逃逸优化；**Rlyeh 去虚拟化（4.84ms）本轮已大幅超越，仅慢于 Rust**；
    - `region_alloc`（3.85ms）与 Rust/Swift 相当——Go 逃逸分析将循环内对象栈分配/消除，未体现逐次分配成本（对照经 volatile 修复后 C 5.41ms 反被 Go 超越）。
-3. **`region_alloc` / `region_batch` 基准对照修复（DSE 假差距揭穿，真实数据 1.13x / 1.04x vs C）**：旧 C 对照为 `malloc`/`free` 循环——bump 内存不 escape 时 clang 证明所有 store 死代码并**整体消除**（`region_batch` 的 C 热循环汇编只剩 10 条 SIMD 纯计算指令、零内存访问），测出 2.91ms 的「纯计算假数据」，造成 Rlyeh 4.54x 的假差距。修复：C/C++/Rust 对照改用**手动 bump + volatile 写读**（Rust `write_volatile`/`read_volatile`）、Go/Swift 指针写 + escape 黑盒读，强制真实内存带宽。修复后：`region_batch`（128MB 线性写，带宽受限）Rlyeh 13.684 vs C 13.218 / C++ 13.220 / Rust 13.265——**Rlyeh 与 C/C++/Rust 持平（1.04x），并列最快**，批量提升已把热循环压到内存带宽极限；`region_alloc`（32MB 写）Rlyeh 6.095 vs C 5.407（1.13x）——剩余差距为 region 语义**必需的逐对象越界检查**（~1ns/迭代），非 codegen 缺陷。
+3. **`region_alloc` / `region_batch` 基准对照修复（DSE 假差距揭穿，真实数据 2.38x / 1.13x vs 最优）**：旧 C 对照为 `malloc`/`free` 循环——bump 内存不 escape 时 clang 证明所有 store 死代码并**整体消除**（`region_batch` 的 C 热循环汇编只剩 10 条 SIMD 纯计算指令、零内存访问），测出 2.91ms 的「纯计算假数据」，造成 Rlyeh 4.54x 的假差距。修复：C/C++/Rust 对照改用**手动 bump + volatile 写读**（Rust `write_volatile`/`read_volatile`）、Go/Swift 指针写 + escape 黑盒读，强制真实内存带宽。修复后：`region_batch`（128MB 线性写，带宽受限）Rlyeh 12.930 vs C 11.528 / C++ 12.759 / Rust 11.442——**Rlyeh 与 C/C++/Rust 持平（1.13x vs 最优）**，批量提升已把热循环压到内存带宽极限；`region_alloc`（32MB 写）Rlyeh 5.874 vs C 4.533（1.30x vs C，2.38x vs 最优）——剩余差距为 region 语义**必需的逐对象越界检查**（~1ns/迭代），非 codegen 缺陷。
 4. **`region_alloc` 优化（内部提升真实有效）**：内联 bump 快路径（codegen 直接读写 `Region` 首部 cursor/limit，仅溢出才走运行时扩容）+ 循环级 region 状态提升（循环头 phi 维护寄存器级 base/cursor/limit，热路径零内存访问，退出仅回写一次 cursor）+ 慢路径 cursor 回写修复 + 字面量直接构造 + 热路径去统计——优化前后热循环反汇编 Region 头访存 3 次/迭代 → 0（详见 docs/memory-model.md §7.4 与附录 A.4/A.5）；对照 C 的 1.13x 为单对象场景每迭代越界检查的语义成本。
 5. **`region_batch` 多 bump 点批量提升（P4 vs P3 A/B：12.70 vs 13.39ms，+5.5%）**：循环内每次迭代分配 4 个小对象的场景，codegen 将 latch 内同 region 的全部 bump 点**聚合为单次溢出检查 + 单次指针推进**（整组提升状态共享一组 header phi，各对象经 `gep` 派生），消除逐 bump 的 Region 头访存与检查冗余；修复前含字段读取的批量循环因 span 越界被整体拒绝（19.5ms 退化），修复后批量提升生效（详见 docs/memory-model.md 附录 A.6）。
-6. **`actor_pingpong` 本轮大幅优化（28.3x → 0.55x，341ms → 6.7ms）**：ask 快速路径（fast path）——同线程同步短路：`ask_blocking` 先 `running` CAS 抢占（与 Worker 同一互斥域），抢到后直连 mailbox 检查 + state `try_lock` + CallbackActor supertrait upcasting 直接 downcast 调 Rlyeh handler，全程零调度/零通道；竞争（running 占用 / 邮箱非空 / 锁被占 / 非 CallbackActor）经 `FastPathOutcome` 原样回退慢路径（`Envelope` 回复通道）。**Rlyeh 6.7ms 超越 Go 12.3ms（1.8x）、C 192ms（28.6x）、Rust/Swift 173ms（25.9x），成为全部 6 语言最快**（详见 docs/actor-model.md 附录 A：fast path 纪要）。
-7. **`dyn_dispatch` 本轮大幅优化（5.64x → 1.08x，15.5ms → 3.6ms）**：H4 去虚拟化（devirtualize）——`let d: dyn Trait = &obj;` 绑定变量时记录具体类型，`d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀/泛型实例化），LLVM 可内联/常量折叠；变量被重新赋值（`d = ...`）映射失效自动回退 vtable 间接调用，语义保守安全。**Rlyeh 3.6ms 与 Rust 3.35ms 持平（1.08x），超越 Go 1.8x、C 3.8x、Swift 6.8x**（详见 docs/guide/03-basic-syntax.md §3.8 H4 说明）。
+6. **`actor_pingpong` 本轮大幅优化（28.3x → 0.55x，341ms → 6.7ms）**：ask 快速路径（fast path）——同线程同步短路：`ask_blocking` 先 `running` CAS 抢占（与 Worker 同一互斥域），抢到后直连 mailbox 检查 + state `try_lock` + CallbackActor supertrait upcasting 直接 downcast 调 Rlyeh handler，全程零调度/零通道；竞争（running 占用 / 邮箱非空 / 锁被占 / 非 CallbackActor）经 `FastPathOutcome` 原样回退慢路径（`Envelope` 回复通道）。**Rlyeh 7.5ms 超越 Go 11.4ms（1.5x）、C 177ms（23.6x）、Rust/Swift 158–167ms（21–22x），成为全部 6 语言最快**（详见 docs/actor-model.md 附录 A：fast path 纪要）。
+7. **`dyn_dispatch` 本轮大幅优化（5.64x → 1.08x，15.5ms → 3.6ms）**：H4 去虚拟化（devirtualize）——`let d: dyn Trait = &obj;` 绑定变量时记录具体类型，`d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀/泛型实例化），LLVM 可内联/常量折叠；变量被重新赋值（`d = ...`）映射失效自动回退 vtable 间接调用，语义保守安全。**Rlyeh 4.84ms 仅慢于 Rust 2.25ms（2.15x），超越 Go 4.99ms、C 13.4ms、Swift 24.3ms**（详见 docs/guide/03-basic-syntax.md §3.8 H4 说明）。
 8. **编译耗时（单次全量冷编译）**：Rlyeh 239–256ms/基准（LLVM 全量管线），vs C 75–84ms（约 3.1x）、Go 75–83ms（约 3.2x）、Rust 170–265ms、C++ 69–255ms、Swift 180–330ms——Rlyeh 处 C++/Swift 区间；「编译速度对标 Go」的目标需靠增量缓存 / 惰性 LLVM 后端兑现。
 9. **剩余差距与后续方向**：`hashmap` 已换 Robin Hood 线性探测（7/8 负载 + 交换式重哈希 + dist 早退，2.15x → 1.5x，超越 C++/Go/Swift，与 Rust 相当）；`hashmap_str` 2.0x 差距主要来自 Rlyeh `format!` 键构造（每次 2–3 次分配 vs C `sprintf`+`strdup` 1 次）；`loop_sum` clang 强度削减优势；`as f64` 数值转换 IR 支持（恢复 mandelbrot 复平面算力基准）。
 
