@@ -6,8 +6,8 @@
 
 | 任务 | 内容 | 状态 | 详情 |
 |------|------|------|------|
-| L1 | **`async fn`/`await`**：普通函数异步支持（actor `async` 方法已有独立机制，抽象复用） | ✅（MVP 同步语义；执行情况见 [`l1-async-fn.md`](tasks/leaf/l1-async-fn.md | [`l1-async-fn.md`](../tasks/leaf/l1-async-fn.md) |
-| L2 | **`serde` 序列化模块**：`Serialize`/`Deserialize` trait + `#[derive]` 风格宏（依赖 I） | ✅（`json::stringify`/`json::parse::<T>` 内建 + turbofish；自定义 trait/derive 仍规划；执行情况见 [`l2-serde.md`](tasks/leaf/l2-serde.md | [`l2-serde.md`](../tasks/leaf/l2-serde.md) |
+| L1 | **`async fn`/`await`**：普通函数异步支持（actor `async` 方法已有独立机制，抽象复用） | ✅（MVP 同步语义；执行情况见 [`l1-async-fn.md`](../tasks/leaf/l1-async-fn.md) |
+| L2 | **`serde` 序列化模块**：`Serialize`/`Deserialize` trait + `#[derive]` 风格宏（依赖 I） | ✅（`json::stringify`/`json::parse::<T>` 内建 + turbofish；自定义 trait/derive 仍规划；执行情况见 [`l2-serde.md`](../tasks/leaf/l2-serde.md) |
 | L3 | **region 选项接线**：`strategy (bump)` 等其余选项（`rlyeh-region-alloc` 已就绪，PGO 预测可直接回灌 `adaptive` 初始容量） | ✅ | [`l3-region.md`](../tasks/leaf/l3-region.md) |
 | L4 | **平台加固**：WASI 下 net 支持（或明确禁用文档化）；Actor 交叉编译 / WASM 支持（消除 §13 约束 2/3） | ✅ | [`l4-platform.md`](../tasks/leaf/l4-platform.md) |
 
@@ -35,10 +35,10 @@
 ## 附录 A：实现纪要（编译器后端与工具链）
 
 > 本附录的历史实现纪要（MIR 中间表示 / 增量编译引擎 / 包管理器 Dagon / LLVM 后端与代码生成）已归档至任务树对应里程碑单任务文档：
-> - MIR 中间表示（P011 / M1.7）：[`milestone-tasks/m1-7.md`](milestone-tasks/m1-7.md)
-> - 增量编译引擎（P007 / M2.3）：[`milestone-tasks/m2-3.md`](milestone-tasks/m2-3.md)
-> - 包管理器 Dagon（P008 / M2.2）：[`milestone-tasks/m2-2.md`](milestone-tasks/m2-2.md)
-> - LLVM 后端与代码生成（P013 / M1.8、M1.9）：[`milestone-tasks/m1-8.md`](milestone-tasks/m1-8.md)、[`milestone-tasks/m1-9.md`](milestone-tasks/m1-9.md)
+> - MIR 中间表示（P011 / M1.7）：[`milestone-tasks/m1-7.md`](../tasks/milestone-tasks/m1-7.md)
+> - 增量编译引擎（P007 / M2.3）：[`milestone-tasks/m2-3.md`](../tasks/milestone-tasks/m2-3.md)
+> - 包管理器 Dagon（P008 / M2.2）：[`milestone-tasks/m2-2.md`](../tasks/milestone-tasks/m2-2.md)
+> - LLVM 后端与代码生成（P013 / M1.8、M1.9）：[`milestone-tasks/m1-8.md`](../tasks/milestone-tasks/m1-8.md)、[`milestone-tasks/m1-9.md`](../tasks/milestone-tasks/m1-9.md)
 > 
 > 详细实现（含 ADR 设计决策）见上述单任务文档；此处不再重复。
 
@@ -79,7 +79,7 @@
 
 ### 6.3b. 标准库深度完善计划（阶段 M–T）
 
-> **需求来源**：[`std-lib.md`](./std-lib.md) 状态总览中标记为 📋 规划 / 🔧 部分的标准库章节（§2.3 Iterator、§4 File/标准输入输出/Path/fs/NIO/sendfile、§5 TCP 对象化/HTTP、§6.2 Channel、§8 `Display`/`Debug`、§9 `Serialize`/`Deserialize`、§10 异步运行时、§11 智能指针目标 API、§12 错误处理）。
+> **需求来源**：[`std-lib.md`](../std-lib.md) 状态总览中标记为 📋 规划 / 🔧 部分的标准库章节（§2.3 Iterator、§4 File/标准输入输出/Path/fs/NIO/sendfile、§5 TCP 对象化/HTTP、§6.2 Channel、§8 `Display`/`Debug`、§9 `Serialize`/`Deserialize`、§10 异步运行时、§11 智能指针目标 API、§12 错误处理）。
 > **前置**：阶段 G–L 已全部完成，提供能力地基——G（引用/`&str`/裸指针/严格借用）、H（函数指针/闭包/`dyn Trait`）、I（宏/格式化宏/集合宏）、J（迭代器）、K（`?`/Box/Rc/Arc/Gc）、L（async 同步语义/json/region 指令/WASI）。
 > **Rust 绑定层策略**：延续 rlyeh-std「绑定层阶段」——每个新 std 模块先在 `crates/rlyeh-std/src/` 用 Rust 实现 C ABI 绑定（`#[no_mangle] extern "C"`），语言侧 `crates/rlyeh-std/rlyeh/*.rl` 经 FFI 调用封装；**NIO/sendfile 绑定层已就绪**（`rlyeh-std/src/nio/`：poller.rs/sendfile.rs/nonblocking.rs，三平台 epoll/kqueue/poll），阶段 R 为纯语言侧封装。
 > **现状修正（std-lib.md 过时标注，规划时以实际为准）**：§8 内置格式化宏已实现（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；§12 `?` 运算符已实现（K1）；§9 `json::stringify`/`json::parse::<T>` 已实现（L2，trait/derive 仍规划）。

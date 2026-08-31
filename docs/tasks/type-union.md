@@ -4,6 +4,8 @@
 > **定位**：对现有 **enum 标签联合体系**的增强（**非新运行时类型**）
 > **核心约束（"受限制"）**：联合成员必须**两两互不相交（disjoint）**，保证 tag 无歧义、收窄安全
 
+**叶子任务文档**：[`union-u1-type-layer.md`](leaf/union-u1-type-layer.md) · [`union-u2-desugar-match.md`](leaf/union-u2-desugar-match.md) · [`union-u3-scalar-enum-plan.md`](leaf/union-u3-scalar-enum-plan.md) · [`union-u4-field-union.md`](leaf/union-u4-field-union.md) · [`union-u5-tests-docs.md`](leaf/union-u5-tests-docs.md)
+
 ## 1. 目标
 
 在现有具名 tagged `enum` 之上，提供三类增强，统一覆盖"一个值可能是多种类型之一"的表达：

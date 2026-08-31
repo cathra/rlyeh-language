@@ -68,8 +68,8 @@
 | **U** | 编译器地基（std 完整化前置） | 作用域栈、关联类型、泛型约束、`-> Self`、AddrOf、Cast IR、方法级泛型、泛型结构体 | ✅ U1–U8 全部完成 | [`U.md`](stages/U.md) |
 | **V** | 集合与迭代器完整化 | 借用迭代器、String 码点迭代器、Iterator 默认方法+适配器、get_mut、新集合 | ✅ 已完成（V1/V2/V3/V4/V5 全部完成；V3 数组/`Vec` 适配器因数组非命名类型保留内建 desugar，记为已知语言限制） | [`V.md`](stages/V.md) |
 | **W** | 异步运行时完整化 | Future 泛型化、await 状态机、事件驱动 executor、join_all/timeout、recv_async、async 泛型/递归 | ✅ W1–W6 全部完成 | [`W.md`](stages/W.md) |
-| **X** | 序列化/格式化/时间完整化 | 时间 API、标准 TOML、Deserialize trait、Formatter 完整化 | 🔧 进行中（X1 ✅；X2/X3/X4 规划） | [`X.md`](stages/X.md) |
-| **Y** | IO/网络/并发/智能指针收尾 | File API、NIO 后端、HTTP 复用、锁/Channel 泛型化、Box::leak、Error::source、UDP、stack_size | 📋 规划（Y7/Y8 ✅） | [`Y.md`](stages/Y.md) |
+| **X** | 序列化/格式化/时间完整化 | 时间 API、标准 TOML、Deserialize trait、Formatter 完整化 | ✅ 全部完成（X1/X2/X3/X4 全部完成，2026-08-30） | [`X.md`](stages/X.md) |
+| **Y** | IO/网络/并发/智能指针收尾 | File API、NIO 后端、HTTP 复用、锁/Channel 泛型化、Box::leak、Error::source、UDP、stack_size | 🔧 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分） | [`Y.md`](stages/Y.md) |
 
 > **总览说明**：阶段 A–L 为编译器与工具链 + 能力补齐（§3 阶段详情，G–L 依赖：G 无、H 依赖 G、I 弱依赖、J 依赖 H、K 依赖 G、L 依赖 I/G）；阶段 M–T 为标准库深度完善（§6.3b 阶段详情，推荐路线见下方）；阶段 U–Z 为目标 API 对齐与编译器能力补齐（§6.3c，推荐路线见 §6.3c.1）。
 >
@@ -125,10 +125,10 @@
 ## 附录 A：实现纪要（编译器后端与工具链）
 
 > 本附录的历史实现纪要（MIR 中间表示 / 增量编译引擎 / 包管理器 Dagon / LLVM 后端与代码生成）已归档至任务树对应里程碑单任务文档：
-> - MIR 中间表示（P011 / M1.7）：[`milestone-tasks/m1-7.md`](milestone-tasks/m1-7.md)
-> - 增量编译引擎（P007 / M2.3）：[`milestone-tasks/m2-3.md`](milestone-tasks/m2-3.md)
-> - 包管理器 Dagon（P008 / M2.2）：[`milestone-tasks/m2-2.md`](milestone-tasks/m2-2.md)
-> - LLVM 后端与代码生成（P013 / M1.8、M1.9）：[`milestone-tasks/m1-8.md`](milestone-tasks/m1-8.md)、[`milestone-tasks/m1-9.md`](milestone-tasks/m1-9.md)
+> - MIR 中间表示（P011 / M1.7）：[`milestone-tasks/m1-7.md`](tasks/milestone-tasks/m1-7.md)
+> - 增量编译引擎（P007 / M2.3）：[`milestone-tasks/m2-3.md`](tasks/milestone-tasks/m2-3.md)
+> - 包管理器 Dagon（P008 / M2.2）：[`milestone-tasks/m2-2.md`](tasks/milestone-tasks/m2-2.md)
+> - LLVM 后端与代码生成（P013 / M1.8、M1.9）：[`milestone-tasks/m1-8.md`](tasks/milestone-tasks/m1-8.md)、[`milestone-tasks/m1-9.md`](tasks/milestone-tasks/m1-9.md)
 > 
 > 详细实现（含 ADR 设计决策）见上述单任务文档；此处不再重复。
 
@@ -238,7 +238,7 @@
 >
 > 本文件保留计划主体（§2/§3/§3b/§3c 阶段详情）与状态标识；详细实现流水见任务树 / git 历史。
 
-**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 进行中、W 全部完成、X 进行中（X1 ✅）、Y 规划（见 §2/§3c.1）。
+**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 已完成、W 全部完成、X 全部完成（2026-08-30）、Y 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分）。
 
 ---
 
@@ -255,7 +255,7 @@
 - [x] **T 阶段：集合与迭代器收尾**（2026-08-24）：T1a Vec / T1b String / T1c HashMap API 补齐 + T2 `Iterator` trait（元素固定 i64）+ T3a `Box::leak`（裸指针退化）/ T3b Rc/Arc/Weak 核对。各任务执行情况与技术细节见任务树 [`stage-m-t.md`](tasks/stage-m-t.md) T 阶段叶子文档（`t1a`–`t3b`）。
 
 > **维护者**：Rlyeh Language Team
-> **最后更新**：2026-08-25
+> **最后更新**：2026-08-31
 
 > **维护者**：Rlyeh Language Team
-> **最后更新**：2026-08-26
+> **最后更新**：2026-08-31

@@ -32,7 +32,7 @@
 | V3 默认方法 | 2026-08-26 | trait 默认方法机制 + `Iterator` count/sum/any/all |
 | V2-C 打印修复 | 2026-08-26 | `&str`（StrFat）打印链路（方案 A） |
 | V2-D 函数参数 | 2026-08-26 | `&str` 函数参数 StrFat ABI |
-| W1–W6 全部完成 | 2026-08-26 | async 运行时完整化 |
+| W1–W6 全部完成 | 2026-08-30 | async 运行时完整化 |
 
 ---
 
@@ -44,7 +44,7 @@
 | V1 `HashMap::iter` 引用迭代器 + 引用元素 `Option<&T>` | V1 | ✅ 已完成（2026-08-29：`Vec::iter_ref` 返回 `Option<&T>`、`HashMap::iter_pairs` 经 `KVRef` 零拷贝 KV 引用迭代已落地） |
 | V2 `chars`/`lines` 目标签名（返回 `Chars`/`Lines` 迭代器，需 char 类型） | V2 | ✅ 已完成（2026-08-29：chars/lines 升级为迭代器、`char` 拓宽 32 位） |
 | V3 数组/Vec 适配器走 trait 方法（数组非命名类型语言限制） | V3 | 📋 已知语言限制（数组 `[T;N]` 非命名类型无法 `impl Iterator`，适配器保留内建 desugar 返回 `Vec`；功能完整、全量测试通过，需语言增强后迁移，非 V 阶段阻塞项） |
-| X2/X3/X4、Y1–Y8 | X/Y | 📋 规划 |
+| Y1–Y8 | Y | 📋 规划（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分） |
 
 ---
 

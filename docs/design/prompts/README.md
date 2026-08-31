@@ -20,7 +20,7 @@
 | P005 | [P005_Transfer语义实现.md](./P005_Transfer语义实现.md) | `rlyeh-regionck` | [design/05](../05_区域内存管理系统.md) | 3-5 天 |
 | P006 | [P006_Actor运行时.md](./P006_Actor运行时.md) | `rlyeh-actor-runtime` | [design/07](../07_Actor并发模型.md) | 5-7 天 |
 | P007 | [P007_增量编译引擎.md](./P007_增量编译引擎.md) | `rlyeh-driver` | [design/09](../09_工具链设计.md) | 5-7 天 |
-| P008 | [P008_包管理器Dagon.md](./P008_包管理器Dagon.md) | `dagon` | [design/09](../09_工具链设计.md) | 5-7 天 |
+| P008 | [P008_包管理器Zep.md](./P008_包管理器Zep.md) | `dagon` | [design/09](../09_工具链设计.md) | 5-7 天 |
 | P009 | [P009_标准库核心模块.md](./P009_标准库核心模块.md) | `rlyeh-std` | [design/10](../10_标准库规划.md) | 5-7 天 |
 | P010 | [P010_智能区域分配器.md](./P010_智能区域分配器.md) | `rlyeh-region-alloc` | [design/05](../05_区域内存管理系统.md) | 5-7 天 |
 | P011 | [P011_MIR中间表示实现.md](./P011_MIR中间表示实现.md) | `rlyeh-mir` | [design/08](../08_编译器后端与代码生成.md) | 5-7 天 |

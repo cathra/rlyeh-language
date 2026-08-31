@@ -4,6 +4,8 @@
 > **定位**：类型系统增强；与定长数组 `[T; N]` 互补，解锁运行时长度未知的连续序列视图
 > **关联任务**：Y1（二进制文件 IO 切片签名升级路径见 §6）
 
+**叶子任务文档**：[`slice-s1-type-layer.md`](leaf/slice-s1-type-layer.md) · [`slice-s2-codegen.md`](leaf/slice-s2-codegen.md) · [`slice-s4-tests-docs.md`](leaf/slice-s4-tests-docs.md)
+
 ## 1. 目标
 
 提供运行时长度未知的连续序列「视图」：

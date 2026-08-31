@@ -689,7 +689,7 @@ fn main() {
 | `crates/rlyeh-parser/src/tests.rs` | 1108 | `tests/mod.rs` + region/control/decl | ✅ 已完成 |
 | `crates/rlyeh-std/rlyeh/core.rl` | 2186 | —（预置单一语言源码，暂不拆分） | ⏸ 专项处理 |
 
-> **拆分规范**：保持语义等价；`mod`/`use` 改为子模块（`mod xxx;` + `use xxx::*`，子模块私有函数提升为 `pub(super)`/`pub(crate)`，对外 API 从 mod.rs 显式 re-export）；每个文件拆分后须通过全量回归（`rlyeh test` 139 用例 + `cargo test`）。新增代码一律不得再扩大超限文件。
+> **拆分规范**：保持语义等价；`mod`/`use` 改为子模块（`mod xxx;` + `use xxx::*`，子模块私有函数提升为 `pub(super)`/`pub(crate)`，对外 API 从 mod.rs 显式 re-export）；每个文件拆分后须通过全量回归（`rlyeh test` 194 用例 + `cargo test`）。新增代码一律不得再扩大超限文件。
 
 ### 7.1 Rust 代码（编译器实现）
 
@@ -978,6 +978,6 @@ jobs:
 
 ---
 
-> **最后更新**：2026-08-20  
+> **最后更新**：2026-08-31  
 > **维护者**：Rlyeh Language Team  
 > **License**：MIT / Apache-2.0

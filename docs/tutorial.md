@@ -151,7 +151,7 @@ dagon search myapp       # 注册表中搜索
 
 ### 4.6 测试用例目录
 
-`rlyeh test [<tests-dir>]` 运行目录下 `compile-pass/`、`compile-fail/`、`run-pass/` 三类用例（仓库 `tests/` 已内置 140+ 用例）。
+`rlyeh test [<tests-dir>]` 运行目录下 `compile-pass/`、`compile-fail/`、`run-pass/` 三类用例（仓库 `tests/` 已内置 194 个用例：run-pass 149 + compile-pass 12 + compile-fail 33）。
 
 ---
 

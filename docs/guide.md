@@ -432,7 +432,7 @@ for j in 1...3 {         // 双闭区间 [1, 3]
 }
 ```
 
-`for` 支持数值区间（步长固定为 1）与 Vec / HashMap 容器迭代：`for x in vec`（见 §10.3）、`for (k, v) in map`（见 §10.4）；**数组迭代暂不支持**。`break` / `continue` 均可用。`match` 用于枚举解构（见 §5.2）。
+`for` 支持数值区间（步长固定为 1）与 Vec / HashMap / 数组容器迭代：`for x in vec`（见 §10.3）、`for (k, v) in map`（见 §10.4）、`for x in arr`（数组迭代，见 §13）。`break` / `continue` 均可用。`match` 用于枚举解构（见 §5.2）。
 
 ### 3.4 注释
 

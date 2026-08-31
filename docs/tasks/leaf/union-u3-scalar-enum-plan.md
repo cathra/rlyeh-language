@@ -3,7 +3,7 @@
 > **所属**：受限制的类型联合（规划 [`type-union.md`](../type-union.md)）→ 叶子 [`union-u3-scalar-enum.md`](./union-u3-scalar-enum.md)
 > **状态**：✅ 已完成（2026-08-30 核心项已落地：`Type::ScalarEnum` 表示 + 4 联动 + 缓存键 `INTERFACE_VERSION` 1→2；`rlyeh test` **190 用例全通过**；执行结果见下方「执行纪要」，详细根因与修复见叶子 [`union-u3-scalar-enum.md`](./union-u3-scalar-enum.md) 第四节）
 > **前置**：显式判别式（`enum E { A = 1 }`）已落地并稳定；`is_scalar_enum` 判定函数保留在 `TypeContext` 待用
-> **目标文档导航**：[任务文档导航](./README.md)
+> **目标文档导航**：[任务文档导航](../README.md)
 
 ---
 

@@ -17,7 +17,7 @@
 | [06_比较链与条件判断](./06_比较链与条件判断.md) | [grammar.md](../grammar.md) / [semantics.md](../semantics.md) | [P003](./prompts/P003_比较链语义分析.md) |
 | [07_Actor并发模型](./07_Actor并发模型.md) | [actor-model.md](../actor-model.md) | [P006](./prompts/P006_Actor运行时.md) |
 | [08_编译器后端与代码生成](./08_编译器后端与代码生成.md) | [CODEBUDDY.md](../../CODEBUDDY.md) §4 / [development-plan](../development-plan.md) | [P011](./prompts/P011_MIR中间表示实现.md) / [P013](./prompts/P013_LLVM后端与代码生成.md) |
-| [09_工具链设计](./09_工具链设计.md) | [CODEBUDDY.md](../../CODEBUDDY.md) §5 | [P007](./prompts/P007_增量编译引擎.md) / [P008](./prompts/P008_包管理器Dagon.md) |
+| [09_工具链设计](./09_工具链设计.md) | [CODEBUDDY.md](../../CODEBUDDY.md) §5 | [P007](./prompts/P007_增量编译引擎.md) / [P008](./prompts/P008_包管理器Zep.md) |
 | [10_标准库规划](./10_标准库规划.md) | [std-lib.md](../std-lib.md) | [P009](./prompts/P009_标准库核心模块.md) |
 
 ## 说明
