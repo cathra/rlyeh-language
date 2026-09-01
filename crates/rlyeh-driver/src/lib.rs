@@ -92,7 +92,8 @@ pub fn run_source(source: &str) -> Result<String, DriverError> {
 /// 标准库预置（`rlyeh-std/rlyeh/core.rl`，若存在）自动注入为前缀。
 pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;
-    full_pipeline(&source_with_std(source, false)?)
+    let (combined, prelude_len) = source_with_std(source, false)?;
+    full_pipeline_with_hints(&combined, &Default::default(), prelude_len)
 }
 
 /// 编译入口文件（含外部模块）为可执行文件，无缓存。
@@ -232,6 +233,8 @@ pub struct IncrementalDriver {
     stats: CacheStats,
     /// L3 PGO 回灌：区域名 → 推荐初始容量（`rlyeh build --profile` 注入）
     region_hints: std::collections::HashMap<String, usize>,
+    /// 标准库预置（prelude）字节长度（含末尾换行），用于 E3 extern 调用门禁豁免 std
+    prelude_len: usize,
 }
 
 impl IncrementalDriver {
@@ -244,6 +247,7 @@ impl IncrementalDriver {
             target: None,
             stats: CacheStats::default(),
             region_hints: std::collections::HashMap::new(),
+            prelude_len: 0,
         }
     }
 
@@ -306,7 +310,7 @@ impl IncrementalDriver {
 
         // 2. 全量编译 + 写入缓存
         self.stats.misses += 1;
-        let llvm = full_pipeline_with_hints(source, &self.region_hints)?;
+        let llvm = full_pipeline_with_hints(source, &self.region_hints, self.prelude_len)?;
         let interface = extract_interface(source)?;
         let interface_hash = compute_interface_hash(&interface);
         cache.store_llvm(file, &source_hash, &interface_hash, &llvm)?;
@@ -350,7 +354,9 @@ impl IncrementalDriver {
     /// 缓存键为入口文件路径；组合源码哈希覆盖全部模块文件与标准库预置，
     /// 任一模块/标准库变更都会触发重新编译。
     pub fn compile_file_to_llvm(&mut self, entry: &Path) -> Result<BuildOutcome, DriverError> {
-        let combined = source_with_std(module::load_combined_source(entry)?, self.no_std)?;
+        let (combined, prelude_len) =
+            source_with_std(module::load_combined_source(entry)?, self.no_std)?;
+        self.prelude_len = prelude_len;
         let key = entry.to_string_lossy().to_string();
         self.compile_to_llvm(&key, &combined)
     }
@@ -380,29 +386,35 @@ impl IncrementalDriver {
     }
 }
 
-/// 组合入口源码与标准库预置（`--no-std` 时原样返回）。
-fn source_with_std(source: String, no_std: bool) -> Result<String, DriverError> {
+/// 组合入口源码与标准库预置（`--no-std` 时原样返回，预置长度记 0）。
+/// 返回 `(combined_source, prelude_len)`：`prelude_len` 为预置源码字节长度
+/// （含拼接用的换行），用于 E3 extern 调用门禁豁免 std 内部 FFI。
+fn source_with_std(source: String, no_std: bool) -> Result<(String, usize), DriverError> {
     if no_std {
-        return Ok(source);
+        return Ok((source, 0));
     }
     Ok(match stdlib::load_std_prelude()? {
-        Some(prelude) => format!("{prelude}\n{source}"),
-        None => source,
+        Some(prelude) => {
+            let len = prelude.len() + 1; // 含拼接用的 '\n'
+            (format!("{prelude}\n{source}"), len)
+        }
+        None => (source, 0),
     })
 }
 
 /// 完整流水线：typecheck → borrowck → regionck → MIR(+优化) → LIR → LLVM IR。
 fn full_pipeline(source: &str) -> Result<String, DriverError> {
-    full_pipeline_with_hints(source, &std::collections::HashMap::new())
+    full_pipeline_with_hints(source, &std::collections::HashMap::new(), 0)
 }
 
 /// 完整流水线，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
 fn full_pipeline_with_hints(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
+    prelude_len: usize,
 ) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR）
-    let hir = rlyeh_typecheck::typecheck_source_with_region_hints(source, region_hints)
+    let hir = rlyeh_typecheck::typecheck_source_with_region_hints(source, region_hints, prelude_len)
         .map_err(|e| DriverError::Typecheck(e.to_string()))?;
 
     // 2. 借用检查（L0 所有权）

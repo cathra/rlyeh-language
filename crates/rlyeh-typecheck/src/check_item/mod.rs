@@ -31,7 +31,7 @@ use crate::types::{
 ///
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
 pub fn typecheck(program: &AstProgram) -> Result<HirProgram, TypeError> {
-    typecheck_with_region_hints(program, &Default::default())
+    typecheck_with_region_hints(program, &Default::default(), 0)
 }
 
 /// 类型检查完整程序，并注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
@@ -40,9 +40,11 @@ pub fn typecheck(program: &AstProgram) -> Result<HirProgram, TypeError> {
 pub fn typecheck_with_region_hints(
     program: &AstProgram,
     region_hints: &std::collections::HashMap<String, usize>,
+    prelude_len: usize,
 ) -> Result<HirProgram, TypeError> {
     let mut ctx = TypeContext::new();
     ctx.region_hints = region_hints.clone();
+    ctx.prelude_len = prelude_len;
     collect_declarations(&mut ctx, program)?;
     // 第二遍：所有 struct 名注册后解析字段（支持自引用/前向引用递归类型）。
     resolve_all_struct_fields(&mut ctx, program)?;
@@ -118,9 +120,15 @@ fn collect_item_decls(
                     let mangled = format!("{}@shadow{}", f.name, seq);
                     ctx.fn_decl_shadow.insert((f.span.start, f.span.end), mangled.clone());
                     ctx.fn_shadow_of.insert(f.name.clone(), mangled.clone());
-                    ctx.insert_fn_signature(mangled, sig);
+                    ctx.insert_fn_signature(mangled.clone(), sig);
+                    if f.is_extern {
+                        ctx.extern_fns.insert(mangled);
+                    }
                 } else {
-                    ctx.insert_fn_signature(full, sig);
+                    ctx.insert_fn_signature(full.clone(), sig);
+                    if f.is_extern {
+                        ctx.extern_fns.insert(full);
+                    }
                 }
             }
         }

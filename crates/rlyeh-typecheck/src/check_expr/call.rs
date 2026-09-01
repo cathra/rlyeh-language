@@ -734,6 +734,19 @@ pub(super) fn check_call(
             });
         }
     };
+
+    // SH-P0-1 E3：extern 函数调用强制要求在 `unsafe` 块内。
+    // 标准库预置（prelude，字节范围 [0, prelude_len)）内的调用视为受信任，豁免。
+    if ctx.extern_fns.contains(&resolved)
+        && !ctx.in_unsafe
+        && span.start >= ctx.prelude_len
+    {
+        return Err(TypeError::UnsafeExternCall {
+            name: resolved.clone(),
+            span,
+        });
+    }
+
     if args.len() != signature.params.len() {
         return Err(TypeError::UnexpectedArgumentCount {
             name,

@@ -150,6 +150,13 @@ pub struct TypeContext {
     /// 当前函数/方法声明返回类型（P6c，`?` 运算符 From 自动转换用于确定目标错误类型）。
     /// 在函数/actor 方法体检查入口设置，退出时恢复。
     pub current_return_type: Option<Type>,
+    /// 当前是否处于 `unsafe` 块内（SH-P0-1 E3：extern 调用门禁上下文）
+    pub in_unsafe: bool,
+    /// 标准库预置（prelude）源码字节长度（含末尾换行）：
+    /// 偏移量 `<` 此值的调用视为受信任的 std 内部 FFI，豁免 unsafe 门禁。
+    pub prelude_len: usize,
+    /// extern 函数名集合（SH-P0-1 E3：门禁查表，键与 `fn_signatures` 一致）
+    pub extern_fns: std::collections::HashSet<String>,
 }
 
 impl TypeContext {

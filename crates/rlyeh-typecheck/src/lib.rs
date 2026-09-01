@@ -36,13 +36,14 @@ pub use crate::check_item::{collect_fn_signatures, typecheck, typecheck_with_reg
 
 /// 便捷函数：解析源码并类型检查，返回 HIR。
 pub fn typecheck_source(source: &str) -> Result<HirProgram, TypeError> {
-    typecheck_source_with_region_hints(source, &Default::default())
+    typecheck_source_with_region_hints(source, &Default::default(), 0)
 }
 
 /// 便捷函数：解析源码并类型检查，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
 pub fn typecheck_source_with_region_hints(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
+    prelude_len: usize,
 ) -> Result<HirProgram, TypeError> {
     let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
@@ -53,5 +54,5 @@ pub fn typecheck_source_with_region_hints(
         what: e.to_string(),
         span: e.span(),
     })?;
-    typecheck_with_region_hints(&program, region_hints)
+    typecheck_with_region_hints(&program, region_hints, prelude_len)
 }

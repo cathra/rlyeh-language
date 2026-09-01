@@ -121,6 +121,13 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 在 `unsafe` 块外调用 extern 函数（SH-P0-1 E3 门禁）
+    UnsafeExternCall {
+        /// 函数名
+        name: String,
+        /// 源码位置
+        span: Span,
+    },
     /// 实参数量不匹配
     UnexpectedArgumentCount {
         /// 函数名
@@ -268,7 +275,8 @@ impl TypeError {
             | TypeError::Unsupported { span, .. }
             | TypeError::UnionMembersNotDisjoint { span, .. }
             | TypeError::GenericBoundMismatch { span, .. }
-            | TypeError::GenericArityMismatch { span, .. } => *span,
+            | TypeError::GenericArityMismatch { span, .. }
+            | TypeError::UnsafeExternCall { span, .. } => *span,
         }
     }
 }
@@ -333,6 +341,10 @@ impl fmt::Display for TypeError {
             TypeError::FunctionNotFound { name, .. } => {
                 write!(f, "{loc}: error: function `{name}` not found")
             }
+            TypeError::UnsafeExternCall { name, .. } => write!(
+                f,
+                "{loc}: error: call to extern function `{name}` must be inside an `unsafe` block"
+            ),
             TypeError::UnexpectedArgumentCount {
                 name,
                 expected,
