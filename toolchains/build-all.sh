@@ -52,11 +52,14 @@ build_platform() {
         cp "$REPO/target/$target/release/$b$ext" "$stage/bin/$b$ext"
     done
 
+    # 真实编译器二进制改名 rlyeh-bin，避免与入口 wrapper（同名 rlyeh）冲突被覆盖
+    mv -f "$stage/bin/rlyeh$ext" "$stage/bin/rlyeh-bin$ext"
+
     # 生成 rlyeh wrapper
     if [[ "$name" == *windows* ]]; then
-        printf '@echo off\r\nset RLYEH_STD_PATH=%%~dp0..\\std\r\n"%%~dp0rlyeh.exe" %%*\r\n' > "$stage/bin/rlyeh.bat"
+        printf '@echo off\r\nset RLYEH_STD_PATH=%%~dp0..\\std\r\n"%%~dp0rlyeh-bin.exe" %%*\r\n' > "$stage/bin/rlyeh.bat"
     else
-        printf '#!/usr/bin/env bash\nexport RLYEH_STD_PATH="${RLYEH_STD_PATH:-$(cd "$(dirname "$0")/.." && pwd)/std}"\nexec "$(dirname "$0")/rlyeh" "$@"\n' > "$stage/bin/rlyeh"
+        printf '#!/usr/bin/env bash\nexport RLYEH_STD_PATH="${RLYEH_STD_PATH:-$(cd "$(dirname "$0")/.." && pwd)/std}"\nexec "$(dirname "$0")/rlyeh-bin" "$@"\n' > "$stage/bin/rlyeh"
         chmod +x "$stage/bin/rlyeh"
     fi
 

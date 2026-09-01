@@ -59,6 +59,10 @@ for b in "${BINARIES[@]}"; do
 done
 echo "    二进制 -> $PREFIX/bin"
 
+# 3b. 真实编译器二进制以 rlyeh-bin 部署，避免与入口 wrapper（同名 rlyeh）冲突被覆盖。
+#     [[bin]] 已将编译器命名为 rlyeh，故此处把 ELF 改名为 rlyeh-bin，由 wrapper 转调。
+mv -f "$PREFIX/bin/rlyeh" "$PREFIX/bin/rlyeh-bin"
+
 # 4. 复制标准库（core.rl / future.rl + 全部模块子目录）
 rm -rf "$PREFIX/std"
 mkdir -p "$PREFIX/std"
@@ -98,7 +102,7 @@ cat > "$PREFIX/bin/rlyeh" <<EOF
 #!/usr/bin/env bash
 # Rlyeh 编译器入口（本地发布版，可重定位）
 export RLYEH_STD_PATH="\${RLYEH_STD_PATH:-\$(cd "\$(dirname "\$0")/.." && pwd)/std}"
-exec "\$(dirname "\$0")/rlyeh" "\$@"
+exec "\$(dirname "\$0")/rlyeh-bin" "\$@"
 EOF
 chmod +x "$PREFIX/bin/rlyeh"
 
