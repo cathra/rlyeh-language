@@ -37,7 +37,7 @@
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | ⏳ 规划 | 运行时表达力地基 |
 | **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
 | **0.2.0-G** | `dyn Trait` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | 🟢 完成 | actor 消息协议地基 |
-| **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | ⏳ 规划 | 运行时并发地基 |
+| **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | 🟢 完成 | 运行时并发地基 |
 | **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | ⏳ 规划 | IR 可变遍历 |
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ⏳ 规划 | Rlyeh 产物链接 Rust 运行时 |
 | **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | ⏳ 规划 | 引导器 + 对拍验证 |
@@ -98,8 +98,9 @@
 > **关联文档**：[SH-P0-3 `dyn Trait` 含 `Self` + `Any` 类型擦除](tasks/leaf/sh-p0-3-dyn-any.md)
 
 ### 3.8 H 并发原语（P0-4）
-- H1 `Arc<Mutex<T>>`/`Weak` 内部可变性 + 锁原语 / H2 原子类型（`Atomic*`）/ H3 线程 `spawn`（与 F 协同）。
-- 验证：Rlyeh 侧并发计数器（多线程 + `Arc<Mutex>`）无数据竞争。
+- ✅ H1 `Arc<Mutex<T>>`/`Weak` 内部可变性 + 锁原语（复核：已具备 `Mutex`/`RwLock`/守卫/`Condvar`/`Barrier`/`Channel`）/ ✅ H2 原子类型 `AtomicI64` + `Ordering` 内存序（driver 注入 LLVM `atomicrmw`/`cmpxchg`）/ ✅ H3 线程 `spawn`（复核：已由 SH-P0-2 的 `Thread::start(move || ..)` 落地）。
+- 验证：Rlyeh 侧并发计数器（多线程 + `Arc<Mutex<i64>>` + `Arc<AtomicI64>`）无数据竞争（见 `tests/run-pass/concurrent_counter.rl`，两路径均 4000）。
+- 已知限制：仅 `AtomicI64`；无 `fetch_update`/`fetch_max`/`compare_exchange_weak`；`AcqRel` 在 load/store 分派中归入 SeqCst。
 > **关联文档**：[SH-P0-4 并发原语](tasks/leaf/sh-p0-4-concurrency.md)
 
 ### 3.9 I 内部可变性 / arena 表示（P2-3）
@@ -268,12 +269,13 @@ actor 消息协议（异构消息信封）地基（事实依据：`rlyeh-actor-r
 > **关联文档**：[SH-P0-3 `dyn Trait` 含 `Self` + `Any` 类型擦除](tasks/leaf/sh-p0-3-dyn-any.md)
 
 ### 7.4 H 并发原语（SH-P0-4，🔴 高）
-运行时并发地基（与 F 协同）；当前有 `Arc`/`Weak`（K3），缺 `Mutex` 内部可变性、原子类型、线程 `spawn` 一等支持。
-- **H-M1** `Arc<Mutex<T>>`/`Weak` 内部可变性 + 锁原语。
-- **H-M2** `Atomic*` 原子类型 + 内存序。
-- **H-M3** 线程 `spawn`（接收跨边界闭包，依赖 F）。
-- **H-M4** 并发计数器（无数据竞争）。
-- **关键 checkpoint**：Rlyeh 侧多线程 + `Arc<Mutex>` 计数器无数据竞争；原子自增正确。
+运行时并发地基（与 F 协同）；当前有 `Arc`/`Weak`（K3）。
+- ✅ **H-M1** `Arc<Mutex<T>>`/`Weak` 内部可变性 + 锁原语——**复核确认已具备**：`Mutex<T>`/`RwLock<T>` + 三种守卫（desugar 作用域自动解锁）+ `Condvar`/`Barrier`/`Channel`（无界/有界/异步 `recv_async`）已在 `rlyeh-std/rlyeh/sync/module.rl` 落地（B4/P/P1/P5/Y4b-3/Y4c/W5）。
+- ✅ **H-M2** `Atomic*` 原子类型 + 内存序——` AtomicI64` + `Ordering`。底层由 driver 注入 LLVM IR（`rlyeh-driver/src/platform_ir.rs::atomic_builtin_ir`）：RMW 族（`swap`/`fetch_{add,sub,and,or,xor}`，返回旧值）经 `atomicrmw ... seq_cst`，CAS 经 `cmpxchg`，`load`/`store` 另提供 `acquire`/`release`/`relaxed` 变体供内存序分派。原子读改写**无 C 链接符号**（C11 `<stdatomic.h>` 为泛型宏），故沿用 `__rlyeh_*` 注入机制。API：`new`/`load`/`store`/`swap`/`fetch_*`/`compare_and_swap`/`compare_exchange`/`load_with`/`store_with`。
+- ✅ **H-M3** 线程 `spawn`（接收跨边界闭包，依赖 F）——**复核确认已由 SH-P0-2 F-M4 落地**：`Thread::start(move || ..)` + `join`。
+- ✅ **H-M4** 并发计数器（无数据竞争）——`tests/run-pass/concurrent_counter.rl`：两线程各自增 2000 次，`Arc<AtomicI64>`（无锁）与 `Arc<Mutex<i64>>`（`lock_guard` 守卫）两路径最终计数均恰为 4000（丢失更新会偏小），连跑 3 次稳定。
+- **关键 checkpoint**：Rlyeh 侧多线程 + `Arc<Mutex>` 计数器无数据竞争通过（4000/4000/1）；原子自增正确通过（`atomic_i64.rl`）；完整套件 740/740 全绿。
+- **已知限制**：仅 `AtomicI64`（无 `AtomicBool`/`AtomicUsize`/`AtomicPtr`）；无 `fetch_update`/`fetch_max`/`fetch_min`/`compare_exchange_weak`；`Ordering::AcqRel` 在 `load_with`/`store_with` 分派中归入 SeqCst；原子对象无析构（同 `Mutex`）。
 > **关联文档**：[SH-P0-4 并发原语](tasks/leaf/sh-p0-4-concurrency.md)
 
 ### 7.5 J FFI/ABI 链接桥（SH-P2-4，🔴 高）

@@ -19,15 +19,94 @@ pub(crate) fn platform_builtin_ir(target: Option<&str>, llvm: &str) -> String {
         String::new()
     };
     format!(
-        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         os,
         sendfile_builtin_ir(os),
         thread_builtin_ir(os),
         time_builtin_ir(os),
         file_stat_builtin_ir(os),
         kqueue_builtin_ir(os),
-        slice_io
+        slice_io,
+        atomic_builtin_ir(),
     )
+}
+
+/// H-M2（SH-P0-4，2026-09-02）：原子操作内建（i64 字长，LLVM IR 级实现）。
+///
+/// 原子读改写（`atomicrmw`）/ 比较交换（`cmpxchg`）在 LLVM IR 层表达，**无对应
+/// C 链接符号**（C11 `<stdatomic.h>` 的 `atomic_fetch_add` 为泛型宏，不可链接），
+/// 故由 driver 注入 `define internal`，与 `__rlyeh_clock_monotonic` /
+/// `__rlyeh_target_os` 同一机制（core.rl 以 `__rlyeh_` 前缀声明，codegen 不生成
+/// declare，避免与注入定义冲突）。
+///
+/// 全部操作为 **SeqCst**（`seq_cst`，最强内存序，等价 Rust `Ordering::SeqCst`）：
+/// 保证跨线程 total order，读写不被重排到原子操作之外。指针参数为 `i64` 句柄
+/// （std `AtomicI64.p`，由 `calloc(1, 8)` 分配，8 字节对齐），注入体内 `inttoptr`
+/// 还原为 `i64*` 后执行原子指令。
+fn atomic_builtin_ir() -> String {
+    // RMW 族：仅运算符不同（xchg / add / sub / and / or / xor），均返回旧值。
+    let rmw = |op: &str, name: &str| -> String {
+        format!(
+            "define internal i64 @__rlyeh_atomic_{name}_i64(i64 %p, i64 %v) {{\n\
+             entry:\n  \
+             %ptr = inttoptr i64 %p to i64*\n  \
+             %old = atomicrmw {op} i64* %ptr, i64 %v seq_cst, align 8\n  \
+             ret i64 %old\n\
+             }}\n"
+        )
+    };
+    // 载入族：`load atomic` 按给定内存序（relaxed / acquire / seq_cst）。
+    let load = |order: &str, name: &str| -> String {
+        format!(
+            "define internal i64 @__rlyeh_atomic_load_i64_{name}(i64 %p) {{\n\
+             entry:\n  \
+             %ptr = inttoptr i64 %p to i64*\n  \
+             %v = load atomic i64, i64* %ptr {order}, align 8\n  \
+             ret i64 %v\n\
+             }}\n"
+        )
+    };
+    // 存储族：`store atomic` 按给定内存序（relaxed / release / seq_cst）。
+    let store = |order: &str, name: &str| -> String {
+        format!(
+            "define internal void @__rlyeh_atomic_store_i64_{name}(i64 %p, i64 %v) {{\n\
+             entry:\n  \
+             %ptr = inttoptr i64 %p to i64*\n  \
+             store atomic i64 %v, i64* %ptr {order}, align 8\n  \
+             ret void\n\
+             }}\n"
+        )
+    };
+    let mut s = String::from(
+        "\n; --- 原子操作内建（H-M2：LLVM atomicrmw / cmpxchg，SeqCst）---\n",
+    );
+    s.push_str(&load("seq_cst", "seq_cst"));
+    s.push_str(&load("acquire", "acquire"));
+    s.push_str(&load("monotonic", "relaxed"));
+    s.push_str(&store("seq_cst", "seq_cst"));
+    s.push_str(&store("release", "release"));
+    s.push_str(&store("monotonic", "relaxed"));
+    for (op, name) in [
+        ("xchg", "swap"),
+        ("add", "fetch_add"),
+        ("sub", "fetch_sub"),
+        ("and", "fetch_and"),
+        ("or", "fetch_or"),
+        ("xor", "fetch_xor"),
+    ] {
+        s.push_str(&rmw(op, name));
+    }
+    // 比较交换：成功/失败均为 seq_cst；返回旧值（调用方与 expected 比较判定是否成功）。
+    s.push_str(
+        "define internal i64 @__rlyeh_atomic_cas_i64(i64 %p, i64 %expected, i64 %desired) {\n\
+         entry:\n  \
+         %ptr = inttoptr i64 %p to i64*\n  \
+         %pair = cmpxchg i64* %ptr, i64 %expected, i64 %desired seq_cst seq_cst, align 8\n  \
+         %old = extractvalue { i64, i1 } %pair, 0\n  \
+         ret i64 %old\n\
+         }\n",
+    );
+    s
 }
 
 /// `__rlyeh_kqueue`/`__rlyeh_kevent` 平台内建（Y，2026-08-28）。

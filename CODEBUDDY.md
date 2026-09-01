@@ -157,6 +157,58 @@ let supervised = Counter::new_supervised(0);
 
 语义：actor 方法消息经「kind 槽 + 3 个 i64 消息槽」传递，同一 actor 消息按邮箱 FIFO 互斥处理；返回 -1 触发崩溃协议（ask 立即返回 0，supervisor 重启；无监督则 actor 停止）。
 
+### 3.3.1 共享内存并发原语（sync 模块）
+
+```rlyeh
+// 互斥锁：带值锁 + 作用域守卫（块尾自动解锁）
+let mut m = Mutex::new(0);
+{
+    let mut g = m.lock_guard();
+    let p = (&mut g).get_mut();
+    *p = *p + 1;
+};
+
+// 读写锁：读-读共享，写-写 / 读-写互斥
+let rw = RwLock::new(0);
+let r = rw.read_guard();      // 读守卫（&T）
+// let w = rw.write_guard();  // 写守卫（&mut T）
+
+// 原子整数（H-M2）：无锁读改写，SeqCst
+let a = AtomicI64::new(10);
+a.store(20);
+println(a.fetch_add(5));                  // 20（返回旧值）→ 当前 25
+println(a.compare_exchange(25, 99));      // true
+println(a.load_with(sync::Ordering::Acquire));
+
+// 条件变量 / 屏障 / 通道
+let cv = Condvar::new();
+let bar = Barrier::new(2);
+let pair = channel::<i64>();               // ChannelPair { tx, rx }
+
+// 线程：start 接收 move 闭包（跨边界闭包，见 §3.8），join 取返回值
+let counter = Arc::new(AtomicI64::new(0));
+let c = counter.clone();
+let t = Thread::start(move || { c.fetch_add(1); 0 });
+match t { Ok(th) => { let _ = th.join(); }, Err(_) => {} }
+println(counter.load());                   // 1
+```
+
+- **锁**：`Mutex<T>` / `RwLock<T>` 带值锁（`value: T`），`lock_guard` /
+  `read_guard` / `write_guard` 返回守卫，**desugar 在所在块尾自动注入 `unlock()`**
+  （按方法名特判；`if`/`match` 分支内的提前 `return`/`break` 不注入，可显式调用
+  `g.unlock()`）。`*g` 经 Deref/DerefMut 分发（`deref` / `deref_mut` 方法）。
+- **通道**：`channel::<T>()` 无界、`bounded_channel::<T>(n)` 有界（背压）；
+  `send`/`recv` 阻塞，`try_send`/`try_recv` 非阻塞，`*_result` 返回 `Result`；
+  `recv_async()` 返回 future，可 `await`（事件驱动，不阻塞线程）。
+- **原子**（H-M2，2026-09-02）：`AtomicI64` + `Ordering`。底层由 driver 注入
+  LLVM `atomicrmw` / `cmpxchg`（**无 C 链接符号**，C11 `<stdatomic.h>` 为泛型宏），
+  沿用 `__rlyeh_*` 注入机制。RMW 与 CAS 固定 **SeqCst**；`load_with` 支持
+  Relaxed/Acquire/SeqCst，`store_with` 支持 Relaxed/Release/SeqCst。
+- **已知限制**：仅 `AtomicI64`（无 `AtomicBool`/`AtomicUsize`/`AtomicPtr`）；
+  无 `fetch_update` / `fetch_max` / `fetch_min` / `compare_exchange_weak`；
+  `Ordering::AcqRel` 在 load/store 分派中归入 SeqCst；锁与原子对象无析构
+  （缓冲由 OS 在进程退出时回收）。
+
 ### 3.4 区域系统
 
 ```rlyeh

@@ -12,7 +12,7 @@
 | SH-P0-1 | `unsafe` 块 / 裸指针 / `#[repr(C)]` | 0.2.0-E | gc-runtime / region-alloc / actor-runtime ffi / rlyeh-std nio | [leaf](./leaf/sh-p0-1-unsafe.md) | 🟢 完成 |
 | SH-P0-2 | 跨函数边界闭包 + `move` + `'static` | 0.2.0-F | actor-runtime / driver 线程模型 | [leaf](./leaf/sh-p0-2-closure.md) | 🟢 完成 |
 | SH-P0-3 | `dyn Trait` 含 `Self` 方法 + `Any` 类型擦除 | 0.2.0-G | actor 消息协议 | [leaf](./leaf/sh-p0-3-dyn-any.md) | 🟢 完成 |
-| SH-P0-4 | 并发原语（Arc<Mutex>/atomic/线程 spawn） | 0.2.0-H | actor-runtime / driver 并发 | [leaf](./leaf/sh-p0-4-concurrency.md) | ⏳ 规划中 |
+| SH-P0-4 | 并发原语（Arc<Mutex>/atomic/线程 spawn） | 0.2.0-H | actor-runtime / driver 并发 | [leaf](./leaf/sh-p0-4-concurrency.md) | 🟢 完成 |
 | SH-P0-5 | 元组值构造 + 解构（多返回值） | 0.2.0-N | lexer / parser（PoC 重写）、typecheck / codegen | [leaf](./leaf/sh-p0-5-tuple-value.md) | ⏳ 规划中 |
 | SH-P0-6 | `if let` / `while let` 模式控制流 | 0.2.0-O | lexer / parser / typecheck（PoC 重写） | [leaf](./leaf/sh-p0-6-if-let.md) | ⏳ 规划中 |
 | SH-P0-7 | `match` 守卫 + 范围/或模式 | 0.2.0-P | parser / typecheck（字符分类/判别分支） | [leaf](./leaf/sh-p0-7-match-guard.md) | ⏳ 规划中 |
@@ -22,7 +22,7 @@
 
 ## 进度
 
-P0 共 8 项：**SH-P0-1 / SH-P0-2 / SH-P0-3 🟢 完成**，其余 SH-P0-4~8 ⏳ 规划中（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。
+P0 共 8 项：**SH-P0-1 / SH-P0-2 / SH-P0-3 / SH-P0-4 🟢 完成**，其余 SH-P0-5~8 ⏳ 规划中（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。
 
 ---
 

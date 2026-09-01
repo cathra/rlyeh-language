@@ -2648,6 +2648,29 @@ extern fn __rlyeh_thread_self() -> i64;
 extern fn __rlyeh_thread_sleep(micros: i64) -> i64;
 extern fn __rlyeh_thread_spawn_stack(entry: i64, arg: i64, stack_size: i64) -> i64;  // Y8：Builder::stack_size 定制线程栈（<=0 → 默认栈）
 
+// --- 原子操作（H-M2 / SH-P0-4，2026-09-02）：`AtomicI64` 底层原语 ---
+// 由 driver 注入 `define internal`（见 rlyeh-driver platform_ir.rs atomic_builtin_ir）：
+// LLVM IR 级 `load atomic` / `store atomic` / `atomicrmw` / `cmpxchg` 实现，
+// 无对应 C 链接符号（C11 `<stdatomic.h>` 的 atomic_fetch_add 为泛型宏，不可链接）。
+// `__rlyeh_` 前缀：codegen 跳过 declare，避免与注入定义冲突。
+// 指针参数 `p` 为 i64 句柄（8 字节对齐缓冲，std 侧经 calloc(1, 8) 分配）。
+// RMW 族（swap / fetch_add / fetch_sub / fetch_and / fetch_or / fetch_xor）
+// 与 cas 固定 SeqCst；load / store 另提供 acquire / release / relaxed 变体
+// 供 `load_with` / `store_with` 按 Ordering 分派。
+extern fn __rlyeh_atomic_load_i64_seq_cst(p: i64) -> i64;
+extern fn __rlyeh_atomic_load_i64_acquire(p: i64) -> i64;
+extern fn __rlyeh_atomic_load_i64_relaxed(p: i64) -> i64;
+extern fn __rlyeh_atomic_store_i64_seq_cst(p: i64, v: i64) -> ();
+extern fn __rlyeh_atomic_store_i64_release(p: i64, v: i64) -> ();
+extern fn __rlyeh_atomic_store_i64_relaxed(p: i64, v: i64) -> ();
+extern fn __rlyeh_atomic_swap_i64(p: i64, v: i64) -> i64;
+extern fn __rlyeh_atomic_fetch_add_i64(p: i64, v: i64) -> i64;
+extern fn __rlyeh_atomic_fetch_sub_i64(p: i64, v: i64) -> i64;
+extern fn __rlyeh_atomic_fetch_and_i64(p: i64, v: i64) -> i64;
+extern fn __rlyeh_atomic_fetch_or_i64(p: i64, v: i64) -> i64;
+extern fn __rlyeh_atomic_fetch_xor_i64(p: i64, v: i64) -> i64;
+extern fn __rlyeh_atomic_cas_i64(p: i64, expected: i64, desired: i64) -> i64;   // 返回旧值
+
 // --- fs.rl：路径 + 文件系统 ---
 extern fn access(path: String, mode: i64) -> i32;   // N3a：F_OK=0 存在性
 extern fn unlink(path: String) -> i32;              // N3c：remove_file
@@ -2782,6 +2805,9 @@ import net::http::parse_url;
 import sync::Mutex;
 import sync::RwLock;
 import sync::MutexGuard;
+// H-M2（SH-P0-4）：原子类型 + 内存序（裸名构造，与 sync::Mutex 同一路径约定）
+import sync::AtomicI64;
+import sync::Ordering;
 import sync::Condvar;
 import sync::Barrier;
 import sync::Sender;

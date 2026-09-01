@@ -19,6 +19,8 @@ dist/
 !tests/run-pass/any_downcast.out
 !tests/run-pass/agg_return_plain.out
 !tests/run-pass/self_return_normal.out
+!tests/run-pass/atomic_i64.out
+!tests/run-pass/concurrent_counter.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib
