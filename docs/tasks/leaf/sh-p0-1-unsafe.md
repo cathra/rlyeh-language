@@ -29,7 +29,7 @@
   - AST/HIR 新增 `UnsafeBlock` 变体；parser 解析 `unsafe { }`（`is_item_start` 区分 `unsafe fn` 项与 `unsafe { }` 表达式语句）；typecheck/MIR/borrowck/regionck/desugar/fmt/check 各匹配臂委托到块逻辑。
   - 指针算术 `*mut T + i64 → *mut T` 本就支持（typecheck `mod.rs` BinaryOp::Add 特判）。
   - 验证：`tests/run-pass/unsafe-raw-ptr.rl`（裸指针读写/索引）+ `tests/run-pass/unsafe-bump-allocator.rl`（手动 bump 分配器，对拍 `rlyeh-region-alloc` bump 路径）。
-- 🟡 **E2 `#[repr(C)]` 内存布局**：基础设施已落地（属性解析 + `repr_c` 标志下传至 `AstStructDecl`）；默认布局与 C 兼容（8 字节对齐字段即 C 布局）。**真布局（sub-8 字节字段 C 打包）待专项**——需将字段真实尺寸自 HIR 经 MIR→LIR→codegen 下传（当前 `MirProgram` 不携带结构体字段类型，需补布局信息；codegen 为 i8\* 字节偏移模型，`FieldScalar` 已丢失字段尺寸），风险高，建议作为 0.3.0 运行时重写的前置专项。验证：`tests/run-pass/repr-c-struct.rl`。
+- 🟡 **E2 `#[repr(C)]` 内存布局**：属性解析 + `repr_c` 标志已下传（`AstStructDecl`）；typecheck 加**安全护栏**——仅接受「全 8 字节对齐标量字段（i64/u64/f64/指针）」的 repr(C) 结构体（此类与 C 布局天然一致，已验证 `tests/run-pass/repr-c-struct.rl`）；含 sub-8 字节字段（i8/i16/i32/f32/bool/char）或聚合字段的 repr(C) 显式报错（`tests/compile-fail/repr-c-sub8.rl`），杜绝静默错误 FFI 布局。**真布局（sub-8 字节字段 C 打包 / 嵌套聚合内联）待专项**——需将字段真实尺寸自 HIR 经 MIR→LIR→codegen 下传（约 250 处 `FieldGet/FieldSet` 构造与模式匹配编辑，高回归风险），建议作为 0.3.0 运行时重写的前置专项。
 - ✅ **E3 FFI 安全边界约定（extern 调用门禁已实现并验证）**：`extern fn` 调用强制要求在 `unsafe` 块内（typecheck `in_unsafe` 上下文 + `extern_fns` 查表）；标准库预置（prelude）经字节长度豁免受信任 FFI（类比 Rust std）。裸指针解引用门禁因会波及 `rlyeh-std` 裸指针用法、风险高，暂未强制（E-M1 已允许 `unsafe` 块内解引用）。验证：`tests/run-pass/unsafe-extern-call.rl` + `tests/compile-fail/unsafe-extern-call-outside.rl`。
 
 ## 变更记录
@@ -40,3 +40,4 @@
 | 2026-09-01 | 实现 E-M1：`unsafe { }` 块 + 裸指针读写/索引（跨 ast/hir/parser/typecheck/mir/borrowck/regionck/desugar/fmt/check 多 crate）；新增 run-pass 用例 `unsafe-raw-ptr.rl`、`unsafe-bump-allocator.rl`，状态由规划中改为部分完成 |
 | 2026-09-01 | 实现 E3 FFI 安全边界门禁：extern 调用须 `unsafe`（typecheck `in_unsafe` + `extern_fns` 查表；driver 注入 prelude 字节长度豁免 std 受信任 FFI）；新增 `unsafe-extern-call.rl`（run-pass）+ `unsafe-extern-call-outside.rl`（compile-fail） |
 | 2026-09-01 | E2 基础设施：`#[repr(C)]` 属性解析（`parse_attributes` 扩展）+ `repr_c` 标志下传至 `AstStructDecl`；新增 `repr-c-struct.rl`（run-pass） |
+| 2026-09-01 | E2 安全护栏：typecheck 对含 sub-8 字节 / 聚合字段的 repr(C) 结构体显式报错（真布局 C 打包待专项）；新增 `repr-c-sub8.rl`（compile-fail） |

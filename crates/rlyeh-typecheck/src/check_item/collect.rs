@@ -57,6 +57,36 @@ pub(crate) fn resolve_struct_fields(
                 span: field.span,
             });
         }
+        // SH-P0-1 E2（repr(C) 真布局护栏）：当前 codegen 为统一 8 字节槽模型，
+        // 仅「全 8 字节对齐标量字段」的 repr(C) 结构体与 C 布局一致；sub-8 字节
+        // 字段（i8/i16/i32/f32/bool/char）的 C 打包与嵌套聚合内联尚未实现，
+        // 显式报错以杜绝静默错误 FFI 布局。
+        if s.repr_c {
+            match c_field_size(&ty) {
+                Some(8) => {}
+                Some(sz) => {
+                    return Err(TypeError::Unsupported {
+                        what: format!(
+                            "repr(C) 结构体字段 `{name}: {ty}` 尺寸为 {sz} 字节；真布局（sub-8 字节字段 C 打包）尚未实现，当前仅支持全 8 字节对齐字段（i64/u64/f64/指针）",
+                            name = field.name,
+                            ty = ty,
+                            sz = sz,
+                        ),
+                        span: field.span,
+                    })
+                }
+                None => {
+                    return Err(TypeError::Unsupported {
+                        what: format!(
+                            "repr(C) 结构体字段 `{name}: {ty}` 为聚合类型；真布局（嵌套聚合内联）尚未实现，当前仅支持标量字段",
+                            name = field.name,
+                            ty = ty,
+                        ),
+                        span: field.span,
+                    })
+                }
+            }
+        }
         fields.push((field.name.clone(), ty));
     }
     ctx.type_params = saved_params;
@@ -66,6 +96,20 @@ pub(crate) fn resolve_struct_fields(
         def.fields = fields;
     }
     Ok(())
+}
+
+/// C ABI 字段尺寸（仅标量；聚合 / 字符串视图返回 `None`）。用于 repr(C) 布局护栏。
+fn c_field_size(ty: &Type) -> Option<u8> {
+    match ty {
+        Type::I8 | Type::U8 => Some(1),
+        Type::I16 | Type::U16 => Some(2),
+        Type::I32 | Type::U32 | Type::F32 => Some(4),
+        Type::I64 | Type::U64 | Type::F64 => Some(8),
+        Type::Bool => Some(1),
+        Type::Char => Some(4),
+        Type::RawPtr(..) | Type::Ref(..) => Some(8),
+        _ => None,
+    }
 }
 
 pub(crate) fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str) -> Result<(), TypeError> {
