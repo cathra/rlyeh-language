@@ -40,6 +40,8 @@ impl<'src> Parser<'src> {
                     | ExprKind::Loop { .. }
                     | ExprKind::Region { .. }
                     | ExprKind::GcRegion { .. }
+                    | ExprKind::Block(_)
+                    | ExprKind::UnsafeBlock(_)
             ) {
                 // 语句式 if / match / for / while / loop / region / gc_region：无分号时，
                 // 若块到此结束则作为块尾表达式，否则按语句处理（允许后续继续跟语句）
@@ -115,7 +117,7 @@ impl<'src> Parser<'src> {
         };
         self.expect(&Token::FatArrow, "'=>'")?;
         let body = self.parse_expr()?;
-        let is_block = matches!(*body.kind, ExprKind::Block(_));
+        let is_block = matches!(*body.kind, ExprKind::Block(_) | ExprKind::UnsafeBlock(_));
         if !is_block && !self.check(&Token::Comma) && !self.check(&Token::RBrace) {
             return Err(self.unexpected("',' or '}' after match arm"));
         }

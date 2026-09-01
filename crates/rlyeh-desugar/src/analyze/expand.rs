@@ -425,7 +425,7 @@ pub(super) fn expand_match(
             });
         }
         let a_first = match &*arm.body.kind {
-            ExprKind::Block(block) => expand_block(ctx, out, block, cont)?.0,
+            ExprKind::Block(block) | ExprKind::UnsafeBlock(block) => expand_block(ctx, out, block, cont)?.0,
             _ => {
                 return Err(DesugarError::Unsupported {
                     what: "W2 MVP：match 臂体限块表达式（含 await 时）".to_string(),

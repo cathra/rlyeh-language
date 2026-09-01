@@ -100,7 +100,7 @@ fn walk_expr(e: &mut AstExpr) {
                 walk_expr(&mut arm.body);
             }
         }
-        ExprKind::Block(b) => inject_in_block(b),
+        ExprKind::Block(b) | ExprKind::UnsafeBlock(b) => inject_in_block(b),
         ExprKind::Closure { body, .. } => walk_expr(body),
         ExprKind::While { cond, body } => {
             walk_expr(cond);

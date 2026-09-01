@@ -209,6 +209,8 @@ pub enum HirExpr {
     },
     /// 块表达式
     Block(Box<HirBlock>),
+    /// `unsafe` 块表达式（SH-P0-1：受控手动内存管理作用域）
+    UnsafeBlock(Box<HirBlock>),
     /// 函数 / 宏调用
     Call {
         /// 被调用的名称

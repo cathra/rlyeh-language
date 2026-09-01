@@ -783,6 +783,13 @@ pub(crate) fn infer_expr(
             let (hir, ty) = check_block(ctx, block)?;
             Ok((HirExpr::Block(Box::new(hir)), ty))
         }
+        ExprKind::UnsafeBlock(block) => {
+            // SH-P0-1：`unsafe { ... }` 块表达式。当前 raw 指针解引用尚未强制门禁
+            // （任何位置均可解引用），故 unsafe 块仅作为受控作用域结构支撑，便于在
+            // `unsafe` 中书写裸指针代码（见 development-plan-0.2.0.md §3.5 / SH-P0-1）。
+            let (hir, ty) = check_block(ctx, block)?;
+            Ok((HirExpr::UnsafeBlock(Box::new(hir)), ty))
+        }
         ExprKind::GcRegion { body } => check_gc_region(ctx, body, span),
         ExprKind::Return(Some(e)) => {
             let (hir, _) = infer_expr(ctx, e)?;

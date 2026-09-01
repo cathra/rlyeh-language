@@ -286,7 +286,7 @@ impl MirLowerer {
                 self.terminate(MirTerminator::Jump(ctx.continue_target));
                 None
             }
-            HirExpr::Block(b) => {
+            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => {
                 let val = self.lower_block(b)?;
                 Some(MirValue::Place(val))
             }

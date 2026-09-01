@@ -256,7 +256,7 @@ impl BorrowChecker {
             // V2-D（2026-08-26）：`s.as_str()` / `s.as_str_range(..)` 的返回是
             // StrFat 构造块（`Alloc{is_strfat}` + FieldSet data/len），悬垂检查需
             // 识别其 data 槽来源：若指向局部 String（非参数），返回 `&str` 悬垂。
-            HirExpr::Block(block) => self.check_dangling_strfat_block(block),
+            HirExpr::Block(block) | HirExpr::UnsafeBlock(block) => self.check_dangling_strfat_block(block),
             _ => {}
         }
     }
@@ -470,7 +470,7 @@ impl BorrowChecker {
                     self.scopes.pop();
                 }
             }
-            HirExpr::Block(b) => {
+            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => {
                 self.scopes.push(Scope::default());
                 self.check_block(b, false);
                 self.scopes.pop();
@@ -650,7 +650,7 @@ impl BorrowChecker {
                     self.collect_block_uses(eb, false);
                 }
             }
-            HirExpr::Block(b) => self.collect_block_uses(b, false),
+            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => self.collect_block_uses(b, false),
             HirExpr::Call { args, .. } => {
                 for a in args {
                     self.collect_expr_uses(a);

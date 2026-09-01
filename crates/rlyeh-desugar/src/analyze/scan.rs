@@ -193,7 +193,7 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
             }
             Ok(())
         }
-        ExprKind::Block(block) => scan_block(block, uses),
+        ExprKind::Block(block) | ExprKind::UnsafeBlock(block) => scan_block(block, uses),
         ExprKind::Loop { body } => scan_block(body, uses),
         ExprKind::While { cond, body } => {
             scan_expr(cond, uses)?;

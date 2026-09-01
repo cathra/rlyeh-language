@@ -414,7 +414,7 @@ impl<'src> Parser<'src> {
 
     /// 当前 token 是否可能开启一个顶层项
     pub(crate) fn is_item_start(&self) -> bool {
-        matches!(
+        let is_start = matches!(
             self.current(),
             Some(
                 Token::Fn
@@ -432,6 +432,17 @@ impl<'src> Parser<'src> {
                     | Token::Unsafe
                     | Token::Pound // `#[derive(...)]` attribute 后接 item（Q1b）
             )
-        )
+        );
+        if !is_start {
+            return false;
+        }
+        // `unsafe { ... }` 是表达式语句（裸指针作用域），仅 `unsafe fn/impl/...` 才是项；
+        // 故 `unsafe` 紧跟 `{` 时不作为项起始，交由表达式解析。
+        if matches!(self.current(), Some(Token::Unsafe))
+            && self.peek_n(1).map_or(false, |lt| matches!(lt.token, Token::LBrace))
+        {
+            return false;
+        }
+        true
     }
 }

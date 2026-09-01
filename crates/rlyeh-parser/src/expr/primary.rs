@@ -87,6 +87,16 @@ impl <'src> Parser<'src> {
                 ))
             }
             Some(Token::LParen) => self.parse_paren_or_set(),
+            Some(Token::Unsafe) => {
+                self.bump();
+                // `unsafe { ... }` 块表达式；`unsafe fn` 由 item 层处理。
+                if !self.check(&Token::LBrace) {
+                    return Err(self.unexpected("{"));
+                }
+                let block = self.parse_block()?;
+                let span = self.merge_span(start, block.span);
+                Ok(AstExpr::new(ExprKind::UnsafeBlock(block), span))
+            }
             Some(Token::LBrace) => {
                 let span = self.peek().expect("non-eof").span;
                 let block = self.parse_block()?;

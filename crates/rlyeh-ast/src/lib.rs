@@ -588,6 +588,9 @@ pub enum ExprKind {
     /// 块表达式
     Block(AstBlock),
 
+    /// `unsafe` 块表达式（SH-P0-1：受控手动内存管理作用域）
+    UnsafeBlock(AstBlock),
+
     /// return 语句
     Return(Option<AstExpr>),
 

@@ -358,6 +358,10 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             ExprKind::Block(rewrite_block(block, lifted, span)),
             span,
         ),
+        ExprKind::UnsafeBlock(block) => AstExpr::new(
+            ExprKind::UnsafeBlock(rewrite_block(block, lifted, span)),
+            span,
+        ),
         ExprKind::Return(Some(v)) => AstExpr::new(
             ExprKind::Return(Some(rewrite_expr(v, lifted, span))),
             span,

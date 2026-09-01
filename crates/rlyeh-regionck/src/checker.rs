@@ -179,7 +179,7 @@ impl RegionChecker {
                     self.check_block(eb);
                 }
             }
-            HirExpr::Block(b) => self.check_block(b),
+            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => self.check_block(b),
             HirExpr::While { cond, body } => {
                 self.check_expr(cond);
                 self.check_block(body);

@@ -365,6 +365,11 @@ impl Printer {
                 self.with_indent(|p| p.print_block_body(b));
                 self.line(&format!("}}{}", suffix));
             }
+            ExprKind::UnsafeBlock(b) => {
+                self.line("unsafe {");
+                self.with_indent(|p| p.print_block_body(b));
+                self.line(&format!("}}{}", suffix));
+            }
             ExprKind::If {
                 cond,
                 then_block,
@@ -466,6 +471,7 @@ fn is_block_like(e: &AstExpr) -> bool {
     matches!(
         e.kind.as_ref(),
         ExprKind::Block(_)
+            | ExprKind::UnsafeBlock(_)
             | ExprKind::If { .. }
             | ExprKind::Match { .. }
             | ExprKind::For { .. }
@@ -689,6 +695,7 @@ fn fmt_expr(e: &AstExpr) -> String {
             fmt_operand(inner, PREC_POSTFIX, false)
         ),
         ExprKind::Block(b) => fmt_block_compact(b),
+        ExprKind::UnsafeBlock(b) => format!("unsafe {}", fmt_block_compact(b)),
         ExprKind::Question(inner) => format!("{}?", fmt_operand(inner, PREC_POSTFIX, false)),
         ExprKind::Return(Some(v)) => format!("return {}", fmt_operand(v, PREC_ASSIGN, false)),
         ExprKind::Return(None) => "return".to_string(),
@@ -710,6 +717,7 @@ fn fmt_expr(e: &AstExpr) -> String {
 fn fmt_expr_compact_block(e: &AstExpr) -> String {
     match e.kind.as_ref() {
         ExprKind::Block(b) => fmt_block_compact(b),
+        ExprKind::UnsafeBlock(b) => format!("unsafe {}", fmt_block_compact(b)),
         ExprKind::If {
             cond,
             then_block,

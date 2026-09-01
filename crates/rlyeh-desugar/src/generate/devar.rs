@@ -269,6 +269,10 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             ExprKind::Block(devar_block(block)),
             e.span,
         ),
+        ExprKind::UnsafeBlock(block) => AstExpr::new(
+            ExprKind::UnsafeBlock(devar_block(block)),
+            e.span,
+        ),
         ExprKind::Return(Some(v)) => AstExpr::new(
             ExprKind::Return(Some(devar(v))),
             e.span,
