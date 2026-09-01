@@ -365,6 +365,41 @@ pub enum FieldScalar {
     SliceFat,
     /// 聚合对象 / 引用指针
     Ptr,
+    /// repr(C) 结构体字段：C 真布局下的内存字节偏移与标量类型（详见 `ReprConv`）。
+    /// 读取时按 `field_ty` 从 `offset` 处 load 窄值再经 `conv` 提升为 Rlyeh 宽值；
+    /// 写入时经逆转换（`trunc`/`fptrunc`）降为 `field_ty` 后落内存。
+    ReprCField {
+        /// C 布局字节偏移
+        offset: u32,
+        /// 字段在内存中的 LLVM 类型（如 `"i8"`/`"i16"`/`"i32"`/`"i32"`(char)/`"i1"`/`"i8*"`）
+        field_ty: &'static str,
+        /// 窄字段值 → Rlyeh 宽值的提升方式
+        conv: ReprConv,
+    },
+    /// repr(C) 嵌套聚合子对象（嵌套结构体）：字段本身在内存中内联于父对象，
+    /// `FieldGet` 返回指向 `base + offset` 的子指针（i8*，指向内联的子对象），
+    /// 后续 `.inner` 访问复用内层结构体的 C 布局（offset 累加）。`FieldSet`
+    /// 经 `llvm.memcpy` 把整个子对象（size 字节）拷入 `base + offset`，实现
+    /// 嵌套聚合按 C 规则内联打包。
+    ReprCSubPtr {
+        /// C 布局字节偏移（父对象内）
+        offset: u32,
+        /// 子对象字节大小（memcpy 长度；仅 `FieldSet` 用）
+        size: u32,
+    },
+}
+
+/// repr(C) 字段窄化→宽值的提升方式（读取时应用到 load 结果）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReprConv {
+    /// 无转换（i64 / f64 / bool(i1) / char(i32) / 指针(i8*) 与 Rlyeh 宽值同构）
+    None,
+    /// 无符号窄整数（u8/u16/u32）→ Rlyeh i64（`zext`）
+    Zext,
+    /// 有符号窄整数（i8/i16/i32）→ Rlyeh i64（`sext`）
+    Sext,
+    /// f32 → Rlyeh f64（`fpext`）
+    Fpext,
 }
 
 /// 区域分配策略（`strategy (bump)`，MVP 仅 bump）。

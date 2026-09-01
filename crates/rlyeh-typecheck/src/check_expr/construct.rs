@@ -2,6 +2,7 @@
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
 use super::*;
+use rlyeh_hir::FieldScalar;
 
 pub(super) fn check_struct_construct(
     ctx: &mut TypeContext,
@@ -84,13 +85,23 @@ pub(super) fn check_struct_construct(
     // 跨调用后悬垂（如 `Result<SocketAddr, _>::Ok(sa)`，`SocketAddr` 含
     // String 字段 → tcp_addr SIGSEGV）。含聚合/引用/裸指针/泛型字段者按值
     // 构造一律不安全，退化回堆分配。
-    let struct_by_value = def.fields.len() <= 2
+    // SH-P0-1 E2（repr(C) 嵌套聚合内联）：repr(C) 结构体按 C 字节布局分配
+    // （slots = ceil(c_size/8)），且不可按值（按值栈槽 `[2 x i64]` 不保留字节偏移）。
+    let c_size = if def.repr_c {
+        Some(crate::types::compute_repr_c(&def.fields, ctx, span)?.size)
+    } else {
+        None
+    };
+    let struct_by_value = !def.repr_c
+        && def.fields.len() <= 2
         && def.fields.iter().all(|(_, fty)| field_is_scalar_slot(fty));
     let base = ctx.fresh_temp();
     let mut stmts = vec![HirStmt::Let {
         name: base.clone(),
         init: HirExpr::Alloc {
-            slots: def.fields.len(),
+            slots: c_size
+                .map(|s| ((s + 7) / 8) as usize)
+                .unwrap_or(def.fields.len()),
             by_value: struct_by_value,
             is_strfat: false,
         },
@@ -141,11 +152,36 @@ pub(super) fn check_struct_construct(
                 span: init.span,
             });
         }
+        // SH-P0-1 E2（repr(C) 嵌套聚合内联）：repr(C) 结构体字面量构造时，字段须按
+        // C 字节偏移落位（a@0, b@4 ...），嵌套聚合（结构体）字段经 memcpy 内联。
+        // 偏移 / 内存类型 / 提升方式直接烤进 `FieldScalar`，与字段访问下传路径一致。
+        let field_scalar = if def.repr_c {
+            let layout = crate::types::compute_repr_c(&def.fields, ctx, span)?;
+            match &layout.fields[i] {
+                crate::types::CField::Scalar {
+                    offset,
+                    field_ty,
+                    conv,
+                } => rlyeh_hir::FieldScalar::ReprCField {
+                    offset: *offset,
+                    field_ty,
+                    conv: *conv,
+                },
+                crate::types::CField::Nested { offset, size } => {
+                    rlyeh_hir::FieldScalar::ReprCSubPtr {
+                        offset: *offset,
+                        size: *size,
+                    }
+                }
+            }
+        } else {
+            field_scalar_of(&field_fty)
+        };
         stmts.push(HirStmt::Semi(HirExpr::FieldSet {
             base: Box::new(HirExpr::Variable(base.clone())),
             index: i,
             value: Box::new(hir),
-            ty: field_scalar_of(&field_fty),
+            ty: field_scalar,
         }));
     }
 

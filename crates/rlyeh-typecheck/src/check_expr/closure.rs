@@ -188,7 +188,7 @@ pub(crate) fn check_closure_value_call(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
-    let Type::Closure { captures, params, ret, fn_name } = closure_ty else {
+    let Type::Closure { captures, params, ret, fn_name, .. } = closure_ty else {
         unreachable!("check_closure_value_call 仅接受闭包值类型");
     };
     // 未固化延迟闭包（非注解绑定 `let f = |x| ..; f(..)`）：
@@ -385,6 +385,10 @@ pub(crate) fn check_deferred_closure_call(
             params: arg_tys,
             ret: Box::new(body_ty.clone()),
             fn_name,
+            is_move: matches!(
+                &*binding.closure.kind,
+                ExprKind::Closure { capture: rlyeh_ast::CaptureMode::Move, .. }
+            ),
         },
     );
     Ok((
@@ -431,6 +435,7 @@ pub(crate) fn check_deferred_closure_binding(
         params: vec![],
         ret: Box::new(Type::Unit),
         fn_name: String::new(),
+        is_move: false,
     };
     Ok((HirExpr::Alloc {
         slots: 0,
@@ -444,7 +449,7 @@ pub(crate) fn check_closure_value_binding(
     closure: &AstExpr,
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
-    let ExprKind::Closure { params, param_types, body, capture: _ } = &*closure.kind else {
+    let ExprKind::Closure { params, param_types, body, capture } = &*closure.kind else {
         return Err(TypeError::Unsupported {
             what: "闭包值绑定需要闭包表达式".to_string(),
             span,
@@ -521,12 +526,13 @@ pub(crate) fn check_closure_value_binding(
             params: param_tys,
             ret: Box::new(body_ty),
             fn_name,
+            is_move: matches!(capture, rlyeh_ast::CaptureMode::Move),
         },
     ))
 }
 
 pub(crate) fn try_closure_value_as_fn(ty: &Type) -> Option<(HirExpr, Type)> {
-    let Type::Closure { captures, params, ret, fn_name } = ty else {
+    let Type::Closure { captures, params, ret, fn_name, .. } = ty else {
         return None;
     };
     if !captures.is_empty() || fn_name.is_empty() {
@@ -633,6 +639,10 @@ pub(crate) fn fix_deferred_closure_with_sig(
             params: param_tys,
             ret: Box::new(body_ty),
             fn_name: fn_name.clone(),
+            is_move: matches!(
+                &*binding.closure.kind,
+                ExprKind::Closure { capture: rlyeh_ast::CaptureMode::Move, .. }
+            ),
         },
     );
     Ok((

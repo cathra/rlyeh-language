@@ -53,6 +53,11 @@ impl Thread {
 // 底层辅助。entry 为线程入口 thunk（`fn(i64) -> i64`，接收输入对象指针），
 // input 为线程输入聚合对象指针（含闭包捕获槽值 + arg）。Result 构造复用此处
 // std 语言层实现（typecheck 特判仅生成 thunk + 输入对象 + 调用本函数）。
+//
+// F-M4：`Thread::start(move || ..)`（零参 move 闭包）直接跨线程执行——捕获环境
+// 按 `'static` 约束校验后堆分配（捕获借用引用 &T 会被拒绝）。这是闭包作一等值
+// 跨线程边界传递的专用通道（对应 SH-P0-2）。注：`spawn` 为 actor 派生保留关键字，
+// 线程启动统一用 `Thread::start`。
 fn __start_with_input(entry_fn: fn(i64) -> i64, input: i64) -> Result<thread::Thread, io::error::IoError> {
     let r = __rlyeh_thread_spawn(entry_fn, input);
     if r < 0 {

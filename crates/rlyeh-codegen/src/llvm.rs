@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 use rlyeh_lir::{
     FieldScalar, LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType,
-    Local,
+    Local, ReprConv,
 };
 
 use crate::error::CodegenError;
@@ -429,12 +429,52 @@ impl LlvmEmitter {
                     .locals
                     .iter()
                     .any(|(n, t)| n == base && *t == LirType::StrFat);
-                let c = if base_is_strfat {
+                if base_is_strfat {
                     let c = self.reg();
                     body.push_str(&format!(
                         "  %{c} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{base}.addr, i32 0, i32 {index}\n"
                     ));
-                    c
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
+                    self.store_to(target, &r, body, f)?;
+                } else if let FieldScalar::ReprCField { offset, field_ty, conv } = *ty {
+                    // SH-P0-1 E2（repr(C) 真布局）：按 C 字节偏移 GEP，load 窄字段后
+                    // 经 conv 提升为 Rlyeh 宽值（目标 local 仍为宽类型，无需改 LirType）。
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let s = self.reg();
+                    body.push_str(&format!(
+                        "  %{s} = getelementptr i8, i8* {b}, i64 {offset}\n"
+                    ));
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{s} to {field_ty}*\n"));
+                    let rn = self.reg();
+                    body.push_str(&format!("  %{rn} = load {field_ty}, {field_ty}* %{c}\n"));
+                    let rv = match conv {
+                        ReprConv::None => rn,
+                        ReprConv::Zext | ReprConv::Sext => {
+                            let r = self.reg();
+                            let ext = if matches!(conv, ReprConv::Zext) { "zext" } else { "sext" };
+                            body.push_str(&format!("  %{r} = {ext} {field_ty} %{rn} to i64\n"));
+                            r
+                        }
+                        ReprConv::Fpext => {
+                            let r = self.reg();
+                            body.push_str(&format!("  %{r} = fpext {field_ty} %{rn} to double\n"));
+                            r
+                        }
+                    };
+                    self.store_to(target, &rv, body, f)?;
+                } else if let FieldScalar::ReprCSubPtr { offset, .. } = *ty {
+                    // repr(C) 嵌套聚合子对象：返回指向 base+offset 的子指针（i8*）
+                    let b = self.operand_value(&LirOperand::Local(base.clone()), LirType::Ptr, body, f)?;
+                    let s = self.reg();
+                    body.push_str(&format!("  %{s} = getelementptr i8, i8* {b}, i64 {offset}\n"));
+                    self.store_to(target, &s, body, f)?;
                 } else {
                     let b = self.operand_value(
                         &LirOperand::Local(base.clone()),
@@ -449,11 +489,10 @@ impl LlvmEmitter {
                     ));
                     let c = self.reg();
                     body.push_str(&format!("  %{c} = bitcast i8* %{s} to {lt}*\n"));
-                    c
-                };
-                let r = self.reg();
-                body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
-                self.store_to(target, &r, body, f)?;
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = load {lt}, {lt}* %{c}\n"));
+                    self.store_to(target, &r, body, f)?;
+                }
             }
             LirStmt::FieldSet {
                 base,
@@ -488,6 +527,51 @@ impl LlvmEmitter {
                         "  %{c} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{base}.addr, i32 0, i32 {index}\n"
                     ));
                     body.push_str(&format!("  store {lt} {v}, {lt}* %{c}\n"));
+                } else if let FieldScalar::ReprCField { offset, field_ty, conv } = *ty {
+                    // SH-P0-1 E2（repr(C) 真布局）：按 C 字节偏移 GEP，宽值经逆转换降窄后落内存。
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let s = self.reg();
+                    body.push_str(&format!("  %{s} = getelementptr i8, i8* {b}, i64 {offset}\n"));
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* %{s} to {field_ty}*\n"));
+                    let vn = match conv {
+                        ReprConv::None => v,
+                        ReprConv::Zext | ReprConv::Sext => {
+                            let r = self.reg();
+                            body.push_str(&format!("  %{r} = trunc i64 {v} to {field_ty}\n"));
+                            format!("%{r}")
+                        }
+                        ReprConv::Fpext => {
+                            let r = self.reg();
+                            body.push_str(&format!("  %{r} = fptrunc double {v} to {field_ty}\n"));
+                            format!("%{r}")
+                        }
+                    };
+                    body.push_str(&format!("  store {field_ty} {vn}, {field_ty}* %{c}\n"));
+                } else if let FieldScalar::ReprCSubPtr { offset, size } = *ty {
+                    // SH-P0-1 E2（嵌套聚合内联）：memcpy value（子对象指针）到 base+offset，长度 size 字节
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let d = self.reg();
+                    body.push_str(&format!("  %{d} = getelementptr i8, i8* {b}, i64 {offset}\n"));
+                    let src = self.operand_value(
+                        &LirOperand::Local(value.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    body.push_str(&format!(
+                        "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{d}, i8* {src}, i64 {size}, i1 false)\n"
+                    ));
                 } else {
                     let b = self.operand_value(
                         &LirOperand::Local(base.clone()),
@@ -609,8 +693,15 @@ impl LlvmEmitter {
                 }
             }
             LirStmt::FieldAddr { target, base, index, ty } => {
-                // `&obj.field`（V1）：GEP 到字段槽，存字段地址（i8* 槽）——
-                // 写回经 DerefWrite(base=target) 直达原字段
+                // `&obj.field`（V1）：GEP 到字段地址（i8* 槽）——
+                // 写回经 DerefWrite(base=target) 直达原字段。repr(C) 用 C 字节偏移。
+                let off = if let FieldScalar::ReprCField { offset, .. } = *ty {
+                    offset as i64
+                } else if let FieldScalar::ReprCSubPtr { offset, .. } = *ty {
+                    offset as i64
+                } else {
+                    (index * 8) as i64
+                };
                 let b = self.operand_value(
                     &LirOperand::Local(base.clone()),
                     LirType::Ptr,
@@ -619,10 +710,8 @@ impl LlvmEmitter {
                 )?;
                 let s = self.reg();
                 body.push_str(&format!(
-                    "  %{s} = getelementptr i8, i8* {b}, i64 {}\n",
-                    index * 8
+                    "  %{s} = getelementptr i8, i8* {b}, i64 {off}\n"
                 ));
-                let _ = ty;
                 self.store_to(target, &s, body, f)?;
             }
             LirStmt::PtrAdd {
@@ -706,6 +795,40 @@ impl LlvmEmitter {
                     )?;
                     // operand_value 返回带 `%` 前缀，store_to 内部会补 `%`
                     self.store_to(target, &v[1..], body, f)?;
+                } else if let FieldScalar::ReprCField { field_ty, conv, .. } = *ty {
+                    // SH-P0-1：裸指针 u8 解引用——按窄内存类型 load 后提升为宽值
+                    // （目标 local 仍为宽类型，无需改 LirType）。
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* {b} to {field_ty}*\n"));
+                    let rn = self.reg();
+                    body.push_str(&format!("  %{rn} = load {field_ty}, {field_ty}* %{c}\n"));
+                    let rv = match conv {
+                        ReprConv::None => rn,
+                        ReprConv::Zext | ReprConv::Sext => {
+                            let r = self.reg();
+                            let ext = if matches!(conv, ReprConv::Zext) { "zext" } else { "sext" };
+                            body.push_str(&format!("  %{r} = {ext} {field_ty} %{rn} to i64\n"));
+                            r
+                        }
+                        ReprConv::Fpext => {
+                            let r = self.reg();
+                            body.push_str(&format!("  %{r} = fpext {field_ty} %{rn} to double\n"));
+                            r
+                        }
+                    };
+                    self.store_to(target, &rv, body, f)?;
+                } else if let FieldScalar::ReprCSubPtr { offset, .. } = *ty {
+                    // repr(C) 嵌套聚合子对象：返回指向 base+offset 的子指针（i8*）
+                    let b = self.operand_value(&LirOperand::Local(base.clone()), LirType::Ptr, body, f)?;
+                    let s = self.reg();
+                    body.push_str(&format!("  %{s} = getelementptr i8, i8* {b}, i64 {offset}\n"));
+                    self.store_to(target, &s, body, f)?;
                 } else {
                     // 标量引用：bitcast 后 load
                     let lt = field_scalar_llvm(*ty)?;
@@ -740,6 +863,55 @@ impl LlvmEmitter {
                     let c = self.reg();
                     body.push_str(&format!("  %{c} = bitcast i8* {b} to i8**\n"));
                     body.push_str(&format!("  store i8* {v}, i8** %{c}\n"));
+                } else if let FieldScalar::ReprCField { field_ty, conv, .. } = *ty {
+                    // SH-P0-1：裸指针 u8 解引用写入——宽值经逆转换降窄后落内存。
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let v = self.operand_value(
+                        &LirOperand::Local(value.clone()),
+                        field_scalar_lir(*ty),
+                        body,
+                        f,
+                    )?;
+                    let vn = match conv {
+                        ReprConv::None => v,
+                        ReprConv::Zext | ReprConv::Sext => {
+                            let r = self.reg();
+                            body.push_str(&format!("  %{r} = trunc i64 {v} to {field_ty}\n"));
+                            format!("%{r}")
+                        }
+                        ReprConv::Fpext => {
+                            let r = self.reg();
+                            body.push_str(&format!("  %{r} = fptrunc double {v} to {field_ty}\n"));
+                            format!("%{r}")
+                        }
+                    };
+                    let c = self.reg();
+                    body.push_str(&format!("  %{c} = bitcast i8* {b} to {field_ty}*\n"));
+                    body.push_str(&format!("  store {field_ty} {vn}, {field_ty}* %{c}\n"));
+                } else if let FieldScalar::ReprCSubPtr { offset, size } = *ty {
+                    // SH-P0-1 E2（嵌套聚合内联）：memcpy value（子对象指针）到 base+offset，长度 size 字节
+                    let b = self.operand_value(
+                        &LirOperand::Local(base.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    let d = self.reg();
+                    body.push_str(&format!("  %{d} = getelementptr i8, i8* {b}, i64 {offset}\n"));
+                    let src = self.operand_value(
+                        &LirOperand::Local(value.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    body.push_str(&format!(
+                        "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{d}, i8* {src}, i64 {size}, i1 false)\n"
+                    ));
                 } else {
                     // 标量引用写入：bitcast 后 store
                     let lt = field_scalar_llvm(*ty)?;

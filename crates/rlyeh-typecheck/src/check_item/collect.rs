@@ -9,6 +9,7 @@ pub(crate) fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &
         StructDef {
             fields: Vec::new(),
             type_params: s.generics.iter().map(|p| p.name.clone()).collect(),
+            repr_c: s.repr_c,
         },
     );
     Ok(())
@@ -57,35 +58,11 @@ pub(crate) fn resolve_struct_fields(
                 span: field.span,
             });
         }
-        // SH-P0-1 E2（repr(C) 真布局护栏）：当前 codegen 为统一 8 字节槽模型，
-        // 仅「全 8 字节对齐标量字段」的 repr(C) 结构体与 C 布局一致；sub-8 字节
-        // 字段（i8/i16/i32/f32/bool/char）的 C 打包与嵌套聚合内联尚未实现，
-        // 显式报错以杜绝静默错误 FFI 布局。
+        // SH-P0-1 E2（repr(C) 嵌套聚合内联）：校验字段为 C 布局兼容类型
+        // （标量 / 指针 / 嵌套 repr(C) 结构体）；数组 / 枚举 / 联合 / dyn / 字符串
+        // 视图 / 元组 / 切片暂不内联（规划中），非 repr(C) 嵌套结构体须同样标注。
         if s.repr_c {
-            match c_field_size(&ty) {
-                Some(8) => {}
-                Some(sz) => {
-                    return Err(TypeError::Unsupported {
-                        what: format!(
-                            "repr(C) 结构体字段 `{name}: {ty}` 尺寸为 {sz} 字节；真布局（sub-8 字节字段 C 打包）尚未实现，当前仅支持全 8 字节对齐字段（i64/u64/f64/指针）",
-                            name = field.name,
-                            ty = ty,
-                            sz = sz,
-                        ),
-                        span: field.span,
-                    })
-                }
-                None => {
-                    return Err(TypeError::Unsupported {
-                        what: format!(
-                            "repr(C) 结构体字段 `{name}: {ty}` 为聚合类型；真布局（嵌套聚合内联）尚未实现，当前仅支持标量字段",
-                            name = field.name,
-                            ty = ty,
-                        ),
-                        span: field.span,
-                    })
-                }
-            }
+            repr_c_field_ok(&ty, ctx, field.span)?;
         }
         fields.push((field.name.clone(), ty));
     }
@@ -98,17 +75,38 @@ pub(crate) fn resolve_struct_fields(
     Ok(())
 }
 
-/// C ABI 字段尺寸（仅标量；聚合 / 字符串视图返回 `None`）。用于 repr(C) 布局护栏。
-fn c_field_size(ty: &Type) -> Option<u8> {
+/// SH-P0-1 E2 repr(C) 嵌套聚合内联：校验 repr(C) 结构体字段是否为 C 布局兼容类型。
+/// 允许：标量（含 sub-8 字节 i8/i16/i32/u8/u16/u32/f32/bool/char）、指针（8 字节）、
+/// 嵌套 repr(C) 结构体（内联）。拒绝：数组 / 枚举 / 联合 / dyn Trait / 字符串视图 /
+/// 元组 / 切片（规划中）；非 repr(C) 嵌套结构体须同样标注 #[repr(C)]。
+fn repr_c_field_ok(ty: &Type, ctx: &TypeContext, span: Span) -> Result<(), TypeError> {
     match ty {
-        Type::I8 | Type::U8 => Some(1),
-        Type::I16 | Type::U16 => Some(2),
-        Type::I32 | Type::U32 | Type::F32 => Some(4),
-        Type::I64 | Type::U64 | Type::F64 => Some(8),
-        Type::Bool => Some(1),
-        Type::Char => Some(4),
-        Type::RawPtr(..) | Type::Ref(..) => Some(8),
-        _ => None,
+        Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32
+        | Type::F32 | Type::I64 | Type::U64 | Type::F64 | Type::Bool | Type::Char => Ok(()),
+        Type::RawPtr(..) | Type::Ref(..) => Ok(()),
+        Type::Named(n, _) => match ctx.lookup_struct(n) {
+            Some(d) if d.repr_c => Ok(()),
+            Some(_) => Err(TypeError::Unsupported {
+                what: format!(
+                    "repr(C) 字段 `{n}` 为嵌套结构体，但其未标注 #[repr(C)]；嵌套聚合内联要求内层结构体同样采用 C 布局"
+                ),
+                span,
+            }),
+            None => Err(TypeError::Unsupported {
+                what: format!("repr(C) 字段 `{n}` 引用的结构体未定义"),
+                span,
+            }),
+        },
+        Type::Array(..) => Err(TypeError::Unsupported {
+            what: "repr(C) 结构体数组字段内联尚未实现（规划中）；当前仅支持标量 / 指针 / 嵌套 repr(C) 结构体字段".to_string(),
+            span,
+        }),
+        _ => Err(TypeError::Unsupported {
+            what: format!(
+                "repr(C) 结构体字段 `{ty}` 为不支持的聚合类型（枚举 / 联合 / 字符串视图 / dyn Trait / 元组 / 切片）"
+            ),
+            span,
+        }),
     }
 }
 

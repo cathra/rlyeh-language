@@ -307,6 +307,16 @@ pub(super) fn check_call(
         }
     };
 
+    // G-M2/G-M3（SH-P0-3）：`Any` 类型擦除——运行时类型标识读取与安全向下转换。
+    // `any_type_id(x: dyn Any) -> i64` 读 vtable 槽 0；
+    // `any_downcast_ref::<T>(x: dyn Any) -> Option<&T>` 比对 type_id 后产出
+    // `Some(&T)` / `None`（无未检查转换）。
+    if name == "any_type_id" {
+        return check_any_type_id(ctx, args, span);
+    }
+    if name == "any_downcast_ref" {
+        return check_any_downcast_ref(ctx, args, type_args, span);
+    }
     // L2 编译器内建 JSON 序列化/反序列化（`json.stringify(v)` / `json.parse::<T>(s)`）：
     // AST 层 desugar 为 String 构建 / 解析表达式，零新增 IR 节点。
     // Q2a 泛型 API 别名：`json.to_string(v)` ≡ `json.stringify(v)`；

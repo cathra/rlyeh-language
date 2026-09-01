@@ -3,6 +3,7 @@
 
 use super::*;
 
+
 pub(super) fn check_field_access(
     ctx: &mut TypeContext,
     base_hir: HirExpr,
@@ -105,11 +106,36 @@ pub(super) fn check_field_access(
         subst.insert(tp.clone(), arg.clone());
     }
     let fty_sub = substitute(&fty, &subst);
+    // SH-P0-1 E2（repr(C) 真布局）：repr(C) 结构体字段按 C 规则打包——经
+    // `FieldScalar::ReprCField` 把真实字节偏移 / 内存类型 / 提升方式烤入指令，
+    // 下传至 codegen（HIR→MIR→LIR 透传 `ty`，无需改三个 Program 结构体）。
+    let ty = if def.repr_c {
+        let layout = crate::types::compute_repr_c(&def.fields, ctx, span)?;
+        match &layout.fields[idx] {
+            crate::types::CField::Scalar {
+                offset,
+                field_ty,
+                conv,
+            } => rlyeh_hir::FieldScalar::ReprCField {
+                offset: *offset,
+                field_ty,
+                conv: *conv,
+            },
+            crate::types::CField::Nested { offset, size } => {
+                rlyeh_hir::FieldScalar::ReprCSubPtr {
+                    offset: *offset,
+                    size: *size,
+                }
+            }
+        }
+    } else {
+        field_scalar_of(&fty_sub)
+    };
     Ok((
         HirExpr::FieldGet {
             base: Box::new(base_hir),
             index: idx,
-            ty: field_scalar_of(&fty_sub),
+            ty,
         },
         fty_sub,
     ))

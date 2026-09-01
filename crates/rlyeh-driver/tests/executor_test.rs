@@ -47,12 +47,12 @@ async fn g() -> i64 {
     42
 }
 fn main() {
-    let w0 = __rlyeh_clock_monotonic();
-    let c0 = clock();
+    let w0 = unsafe { __rlyeh_clock_monotonic() };
+    let c0 = unsafe { clock() };
     let mut f = g();
     let v = block_on(&mut f);
-    let w1 = __rlyeh_clock_monotonic();
-    let c1 = clock();
+    let w1 = unsafe { __rlyeh_clock_monotonic() };
+    let c1 = unsafe { clock() };
     println(v);
     println(w1 - w0);
     println(c1 - c0);
@@ -81,8 +81,8 @@ impl Future for Timer {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.n = self.n + 1;
-        let t0 = __rlyeh_clock_monotonic();
-        let now = if t0 >= 0 { t0 } else { clock() };
+        let t0 = unsafe { __rlyeh_clock_monotonic() };
+        let now = if t0 >= 0 { t0 } else { unsafe { clock() } };
         if now >= self.target {
             Poll::Ready(self.n)
         } else {
@@ -92,12 +92,12 @@ impl Future for Timer {
     }
 }
 fn main() {
-    let w0 = __rlyeh_clock_monotonic();
-    let c0 = clock();
+    let w0 = unsafe { __rlyeh_clock_monotonic() };
+    let c0 = unsafe { clock() };
     let mut f = Timer { target: w0 + 15_000, n: 0 };
     let v = block_on(&mut f);
-    let w1 = __rlyeh_clock_monotonic();
-    let c1 = clock();
+    let w1 = unsafe { __rlyeh_clock_monotonic() };
+    let c1 = unsafe { clock() };
     println(v);          // 2（poll 两次：1 次 Pending + 1 次 Ready）
     println(w1 - w0);    // 墙钟 ≥ 15000us
     println(c1 - c0);    // CPU << 墙钟
@@ -133,15 +133,15 @@ fn main() {
         Result::Err(e) => return,   // 端口被占用则跳过
     };
     let fd = listener.fd;
-    let w0 = __rlyeh_clock_monotonic();
-    let c0 = clock();
+    let w0 = unsafe { __rlyeh_clock_monotonic() };
+    let c0 = unsafe { clock() };
     match Thread::start(connecter) {
         Result::Ok(t) => {
             let wfd = future::wait_fd(fd, io::nio::Interest::Readable);
             let mut f = wfd;
             let v = block_on(&mut f);
-            let w1 = __rlyeh_clock_monotonic();
-            let c1 = clock();
+            let w1 = unsafe { __rlyeh_clock_monotonic() };
+            let c1 = unsafe { clock() };
             println(v);
             println(w1 - w0);
             println(c1 - c0);

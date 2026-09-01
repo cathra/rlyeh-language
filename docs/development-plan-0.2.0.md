@@ -35,8 +35,8 @@
 | **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | ⏳ 规划 | 消除 AST 样板 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | ⏳ 规划 | 后端 assemble 自举 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | ⏳ 规划 | 运行时表达力地基 |
-| **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | ⏳ 规划 | actor 调度器 / driver 线程模型地基 |
-| **0.2.0-G** | `dyn Trait` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | ⏳ 规划 | actor 消息协议地基 |
+| **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
+| **0.2.0-G** | `dyn Trait` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | 🟢 完成 | actor 消息协议地基 |
 | **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | ⏳ 规划 | 运行时并发地基 |
 | **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | ⏳ 规划 | IR 可变遍历 |
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ⏳ 规划 | Rlyeh 产物链接 Rust 运行时 |
@@ -92,8 +92,9 @@
 > **关联文档**：[SH-P0-2 跨函数边界闭包 + `move` + `'static`](tasks/leaf/sh-p0-2-closure.md)
 
 ### 3.7 G `dyn Trait` 含 `Self` + `Any` 类型擦除（P0-3）
-- G1 `dyn Trait` 调用含 `Self` 签名方法（vtable 签名恢复）/ G2 `Any` 类型标识存储与 `downcast` 安全检查。
-- 验证：经 `dyn Trait` 调含 `Self` 返回方法；`Any` 装箱 + `downcast` 往返（等价于 actor 消息分发）。
+- ✅ G1 `dyn Trait` 调用含 `Self` 签名方法（devirtualize 时 `Self`→具体类型；完全擦除的 `dyn` 仍按 object-unsafe 拒绝）/ ✅ G2 `Any` 类型标识存储（`dyn Any` vtable 槽 0 存 type_id）+ `downcast` 安全检查（`any_downcast_ref::<T>` → `Option<&T>`）。
+- 验证：经 `dyn Trait` 调含 `Self` 签名方法（形参 `&Self` + 按值返回 `Self`，见 `tests/run-pass/dyn_self_return.rl`）；`Any` 装箱 + `downcast` 往返（见 `tests/run-pass/any_downcast.rl`，等价于 actor 消息分发）。
+- 已知限制：`Box<dyn Any + Send>` / 多 trait 约束未实现。
 > **关联文档**：[SH-P0-3 `dyn Trait` 含 `Self` + `Any` 类型擦除](tasks/leaf/sh-p0-3-dyn-any.md)
 
 ### 3.8 H 并发原语（P0-4）
@@ -247,21 +248,23 @@ AST 构造样板消减；构造样板 `..` 更新/字段简写。
 - **关键 checkpoint**：unsafe bump 分配器跑通且与 `rlyeh-region-alloc` 对拍。
 > **关联文档**：[SH-P0-1 `unsafe` 块 / 裸指针 / `#[repr(C)]`](tasks/leaf/sh-p0-1-unsafe.md)
 
-### 7.2 F 跨函数边界闭包 + `move` + `'static`（SH-P0-2，🔴 高）
+### 7.2 F 跨函数边界闭包 + `move` + `'static`（SH-P0-2，🔴 高）🟢 完成
 actor 调度器 / driver 线程模型地基（事实依据：`rlyeh-actor-runtime` `spawn(move || worker_loop)`、`rlyeh-driver` 线程 stack 64MB `spawn(move)`）。
-- **F-M1** 无捕获闭包值跨 fn（复用 H2/H5 降级为 fn 指针）。
-- **F-M2** `move` 所有权转移生效（捕获聚合对象按值转移）。
-- **F-M3** `'static` 约束检查。
-- **F-M4** `spawn(move || ...)` 跨线程执行（等价于 actor-runtime worker_loop）。
-- **关键 checkpoint**：`spawn(move)` 跨线程执行通过超时保护的并发测试。
+- ✅ **F-M1** 无捕获闭包值跨 fn（复用 H2/H5 降级为 fn 指针）。
+- ✅ **F-M2** `move` 所有权转移生效（`Type::Closure` 新增 `is_move` 字段；有捕获的非 `move` 闭包跨线程被拒）。
+- ✅ **F-M3** `'static` 约束检查（`type_contains_ref` 拒绝捕获借用引用）。
+- ✅ **F-M4** `Thread::start(move || ...)` 跨线程执行（复用 W6 机制：捕获环境堆分配 + `__thread_entry_N` thunk 新线程调用；注：`spawn` 为 actor 派生保留关键字，线程启动统一用 `Thread::start`）。
+- **关键 checkpoint**：`Thread::start(move || ...)` 跨线程执行通过（见 `tests/run-pass/thread-spawn-move.rl` + 两个 compile-fail；完整套件 218/218 通过）。
 > **关联文档**：[SH-P0-2 跨函数边界闭包 + `move` + `'static`](tasks/leaf/sh-p0-2-closure.md)
 
 ### 7.3 G `dyn Trait` 含 `Self` + `Any` 类型擦除（SH-P0-3，🔴 高）
 actor 消息协议（异构消息信封）地基（事实依据：`rlyeh-actor-runtime` `ActorState: Any + Send + Sync`、`Box<dyn Any + Send>` 信封、编译器已建模 `dyn Trait` 为 2 槽胖指针）。
-- **G-M1** `dyn` 调含 `Self` 方法（vtable 签名恢复）。
-- **G-M2** `Any` 类型标识存储（TypeId 式）。
-- **G-M3** `downcast` 安全检查。
-- **关键 checkpoint**：经 `dyn Trait` 调含 `Self` 返回方法；`Any` 装箱 + `downcast` 往返（等价 actor 消息分发）。
+- ✅ **G-M1** `dyn` 调含 `Self` 方法（devirtualize 时 `replace_type_self` 把 `Self` 替换为绑定源具体类型，再检查实参/推导返回类型；完全擦除的 `dyn Trait` 仍由 vtable 分支按 object-unsafe 拒绝）。
+- ✅ **G-M2** `Any` 类型标识存储（TypeId 式：`type_id_of` = 类型规范字符串 FNV-1a 64 散列，`dyn Any` vtable 槽 0 存储；`any_type_id(x)` 读回）。
+- ✅ **G-M3** `downcast` 安全检查（`any_downcast_ref::<T>(x)` 展开为 type_id 相等判定 + `Option<&T>`，错误类型得 `None`；非 `dyn Any` 实参 / 缺 turbofish 均报错）。
+- **关键 checkpoint**：经 `dyn Trait` 调含 `Self` 签名方法通过（形参 `&Self` + 按值返回 `Self` 聚合，见 `tests/run-pass/dyn_self_return.rl`）；`Any` 装箱 + `downcast` 往返通过（见 `tests/run-pass/any_downcast.rl` + 两个 compile-fail；完整套件 740/740 通过）。
+- **附带修复**：按值返回 `Self` 聚合经 dyn 调用的 codegen 缺陷——`rlyeh-codegen/src/llvm/llvm_ctor.rs` 中**被取址函数**（vtable `FnPtr`）为保持 `i8*` 返回 ABI 被排除在 `ret_by_value` 之外，但原实现在其分支直接 `continue`，跳过了 4b-iv 连带剔除，破坏「`f ∈ ret_by_value` ⟺ 全部 `Return ∈ bvs`」不变量，致函数体按值返回 `{i64,i64}` 而声明为 `i8*`。改为以 `participates` 标志区分：不参与判定但仍执行连带剔除（含指针拷贝别名闭包），函数体改用 calloc 堆分配并返回 `i8*`，声明/函数体/调用点三方一致。
+- **已知限制**：`Box<dyn Any + Send>` / 多 trait 约束未实现（待 0.3.0 运行时重写）。
 > **关联文档**：[SH-P0-3 `dyn Trait` 含 `Self` + `Any` 类型擦除](tasks/leaf/sh-p0-3-dyn-any.md)
 
 ### 7.4 H 并发原语（SH-P0-4，🔴 高）

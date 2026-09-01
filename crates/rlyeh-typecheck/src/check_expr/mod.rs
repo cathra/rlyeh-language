@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use rlyeh_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, CompareOp, ExprKind, RegionStrategy, UnaryOp};
 use rlyeh_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirFnDecl, HirItem, HirItemKind,
-    HirParam, HirRegionOptions, HirRegionStrategy, HirStmt, HirUnaryOp,
+    HirParam, HirRegionOptions, HirRegionStrategy, HirStmt, HirUnaryOp, ReprConv,
 };
 use rlyeh_lexer::Span;
 
@@ -174,7 +174,14 @@ pub(crate) fn infer_expr(
                     Type::RawPtr(inner, is_mut) => (inner.clone(), *is_mut),
                     _ => unreachable!(),
                 };
-                let elem = field_scalar_of(&inner);
+                // SH-P0-1（裸指针字节步长）：元素为 `u8` 时 `elem: Str` → MIR 降级
+                // 为 1 字节步长（与 `Vec<u8>::as_mut_ptr` 字节寻址一致）；其余沿用
+                // 8 字节槽步长。
+                let elem = if matches!(*inner, Type::U8) {
+                    FieldScalar::Str
+                } else {
+                    field_scalar_of(&inner)
+                };
                 let ptr_hir = HirExpr::PtrAdd {
                     base: Box::new(l_hir),
                     offset: Box::new(r_hir),
@@ -311,10 +318,23 @@ pub(crate) fn infer_expr(
                             }
                         },
                     };
+                    // SH-P0-1（裸指针 u8 解引用）：`*p` 对 `*const u8`/`*mut u8` 按 1 字节
+                    // 读取（load i8 后 zext 到宽值），与字节步长裸指针算术 / 索引一致，
+                    // 支持 FFI 字节缓冲逐字节访问（如结构体字节级布局校验）。其余
+                    // 元素沿用 8 字节槽 load（维持既有裸指针 / 引用解引用语义）。
+                    let ty = if matches!(o_ty, Type::RawPtr(_, _)) && matches!(inner, Type::U8) {
+                        FieldScalar::ReprCField {
+                            offset: 0,
+                            field_ty: "i8",
+                            conv: ReprConv::Zext,
+                        }
+                    } else {
+                        field_scalar_of(&inner)
+                    };
                     Ok((
                         HirExpr::Deref {
                             expr: Box::new(heap_ptr_hir(o_hir, &o_ty)),
-                            ty: field_scalar_of(&inner),
+                            ty,
                         },
                         inner,
                     ))
@@ -1041,7 +1061,8 @@ pub(crate) use resolve::resolve_ast_type;
 pub(crate) use construct::check_string_from;
 // block/misc 对外 API
 pub(crate) use block::{check_block, check_block_inner};
-pub(crate) use misc::{builtin_signature, coerce_to_dyn, type_mentions_self};
+pub(crate) use misc::{builtin_signature, coerce_to_dyn, type_mentions_self,
+    is_any_trait, check_any_type_id, check_any_downcast_ref};
 // 宏/序列化辅助被兄弟子模块调用，显式 re-export 供 `use super::*` 可见
 pub(crate) use macro_ser::{check_macro_call, parse_format_string, string_from_lit_ast,
     mk_ident_call, mk_path_call, bin_add, fold_add};

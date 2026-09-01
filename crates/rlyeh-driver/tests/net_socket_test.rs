@@ -80,8 +80,8 @@ fn main() {
         Ok(r2) => println(r2 == String::from("world")),  // true
         Err(e) => println(false),
     }
-    let _ = close(fd0);
-    let _ = close(fd1);
+    let _ = unsafe { close(fd0) };
+    let _ = unsafe { close(fd1) };
 }
 "#,
     );
@@ -112,8 +112,8 @@ fn main() {
         }
         j = j + 1;
     }
-    let _ = close(fd0);
-    let _ = close(fd1);
+    let _ = unsafe { close(fd0) };
+    let _ = unsafe { close(fd1) };
 }
 "#,
     );
@@ -162,8 +162,8 @@ fn main() {
     println(got.data[255]);      // 255
     println(got.data[256]);      // 0
     println(got.data[4095]);     // 255（末字节）
-    let _ = close(fd0);
-    let _ = close(fd1);
+    let _ = unsafe { close(fd0) };
+    let _ = unsafe { close(fd1) };
 }
 "#,
     );

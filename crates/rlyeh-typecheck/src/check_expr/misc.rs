@@ -26,6 +26,247 @@ pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
     }
 }
 
+/// G-M2（SH-P0-3）：运行时类型标识（TypeId 式）。对具体类型的规范字符串做
+/// FNV-1a 64 位散列——编译期确定、全程序稳定：`type_id_of(P)` 在任何模块、
+/// 任何 `dyn Any` 强制转换点都得到相同值，故 `downcast` 可用标量相等比较判定。
+pub(crate) fn type_id_of(ty: &Type) -> i64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in ty.to_string().as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h as i64
+}
+
+/// `dyn Any` 的类型擦除标签（编译器内置，不依赖 trait 声明）。
+pub(crate) fn is_any_trait(name: &str) -> bool {
+    name == "Any" || name.ends_with("::Any")
+}
+
+/// `&T → dyn Any` 强制转换（G-M2）。
+///
+/// 与通用 `dyn Trait` 的区别：不查 trait 声明、不填充方法表——vtable 仅保留
+/// 3 元槽，其中**槽 0 存具体类型的 type_id**，供 `any_type_id` /
+/// `any_downcast_ref` 读取比对（槽 1/2 为 size/align，MVP 置 0）。
+fn coerce_to_any(
+    ctx: &mut TypeContext,
+    data_ptr: HirExpr,
+    concrete: &Type,
+) -> Result<HirExpr, TypeError> {
+    let mut stmts = Vec::new();
+    let vt = ctx.fresh_temp();
+    stmts.push(HirStmt::Let {
+        name: vt.clone(),
+        init: HirExpr::Alloc {
+            slots: 3,
+            by_value: false,
+            is_strfat: false,
+        },
+        mutable: false,
+    });
+    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+        base: Box::new(HirExpr::Variable(vt.clone())),
+        index: 0,
+        value: Box::new(HirExpr::IntLiteral(type_id_of(concrete) as i128)),
+        ty: FieldScalar::Int,
+    }));
+    for i in 1..3 {
+        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(vt.clone())),
+            index: i,
+            value: Box::new(HirExpr::IntLiteral(0)),
+            ty: FieldScalar::Int,
+        }));
+    }
+    let dyn_var = ctx.fresh_temp();
+    stmts.push(HirStmt::Let {
+        name: dyn_var.clone(),
+        init: HirExpr::Alloc {
+            slots: 2,
+            by_value: false,
+            is_strfat: false,
+        },
+        mutable: false,
+    });
+    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+        index: 0,
+        value: Box::new(data_ptr),
+        ty: FieldScalar::Ptr,
+    }));
+    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+        index: 1,
+        value: Box::new(HirExpr::Variable(vt)),
+        ty: FieldScalar::Ptr,
+    }));
+    Ok(HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(dyn_var)),
+    })))
+}
+
+/// 读取 `dyn Any` 的运行时类型标识：`FieldGet(FieldGet(x, 1 /*vtable*/), 0)`。
+fn read_any_type_id(any: HirExpr) -> HirExpr {
+    HirExpr::FieldGet {
+        base: Box::new(HirExpr::FieldGet {
+            base: Box::new(any),
+            index: 1,
+            ty: FieldScalar::Ptr,
+        }),
+        index: 0,
+        ty: FieldScalar::Int,
+    }
+}
+
+/// 断言实参为 `dyn Any`（G-M3 安全检查的类型前提）。
+fn ensure_dyn_any(ty: &Type, who: &str, span: Span) -> Result<(), TypeError> {
+    if let Type::Dyn(n) = ty {
+        if is_any_trait(n) {
+            return Ok(());
+        }
+    }
+    Err(TypeError::Unsupported {
+        what: format!("`{who}` 需要 `dyn Any` 实参，实际为 `{ty}`"),
+        span,
+    })
+}
+
+/// `Option` 枚举的槽布局（tag 槽 + payload 槽），与 `check_variant_construct` 一致。
+fn option_layout(ctx: &TypeContext) -> (usize, bool) {
+    match ctx.lookup_enum("Option") {
+        Some(def) => {
+            let slots = def.slot_count;
+            (slots, enum_instance_by_value(ctx, "Option", slots))
+        }
+        None => (2, true),
+    }
+}
+
+/// 构造 `Option` 值块：槽 0 = tag，槽 1 = payload（可选）。
+fn make_option_block(
+    ctx: &mut TypeContext,
+    slots: usize,
+    by_value: bool,
+    tag: i128,
+    payload: Option<HirExpr>,
+) -> HirBlock {
+    let base = ctx.fresh_temp();
+    let mut stmts = vec![HirStmt::Let {
+        name: base.clone(),
+        init: HirExpr::Alloc {
+            slots,
+            by_value,
+            is_strfat: false,
+        },
+        mutable: false,
+    }];
+    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+        base: Box::new(HirExpr::Variable(base.clone())),
+        index: 0,
+        value: Box::new(HirExpr::IntLiteral(tag)),
+        ty: FieldScalar::Int,
+    }));
+    if let Some(p) = payload {
+        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: 1,
+            value: Box::new(p),
+            ty: FieldScalar::Ptr,
+        }));
+    }
+    HirBlock {
+        stmts,
+        final_expr: Some(HirExpr::Variable(base)),
+    }
+}
+
+/// `any_type_id(x: dyn Any) -> i64`：读取擦除值携带的运行时类型标识（G-M2）。
+pub(crate) fn check_any_type_id(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "any_type_id".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    let (hir, ty) = infer_expr(ctx, &args[0])?;
+    ensure_dyn_any(&ty, "any_type_id", span)?;
+    Ok((read_any_type_id(hir), Type::I64))
+}
+
+/// `any_downcast_ref::<T>(x: dyn Any) -> Option<&T>`（G-M3 安全向下转换）。
+///
+/// 展开为 `if type_id(x) == type_id_of(T) { Some(data_ptr as &T) } else { None }`：
+/// 类型标识相等才产出具 `&T` 的 `Some`，否则 `None`——无未检查转换，
+/// 错误类型的向下转换不会产出悬垂/错误解释的引用。
+pub(crate) fn check_any_downcast_ref(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    type_args: &[AstType],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    if args.len() != 1 {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: "any_downcast_ref".to_string(),
+            expected: 1,
+            found: args.len(),
+            span,
+        });
+    }
+    let target = match type_args.first() {
+        Some(t) => resolve_ast_type(ctx, t, span)?,
+        None => {
+            return Err(TypeError::Unsupported {
+                what: "`any_downcast_ref` 需要显式类型参数：`any_downcast_ref::<T>(x)`".to_string(),
+                span,
+            })
+        }
+    };
+    let (hir, ty) = infer_expr(ctx, &args[0])?;
+    ensure_dyn_any(&ty, "any_downcast_ref", span)?;
+
+    // 绑定到临时变量，避免实参为复杂表达式时重复求值（vtable 读 2 次、数据指针 1 次）。
+    let any_var = ctx.fresh_temp();
+    let cond = HirExpr::Binary(
+        HirBinaryOp::Eq,
+        Box::new(read_any_type_id(HirExpr::Variable(any_var.clone()))),
+        Box::new(HirExpr::IntLiteral(type_id_of(&target) as i128)),
+    );
+    let (slots, by_value) = option_layout(ctx);
+    let data_ptr = HirExpr::FieldGet {
+        base: Box::new(HirExpr::Variable(any_var.clone())),
+        index: 0,
+        ty: FieldScalar::Ptr,
+    };
+    let then_block = make_option_block(ctx, slots, by_value, 1, Some(data_ptr));
+    let else_block = make_option_block(ctx, slots, by_value, 0, None);
+    let ret_ty = Type::Named(
+        "Option".to_string(),
+        vec![Type::Ref(Box::new(target), Mutability::Immutable)],
+    );
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts: vec![HirStmt::Let {
+                name: any_var,
+                init: hir,
+                mutable: false,
+            }],
+            final_expr: Some(HirExpr::If {
+                cond: Box::new(cond),
+                then_block: Box::new(then_block),
+                else_block: Some(Box::new(else_block)),
+            }),
+        })),
+        ret_ty,
+    ))
+}
+
 pub(crate) fn coerce_to_dyn(
     ctx: &mut TypeContext,
     data_ptr: HirExpr,
@@ -33,6 +274,11 @@ pub(crate) fn coerce_to_dyn(
     trait_name: &str,
     span: Span,
 ) -> Result<HirExpr, TypeError> {
+    // G-M2（SH-P0-3）：`dyn Any` 类型擦除——内置 trait，不查 trait 声明，
+    // vtable 槽 0 存具体类型标识（type_id），无方法表。
+    if is_any_trait(trait_name) {
+        return coerce_to_any(ctx, data_ptr, concrete);
+    }
     let trait_def = ctx.trait_defs.get(trait_name).cloned().ok_or_else(|| {
         TypeError::UndefinedType {
             name: trait_name.to_string(),

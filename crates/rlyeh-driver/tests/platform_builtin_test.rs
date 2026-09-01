@@ -62,7 +62,8 @@ fn target_os_code_mapping() {
 /// 平台内建端到端接线：直接 extern 声明并调用 `__rlyeh_target_os()`。
 #[test]
 fn platform_builtin_host_runs() {
-    let out = run("extern fn __rlyeh_target_os() -> i32;\nfn main() { print(__rlyeh_target_os()); }\n");
+    // SH-P0-1 E3：extern 调用须在 `unsafe` 块内。
+    let out = run("extern fn __rlyeh_target_os() -> i32;\nfn main() { print(unsafe { __rlyeh_target_os() }); }\n");
     assert_eq!(out, host_os_code().to_string());
 }
 

@@ -106,8 +106,8 @@ fn main() {
         },
         Err(_) => println(-1),
     }
-    let _ = close(a);
-    let _ = close(b);
+    let _ = unsafe { close(a) };
+    let _ = unsafe { close(b) };
 }
 "#;
     let dir = temp_project();
@@ -149,8 +149,8 @@ fn main() {
         Ok(r) => println(r),
         Err(_) => println(-1),
     }
-    let _ = close(a);
-    let _ = close(b);
+    let _ = unsafe { close(a) };
+    let _ = unsafe { close(b) };
 }
 "#,
     );
@@ -190,8 +190,8 @@ fn main() {
         Ok(evs) => println(evs.len()),
         Err(_) => println(-1),
     }
-    let _ = close(a);
-    let _ = close(b);
+    let _ = unsafe { close(a) };
+    let _ = unsafe { close(b) };
 }
 "#,
     );
@@ -217,8 +217,8 @@ fn main() {
         Ok(n) => println(0),
         Err(_) => println(2),
     }
-    let _ = close(a);
-    let _ = close(b);
+    let _ = unsafe { close(a) };
+    let _ = unsafe { close(b) };
 }
 "#,
     );
@@ -254,8 +254,8 @@ fn main() {
                 },
                 Err(_) => println(-1),
             }
-            let _ = close(a);
-            let _ = close(b);
+            let _ = unsafe { close(a) };
+            let _ = unsafe { close(b) };
         },
         Err(_) => println(-1),
     }
@@ -291,7 +291,7 @@ fn main() {{
     }}
     match File::open(String::from("/tmp/rlyeh-sendfile-src.txt")) {{
         Ok(f) => {{
-            let file_fd = fileno(f.handle);
+            let file_fd = unsafe {{ fileno(f.handle) }};
             match TcpStream::connect(SocketAddr {{ ip: String::from("127.0.0.1"), port: {port} }}) {{
                 Ok(s) => {{
                     match sendfile(s.fd, file_fd, 0, 13) {{

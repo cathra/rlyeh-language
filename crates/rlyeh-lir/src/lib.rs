@@ -20,7 +20,7 @@
 pub mod error;
 pub mod lower;
 
-pub use rlyeh_hir::{FieldScalar, HirBinaryOp, HirUnaryOp};
+pub use rlyeh_hir::{FieldScalar, HirBinaryOp, HirUnaryOp, ReprConv};
 
 use error::LirError;
 

@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::check_expr::util::type_to_ast;
+use rlyeh_hir::FieldScalar;
 
 pub(super) fn check_index(
     ctx: &mut TypeContext,
@@ -109,13 +110,17 @@ pub(super) fn check_index(
             // 裸指针索引 `p[i]`：对 base 指针做 GEP 到元素 i（base 即元素 0 地址），
             // 返回元素类型。与数组/Vec 索引同构（codegen 对 base 做 GEP），支持
             // 引用迭代器 `&p[0]` 取元素引用（V1 IterRef 零拷贝视图）。
+            // SH-P0-1（裸指针字节步长）：元素为 `u8` 时按 1 字节步长（is_str），
+            // 与 `Vec<u8>`/`String` 紧凑字节存储一致（如 `vec.as_ptr()[i]` 取第 i 字节）；
+            // 其余元素沿用 8 字节槽步长（维持既有裸指针语义）。
             let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
+            let is_byte = matches!(elem_sub, Type::U8);
             Ok((
                 HirExpr::Index {
                     base: Box::new(b_hir),
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
-                    is_str: false,
+                    is_str: is_byte,
                 },
                 elem_sub,
             ))

@@ -318,7 +318,36 @@ let d3 = d1;                     // 胖指针拷贝共享同一 vtable
 println(d3.sides());             // 0
 ```
 
-> H4 `dyn Trait` 约束：trait 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用；vtable 的 drop/size/align 槽 MVP 置 0（显式释放语义与 `Box`/`Rc` 一致）。
+> H4 `dyn Trait` 约束：trait 与 impl 均须非泛型；vtable 的 drop/size/align 槽 MVP 置 0（显式释放语义与 `Box`/`Rc` 一致）。
+> 含 `Self` 签名的方法：dyn 变量绑定源具体类型已知时（如 `let d: dyn T = &obj;`）**可调用**——devirtualize 把 `Self` 替换为具体类型后静态分派，形参 `&Self` → `&P`、按值返回 `Self` → `P`（见 `tests/run-pass/dyn_self_return.rl`）；**完全擦除**具体类型的 `dyn Trait`（如作函数参数传入）仍按 object-unsafe 拒绝（与 Rust 一致）。
+> 注：被 vtable 取址的 trait 方法**不参与**「标量聚合按值返回」优化（经函数指针间接调用须保持稳定的 `i8*` 返回 ABI），按值返回聚合时退化为堆分配 + `i8*` 返回——与未被取址的普通函数（如 `make_pair` 的 `{i64,i64}` 寄存器返回）不同。
+
+### 3.8.1 `dyn Any` 类型擦除与 downcast（G ✅，2026-09-01）
+
+```rlyeh
+struct Point { x: i64, y: i64 }
+struct Msg { tag: i64 }
+
+let p = Point { x: 7, y: 8 };
+let a: dyn Any = &p;                        // 装箱：擦除为 dyn Any
+
+let id = any_type_id(a);                    // i64：运行时类型标识
+let rp = any_downcast_ref::<Point>(a);      // Option<&Point>
+match rp {
+    Option::Some(pt) => println(pt.x),      // 7：类型匹配，还原为 &Point
+    Option::None => println(-1),
+}
+let wrong = any_downcast_ref::<Msg>(a);     // 类型不符 → None（安全，非未检查转换）
+```
+
+语义：`&T → dyn Any` 为编译器内置的类型擦除——vtable 仅 3 元槽，**槽 0 存具体类型的
+type_id**（`type_id_of` = 类型规范字符串的 FNV-1a 64 位散列，编译期确定、全程序稳定）。
+`any_type_id(x)` 读回该标识；`any_downcast_ref::<T>(x)` 展开为
+`if type_id(x) == type_id_of(T) { Some(data_ptr as &T) } else { None }`——
+**类型标识相等才产出具 `&T` 的 `Some`**，错误类型向下转换得到 `None`。
+
+门禁：非 `dyn Any` 实参、缺 turbofish 类型参数均显式报错。
+限制：无 `Box<dyn Any>` / 多 trait 约束（`+ Send`、auto trait）；无按值 `downcast`（仅有引用形式 `downcast_ref`）。
 
 ---
 

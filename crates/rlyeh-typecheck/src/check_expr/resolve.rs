@@ -135,6 +135,12 @@ pub(crate) fn resolve_ast_type(
         // 布局为 2 槽胖指针（数据指针 + vtable 指针），转换与调用见
         // `coerce_to_dyn` / `check_method_call` 的 Dyn 分支。
         AstType::Dyn(name) => {
+            // G-M2（SH-P0-3）：`dyn Any` 为编译器内置的类型擦除标签，不要求
+            // trait 声明存在。统一归一为 `Any`，使 `is_any_trait` 在各处
+            // （coerce_to_dyn / any_type_id / any_downcast_ref）稳定匹配。
+            if is_any_trait(name) {
+                return Ok(Type::Dyn("Any".to_string()));
+            }
             // 复用 resolve_trait_key：支持裸名 / 模块前缀 / use 别名 / `::Name` 结尾
             // 定位（与 collect_impl 一致）。
             // P7d-1（2026-08-29）：若未找到且当前正在收集同名 trait（自引用 trait，

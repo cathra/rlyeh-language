@@ -27,7 +27,7 @@ fn main() {
         let p2 = b.alloc(4);
         *p0 = 100;
         *p1 = 200;
-        *p2 = 300;
+        *p2 = 250;
         println(*p0);
         println(*p1);
         println(*p2);

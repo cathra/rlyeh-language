@@ -252,7 +252,8 @@ fn test_lower_range_check_expansion() {
 
 #[test]
 fn test_lower_set_lookup_expansion() {
-    let m = lower("fn main() -> bool { let x = 3; x in (1, 3, 5) }");
+    // 集合成员判断用花括号字面量（`{1, 3, 5}`）；`(1, 3, 5)` 为元组值（运行时容器）。
+    let m = lower("fn main() -> bool { let x = 3; x in {1, 3, 5} }");
     let f = first_fn(&m);
     let has_or = f.blocks[0].stmts.iter().any(|s| {
         matches!(

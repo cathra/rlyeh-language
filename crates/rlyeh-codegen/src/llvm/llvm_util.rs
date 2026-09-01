@@ -2,6 +2,7 @@
 //! （由 llvm.rs 二次拆分而来，保持语义等价）
 
 use super::*;
+use rlyeh_lir::ReprConv;
 
 pub(crate) fn touches_any(s: &LirStmt, aliases: &[&str]) -> bool {
     use LirStmt::*;
@@ -589,6 +590,10 @@ pub(crate) fn field_scalar_llvm(ty: FieldScalar) -> Result<&'static str, Codegen
         // 切片胖指针：`&[T]`（data 指针 + 长度）双槽，与 StrFat 同布局
         FieldScalar::SliceFat => "{ i8*, i64 }",
         FieldScalar::Ptr => "i8*",
+        // repr(C) 真布局：返回字段在内存中的窄 LLVM 类型（load/store 按此类型）。
+        FieldScalar::ReprCField { field_ty, .. } => field_ty,
+        // repr(C) 嵌套聚合子对象：结果是指向内联子对象的指针（i8*）。
+        FieldScalar::ReprCSubPtr { .. } => "i8*",
     })
 }
 
@@ -602,6 +607,22 @@ pub(crate) fn field_scalar_lir(ty: FieldScalar) -> LirType {
         FieldScalar::StrFat => LirType::StrFat,
         FieldScalar::SliceFat => LirType::SliceFat,
         FieldScalar::Ptr => LirType::Ptr,
+        // repr(C) 真布局：目标 local 仍为 Rlyeh 宽类型（i64/f64/...），
+        // 读取时经 conv 提升、写入时经逆转换降窄。
+        FieldScalar::ReprCField { field_ty, conv, .. } => match conv {
+            ReprConv::Zext | ReprConv::Sext => LirType::I64,
+            ReprConv::Fpext => LirType::F64,
+            ReprConv::None => match field_ty {
+                "i64" => LirType::I64,
+                "double" => LirType::F64,
+                "i1" => LirType::Bool,
+                "i32" => LirType::Char,
+                "i8*" => LirType::Ptr,
+                _ => LirType::I64,
+            },
+        },
+        // repr(C) 嵌套聚合子对象：结果是指针（i8*）。
+        FieldScalar::ReprCSubPtr { .. } => LirType::Ptr,
     }
 }
 

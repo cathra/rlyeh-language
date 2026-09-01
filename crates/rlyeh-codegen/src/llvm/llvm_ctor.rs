@@ -188,40 +188,45 @@ impl LlvmEmitter {
                         changed = true;
                     }
                 }
-                // 连带剔除 & ret_by_value 判定仅对非 extern / main / 被取址函数
-                if f.is_extern || f.name == "main" || taken.contains(&f.name) {
-                    if esc2 != esc {
-                        escaped.insert(f.name.clone(), esc2);
-                        changed = true;
-                    }
-                    continue;
-                }
                 // 4b-iii) 判定：所有非 Unit 的 Return 都返回 by_value 对象，
                 //         且至少一个（保持「f ∈ ret_by_value ⟺ 全部 Return
                 //         ∈ bvs」不变量，否则 emit_terminator 对残留成员打包
                 //         而调用点按 i8* 接收，签名不一致）。
+                //
+                // 参与判定的函数：非 extern / main / 被取址函数。被取址函数
+                // （vtable 的 `FnPtr` / 函数指针间接调用）须保持稳定的 i8*
+                // 返回 ABI，不参与按值返回判定；但其 Return 值仍须经 4b-iv
+                // 连带剔除出 bvs——否则函数体按值返回 `{i64, i64}` 而声明为
+                // i8*，LLVM 报「value doesn't match function result type」
+                // （按值返回 `Self` 聚合经 `dyn Trait` 调用即触发此路径）。
+                let participates =
+                    !f.is_extern && f.name != "main" && !taken.contains(&f.name);
                 let mut ret_vals: Vec<Local> = Vec::new();
                 for b in &f.blocks {
                     if let LirTerminator::Return(Some(x)) = &b.terminator {
                         ret_vals.push(x.clone());
                     }
                 }
-                let mut ok = !ret_vals.is_empty();
+                let mut ok = participates && !ret_vals.is_empty();
                 for x in &ret_vals {
                     if !bvs.contains(x) {
                         ok = false;
                         break;
                     }
                 }
-                if ok && !ret_by_value.contains(&f.name) {
-                    ret_by_value.insert(f.name.clone());
-                    changed = true;
-                } else if !ok && ret_by_value.contains(&f.name) {
-                    ret_by_value.remove(&f.name);
-                    changed = true;
+                if participates {
+                    if ok && !ret_by_value.contains(&f.name) {
+                        ret_by_value.insert(f.name.clone());
+                        changed = true;
+                    } else if !ok && ret_by_value.contains(&f.name) {
+                        ret_by_value.remove(&f.name);
+                        changed = true;
+                    }
                 }
                 // 4b-iv) 连带剔除：非 by_value 返回函数的全部 Return 值
                 //        也须剔除（连同别名），保证上述不变量。
+                //        对 extern / main / 被取址函数同样生效——其 Return 值
+                //        不得留在 bvs，否则函数体按值返回聚合、声明却为 i8*。
                 if !ok {
                     for x in &ret_vals {
                         esc2.insert(x.clone());

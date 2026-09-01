@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use rlyeh_hir::{FieldScalar, HirBinaryOp, HirUnaryOp};
+use rlyeh_hir::{FieldScalar, HirBinaryOp, HirUnaryOp, ReprConv};
 use rlyeh_mir::{BasicBlock, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
 
 use crate::error::LirError;
@@ -493,6 +493,22 @@ fn field_scalar_to_lir(ty: FieldScalar) -> LirType {
         FieldScalar::StrFat => LirType::StrFat,
         FieldScalar::SliceFat => LirType::SliceFat,
         FieldScalar::Ptr => LirType::Ptr,
+        // repr(C) 真布局：目标 local 仍为 Rlyeh 宽类型（i64/f64/...），
+        // 读取时经 conv 提升、写入时经逆转换降窄。
+        FieldScalar::ReprCField { field_ty, conv, .. } => match conv {
+            ReprConv::Zext | ReprConv::Sext => LirType::I64,
+            ReprConv::Fpext => LirType::F64,
+            ReprConv::None => match field_ty {
+                "i64" => LirType::I64,
+                "double" => LirType::F64,
+                "i1" => LirType::Bool,
+                "i32" => LirType::Char,
+                "i8*" => LirType::Ptr,
+                _ => LirType::I64,
+            },
+        },
+        // repr(C) 嵌套聚合子对象：结果是指针（i8*）。
+        FieldScalar::ReprCSubPtr { .. } => LirType::Ptr,
     }
 }
 

@@ -36,10 +36,13 @@ fn extern_basic_i64() {
         r#"
 extern fn labs(x: i64) -> i64;
 
+// SH-P0-1 E3：extern 调用须在 `unsafe` 块内。
 fn main() {
-    let a = labs(-42);
-    println(a);          // 42
-    println(labs(7));    // 7
+    unsafe {
+        let a = labs(-42);
+        println(a);          // 42
+        println(labs(7));    // 7
+    }
 }
 "#,
     );
@@ -55,11 +58,13 @@ extern fn fabs(x: f64) -> f64;
 extern fn srand(seed: i64) -> ();
 
 fn main() {
-    let x = fabs(-3.5);
-    println(x);                 // 3.500000（f64 打印 6 位小数）
-    println(fabs(-2.0) + 1.0);  // 3.000000
-    srand(42);                  // void 返回调用
-    println(1);
+    unsafe {
+        let x = fabs(-3.5);
+        println(x);                 // 3.500000（f64 打印 6 位小数）
+        println(fabs(-2.0) + 1.0);  // 3.000000
+        srand(42);                  // void 返回调用
+        println(1);
+    }
 }
 "#,
     );
@@ -75,20 +80,22 @@ extern fn labs(x: i64) -> i64;
 extern fn llabs(x: i64) -> i64;
 
 fn main() {
-    // 嵌套 extern 调用
-    println(labs(llabs(-9)));      // 9
-    // 循环内调用
-    let mut i = 0;
-    while i < 3 {
-        println(labs(-i));
-        i = i + 1;
+    unsafe {
+        // 嵌套 extern 调用
+        println(labs(llabs(-9)));      // 9
+        // 循环内调用
+        let mut i = 0;
+        while i < 3 {
+            println(labs(-i));
+            i = i + 1;
+        }
+        // 结果参与运算与比较
+        let v = labs(-5) * 10 + 2;
+        println(v);                    // 52
+        println(v > 50);               // true
+        // 返回值作参数
+        println(labs(labs(-100) - 90)); // 10
     }
-    // 结果参与运算与比较
-    let v = labs(-5) * 10 + 2;
-    println(v);                    // 52
-    println(v > 50);               // true
-    // 返回值作参数
-    println(labs(labs(-100) - 90)); // 10
 }
 "#,
     );

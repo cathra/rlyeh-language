@@ -3,6 +3,11 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use rlyeh_hir::ReprConv;
+use rlyeh_lexer::Span;
+use crate::context::TypeContext;
+use crate::error::TypeError;
+
 /// 类型可变性。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mutability {
@@ -100,6 +105,9 @@ pub enum Type {
         ret: Box<Type>,
         /// 生成的匿名函数名（`__closure_N`）
         fn_name: String,
+        /// 是否 `move` 闭包（F-M2：捕获环境所有权转移，可跨线程 `'static`）。
+        /// 无捕获的闭包 `move`/`borrow` 语义等价，故仅在有捕获时区分。
+        is_move: bool,
     },
     /// 泛型占位
     Generic(String),
@@ -366,6 +374,8 @@ pub struct StructDef {
     /// 泛型参数名（如 `Vec` 的 `["T"]`；V1 2026-08：字段访问时按接收者
     /// 实例类型参数替换，用户代码 `Vec<Infer>.data` 等场景）
     pub type_params: Vec<String>,
+    /// 是否 `#[repr(C)]`（SH-P0-1 E2）：真 C 布局，sub-8 字节字段按 C 规则打包。
+    pub repr_c: bool,
 }
 
 /// 枚举变体定义。
@@ -481,6 +491,144 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         Type::Union(_) => FieldScalar::Ptr,
         Type::Unit => FieldScalar::Int,
         _ => FieldScalar::Int,
+    }
+}
+
+/// repr(C) 结构体单字段的 C 布局描述（索引即字段声明序，与 `FieldGet` 的 `index` 一致）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CField {
+    /// 标量字段：自然对齐（size）、紧密打包；内存窄类型 + 读取提升方式。
+    Scalar {
+        /// C 布局字节偏移
+        offset: u32,
+        /// 字段在内存中的 LLVM 类型
+        field_ty: &'static str,
+        /// 窄字段值 → Rlyeh 宽值的提升方式
+        conv: ReprConv,
+    },
+    /// 嵌套 repr(C) 结构体字段：在父对象内联（C 规则），`FieldGet` 返回指向
+    /// `offset` 的子指针，`.inner` 访问复用内层 C 布局；`FieldSet` 经 memcpy
+    /// 拷入 `size` 字节。
+    Nested {
+        /// C 布局字节偏移（父对象内）
+        offset: u32,
+        /// 子对象字节大小（memcpy 长度）
+        size: u32,
+    },
+}
+
+/// repr(C) 结构体的完整 C 布局。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReprCLayout {
+    /// 逐字段布局（索引 = 字段声明序）
+    pub fields: Vec<CField>,
+    /// 整体字节大小（含尾部对齐 padding）
+    pub size: u32,
+    /// 整体对齐（max 成员对齐）
+    pub align: u32,
+}
+
+/// 计算 repr(C) 结构体的完整 C 布局（递归处理嵌套 repr(C) 结构体）。
+///
+/// 对齐按字段自然对齐（= size，均为 2 的幂；指针 8 字节）；嵌套 repr(C) 结构体
+/// 按其自身对齐与大小内联。返回逐字段偏移 / 内存类型 / 提升方式，以及整体 size / align。
+pub(crate) fn compute_repr_c(
+    fields: &[(String, Type)],
+    ctx: &TypeContext,
+    span: Span,
+) -> Result<ReprCLayout, TypeError> {
+    compute_repr_c_depth(fields, ctx, span, 0)
+}
+
+fn compute_repr_c_depth(
+    fields: &[(String, Type)],
+    ctx: &TypeContext,
+    span: Span,
+    depth: u32,
+) -> Result<ReprCLayout, TypeError> {
+    if depth > 64 {
+        return Err(TypeError::Unsupported {
+            what: "repr(C) 嵌套层级过深（疑似递归结构体；C 不允许值递归，须改用指针）".to_string(),
+            span,
+        });
+    }
+    let mut offset = 0u32;
+    let mut align = 1u32;
+    let mut out = Vec::with_capacity(fields.len());
+    for (_, ty) in fields {
+        let (size, falign, scalar) = c_field_repr(ty, ctx, span, depth)?;
+        let falign = falign.max(1) as u32;
+        offset = (offset + falign - 1) / falign * falign;
+        let foff = offset;
+        match scalar {
+            Some((field_ty, conv)) => {
+                out.push(CField::Scalar {
+                    offset: foff,
+                    field_ty,
+                    conv,
+                });
+            }
+            None => {
+                out.push(CField::Nested {
+                    offset: foff,
+                    size: size as u32,
+                });
+            }
+        }
+        offset += size as u32;
+        align = align.max(falign);
+    }
+    let size = (offset + align - 1) / align * align;
+    Ok(ReprCLayout {
+        fields: out,
+        size,
+        align,
+    })
+}
+
+/// 单字段的 C 表示：返回 `(size, align, scalar?)`；`scalar = Some((field_ty, conv))`
+/// 为标量字段，`None` 表示嵌套 repr(C) 结构体（size 为其整体大小）。
+fn c_field_repr(
+    ty: &Type,
+    ctx: &TypeContext,
+    span: Span,
+    depth: u32,
+) -> Result<(u8, u8, Option<(&'static str, ReprConv)>), TypeError> {
+    match ty {
+        Type::I8 => Ok((1, 1, Some(("i8", ReprConv::Sext)))),
+        Type::U8 => Ok((1, 1, Some(("i8", ReprConv::Zext)))),
+        Type::I16 => Ok((2, 2, Some(("i16", ReprConv::Sext)))),
+        Type::U16 => Ok((2, 2, Some(("i16", ReprConv::Zext)))),
+        Type::I32 => Ok((4, 4, Some(("i32", ReprConv::Sext)))),
+        Type::U32 => Ok((4, 4, Some(("i32", ReprConv::Zext)))),
+        Type::F32 => Ok((4, 4, Some(("float", ReprConv::Fpext)))),
+        Type::I64 | Type::U64 => Ok((8, 8, Some(("i64", ReprConv::None)))),
+        Type::F64 => Ok((8, 8, Some(("double", ReprConv::None)))),
+        Type::Bool => Ok((1, 1, Some(("i1", ReprConv::None)))),
+        Type::Char => Ok((4, 4, Some(("i32", ReprConv::None)))),
+        Type::RawPtr(..) | Type::Ref(..) => Ok((8, 8, Some(("i8*", ReprConv::None)))),
+        Type::Named(n, _) => match ctx.lookup_struct(n) {
+            Some(d) if d.repr_c => {
+                let nested = compute_repr_c_depth(&d.fields, ctx, span, depth + 1)?;
+                Ok((nested.size as u8, nested.align as u8, None))
+            }
+            Some(_) => Err(TypeError::Unsupported {
+                what: format!(
+                    "repr(C) 字段 `{n}` 为嵌套结构体，但其未标注 #[repr(C)]；嵌套聚合内联要求内层结构体同样采用 C 布局"
+                ),
+                span,
+            }),
+            None => Err(TypeError::Unsupported {
+                what: format!("repr(C) 字段 `{n}` 引用的结构体未定义"),
+                span,
+            }),
+        },
+        other => Err(TypeError::Unsupported {
+            what: format!(
+                "repr(C) 结构体字段 `{other}` 为不支持的聚合类型（枚举 / 联合 / 数组 / 字符串视图 / dyn Trait / 元组 / 切片）"
+            ),
+            span,
+        }),
     }
 }
 
