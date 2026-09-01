@@ -263,6 +263,32 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 let p = Point { x: 1, y: 2 };
 ```
 
+### 3.5.1 元组（值构造 + 解构 + 多返回值）
+
+```rlyeh
+// 元组值构造 + 按位置字段访问 `t.f0` / `t.f1` / ...
+let t = (10, 20, 30);
+println(t.f0);                    // 10
+let hetero = (7, "rlyeh");        // 异构元组（元素类型可不同）
+
+// 解构绑定（M2，SH-P0-5）
+let (a, b) = (1, 2);
+let (x, _, z) = (10, 20, 30);     // `_` 跳过该位置（仍占用下标）
+let mut (p, q) = (1, 2);          // 整体可变
+p = 10;
+
+// 多返回值 + 解构接收（M3）
+fn split_name(s: String) -> (String, i64) { (s, s.len()) }
+let (name, len) = split_name(String::from("rlyeh"));   // len = 5
+```
+
+语义：元组为 N 槽聚合，元素按位置命名 `f0..fN-1`；解构 desugar 为
+「临时变量承载元组值（init 只求值一次）+ 各元素按位置 `FieldGet` 绑定」。
+
+> 已知限制：解构的**元素模式仅支持标识符与 `_`**——无嵌套解构
+> （`let ((a, b), c) = ..` 报错）、无 `(mut a, b)`（parser 不接受元组模式内的
+> `mut`）、无 `..` 剩余模式；结构体 / 枚举解构模式仍不支持。
+
 ### 3.6 模块系统
 
 ```rlyeh

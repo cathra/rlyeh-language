@@ -21,6 +21,7 @@ dist/
 !tests/run-pass/self_return_normal.out
 !tests/run-pass/atomic_i64.out
 !tests/run-pass/concurrent_counter.out
+!tests/run-pass/tuple_destructure.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib

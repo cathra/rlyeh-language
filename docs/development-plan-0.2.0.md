@@ -43,7 +43,7 @@
 | **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | ⏳ 规划 | 引导器 + 对拍验证 |
 | **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | ⏳ 规划 | span 诊断复刻 |
 | **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | ⏳ 规划 | 交付物（dogfood） |
-| **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | ⏳ 规划 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
+| **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | ⏳ 规划 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | ⏳ 规划 | **复审补遗**：字符分类/判别分支依赖 |
 | **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | ⏳ 规划 | **复审补遗**：MutexGuard/arena/智能指针自动释放 |
@@ -134,8 +134,12 @@
 > **关联文档**：[SH-P2-7 前端自举 PoC（driver 自举）](tasks/leaf/sh-p2-7-driver.md)
 
 ### 3.14 N 元组值构造 + 解构（多返回值）（P0-5）
-解析器骨架 `(token, rest)` 风格需元组多返回值。类型层（`Type::Tuple`/单元 `()`）已就绪，缺值字面量/解构/多返回 codegen。
-- N1 元组值字面量 `(a, b, c)` → 复用聚合槽布局 `f0/f1/...`；N2 解构 `let (a, b) = e`（`_`/嵌套）；N3 多返回值 `fn f() -> (i64, String)` + `let (x,y)=f()`；N4 `for (k,v) in map` 一致化；差分对拍（K）。
+解析器骨架 `(token, rest)` 风格需元组多返回值。类型层（`Type::Tuple`/单元 `()`）已就绪。
+- ✅ N1 元组值字面量 `(a, b, c)` → 复用聚合槽布局 `f0/f1/...`（复核：已具备，见 `tests/run-pass/tuple_value.rl`）。
+- ✅ N2 解构 `let (a, b) = e` / `let (a, _, c) = e`——`check_stmt` 改为返回 `(Vec<HirStmt>, Type)`，展开为「临时变量承载元组值 + 各元素按位置 `FieldGet` 绑定」（init 只求值一次）；元数不匹配 / 非元组 / 嵌套解构均有门禁。
+- ✅ N3 多返回值 `fn f() -> (i64, String)` + `let (x, y) = f()`（复核：多返回本身早已可用，此前仅被 N2 阻塞）。
+- ✅ N4 `for (k, v) in map` 回归确认不受影响（`iter.rs` 走独立的二元元组模式特判）。
+- 已知限制：元素模式仅支持标识符与 `_`（无嵌套解构、`(mut a, b)`、`..` 剩余模式）；结构体 / 枚举解构仍为 Unsupported。
 > **关联文档**：[SH-P0-5 元组值构造 + 解构](tasks/leaf/sh-p0-5-tuple-value.md)
 
 ### 3.15 O `if let` / `while let` 模式控制流（P0-6）
@@ -308,12 +312,12 @@ actor 消息协议（异构消息信封）地基（事实依据：`rlyeh-actor-r
 
 ### 7.8 N 元组值构造 + 解构（SH-P0-5，🔴 中高）
 PoC 解析器 `(tok, rest)` 前置；类型层（`Type::Tuple`/单元 `()`）已就绪。
-- **N-M1（中）** 元组字面量 `(a, b, c)` → 复用聚合槽布局 `f0/f1/...`。
-- **N-M2（中）** 解构 `let (a, b) = e`（`_`/嵌套）。
-- **N-M3（中）** 多返回值 `fn f() -> (i64, String)` + `let (x,y)=f()`。
-- **N-M4（低）** `for (k,v) in map` 一致化。
-- **N-L1（低）** 差分对拍 Rust 参考（K）。
-- **关键 checkpoint**：`(tok, rest)` 风格重写 lexer/parser 主体。
+- ✅ **N-M1（中）** 元组字面量 `(a, b, c)` → 复用聚合槽布局 `f0/f1/...`——**复核确认已具备**（`tests/run-pass/tuple_value.rl`）。
+- ✅ **N-M2（中）** 解构 `let (a, b) = e` / `let (a, _, c) = e`——`check_stmt` 签名改为返回 `(Vec<HirStmt>, Type)`（`HirStmt` 无 Block 变体，解构须展开为多条 `Let`），展开形态为「临时变量承载元组值（init 只求值一次）+ 各元素按位置 `FieldGet` 绑定」，与 `t.f0` 字段访问同构；元数不匹配 / 非元组类型 / 嵌套解构均有显式门禁。
+- ✅ **N-M3（中）** 多返回值 `fn f() -> (i64, String)` + `let (x, y) = f()`——**多返回本身早已可用，此前仅被 N-M2 阻塞**（std `Channel` 退化为 `ChannelPair` 结构体的根因）。
+- ✅ **N-M4（低）** `for (k, v) in map` 回归确认不受影响（`iter.rs` 走独立的二元元组模式特判路径）。
+- **关键 checkpoint**：解构 + 多返回接收通过（`tests/run-pass/tuple_destructure.rl`）；`(tok, rest)` 风格重写 lexer/parser 主体待 M 阶段（依赖 O/P 落地）。
+- **已知限制**：元素模式仅支持标识符与 `_`（无嵌套解构、`(mut a, b)`、`..` 剩余模式）；结构体 / 枚举解构仍为 Unsupported；差分对拍（N-L1）随 K 阶段 harness 落地后补。
 > **关联文档**：[SH-P0-5 元组值构造 + 解构](tasks/leaf/sh-p0-5-tuple-value.md)
 
 ### 7.9 O `if let` / `while let`（SH-P0-6，🔴 高）

@@ -59,10 +59,13 @@ pub(crate) fn make_union_ctor(
 }
 
 /// 检查语句并生成 HIR 语句。
+///
+/// 返回**语句序列**而非单条：M2（SH-P0-5）元组解构 `let (a, b) = e;` 需展开为
+/// 多条 `Let`（临时变量承载元组值 + 各元素按位置绑定），其余语句恒为单条。
 pub(crate) fn check_stmt(
     ctx: &mut TypeContext,
     stmt: &AstStmt,
-) -> Result<(HirStmt, Type), TypeError> {
+) -> Result<(Vec<HirStmt>, Type), TypeError> {
     match stmt {
         AstStmt::Let {
             pattern,
@@ -193,11 +196,11 @@ pub(crate) fn check_stmt(
                     // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
                     ctx.insert_local_init(stored.clone(), h_init.clone());
                     Ok((
-                        HirStmt::Let {
+                        vec![HirStmt::Let {
                             name: stored.clone(),
                             init: h_init,
                             mutable: *mutable,
-                        },
+                        }],
                         ty,
                     ))
                 }
@@ -205,11 +208,11 @@ pub(crate) fn check_stmt(
                     // `let _ = expr;`：丢弃绑定
                     let _ = &h_init;
                     Ok((
-                        HirStmt::Let {
+                        vec![HirStmt::Let {
                             name: "_".to_string(),
                             init: h_init,
                             mutable: *mutable,
-                        },
+                        }],
                         ty,
                     ))
                 }
@@ -227,7 +230,7 @@ pub(crate) fn check_stmt(
                         // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
                         ctx.insert_local_init(stored.clone(), h_init.clone());
                         Ok((
-                            HirStmt::Let {
+                            vec![HirStmt::Let {
                                 name: stored.clone(),
                                 init: HirExpr::Ref {
                                     expr: Box::new(h_init),
@@ -235,7 +238,7 @@ pub(crate) fn check_stmt(
                                     pointee: field_scalar_of(&ty),
                                 },
                                 mutable: *is_mut,
-                            },
+                            }],
                             ty,
                         ))
                     } else {
@@ -245,6 +248,70 @@ pub(crate) fn check_stmt(
                         })
                     }
                 }
+                // M2（SH-P0-5，2026-09-02）：元组解构绑定
+                // `let (a, b) = e;` / `let (a, _, c) = e;`。
+                // desugar 为「临时变量承载元组值 + 各元素按位置取字段后绑定」：
+                //   __tup = e;        // init 只求值一次
+                //   a = __tup.f0;     // 与 `t.f0` 字段访问同构（FieldGet index）
+                //   c = __tup.f2;
+                // 元素模式支持标识符 / `_`；嵌套解构暂不支持（显式报错）。
+                AstPattern::Tuple(pats) => {
+                    let Some(ts) = (match &ty {
+                        Type::Tuple(ts) => Some(ts.clone()),
+                        // 引用到元组：剥一层引用后按元组解构（`let (a, b) = &t;`）
+                        Type::Ref(inner, _) => match &**inner {
+                            Type::Tuple(ts) => Some(ts.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    }) else {
+                        return Err(TypeError::WrongType {
+                            expected: format!("元组（{} 元）", pats.len()),
+                            found: ty.to_string(),
+                            span,
+                        });
+                    };
+                    if ts.len() != pats.len() {
+                        return Err(TypeError::WrongType {
+                            expected: format!("{} 元元组", ts.len()),
+                            found: format!("{} 元解构模式", pats.len()),
+                            span,
+                        });
+                    }
+                    let tmp = ctx.fresh_temp();
+                    let mut out = vec![HirStmt::Let {
+                        name: tmp.clone(),
+                        init: h_init,
+                        mutable: false,
+                    }];
+                    for (i, p) in pats.iter().enumerate() {
+                        match p {
+                            // `_`：跳过（不绑定，仍占用对应位置）
+                            AstPattern::Wildcard => {}
+                            AstPattern::Ident(name) => {
+                                let fty = ts[i].clone();
+                                let val = HirExpr::FieldGet {
+                                    base: Box::new(HirExpr::Variable(tmp.clone())),
+                                    index: i,
+                                    ty: field_scalar_of(&fty),
+                                };
+                                let stored = ctx.insert_variable(name.clone(), fty);
+                                out.push(HirStmt::Let {
+                                    name: stored,
+                                    init: val,
+                                    mutable: *mutable,
+                                });
+                            }
+                            _ => {
+                                return Err(TypeError::Unsupported {
+                                    what: "嵌套解构模式（元组内仅支持标识符 / `_`）".to_string(),
+                                    span,
+                                })
+                            }
+                        }
+                    }
+                    Ok((out, ty))
+                }
                 _ => Err(TypeError::Unsupported {
                     what: "复杂 let 绑定模式（元组 / 结构体等）".to_string(),
                     span,
@@ -253,17 +320,17 @@ pub(crate) fn check_stmt(
         }
         AstStmt::Expr(e) => {
             let (hir, ty) = infer_expr(ctx, e)?;
-            Ok((HirStmt::Expr(hir), ty))
+            Ok((vec![HirStmt::Expr(hir)], ty))
         }
         AstStmt::Semi(e) => {
             let (hir, _) = infer_expr(ctx, e)?;
-            Ok((HirStmt::Semi(hir), Type::Unit))
+            Ok((vec![HirStmt::Semi(hir)], Type::Unit))
         }
         AstStmt::Item(item) => {
             // 语句级嵌套项（如函数体内的局部 fn）：检查但不在顶层生成 HIR
             let mut scratch = Vec::new();
             crate::check_item::check_item(ctx, item, "", &mut scratch)?;
-            Ok((HirStmt::Semi(HirExpr::Unit), Type::Unit))
+            Ok((vec![HirStmt::Semi(HirExpr::Unit)], Type::Unit))
         }
     }
 }

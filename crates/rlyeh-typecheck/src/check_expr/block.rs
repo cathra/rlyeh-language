@@ -30,8 +30,9 @@ pub(crate) fn check_block_inner(
 ) -> Result<(HirBlock, Type), TypeError> {
     let mut stmts = Vec::with_capacity(block.stmts.len());
     for stmt in &block.stmts {
-        let (hir_stmt, _) = crate::check_stmt::check_stmt(ctx, stmt)?;
-        stmts.push(hir_stmt);
+        // M2：`check_stmt` 返回语句序列（元组解构展开为多条 Let）
+        let (hir_stmts, _) = crate::check_stmt::check_stmt(ctx, stmt)?;
+        stmts.extend(hir_stmts);
     }
     let mut final_ty = Type::Unit;
     let mut final_expr = None;
