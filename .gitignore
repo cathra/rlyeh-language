@@ -8,6 +8,17 @@ dist/
 .DS_Store
 *.d
 *.out
+# run-pass 期望输出例外：仅纳入已确认**平台无关**（无路径 / 时序 / PID / fd 号 /
+# kqueue 等平台专属分支）的用例，供 CI 精确比对。
+#
+# 注意：不可放开为 `!tests/run-pass/*.out`——部分用例输出随平台变化，纳入会使
+# ubuntu-latest 与 macos-latest 双平台 CI 失配。典型：`y2a_kqueue` /
+# `y2b_kqueue_wait` 依赖 kqueue（macOS/BSD 专属，Linux 回退 poll 且 `kq < 0`，
+# 输出 3 而非 5）。新用例加白名单前须确认两平台输出一致。
+!tests/run-pass/dyn_self_return.out
+!tests/run-pass/any_downcast.out
+!tests/run-pass/agg_return_plain.out
+!tests/run-pass/self_return_normal.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib
