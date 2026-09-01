@@ -199,4 +199,4 @@ rlyeh-language/
 
 ## 许可证
 
-Rlyeh 采用双许可证：[MIT](https://opensource.org/licenses/MIT) 或 [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)，任选其一。
+Rlyeh 采用双许可证：[MIT](https://opensource.org/licenses/MIT)。
