@@ -27,9 +27,9 @@ use crate::error::{Result, DagonError};
 /// 默认注册表：用户目录下的本地注册表。
 pub fn default_registry() -> String {
     if let Ok(home) = std::env::var("HOME") {
-        format!("file://{home}/.rl/registry")
+        format!("file://{home}/.rlyeh/registry")
     } else {
-        "file://~/.rl/registry".to_string()
+        "file://~/.rlyeh/registry".to_string()
     }
 }
 

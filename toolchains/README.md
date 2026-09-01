@@ -9,7 +9,7 @@
 ```
 toolchains/
 ├── build.sh               # 一键构建脚本（构建 → 测试 → 发布 → 冒烟 → 归档）
-├── install.sh             # 本地发布脚本（发布到 ~/.rl，可单独运行）
+├── install.sh             # 本地发布脚本（发布到 ~/.rlyeh，可单独运行）
 ├── README.md              # 本文件
 ├── docs/
 │   ├── REBUILD.md         # 重新构建教程（从源码重建 toolchain 的完整指南）
@@ -25,7 +25,7 @@ toolchains/
 ./build.sh
 
 # 2. 加入 PATH
-export PATH="$HOME/.rl/bin:$PATH"
+export PATH="$HOME/.rlyeh/bin:$PATH"
 
 # 3. 验证
 rlyeh --version
@@ -44,7 +44,7 @@ rlyeh new hello && cd hello && rlyeh run src/main.rl
 
 ## 构建产物
 
-- **本地安装**：`~/.rl/`（bin/ + std/ + skills/ + examples/ + registry/，可重定位）
+- **本地安装**：`~/.rlyeh/`（bin/ + std/ + skills/ + examples/ + registry/，可重定位）
 - **归档**：`toolchains/dist/rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz`（解压后 `bin` 加入 PATH 即可用，wrapper 自动定位同目录 std；`skills/rlyeh-language/` 为项目级技能，可被 CodeBuddy 等 IDE 加载；`examples/std-demos/` 为标准库各功能点用例项目，纯代码随包分发，不编译）
 
 ## 环境要求

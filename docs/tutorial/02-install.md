@@ -66,7 +66,7 @@ toolchains/dist/rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz
 构建好的工具链需要放到一个固定位置，并把 `bin` 加进 `PATH`：
 
 ```bash
-./toolchains/install.sh                # 发布到默认 ~/.rl
+./toolchains/install.sh                # 发布到默认 ~/.rlyeh
 RLYEH_PREFIX=/opt/rlyeh ./toolchains/install.sh   # 自定义前缀
 ```
 
@@ -97,7 +97,7 @@ RLYEH_PREFIX=/opt/rlyeh ./toolchains/install.sh   # 自定义前缀
 把 `bin` 目录加进环境变量，这样在任意目录都能直接敲 `rlyeh`：
 
 ```bash
-export PATH="$HOME/.rl/bin:$PATH"    # 建议写入 ~/.zshrc / ~/.bashrc 永久生效
+export PATH="$HOME/.rlyeh/bin:$PATH"    # 建议写入 ~/.zshrc / ~/.bashrc 永久生效
 rlyeh --version                          # 验证：应显示 rlyeh 0.1.0
 ```
 

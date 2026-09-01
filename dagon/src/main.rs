@@ -22,7 +22,7 @@ struct Cli {
     #[arg(long, global = true)]
     verbose: bool,
 
-    /// 注册表地址（默认 ~/.rl/registry；支持路径或 http://）
+    /// 注册表地址（默认 ~/.rlyeh/registry；支持路径或 http://）
     #[arg(long, global = true, value_name = "URL")]
     registry: Option<String>,
 }

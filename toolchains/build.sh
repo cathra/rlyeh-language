@@ -9,7 +9,7 @@
 #   ./build.sh --no-test           # 跳过测试
 #   ./build.sh --no-install        # 跳过本地发布（仅构建 + 归档）
 #   ./build.sh --no-tar            # 跳过归档打包
-#   ./build.sh --prefix /opt/rlyeh  # 自定义安装前缀（默认 $HOME/.rl）
+#   ./build.sh --prefix /opt/rlyeh  # 自定义安装前缀（默认 $HOME/.rlyeh）
 #
 set -euo pipefail
 
@@ -19,7 +19,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUN_TEST=1
 RUN_INSTALL=1
 RUN_TAR=1
-PREFIX="${RLYEH_PREFIX:-$HOME/.rl}"
+PREFIX="${RLYEH_PREFIX:-$HOME/.rlyeh}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

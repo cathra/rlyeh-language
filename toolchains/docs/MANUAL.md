@@ -68,12 +68,12 @@ Commands:
 
 Options:
       --verbose                详细输出
-      --registry <URL>         注册表地址（默认 ~/.rl/registry；支持路径或 http://）
+      --registry <URL>         注册表地址（默认 ~/.rlyeh/registry；支持路径或 http://）
 ```
 
 ### 3.1 注册表
 
-- 默认注册表：`~/.rl/registry`（本地目录注册表，`rlyeh publish`/`dagon search` 自动使用）
+- 默认注册表：`~/.rlyeh/registry`（本地目录注册表，`rlyeh publish`/`dagon search` 自动使用）
 - 指定注册表：`dagon --registry /path/to/reg` 或 `rlyeh publish --registry file:///path/to/reg`
 - 包存储：`pkgs/<name>-<ver>.tar.gz` + `index/<name>.json`
 
@@ -81,15 +81,15 @@ Options:
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `RLYEH_STD_PATH` | `~/.rl/std`（wrapper 自动注入） | 标准库目录（含 `core.rl`） |
-| `RLYEH_PREFIX` | `$HOME/.rl` | 工具链安装前缀（install.sh 使用） |
-| `PATH` | — | 需包含 `$HOME/.rl/bin` 才能直接使用 `rlyeh` |
+| `RLYEH_STD_PATH` | `~/.rlyeh/std`（wrapper 自动注入） | 标准库目录（含 `core.rl`） |
+| `RLYEH_PREFIX` | `$HOME/.rlyeh` | 工具链安装前缀（install.sh 使用） |
+| `PATH` | — | 需包含 `$HOME/.rlyeh/bin` 才能直接使用 `rlyeh` |
 
 ## 5. rlyeh-language 技能（CodeBuddy Skill）
 
 工具链随附 `rlyeh-language` 技能（`SKILL.md` + `references/`），供 CodeBuddy 等 IDE 加载为项目级技能，辅助编写 / 审查 / 调试 Rlyeh 代码：
 
-- **安装位置**：`<prefix>/skills/rlyeh-language/`（默认 `~/.rl/skills/rlyeh-language/`，install.sh 自动复制）
+- **安装位置**：`<prefix>/skills/rlyeh-language/`（默认 `~/.rlyeh/skills/rlyeh-language/`，install.sh 自动复制）
 - **归档包含**：`rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可使用
 - **内容**：语法 / 语义 / 标准库 / MVP 陷阱速查（`references/language.md` / `semantics.md` / `std-lib.md` / `pitfalls.md`）
 - **使用**：IDE 将 `<prefix>/skills/` 注册为技能目录后自动发现；更新工具链后重载技能即可同步

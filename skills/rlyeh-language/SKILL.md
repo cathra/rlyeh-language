@@ -69,7 +69,7 @@ Skill references 是 `docs/` 权威规范的提炼速查。深度问题回源：
 本技能随 Rlyeh 工具链一起构建、发布与归档：
 
 - **源码位置**：仓库 `skills/rlyeh-language/`（SKILL.md + `references/`）
-- **本地安装**：`toolchains/install.sh` 将整个目录复制到 `<prefix>/skills/rlyeh-language/`（默认 `~/.rl/skills/rlyeh-language/`）
+- **本地安装**：`toolchains/install.sh` 将整个目录复制到 `<prefix>/skills/rlyeh-language/`（默认 `~/.rlyeh/skills/rlyeh-language/`）
 - **归档发布**：`toolchains/build.sh` 归档 `rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz` 内含 `skills/` 目录，解压后即可被 CodeBuddy 等 IDE 作为项目级技能加载（`<prefix>/skills/rlyeh-language/SKILL.md`）
 - **版本同步**：Skill 版本与工具链发布节奏一致（当前 v0.1.0）
 

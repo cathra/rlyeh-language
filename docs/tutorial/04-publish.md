@@ -129,7 +129,7 @@ dagon build && dagon run  # 按清单拉依赖并构建运行
 当你写好一个可复用的库，想发布出去（或只是存档）：
 
 ```bash
-rlyeh publish           # 默认发布到 ~/.rl/registry
+rlyeh publish           # 默认发布到 ~/.rlyeh/registry
 dagon search myapp       # 在注册表中搜索（验证是否发布成功）
 ```
 

@@ -22,7 +22,7 @@ cd rlyeh-language
 1. **环境检查**：cargo / rustc / clang / git 是否就位
 2. **release 构建**：`cargo build --release`（编译 rlyeh-driver + 4 工具 + dagon）
 3. **全量测试**：`cargo test --workspace`（compile-pass/compile-fail/run-pass 全用例）
-4. **本地发布**：调用 `toolchains/install.sh`，发布到 `~/.rl/`
+4. **本地发布**：调用 `toolchains/install.sh`，发布到 `~/.rlyeh/`
 5. **冒烟验证**：`rlyeh --version` + 编译运行 hello world
 6. **归档打包**：生成 `toolchains/dist/rlyeh-toolchain-<ver>-<os>-<arch>.tar.gz`
 
@@ -44,15 +44,15 @@ cargo build --release
 # 2) 运行测试（可选但推荐）
 cargo test --workspace
 
-# 3) 本地发布（默认 ~/.rl，可 RLYEH_PREFIX 覆盖）
+# 3) 本地发布（默认 ~/.rlyeh，可 RLYEH_PREFIX 覆盖）
 ./toolchains/install.sh
 
 # 4) 冒烟验证
-~/.rl/bin/rlyeh --version
-~/.rl/bin/rlyeh run examples/hello-world.rl
+~/.rlyeh/bin/rlyeh --version
+~/.rlyeh/bin/rlyeh run examples/hello-world.rl
 
 # 5) 归档（可选，含技能目录）
-tar -C ~/.rl -czf toolchains/dist/rlyeh-toolchain.tar.gz bin std skills
+tar -C ~/.rlyeh -czf toolchains/dist/rlyeh-toolchain.tar.gz bin std skills
 ```
 
 ## 4. 验证清单
@@ -60,7 +60,7 @@ tar -C ~/.rl -czf toolchains/dist/rlyeh-toolchain.tar.gz bin std skills
 构建完成后逐项确认：
 
 ```bash
-export PATH="$HOME/.rl/bin:$PATH"
+export PATH="$HOME/.rlyeh/bin:$PATH"
 
 # 编译器
 rlyeh --version                    # → rlyeh 0.1.0
@@ -80,7 +80,7 @@ rlyeh publish                      # → 已发布 demo 0.1.0
 dagon search demo                   # → 能查到
 
 # rlyeh-language 技能（随工具链发布）
-ls ~/.rl/skills/rlyeh-language    # → SKILL.md + references/
+ls ~/.rlyeh/skills/rlyeh-language    # → SKILL.md + references/
 ```
 
 ## 5. 交叉编译（可选，WASM）
@@ -101,8 +101,8 @@ rlyeh build app.rl --target wasm32-wasip1 -o app.wasm
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `缺少 release 产物` | 未先构建或构建失败 | `cargo build --release` 后重跑 install.sh |
-| `模块 X 未找到` | 标准库未正确复制 | 重跑 install.sh（会重建 `~/.rl/std`） |
-| `rlyeh: command not found` | PATH 未配置 | `export PATH="$HOME/.rl/bin:$PATH"` |
+| `模块 X 未找到` | 标准库未正确复制 | 重跑 install.sh（会重建 `~/.rlyeh/std`） |
+| `rlyeh: command not found` | PATH 未配置 | `export PATH="$HOME/.rlyeh/bin:$PATH"` |
 | clang 链接报错 | 无 LLVM/Clang | 安装 Xcode CLT：`xcode-select --install` |
 | `cargo test` 个别失败 | 依赖未更新 | `cargo update` 后重试 |
 | wasm 目标缺失 | 未装 target | `rustup target add wasm32-wasip1` |

@@ -3,11 +3,11 @@
 # Rlyeh 工具链本地发布脚本
 #
 # 将编译好的 Rlyeh 工具链（编译器 rlyeh 命令 + fmt/check/doc/bench + dagon 包管理器
-# + 标准库 + rlyeh-language 技能）发布到本地目录，默认 $HOME/.rl
-# （与本地 dagon 注册表 ~/.rl/registry 同根）。可由 build.sh 调用，也可单独运行。
+# + 标准库 + rlyeh-language 技能）发布到本地目录，默认 $HOME/.rlyeh
+# （与本地 dagon 注册表 ~/.rlyeh/registry 同根）。可由 build.sh 调用，也可单独运行。
 #
 # 用法:
-#   ./install.sh                      # 发布到默认位置 ~/.rl
+#   ./install.sh                      # 发布到默认位置 ~/.rlyeh
 #   RLYEH_PREFIX=/opt/rlyeh ./install.sh  # 自定义前缀
 #
 # 安装布局:
@@ -26,7 +26,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
-PREFIX="${RLYEH_PREFIX:-$HOME/.rl}"
+PREFIX="${RLYEH_PREFIX:-$HOME/.rlyeh}"
 RELEASE="${RLYEH_RELEASE_DIR:-$REPO/target/release}"
 
 BINARIES=(rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon)

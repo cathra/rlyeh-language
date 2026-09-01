@@ -6,7 +6,7 @@
   - 每个 benchmark 每种语言独立二进制（bench_<lang>）
   - 编译优化级别: Rlyeh=clang -O3 发布级优化（LLVM opt 管线）; C/C++=clang -O3;
     Go=go build（gc 编译器默认优化）; Swift=swiftc -O; Rust=rustc -O
-  - 计时: warmup 后 runs 次取中位数（毫秒）
+  - 计时: warmup 后 runs 次取平均值（毫秒）
   - 编译耗时: 每次构建计时（Rlyeh 用 --force 全量冷编译，绕开增量缓存，
     保证与 C/C++/Swift/Rust 同为"从源码全量编译"的公平对比）
   - 输出一致性: 构建后首次运行捕获各语言 stdout，跨语言不一致时告警
@@ -92,11 +92,11 @@ def time_binary(binary: str, runs: int, warmup: int) -> tuple[float | None, str]
         times.append((time.perf_counter() - t0) * 1000.0)
         if i == 0:
             stdout = (r.stdout or "").strip()
-    return statistics.median(times), stdout
+    return statistics.mean(times), stdout
 
 
 def main() -> int:
-    runs = 5
+    runs = 10
     warmup = 1
     only = None
     skip_build = False
@@ -121,7 +121,7 @@ def main() -> int:
 
     print(f"Rlyeh 编译器: {RLYEH_DRIVER}")
     print(f"编译策略: Rlyeh=clang -O3（--force 冷编译） / C,C++=-O3 / Go=go build / Swift=-O / Rust=-O")
-    print(f"计时: warmup={warmup} 次 + 正式 {runs} 次取中位数\n")
+    print(f"计时: warmup={warmup} 次 + 正式 {runs} 次取平均值\n")
 
     results: dict[str, dict[str, float]] = {}
     compile_ms: dict[str, dict[str, float]] = {}
@@ -186,7 +186,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = []
     lines.append("# Rlyeh 语言性能对比基准报告\n")
-    lines.append(f"> 生成时间: {now}  |  每次运行 warmup {warmup} 次 + 正式 {runs} 次取中位数\n")
+    lines.append(f"> 生成时间: {now}  |  每次运行 warmup {warmup} 次 + 正式 {runs} 次取平均值\n")
     lines.append("## 环境\n")
     for cmd in ["uname -m", "sw_vers -productVersion", "clang --version", "go version", "swiftc --version",
                 "rustc --version", "sysctl -n machdep.cpu.brand_string", "sysctl -n hw.ncpu"]:
@@ -209,7 +209,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     lines.append("| Rust | `rustc -O` |")
     lines.append("| Swift| `swiftc -O` |")
     lines.append("")
-    lines.append("## 运行耗时（毫秒，中位数，越低越好）\n")
+    lines.append("## 运行耗时（毫秒，10 轮取平均值，越低越好）\n")
     lines.append("| 基准 | " + " | ".join(langs) + " |")
     lines.append("|------|" + "-----|" * len(langs))
     for bench in BENCHMARKS:
