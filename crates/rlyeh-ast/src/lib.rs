@@ -139,6 +139,9 @@ pub struct AstStructDecl {
     pub fields: Vec<AstStructField>,
     /// 派生 trait 名列表（`#[derive(Serialize, Deserialize)]`，阶段 Q1b）
     pub derive: Vec<String>,
+    /// 是否 `#[repr(C)]`（SH-P0-1 E2：C ABI 内存布局标记；当前基础设施已解析并存储，
+    /// 真布局（sub-8 字节字段打包）待 MIR/LIR/codegen 字段尺寸下传专项落地）
+    pub repr_c: bool,
     /// 源码位置
     pub span: Span,
 }

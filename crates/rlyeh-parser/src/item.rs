@@ -288,6 +288,7 @@ impl<'src> Parser<'src> {
             generics,
             fields,
             derive: Vec::new(),
+            repr_c: false,
             span: self.merge_span(start, end),
         })
     }

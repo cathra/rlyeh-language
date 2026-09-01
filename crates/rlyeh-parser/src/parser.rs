@@ -187,12 +187,13 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_item(&mut self) -> Result<AstItem, ParseError> {
         // `#[derive(Serialize, Deserialize)]` attribute（阶段 Q1b）：MVP 仅支持
         // struct 声明前的 derive 标记；其它项宽松忽略（typecheck 不感知 derive）。
-        let derive = self.parse_attributes()?;
+        let (derive, repr_c) = self.parse_attributes()?;
         match self.current() {
             Some(Token::Fn) => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
             Some(Token::Struct) => {
                 let mut s = self.parse_struct()?;
                 s.derive = derive;
+                s.repr_c = repr_c;
                 Ok(AstItem::StructDecl(Box::new(s)))
             }
             Some(Token::Enum) => Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?))),
@@ -264,32 +265,45 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// 解析 `#[derive(Serialize, Deserialize)]` attribute（阶段 Q1b）。
+    /// 解析 `#[derive(Serialize, Deserialize)]` 与 `#[repr(C)]` attribute（阶段 Q1b / SH-P0-1 E2）。
     ///
-    /// MVP 仅支持 struct 声明前的 derive 标记：`#[derive(...)]`（可多个、可空
-    /// `#[derive]`）；其它 attribute 名报错。返回 derive 的 trait 名列表。
-    fn parse_attributes(&mut self) -> Result<Vec<String>, ParseError> {
+    /// MVP 仅支持 struct 声明前的 `derive` 标记（`#[derive(..)]`，可多个、可空
+    /// `#[derive]`）与 `#[repr(C)]`；其它 attribute 名报错。返回
+    /// `(derive trait 名列表, 是否 repr(C))`。
+    fn parse_attributes(&mut self) -> Result<(Vec<String>, bool), ParseError> {
         let mut derives = Vec::new();
+        let mut repr_c = false;
         while self.eat(&Token::Pound) {
             self.expect(&Token::LBracket, "'['")?;
             let attr_name = self.expect_ident()?;
-            if attr_name != "derive" {
-                return Err(self.unexpected("'#[derive(..)]'"));
-            }
-            if self.eat(&Token::LParen) {
-                if !self.check(&Token::RParen) {
-                    loop {
-                        derives.push(self.expect_ident()?);
-                        if !self.eat(&Token::Comma) {
-                            break;
+            match attr_name.as_str() {
+                "derive" => {
+                    if self.eat(&Token::LParen) {
+                        if !self.check(&Token::RParen) {
+                            loop {
+                                derives.push(self.expect_ident()?);
+                                if !self.eat(&Token::Comma) {
+                                    break;
+                                }
+                            }
                         }
+                        self.expect(&Token::RParen, "')'")?;
                     }
                 }
-                self.expect(&Token::RParen, "')'")?;
+                "repr" => {
+                    self.expect(&Token::LParen, "'('")?;
+                    let repr_arg = self.expect_ident()?;
+                    if repr_arg != "C" {
+                        return Err(self.unexpected("'#[repr(C)]'"));
+                    }
+                    repr_c = true;
+                    self.expect(&Token::RParen, "')'")?;
+                }
+                _ => return Err(self.unexpected("'#[derive(..)]' 或 '#[repr(C)]'")),
             }
             self.expect(&Token::RBracket, "']'")?;
         }
-        Ok(derives)
+        Ok((derives, repr_c))
     }
 
     /// 解析 `macro_rules! name { (matcher) => { transcriber }; ... }`（MVP）。

@@ -161,6 +161,7 @@ pub fn gen_struct(
         generics: a.decl.generics.clone(),
         fields,
         derive: Vec::new(),
+        repr_c: false,
         span,
     }));
     (item, spec)

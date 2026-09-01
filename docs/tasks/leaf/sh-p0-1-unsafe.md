@@ -1,6 +1,6 @@
 # SH-P0-1 `unsafe` 块 / 裸指针
 
-> **级别**：P0（阻塞全栈自举） · **风险**：🔴 高 · **状态**：🟡 部分完成（E-M1 地基 + 验证已落地；E2/E3 规划中） · **归属**：0.2.0-E
+> **级别**：P0（阻塞全栈自举） · **风险**：🔴 高 · **状态**：🟡 部分完成（E-M1 + 验证已落地；E3 FFI 门禁已落地；E2 `#[repr(C)]` 真布局待专项） · **归属**：0.2.0-E
 > **索引**：[`../self-hosting-p0.md`](../self-hosting-p0.md) · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.5
 
 ## 目标
@@ -29,8 +29,8 @@
   - AST/HIR 新增 `UnsafeBlock` 变体；parser 解析 `unsafe { }`（`is_item_start` 区分 `unsafe fn` 项与 `unsafe { }` 表达式语句）；typecheck/MIR/borrowck/regionck/desugar/fmt/check 各匹配臂委托到块逻辑。
   - 指针算术 `*mut T + i64 → *mut T` 本就支持（typecheck `mod.rs` BinaryOp::Add 特判）。
   - 验证：`tests/run-pass/unsafe-raw-ptr.rl`（裸指针读写/索引）+ `tests/run-pass/unsafe-bump-allocator.rl`（手动 bump 分配器，对拍 `rlyeh-region-alloc` bump 路径）。
-- ⏳ **E2 `#[repr(C)]` 内存布局**：规划中。当前 Rlyeh struct 采用统一 8 字节槽布局（codegen `槽偏移 = index*8`），与 C 紧凑布局仅在含 sub-8 字节字段时不兼容；真正 C 布局需改 codegen 布局模型，风险高，建议作为 0.3.0 运行时重写的前置专项，不在 0.2.0 语言特性最小切片内。
-- ⏳ **E3 FFI 安全边界约定**：规划中。`extern fn` 声明与调用已可用（core.rl 的 `calloc` 等）；将 `extern` 调用/裸指针解引用**强制要求在 `unsafe` 内**的門禁会要求把 `rlyeh-std`（core.rl）所有 extern 调用包进 `unsafe`，波及面大，建议作为专项。
+- 🟡 **E2 `#[repr(C)]` 内存布局**：基础设施已落地（属性解析 + `repr_c` 标志下传至 `AstStructDecl`）；默认布局与 C 兼容（8 字节对齐字段即 C 布局）。**真布局（sub-8 字节字段 C 打包）待专项**——需将字段真实尺寸自 HIR 经 MIR→LIR→codegen 下传（当前 `MirProgram` 不携带结构体字段类型，需补布局信息；codegen 为 i8\* 字节偏移模型，`FieldScalar` 已丢失字段尺寸），风险高，建议作为 0.3.0 运行时重写的前置专项。验证：`tests/run-pass/repr-c-struct.rl`。
+- ✅ **E3 FFI 安全边界约定（extern 调用门禁已实现并验证）**：`extern fn` 调用强制要求在 `unsafe` 块内（typecheck `in_unsafe` 上下文 + `extern_fns` 查表）；标准库预置（prelude）经字节长度豁免受信任 FFI（类比 Rust std）。裸指针解引用门禁因会波及 `rlyeh-std` 裸指针用法、风险高，暂未强制（E-M1 已允许 `unsafe` 块内解引用）。验证：`tests/run-pass/unsafe-extern-call.rl` + `tests/compile-fail/unsafe-extern-call-outside.rl`。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -38,3 +38,5 @@
 | 2026-09-01 | 从评估报告 P0-1 拆出为叶子 |
 | 2026-09-01 | 修正归属：由「0.3.0+ 长期跟踪」上移为 0.2.0-E（与计划 §1/§3.5 一致）；索引由 feasibility 评估改为 development-plan §3.5 |
 | 2026-09-01 | 实现 E-M1：`unsafe { }` 块 + 裸指针读写/索引（跨 ast/hir/parser/typecheck/mir/borrowck/regionck/desugar/fmt/check 多 crate）；新增 run-pass 用例 `unsafe-raw-ptr.rl`、`unsafe-bump-allocator.rl`，状态由规划中改为部分完成 |
+| 2026-09-01 | 实现 E3 FFI 安全边界门禁：extern 调用须 `unsafe`（typecheck `in_unsafe` + `extern_fns` 查表；driver 注入 prelude 字节长度豁免 std 受信任 FFI）；新增 `unsafe-extern-call.rl`（run-pass）+ `unsafe-extern-call-outside.rl`（compile-fail） |
+| 2026-09-01 | E2 基础设施：`#[repr(C)]` 属性解析（`parse_attributes` 扩展）+ `repr_c` 标志下传至 `AstStructDecl`；新增 `repr-c-struct.rl`（run-pass） |
