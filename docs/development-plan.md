@@ -4,6 +4,8 @@
 > **总纲与进度速览**：见根目录 [`CODEBUDDY.md`](../CODEBUDDY.md)（§6 为里程碑原表）。
 > **任务执行记录**：见 [`tasks/`](./tasks/README.md)（stage-* 索引 §子任务叶子文档 + milestone-tasks/）——已按 §7.4 任务管理体系从本文档 §4 / §6.4 迁移。
 > **维护规则**：每完成一项任务，需同步更新本文档与任务树的状态标识。
+> **0.1.0 已收口**：阶段 A–Z 全部完成（Y 部分完成），本文件为 0.1.0 规划权威副本。
+> **0.2.0 主线**：自举准备阶段计划见 [`development-plan-0.2.0.md`](./development-plan-0.2.0.md)；自举可行性评估见 [`self-hosting/feasibility.md`](./self-hosting/feasibility.md)。
 
 ---
 

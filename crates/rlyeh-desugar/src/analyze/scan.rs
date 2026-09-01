@@ -82,7 +82,7 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
         | ExprKind::CharLiteral(_)
         | ExprKind::TimeLiteral { .. }
         | ExprKind::Unit => Ok(()),
-        ExprKind::Set(items) | ExprKind::ArrayLit(items) => {
+        ExprKind::Set(items) | ExprKind::ArrayLit(items) | ExprKind::TupleLit(items) => {
             for it in items {
                 scan_expr(it, uses)?;
             }
@@ -123,6 +123,10 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
         ExprKind::InRange { value, range, .. } => {
             scan_expr(value, uses)?;
             scan_expr(range, uses)
+        }
+        ExprKind::InContainer { value, container, .. } => {
+            scan_expr(value, uses)?;
+            scan_expr(container, uses)
         }
         ExprKind::InRegion { expr, .. } => scan_expr(expr, uses),
         ExprKind::Assign { target, value, .. } => {
@@ -349,6 +353,11 @@ pub(super) fn extract_expr_awaits(
             range: extract_expr_awaits(ctx, out, range, cur_uses, first, last)?,
             negated: *negated,
         },
+        ExprKind::InContainer { value, container, negated } => ExprKind::InContainer {
+            value: extract_expr_awaits(ctx, out, value, cur_uses, first, last)?,
+            container: extract_expr_awaits(ctx, out, container, cur_uses, first, last)?,
+            negated: *negated,
+        },
         ExprKind::InRegion { expr, region } => ExprKind::InRegion {
             expr: extract_expr_awaits(ctx, out, expr, cur_uses, first, last)?,
             region: region.clone(),
@@ -413,6 +422,13 @@ pub(super) fn extract_expr_awaits(
             ctx, out, inner, cur_uses, first, last,
         )?)),
         ExprKind::Set(items) => ExprKind::Set({
+            let mut s = Vec::new();
+            for el in items {
+                s.push(extract_expr_awaits(ctx, out, el, cur_uses, first, last)?);
+            }
+            s
+        }),
+        ExprKind::TupleLit(items) => ExprKind::TupleLit({
             let mut s = Vec::new();
             for el in items {
                 s.push(extract_expr_awaits(ctx, out, el, cur_uses, first, last)?);

@@ -1002,7 +1002,7 @@ fn assemble_cross_elf(
 /// 目标架构的 Rust `libcompiler_builtins` rlib 路径（提供 f128 等 soft-float 内建）。
 /// arm64/RISC-V/LoongArch 的 long double = f128，musl printf 引用 `__*tf3`，需此库解析。
 fn rust_compiler_builtins_path(target: &str) -> Option<PathBuf> {
-    let sysroot = rust_sysroot(target)?;
+    let sysroot = rust_sysroot()?;
     let dir = sysroot.join("lib/rustlib").join(target).join("lib");
     let entries = std::fs::read_dir(&dir).ok()?;
     for e in entries.flatten() {
@@ -1015,7 +1015,7 @@ fn rust_compiler_builtins_path(target: &str) -> Option<PathBuf> {
 }
 
 /// rustc 工具链 sysroot（`rustc --print sysroot`）。
-fn rust_sysroot(target: &str) -> Option<PathBuf> {
+fn rust_sysroot() -> Option<PathBuf> {
     let out = Command::new("rustc")
         .arg("--print").arg("sysroot")
         .output()
@@ -1029,7 +1029,7 @@ fn rust_sysroot(target: &str) -> Option<PathBuf> {
 
 /// 从 rustc 查询目标 sysroot 的 self-contained 目录（`<rustc-sysroot>/lib/rustlib/<target>/lib/self-contained`）。
 fn rust_sysroot_target_selfcontained(target: &str) -> PathBuf {
-    rust_sysroot(target)
+    rust_sysroot()
         .unwrap_or_default()
         .join("lib/rustlib")
         .join(target)

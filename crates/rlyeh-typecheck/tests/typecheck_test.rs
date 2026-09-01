@@ -114,44 +114,44 @@ fn test_chain_backward_expands_to_or() {
 #[test]
 fn test_in_set() {
     // 小集合：x == 1 || x == 3 || x == 5
-    assert!(check("fn main() { let x = 5; if x in (1, 3, 5) {} }").is_ok());
+    assert!(check("fn main() { let x = 5; if x in {1, 3, 5} {} }").is_ok());
 }
 
 #[test]
 fn test_in_set_range() {
     // 集合内范围元素离散展开：x in (0..<10) → x == 0 || ... || x == 9
-    assert!(check("fn main() { let x = 5; if x in (0..<10) {} }").is_ok());
+    assert!(check("fn main() { let x = 5; if x in {0..<10} {} }").is_ok());
 }
 
 #[test]
 fn test_in_set_with_time() {
     // 时间字面量参与集合（归一化为分钟值）
-    assert!(check("fn main() { let h = 14; if h in (9am...6pm) {} }").is_ok());
+    assert!(check("fn main() { let h = 14; if h in {9am...6pm} {} }").is_ok());
 }
 
 #[test]
 fn test_in_mixed() {
     // 混合集合：范围元素 + 单值
-    assert!(check("fn main() { let x = 5; if x in (1..<10, 20, 30) {} }").is_ok());
+    assert!(check("fn main() { let x = 5; if x in {1..<10, 20, 30} {} }").is_ok());
 }
 
 #[test]
 fn test_in_not_in() {
     // not in：取反
-    assert!(check("fn main() { let x = 5; if x not in (1, 3, 5) {} }").is_ok());
+    assert!(check("fn main() { let x = 5; if x not in {1, 3, 5} {} }").is_ok());
 }
 
 #[test]
 fn test_in_type_mismatch() {
     // 集合元素类型与值不兼容
-    let err = check("fn main() { let x = 5; if x in (\"a\", \"b\") {} }").unwrap_err();
+    let err = check("fn main() { let x = 5; if x in {\"a\", \"b\"} {} }").unwrap_err();
     assert!(matches!(err, TypeError::InSetTypeMismatch { .. }));
 }
 
 #[test]
 fn test_in_set_small_expands_to_or_chain() {
     // 小集合（≤5 成员）展开为 == 链
-    let program = check("fn main() { let x = 5; if x in (1, 3, 5) {} }").unwrap();
+    let program = check("fn main() { let x = 5; if x in {1, 3, 5} {} }").unwrap();
     let cond = first_if_cond(&program);
     assert!(
         matches!(cond, HirExpr::Binary(HirBinaryOp::Or, _, _)),
@@ -162,7 +162,7 @@ fn test_in_set_small_expands_to_or_chain() {
 #[test]
 fn test_in_set_large_uses_set_lookup() {
     // 大集合（>5 成员）保留为 SetLookup
-    let program = check("fn main() { let x = 5; if x in (0..<10) {} }").unwrap();
+    let program = check("fn main() { let x = 5; if x in {0..<10} {} }").unwrap();
     let cond = first_if_cond(&program);
     let HirExpr::SetLookup {
         members, negated, ..
@@ -177,7 +177,7 @@ fn test_in_set_large_uses_set_lookup() {
 #[test]
 fn test_not_in_set_large_uses_set_lookup_negated() {
     // not in 大集合：SetLookup + negated
-    let program = check("fn main() { let x = 5; if x not in (0..<10) {} }").unwrap();
+    let program = check("fn main() { let x = 5; if x not in {0..<10} {} }").unwrap();
     let cond = first_if_cond(&program);
     let HirExpr::SetLookup { negated, .. } = cond else {
         panic!("大集合应为 SetLookup，got {cond:?}");
@@ -188,7 +188,7 @@ fn test_not_in_set_large_uses_set_lookup_negated() {
 #[test]
 fn test_in_set_open_bound_discrete() {
     // 左开右闭集合展开：x in (0<..9) → {1..=9}（9 个成员）
-    let program = check("fn main() { let x = 5; if x in (0<..9) {} }").unwrap();
+    let program = check("fn main() { let x = 5; if x in {0<..9} {} }").unwrap();
     let cond = first_if_cond(&program);
     let HirExpr::SetLookup { members, .. } = cond else {
         panic!("应为 SetLookup，got {cond:?}");
@@ -199,7 +199,7 @@ fn test_in_set_open_bound_discrete() {
 #[test]
 fn test_in_set_negative_bound() {
     // 负下界
-    assert!(check("fn main() { let x = 5; if x in (-5..<5) {} }").is_ok());
+    assert!(check("fn main() { let x = 5; if x in {-5..<5} {} }").is_ok());
 }
 
 // ---------- in 裸范围（区间判断） ----------
@@ -281,6 +281,45 @@ fn test_in_bare_range_with_time() {
     assert!(check("fn main() { let h = 14; if h in 9am...6pm {} }").is_ok());
 }
 
+// ---------- M2：`in` 右侧运行时容器（数组 / Vec / 切片）----------
+
+#[test]
+fn test_in_array_literal_container() {
+    // 数组字面量作为运行时容器成员判断（区别于 `InSet` 编译期离散展开）
+    assert!(check("fn main() { let x = 2; if x in [1, 2, 3] {} }").is_ok());
+}
+
+#[test]
+fn test_in_array_var_container() {
+    assert!(check(
+        "fn main() { let a: [i64; 3] = [1, 2, 3]; let x = 2; if x in a {} }"
+    )
+    .is_ok());
+}
+
+#[test]
+fn test_not_in_array_container() {
+    assert!(check(
+        "fn main() { let a: [i64; 3] = [1, 2, 3]; let x = 99; if x not in a {} }"
+    )
+    .is_ok());
+}
+
+#[test]
+fn test_in_container_type_mismatch() {
+    // i64 值在字符串数组中：类型不兼容
+    let err = check("fn main() { let s = \"hi\"; let arr = [s, s]; let x = 2; if x in arr {} }")
+        .unwrap_err();
+    assert!(matches!(err, TypeError::InSetTypeMismatch { .. }));
+}
+
+#[test]
+fn test_in_container_not_a_container() {
+    // i64 不是容器
+    let err = check("fn main() { let x = 2; if x in 5 {} }").unwrap_err();
+    assert!(matches!(err, TypeError::Unsupported { .. }));
+}
+
 // ---------- 基础控制流 ----------
 
 #[test]
@@ -330,7 +369,7 @@ fn test_typecheck_source() {
 #[test]
 fn test_empty_set_constant() {
     // 空集合：x in () 恒 false / x not in () 恒 true
-    let program = check("fn main() { let x = 5; if x in (4..<4) {} }").unwrap();
+    let program = check("fn main() { let x = 5; if x in {4..<4} {} }").unwrap();
     let cond = first_if_cond(&program);
     assert!(matches!(cond, HirExpr::BoolLiteral(false)));
 }

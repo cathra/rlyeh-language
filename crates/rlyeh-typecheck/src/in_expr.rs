@@ -9,13 +9,18 @@
 //!   （`InRange`），区间判断：`x in 0..<10` ≡ `x >= 0 && x < 10`。
 
 use rlyeh_ast::{AstExpr, ExprKind};
-use rlyeh_hir::{HirBinaryOp, HirExpr};
+use rlyeh_hir::{
+    FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirStmt, HirUnaryOp,
+};
 use rlyeh_lexer::Span;
 
 use crate::check_expr;
+use crate::check_expr::construct::check_string_from;
+use crate::check_expr::util::substitute;
+use crate::comparison;
 use crate::context::TypeContext;
 use crate::error::TypeError;
-use crate::types::Type;
+use crate::types::{field_scalar_of, Type};
 
 /// 集合离散展开的最大成员数（超过则报错，防止内存爆炸）。
 const MAX_SET_MEMBERS: i128 = 1_000_000;
@@ -238,4 +243,252 @@ fn optimize_in_set(value: HirExpr, members: Vec<HirExpr>, negated: bool) -> HirE
             negated,
         }
     }
+}
+
+/// 检查并展开容器成员判断（`x in arr` / `x in vec` / `x in [1,2,3]` /
+/// `x in &slice` / `x not in ...`）。
+///
+/// 与 [`check_in_expression`]（集合 `InSet` 编译期离散展开）不同：容器长度
+/// 运行时未知，typecheck 生成 **HIR 循环**在运行期逐元素相等判断：
+///
+/// ```text
+/// let __v = <value>;            // 缓存值（避免重复求值）
+/// let __c = <container>;        // 缓存容器
+/// let mut __found = false;
+/// let mut __i = 0;
+/// let __len = <容器长度>;
+/// loop {
+///     if __i >= __len { break; }
+///     let __e = <容器>[__i];     // 按下标读元素
+///     if __e == __v { __found = true; break; }   // 命中
+///     __i += 1;
+/// }
+/// <negated ? !__found : __found>
+/// ```
+///
+/// 支持容器：数组 `[T; N]`、切片 `&[T]` / `&mut [T]`（元素类型须确定）、
+/// `Vec<T>`。元素与值类型须兼容（字符串经 `string_eq_hir` 内容比较）。
+pub(crate) fn check_in_container_expression(
+    ctx: &mut TypeContext,
+    value: AstExpr,
+    container: AstExpr,
+    negated: bool,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let (v_hir, v_ty) = check_expr::infer_expr(ctx, &value)?;
+    let (c_hir, c_ty) = check_expr::infer_expr(ctx, &container)?;
+
+    // 解析容器：剥离一层引用（&[T] / &[T; N]），匹配数组 / 切片 / Vec
+    let inner = match &c_ty {
+        Type::Ref(inner, _) => &**inner,
+        other => other,
+    };
+    let (elem_ty, is_array, array_len, is_str) = match inner {
+        Type::Array(elem, n) => {
+            let et = substitute(elem, &ctx.generic_subst);
+            if matches!(et, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "`in` 的数组容器要求元素类型确定（如 `let a: [i64; N] = ...`）"
+                        .to_string(),
+                    span,
+                });
+            }
+            let is_str = matches!(et, Type::U8);
+            (et, true, *n, is_str)
+        }
+        Type::Slice(elem) => {
+            let et = substitute(elem, &ctx.generic_subst);
+            if matches!(et, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "`in` 的切片容器要求元素类型确定（如 `let s: &[i64] = ...`）"
+                        .to_string(),
+                    span,
+                });
+            }
+            (et, false, 0, false)
+        }
+        Type::Named(n, args) if n == "Vec" && ctx.lookup_struct("Vec").is_some() => {
+            let et = substitute(args.first().unwrap_or(&Type::Infer), &ctx.generic_subst);
+            if matches!(et, Type::Infer) {
+                return Err(TypeError::Unsupported {
+                    what: "`in` 的 Vec 容器要求元素类型确定（如 `let v: Vec<i64> = ...`）"
+                        .to_string(),
+                    span,
+                });
+            }
+            (et, false, 0, false)
+        }
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: "`in` 右侧容器须为数组 / 切片 / Vec（`[T; N]` / `&[T]` / `Vec<T>`）".to_string(),
+                span,
+            })
+        }
+    };
+
+    // 类型兼容检查（字符串容器须与字符串值配对）
+    let elem_str = comparison::is_string_type(ctx, &elem_ty)
+        || comparison::is_str_view(&elem_ty)
+        || comparison::is_str_value(&elem_ty);
+    let val_str = comparison::is_string_type(ctx, &v_ty)
+        || comparison::is_str_view(&v_ty)
+        || comparison::is_str_value(&v_ty);
+    if elem_str != val_str {
+        return Err(TypeError::InSetTypeMismatch {
+            value_type: v_ty.to_string(),
+            element_type: elem_ty.to_string(),
+            span,
+        });
+    }
+    if !elem_str && !v_ty.compatible_with(&elem_ty) {
+        return Err(TypeError::InSetTypeMismatch {
+            value_type: v_ty.to_string(),
+            element_type: elem_ty.to_string(),
+            span,
+        });
+    }
+
+    // 唯一临时名（避免与用户变量冲突）
+    let v_var = ctx.fresh_temp();
+    let found = ctx.fresh_temp();
+    let i_var = ctx.fresh_temp();
+    let e_var = ctx.fresh_temp();
+    let len_var = ctx.fresh_temp();
+
+    // 值初始化：字符串字面量（`str` 值）升级为 String 对象，便于 `string_eq_hir`
+    let v_init = if val_str && comparison::is_str_value(&v_ty) {
+        check_string_from(ctx, &[value.clone()], span)?.0
+    } else {
+        v_hir
+    };
+
+    let elem_scalar = field_scalar_of(&elem_ty);
+    let index_base = if is_array {
+        // 数组：容器表达式本身即数据（按元素步长 GEP）
+        c_hir.clone()
+    } else {
+        // Vec / 切片：槽 0 = data 指针。注意：直接复用容器表达式 `c_hir`，
+        // 不要绑定到新的临时变量——切片为胖指针（2 槽 {data, len}），若经
+        // `let __c = <容器>` 复制到单槽临时变量会截断长度信息，导致遍历越界崩溃。
+        HirExpr::FieldGet {
+            base: Box::new(c_hir.clone()),
+            index: 0,
+            ty: FieldScalar::Ptr,
+        }
+    };
+    let len_hir = if is_array {
+        HirExpr::IntLiteral(array_len as i128)
+    } else {
+        // Vec / 切片：槽 1 = 长度
+        HirExpr::FieldGet {
+            base: Box::new(c_hir.clone()),
+            index: 1,
+            ty: FieldScalar::Int,
+        }
+    };
+
+    // 元素相等条件：`==` 对字符串走 `string_eq_hir`（内容比较），其余标量直接 `==`
+    let cmp_cond = if elem_str {
+        comparison::string_eq_hir(
+            ctx,
+            &HirExpr::Variable(e_var.clone()),
+            &HirExpr::Variable(v_var.clone()),
+        )
+    } else {
+        HirExpr::Binary(
+            HirBinaryOp::Eq,
+            Box::new(HirExpr::Variable(e_var.clone())),
+            Box::new(HirExpr::Variable(v_var.clone())),
+        )
+    };
+
+    let loop_body = HirBlock {
+        stmts: vec![
+            // if __i >= __len { break; }
+            HirStmt::Expr(HirExpr::If {
+                cond: Box::new(HirExpr::Binary(
+                    HirBinaryOp::Ge,
+                    Box::new(HirExpr::Variable(i_var.clone())),
+                    Box::new(HirExpr::Variable(len_var.clone())),
+                )),
+                then_block: Box::new(HirBlock {
+                    stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                    final_expr: None,
+                }),
+                else_block: None,
+            }),
+            // let __e = <容器>[__i];
+            HirStmt::Let {
+                name: e_var.clone(),
+                init: HirExpr::Index {
+                    base: Box::new(index_base),
+                    index: Box::new(HirExpr::Variable(i_var.clone())),
+                    elem: elem_scalar,
+                    is_str,
+                },
+                mutable: false,
+            },
+            // if __e == __v { __found = true; break; }
+            HirStmt::Expr(HirExpr::If {
+                cond: Box::new(cmp_cond),
+                then_block: Box::new(HirBlock {
+                    stmts: vec![
+                        HirStmt::Expr(HirExpr::Assign {
+                            target: found.clone(),
+                            op: HirAssignOp::Assign,
+                            value: Box::new(HirExpr::BoolLiteral(true)),
+                        }),
+                        HirStmt::Expr(HirExpr::Break(None)),
+                    ],
+                    final_expr: None,
+                }),
+                else_block: None,
+            }),
+            // __i += 1;
+            HirStmt::Expr(HirExpr::Assign {
+                target: i_var.clone(),
+                op: HirAssignOp::AddAssign,
+                value: Box::new(HirExpr::IntLiteral(1)),
+            }),
+        ],
+        final_expr: None,
+    };
+
+    let stmts = vec![
+        HirStmt::Let {
+            name: v_var.clone(),
+            init: v_init,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: len_var.clone(),
+            init: len_hir,
+            mutable: false,
+        },
+        HirStmt::Let {
+            name: found.clone(),
+            init: HirExpr::BoolLiteral(false),
+            mutable: true,
+        },
+        HirStmt::Let {
+            name: i_var.clone(),
+            init: HirExpr::IntLiteral(0),
+            mutable: true,
+        },
+        HirStmt::Expr(HirExpr::Loop {
+            body: Box::new(loop_body),
+        }),
+    ];
+
+    let result = if negated {
+        HirExpr::Unary(HirUnaryOp::Not, Box::new(HirExpr::Variable(found)))
+    } else {
+        HirExpr::Variable(found)
+    };
+
+    let hir = HirExpr::Block(Box::new(HirBlock {
+        stmts,
+        final_expr: Some(result),
+    }));
+    Ok((hir, Type::Bool))
 }

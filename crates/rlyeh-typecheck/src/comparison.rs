@@ -302,7 +302,7 @@ fn is_struct_object(ctx: &TypeContext, ty: &Type) -> bool {
 /// 操作数绑定到唯一临时变量（防止重复求值）；String 槽布局：
 /// 槽 0 = data 指针、槽 1 = len、槽 2 = cap。`bytes_eq` 为内建
 /// （`memcmp(a, b, n) == 0`），经 MIR/LIR 透传至代码生成。
-fn string_eq_hir(ctx: &mut TypeContext, lhs: &HirExpr, rhs: &HirExpr) -> HirExpr {
+pub(crate) fn string_eq_hir(ctx: &mut TypeContext, lhs: &HirExpr, rhs: &HirExpr) -> HirExpr {
     let a = ctx.fresh_temp();
     let b = ctx.fresh_temp();
 

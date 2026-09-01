@@ -441,6 +441,10 @@ impl Checker {
                 self.walk_expr(value);
                 self.walk_expr(range);
             }
+            ExprKind::InContainer { value, container, .. } => {
+                self.walk_expr(value);
+                self.walk_expr(container);
+            }
             ExprKind::InRegion { expr, .. } => self.walk_expr(expr),
             ExprKind::Assign { target, value, .. } => {
                 self.walk_expr(target);
@@ -523,6 +527,11 @@ impl Checker {
                 self.walk_expr(index);
             }
             ExprKind::ArrayLit(elems) => {
+                for el in elems {
+                    self.walk_expr(el);
+                }
+            }
+            ExprKind::TupleLit(elems) => {
                 for el in elems {
                     self.walk_expr(el);
                 }

@@ -158,6 +158,59 @@ pub(super) fn check_struct_construct(
     ))
 }
 
+/// 元组值构造检查（M1：`(a, b, c)`）。
+///
+/// 复用结构体构造的聚合槽布局：展开为 `Alloc{slots}` + 逐槽 `FieldSet`
+/// 的 HIR `Block`，codegen 与结构体一致（N 槽聚合对象）。字段按位置命
+/// 名为 `f0`/`f1`/...，经 `check_field_access` 的元组分支访问。
+///
+/// 按值仅允许"字段全为标量槽"的元组（≤2 槽）：与结构体一致——
+/// 含聚合/引用字段者按值构造不安全，退化回堆分配。
+pub(super) fn check_tuple_construct(
+    ctx: &mut TypeContext,
+    elems: &[AstExpr],
+    _span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 推断每个元素类型
+    let mut elem_tys: Vec<Type> = Vec::with_capacity(elems.len());
+    let mut elem_hirs: Vec<HirExpr> = Vec::with_capacity(elems.len());
+    for e in elems {
+        let (hir, ty) = infer_expr(ctx, e)?;
+        elem_hirs.push(hir);
+        elem_tys.push(ty);
+    }
+
+    // 按值仅允许"字段全为标量槽"的元组（≤2 槽），与结构体一致
+    let tuple_by_value = elem_tys.len() <= 2
+        && elem_tys.iter().all(|t| field_is_scalar_slot(t));
+    let base = ctx.fresh_temp();
+    let mut stmts = vec![HirStmt::Let {
+        name: base.clone(),
+        init: HirExpr::Alloc {
+            slots: elem_tys.len(),
+            by_value: tuple_by_value,
+            is_strfat: false,
+        },
+        mutable: false,
+    }];
+    for (i, (hir, t)) in elem_hirs.into_iter().zip(elem_tys.iter()).enumerate() {
+        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
+            base: Box::new(HirExpr::Variable(base.clone())),
+            index: i,
+            value: Box::new(hir),
+            ty: field_scalar_of(t),
+        }));
+    }
+
+    Ok((
+        HirExpr::Block(Box::new(HirBlock {
+            stmts,
+            final_expr: Some(HirExpr::Variable(base)),
+        })),
+        Type::Tuple(elem_tys),
+    ))
+}
+
 pub(super) fn check_vec_construct(
     ctx: &mut TypeContext,
     method: &str,

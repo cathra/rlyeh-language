@@ -13,6 +13,27 @@ pub(super) fn check_field_access(
     // `Box<T>` 接收者：自动剥层后按 `T` 的字段访问（K2）。base 须为堆对象
     // 指针：经槽 0 解出（`box_ptr_hir`），`&Box<T>` 引用求值即对象指针同构
     let base_hir = heap_ptr_hir(base_hir, &base_ty);
+    // M1：元组按位置字段访问（`t.f0` / `t.f1` / ...）
+    if let Type::Tuple(ts) = peel_refs_and_heap(&base_ty) {
+        let idx = field
+            .strip_prefix('f')
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|&i| i < ts.len())
+            .ok_or_else(|| TypeError::UnknownField {
+                struct_name: "(tuple)".to_string(),
+                field: field.to_string(),
+                span,
+            })?;
+        let fty = ts[idx].clone();
+        return Ok((
+            HirExpr::FieldGet {
+                base: Box::new(base_hir),
+                index: idx,
+                ty: field_scalar_of(&fty),
+            },
+            fty,
+        ));
+    }
     let Type::Named(name, _) = peel_refs_and_heap(&base_ty) else {
         return Err(TypeError::ExpectedStruct {
             found: base_ty.to_string(),

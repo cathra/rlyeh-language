@@ -23,6 +23,8 @@
 | [module-system.md](./module-system.md) | 模块系统规范 | 编译器开发者 / 使用者 | 模块系统设计（语法/语义/编译模型/包集成 + 演进路线） |
 | [std-lib.md](./std-lib.md) | 标准库 API | 编译器开发者 / 使用者 | 各模块目标 API（✅ 已实现 / 📋 规划），MVP 差异注记 |
 | [development-plan.md](./development-plan.md) | 进度计划 | 团队 | 开发计划（阶段 A–Z 总览 + 阶段详情索引；§2 总览表链接各阶段详情） |
+| [development-plan-0.2.0.md](./development-plan-0.2.0.md) | 0.2.0 进度计划 | 团队 | 自举准备阶段计划（阶段 A–E：泛型 trait/impl、嵌套模块、derive 宏、进程调用 FFI、前端自举 PoC） |
+| [self-hosting/feasibility.md](./self-hosting/feasibility.md) | 自举可行性评估 | 团队 | Rlyeh 自举能力评估（全栈编译器/标准库/工具四层可行性矩阵 + 缺口 P0/P1/P2 + 推荐自举路径） |
 | [stages/](./stages/) | 阶段详情 | 团队 | 每阶段一个详情文档（A–Y，含任务列表 + 各任务详情文档链接到 tasks/leaf） |
 | [tasks/README.md](./tasks/README.md) | 任务文档（树形） | 团队 | 任务树根（里程碑总览 + 阶段 A–Z 索引 + 进度）；索引层 stage-* / v2-str-view / v3-iterator-adapters（含 §执行记录），叶子层 leaf/ 为最小粒度子任务具体实施 |
 

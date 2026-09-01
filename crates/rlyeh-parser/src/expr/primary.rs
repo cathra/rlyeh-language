@@ -292,8 +292,7 @@ impl <'src> Parser<'src> {
     pub(super) fn parse_paren_or_set(&mut self) -> Result<AstExpr, ParseError> {
         let lp = self.expect(&Token::LParen, "'('")?;
         if self.eat(&Token::RParen) {
-            // X4：空 `()` 为单元类型字面量（`Result::Ok(())` 的值）；`in ()` 空集合
-            // 由 `parse_in_target`/`parse_set_elements` 单独解析，不经过此处。
+            // X4：空 `()` 为单元类型字面量（`Result::Ok(())` 的值）
             return Ok(AstExpr::new(
                 ExprKind::Unit,
                 self.merge_span(lp.span, lp.span),
@@ -301,6 +300,7 @@ impl <'src> Parser<'src> {
         }
         let first = self.parse_expr()?;
         if self.eat(&Token::Comma) {
+            // 多元素括号表达式 = 元组值字面量 `(a, b, c)`（M1：元组值）
             let mut elems = vec![first];
             while !self.check(&Token::RParen) {
                 if self.at_eof() {
@@ -313,16 +313,12 @@ impl <'src> Parser<'src> {
             }
             let rp = self.expect(&Token::RParen, "')'")?;
             let span = self.merge_span(lp.span, rp.span);
-            Ok(AstExpr::new(ExprKind::Set(elems), span))
+            Ok(AstExpr::new(ExprKind::TupleLit(elems), span))
         } else {
             let rp = self.expect(&Token::RParen, "')'")?;
             let span = self.merge_span(lp.span, rp.span);
-            // 单元素范围（`(0...10)`）构成集合，其余为分组
-            if matches!(first.kind.as_ref(), ExprKind::Range { .. }) {
-                Ok(AstExpr::new(ExprKind::Set(vec![first]), span))
-            } else {
-                Ok(AstExpr::new(first.kind.as_ref().clone(), span))
-            }
+            // 单元素括号表达式：分组（含单元素范围 `(0...10)`）
+            Ok(AstExpr::new(first.kind.as_ref().clone(), span))
         }
     }
 

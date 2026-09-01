@@ -459,7 +459,7 @@ pub(super) fn check_dbg_macro(
     Ok((HirExpr::Block(Box::new(hir)), ty))
 }
 
-pub(super) fn substitute(ty: &Type, subst: &HashMap<String, Type>) -> Type {
+pub(crate) fn substitute(ty: &Type, subst: &HashMap<String, Type>) -> Type {
     match ty {
         Type::Generic(tp) => subst.get(tp).cloned().unwrap_or_else(|| ty.clone()),
         Type::Named(n, ps) => Type::Named(

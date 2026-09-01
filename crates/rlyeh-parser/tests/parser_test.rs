@@ -79,7 +79,7 @@ fn test_reverse_comparison_chain() {
 
 #[test]
 fn test_in_set_expression() {
-    let program = parse_ok("if x in (1, 3, 5) {}");
+    let program = parse_ok("if x in {1, 3, 5} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -102,7 +102,7 @@ fn test_in_set_expression() {
 
 #[test]
 fn test_not_in_expression() {
-    let program = parse_ok("if x not in (1, 2, 3) {}");
+    let program = parse_ok("if x not in {1, 2, 3} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -144,7 +144,7 @@ fn test_in_bare_range_expression() {
 #[test]
 fn test_in_set_range_vs_bare_range() {
     // 括号集合 `(0..<10)` 是 InSet（成员判断）
-    let program = parse_ok("if x in (0..<10) {}");
+    let program = parse_ok("if x in {0..<10} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -263,7 +263,7 @@ fn test_match_expression() {
 
 #[test]
 fn test_time_literal_in_set() {
-    let program = parse_ok("if hour in (9am...6pm) {}");
+    let program = parse_ok("if hour in {9am...6pm} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();

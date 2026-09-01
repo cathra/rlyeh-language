@@ -159,6 +159,10 @@ fn walk_expr(e: &mut AstExpr) {
             walk_expr(value);
             walk_expr(range);
         }
+        ExprKind::InContainer { value, container, .. } => {
+            walk_expr(value);
+            walk_expr(container);
+        }
         ExprKind::InRegion { expr, .. } => walk_expr(expr),
         ExprKind::Range { lower, upper, .. } => {
             // P8：边界可为 None（切片省略边界），仅遍历 Some 侧

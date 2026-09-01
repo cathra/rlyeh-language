@@ -43,10 +43,13 @@ mod prec {
 
 /// `in`/`not in` 右侧目标
 pub(crate) enum InTarget {
-    /// 括号集合 `(a, b, c)`（元素可为单值或范围，范围元素语义为离散展开）
+    /// 集合 `{a, b, c}`（元素可为单值或范围，范围元素语义为离散展开）
     Set(Vec<AstExpr>),
     /// 裸范围 `a..<b` / `a...b` / `a<..b`
     Range(AstExpr),
+    /// 运行时容器（`[a, b, c]` / 标识符 / `vec!` / 字符串等）：
+    /// 成员判断在 typecheck 阶段运行时遍历容器逐元素比较
+    Container(AstExpr),
 }
 
 impl<'src> Parser<'src> {
@@ -204,6 +207,14 @@ impl<'src> Parser<'src> {
                             },
                             self.span_until_current(start),
                         ),
+                        InTarget::Container(c) => AstExpr::new(
+                            ExprKind::InContainer {
+                                value: lhs,
+                                container: c,
+                                negated: false,
+                            },
+                            self.span_until_current(start),
+                        ),
                     };
                 }
                 continue;
@@ -224,6 +235,14 @@ impl<'src> Parser<'src> {
                         ExprKind::InRange {
                             value: lhs,
                             range,
+                            negated: true,
+                        },
+                        self.span_until_current(start),
+                    ),
+                    InTarget::Container(c) => AstExpr::new(
+                        ExprKind::InContainer {
+                            value: lhs,
+                            container: c,
                             negated: true,
                         },
                         self.span_until_current(start),
@@ -359,36 +378,43 @@ impl<'src> Parser<'src> {
     }
 
     /// 解析 `in`/`not in` 右侧目标：
-    /// - `(a, b, c)` → 集合（`InSet`，成员判断，范围元素展开为离散成员）
+    /// - `{a, b, c}` → 集合（`InSet`，成员判断，范围元素展开为离散成员）
+    /// - `(a, b, c)` → 元组值（`InContainer`，运行时容器成员判断；与元组值
+    ///   字面量 `(a,b,c)` 语义一致）
+    /// - `[a, b, c]` / 标识符 / `vec!` / 字符串等 → 运行时容器（`InContainer`）
     /// - `a..<b` / `a...b` / `a<..b` → 裸范围（`InRange`，区间判断）
     ///
     /// 区域目标 `'r`（`InRegion`）由调用方在处理 `Lifetime` 时单独处理。
     fn parse_in_target(&mut self) -> Result<InTarget, ParseError> {
+        if self.check(&Token::LBrace) {
+            return Ok(InTarget::Set(self.parse_brace_set()?));
+        }
+        // `(a, b, c)` → 元组值（运行时容器成员判断）
         if self.check(&Token::LParen) {
-            return Ok(InTarget::Set(self.parse_set_elements()?));
+            return Ok(InTarget::Container(self.parse_expr()?));
         }
-        // 裸范围：`x in 0..<10`
-        let range = self.parse_expr_prec(prec::RANGE)?;
-        if !matches!(&*range.kind, ExprKind::Range { .. }) {
-            return Err(self.unexpected("集合 `(a, b, c)` 或范围 `a..<b` / `a...b` / `a<..b`"));
+        // 裸范围：`x in 0..<10`（否则当作运行时容器表达式）
+        let expr = self.parse_expr_prec(prec::RANGE)?;
+        if matches!(&*expr.kind, ExprKind::Range { .. }) {
+            return Ok(InTarget::Range(expr));
         }
-        Ok(InTarget::Range(range))
+        Ok(InTarget::Container(expr))
     }
 
-    /// 解析 `(elem, elem, ...)` 集合元素
-    fn parse_set_elements(&mut self) -> Result<Vec<AstExpr>, ParseError> {
-        self.expect(&Token::LParen, "'('")?;
+    /// 解析 `{elem, elem, ...}` 集合元素（集合字面量语法）
+    fn parse_brace_set(&mut self) -> Result<Vec<AstExpr>, ParseError> {
+        self.expect(&Token::LBrace, "'{'")?;
         let mut set = Vec::new();
-        while !self.check(&Token::RParen) {
+        while !self.check(&Token::RBrace) {
             if self.at_eof() {
-                return Err(self.unexpected("')'"));
+                return Err(self.unexpected("'}'"));
             }
             set.push(self.parse_expr()?);
             if !self.eat(&Token::Comma) {
                 break;
             }
         }
-        self.expect(&Token::RParen, "')'")?;
+        self.expect(&Token::RBrace, "'}'")?;
         Ok(set)
     }
 

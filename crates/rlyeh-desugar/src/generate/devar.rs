@@ -10,6 +10,10 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             ExprKind::Set(items.iter().map(devar).collect()),
             e.span,
         ),
+        ExprKind::TupleLit(items) => AstExpr::new(
+            ExprKind::TupleLit(items.iter().map(devar).collect()),
+            e.span,
+        ),
         ExprKind::Range {
             lower,
             upper,
@@ -63,6 +67,18 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             ExprKind::InRange {
                 value: devar(value),
                 range: devar(range),
+                negated: *negated,
+            },
+            e.span,
+        ),
+        ExprKind::InContainer {
+            value,
+            container,
+            negated,
+        } => AstExpr::new(
+            ExprKind::InContainer {
+                value: devar(value),
+                container: devar(container),
                 negated: *negated,
             },
             e.span,

@@ -73,6 +73,10 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             ExprKind::Set(items.iter().map(|i| rewrite_expr(i, lifted, span)).collect()),
             span,
         ),
+        ExprKind::TupleLit(items) => AstExpr::new(
+            ExprKind::TupleLit(items.iter().map(|i| rewrite_expr(i, lifted, span)).collect()),
+            span,
+        ),
         ExprKind::Range {
             lower,
             upper,
@@ -129,6 +133,18 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             ExprKind::InRange {
                 value: rewrite_expr(value, lifted, span),
                 range: rewrite_expr(range, lifted, span),
+                negated: *negated,
+            },
+            span,
+        ),
+        ExprKind::InContainer {
+            value,
+            container,
+            negated,
+        } => AstExpr::new(
+            ExprKind::InContainer {
+                value: rewrite_expr(value, lifted, span),
+                container: rewrite_expr(container, lifted, span),
                 negated: *negated,
             },
             span,

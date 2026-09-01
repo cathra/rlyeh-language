@@ -1,6 +1,6 @@
 # Rlyeh — 系统级编程语言
 
-> 版本：**0.1.0**（MVP） · 状态：活跃开发中
+> 版本：**0.1.0**（MVP，已收口） · **0.2.0**（自举能力补齐，规划中） · 状态：0.1.0 已收口，0.2.0 规划中
 > 仓库：<https://gitee.com/cathra/rlyeh-language.git>
 > 目标平台：Linux / macOS / Windows / WASM
 > 实现语言：Rust（自举编译器，bootstrap 阶段用 Rust 实现）

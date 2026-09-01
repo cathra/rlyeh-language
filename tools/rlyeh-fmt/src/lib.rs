@@ -496,6 +496,10 @@ fn fmt_expr(e: &AstExpr) -> String {
             "({})",
             elems.iter().map(fmt_expr).collect::<Vec<_>>().join(", ")
         ),
+        ExprKind::TupleLit(elems) => format!(
+            "({})",
+            elems.iter().map(fmt_expr).collect::<Vec<_>>().join(", ")
+        ),
         ExprKind::Range {
             lower,
             upper,
@@ -564,6 +568,18 @@ fn fmt_expr(e: &AstExpr) -> String {
                 format!("{} not in {}", v, fmt_expr(range))
             } else {
                 format!("{} in {}", v, fmt_expr(range))
+            }
+        }
+        ExprKind::InContainer {
+            value,
+            container,
+            negated,
+        } => {
+            let v = fmt_operand(value, PREC_COMPARE, false);
+            if *negated {
+                format!("{} not in {}", v, fmt_expr(container))
+            } else {
+                format!("{} in {}", v, fmt_expr(container))
             }
         }
         ExprKind::InRegion { expr, region } => {

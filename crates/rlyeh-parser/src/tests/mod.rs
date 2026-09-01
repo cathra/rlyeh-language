@@ -128,7 +128,7 @@ fn test_mixed_direction_chain_accepted_by_parser() {
 
 #[test]
 fn test_in_set() {
-    let program = parse_ok("if x in (1, 3, 5) {}");
+    let program = parse_ok("if x in {1, 3, 5} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -148,7 +148,7 @@ fn test_in_set() {
 
 #[test]
 fn test_not_in() {
-    let program = parse_ok("if x not in (1, 2, 3) {}");
+    let program = parse_ok("if x not in {1, 2, 3} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -255,7 +255,7 @@ fn test_in_bare_range_does_not_swallow_and() {
 #[test]
 fn test_in_set_with_range_stays_in_set() {
     // `x in (0..<10)`：括号内是集合，范围元素保留在集合中（成员判断语义）
-    let program = parse_ok("if x in (0..<10) {}");
+    let program = parse_ok("if x in {0..<10} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -276,22 +276,33 @@ fn test_in_set_with_range_stays_in_set() {
 }
 
 #[test]
-fn test_in_requires_set_or_range() {
-    // `x in y`：右侧既不是集合也不是范围 → 报错
-    let src = "if x in y {}";
-    let err = Parser::new(src)
-        .unwrap()
-        .parse_program()
-        .expect_err("in 右侧必须是集合或范围");
-    assert!(
-        matches!(err, ParseError::UnexpectedToken { .. }),
-        "意外错误类型: {err:?}"
-    );
+fn test_in_identifier_is_container() {
+    // `x in y`：右侧为标识符 → 视为运行时容器（InContainer）
+    let program = parse_ok("if x in y {}");
+    let e = top_expr(&program);
+    let ExprKind::If { cond, .. } = &*e.kind else {
+        panic!();
+    };
+    let ExprKind::InContainer {
+        value,
+        container,
+        negated,
+        ..
+    } = &*cond.kind
+    else {
+        panic!("expected in-container");
+    };
+    assert!(!negated);
+    assert!(matches!(&*value.kind, ExprKind::Ident(ref n) if n == "x"));
+    assert!(matches!(
+        &*container.kind,
+        ExprKind::Ident(ref n) if n == "y"
+    ));
 }
 
 #[test]
 fn test_set_with_ranges() {
-    let program = parse_ok("if ch in ('a'..<'z', 'A'..<'Z') {}");
+    let program = parse_ok("if ch in {'a'..<'z', 'A'..<'Z'} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();
@@ -348,49 +359,50 @@ fn test_range_expression_forms() {
 }
 
 #[test]
-fn test_set_literal_with_ranges() {
-    // (0...10) 单元素范围构成集合
-    let program = parse_ok("(0...10)");
+fn test_tuple_literal() {
+    // (1, 20, 30) 多元素括号表达式 = 元组值字面量
+    let program = parse_ok("(1, 20, 30)");
     let e = top_expr(&program);
-    let ExprKind::Set(elems) = &*e.kind else {
-        panic!("expected set");
-    };
-    assert_eq!(elems.len(), 1);
-    assert!(matches!(
-        &*elems[0].kind,
-        ExprKind::Range {
-            lower_inclusive: true,
-            upper_inclusive: true,
-            ..
-        }
-    ));
-
-    // (0..<10) 半开范围集合（不含 10）
-    let program = parse_ok("(0..<10)");
-    let e = top_expr(&program);
-    let ExprKind::Set(elems) = &*e.kind else {
-        panic!("expected set");
-    };
-    assert_eq!(elems.len(), 1);
-    assert!(matches!(
-        &*elems[0].kind,
-        ExprKind::Range {
-            lower_inclusive: true,
-            upper_inclusive: false,
-            ..
-        }
-    ));
-
-    // (1...10, 20, 30) 混合范围与单值的集合
-    let program = parse_ok("(1...10, 20, 30)");
-    let e = top_expr(&program);
-    let ExprKind::Set(elems) = &*e.kind else {
-        panic!("expected set");
+    let ExprKind::TupleLit(elems) = &*e.kind else {
+        panic!("expected tuple literal");
     };
     assert_eq!(elems.len(), 3);
-    assert!(matches!(&*elems[0].kind, ExprKind::Range { .. }));
+    assert!(matches!(&*elems[0].kind, ExprKind::IntLiteral(1)));
     assert!(matches!(&*elems[1].kind, ExprKind::IntLiteral(20)));
     assert!(matches!(&*elems[2].kind, ExprKind::IntLiteral(30)));
+
+    // (0...10) 单元素范围 = 分组（非元组）
+    let program = parse_ok("(0...10)");
+    let e = top_expr(&program);
+    assert!(matches!(&*e.kind, ExprKind::Range { .. }));
+}
+
+#[test]
+fn test_set_literal_brace() {
+    // `in {1, 2, 3}` 集合成员判断使用花括号语法（新集合字面量语法）
+    let program = parse_ok("if x in {1, 2, 3} {}");
+    let e = top_expr(&program);
+    let ExprKind::If { cond, .. } = &*e.kind else {
+        panic!();
+    };
+    let ExprKind::InSet { set, .. } = &*cond.kind else {
+        panic!("expected in-set");
+    };
+    assert_eq!(set.len(), 3);
+    assert!(matches!(&*set[0].kind, ExprKind::IntLiteral(1)));
+    assert!(matches!(&*set[1].kind, ExprKind::IntLiteral(2)));
+    assert!(matches!(&*set[2].kind, ExprKind::IntLiteral(3)));
+
+    // 花括号集合（成员判断，编译期离散展开）
+    let program = parse_ok("if x in {1, 2, 3} {}");
+    let e = top_expr(&program);
+    let ExprKind::If { cond, .. } = &*e.kind else {
+        panic!();
+    };
+    let ExprKind::InSet { set, .. } = &*cond.kind else {
+        panic!("expected in-set");
+    };
+    assert_eq!(set.len(), 3);
 }
 
 #[test]
@@ -428,7 +440,7 @@ fn test_old_range_syntax_rejected() {
 
 #[test]
 fn test_time_literal_in_set() {
-    let program = parse_ok("if hour in (9am...6pm) {}");
+    let program = parse_ok("if hour in {9am...6pm} {}");
     let e = top_expr(&program);
     let ExprKind::If { cond, .. } = &*e.kind else {
         panic!();

@@ -36,7 +36,11 @@ build_platform() {
 
     # 构建二进制（rust-lld/zig 链接器：export 后 cargo build；空 linker 直接构建）
     if [[ -n "$linker" ]]; then
-        local linker_key="CARGO_TARGET_${target//-/_}_LINKER"
+        # 注意：cargo 的 CARGO_TARGET_<T>_LINKER 环境变量要求 <T> 全大写，
+        # 故需将 target（如 x86_64-unknown-linux-musl）整体转为大写，否则变量被忽略。
+        local t_upper
+        t_upper="$(printf '%s' "${target//-/_}" | tr '[:lower:]' '[:upper:]')"
+        local linker_key="CARGO_TARGET_${t_upper}_LINKER"
         local -x "$linker_key=$linker"
         cargo build --release --target "$target" --manifest-path "$REPO/Cargo.toml"
     else

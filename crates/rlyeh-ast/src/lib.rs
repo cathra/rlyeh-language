@@ -328,6 +328,8 @@ pub enum ExprKind {
     Set(Vec<AstExpr>),
     /// 单元类型字面量 `()`（X4：`Result::Ok(())` 的 `()` 值；空 tuple）
     Unit,
+    /// 元组值字面量 `(a, b, c)`，按位置命名字段 `f0` / `f1` / ...
+    TupleLit(Vec<AstExpr>),
     /// 范围表达式 `a..<b` / `a...b` / `a<..b`
     /// P8（2026-08-29）：`lower`/`upper` 可为 `None`（省略边界）——
     /// **仅切片** `v[..]`/`v[0..]`/`v[..<3]` 支持（缺省语义：lower=0、upper=len）；
@@ -392,6 +394,21 @@ pub enum ExprKind {
         value: AstExpr,
         /// 范围表达式（`ExprKind::Range`）
         range: AstExpr,
+        /// 是否为取反（`not in`）
+        negated: bool,
+    },
+
+    /// 容器成员判断（`x in arr` / `x in vec` / `x in [1, 2, 3]` / `x in &slice`，
+    /// `in` 右侧为运行时容器：数组 / Vec / 切片）。typecheck 在运行时遍历
+    /// 容器逐元素相等判断（区别于 `InSet` 的编译期离散展开）。
+    ///
+    /// 与集合（`InSet`）/`{a, b, c}` 不同：容器长度在编译期未知，需生成
+    /// 循环在运行期逐元素比较（`==` / `!=`），命中即返回。
+    InContainer {
+        /// 被判断的值
+        value: AstExpr,
+        /// 容器表达式（数组 / Vec / 切片）
+        container: AstExpr,
         /// 是否为取反（`not in`）
         negated: bool,
     },

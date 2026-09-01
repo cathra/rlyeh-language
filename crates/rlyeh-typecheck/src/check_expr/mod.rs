@@ -382,6 +382,11 @@ pub(crate) fn infer_expr(
             range,
             negated,
         } => in_expr::check_in_range_expression(ctx, value.clone(), range.clone(), *negated, span),
+        ExprKind::InContainer {
+            value,
+            container,
+            negated,
+        } => in_expr::check_in_container_expression(ctx, value.clone(), container.clone(), *negated, span),
         ExprKind::InRegion { expr, region } => {
             let (hir, ty) = infer_expr(ctx, expr)?;
             // L3 接线：计算被归属对象在区域中的字节大小（slot_count × 8），
@@ -737,6 +742,7 @@ pub(crate) fn infer_expr(
             type_args,
             fields,
         } => check_struct_construct(ctx, type_name, type_args, fields, span),
+        ExprKind::TupleLit(elems) => check_tuple_construct(ctx, elems, span),
         ExprKind::FieldAccess { expr, field } => {
             let (base_hir, base_ty) = infer_expr(ctx, expr)?;
             check_field_access(ctx, base_hir, base_ty, field, span)
@@ -986,13 +992,13 @@ mod iter;
 mod binary;
 mod call;
 mod resolve;
-mod construct;
+pub(crate) mod construct;
 mod field;
 mod heap;
 mod index_enum;
 mod method;
 mod generic;
-mod util;
+pub(crate) mod util;
 mod macro_ser;
 mod json;
 mod toml;
