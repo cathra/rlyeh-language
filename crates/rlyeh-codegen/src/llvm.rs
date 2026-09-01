@@ -539,7 +539,11 @@ impl LlvmEmitter {
                         body.push_str(&format!("  %{r} = zext i8 %{r8} to i64\n"));
                         self.store_to(target, &r, body, f)?;
                     } else {
-                        self.store_to(target, &r8, body, f)?;
+                        // 非 Int 元素（如 char）：load 出 i8 字节后零扩展为目标标量
+                        // 类型（char 在 LLVM 中以 i32 表示，见 field_scalar_llvm）
+                        let r = self.reg();
+                        body.push_str(&format!("  %{r} = zext i8 %{r8} to {lt}\n"));
+                        self.store_to(target, &r, body, f)?;
                     }
                 } else {
                     let scaled = self.reg();
@@ -587,7 +591,10 @@ impl LlvmEmitter {
                         body.push_str(&format!("  %{v8} = trunc i64 {v} to i8\n"));
                         body.push_str(&format!("  store i8 %{v8}, i8* %{c}\n"));
                     } else {
-                        body.push_str(&format!("  store i8 {v}, i8* %{c}\n"));
+                        // 非 Int 元素（如 char）：store 前把目标标量类型的值截断为 i8
+                        let v8 = self.reg();
+                        body.push_str(&format!("  %{v8} = trunc {lt} {v} to i8\n"));
+                        body.push_str(&format!("  store i8 %{v8}, i8* %{c}\n"));
                     }
                 } else {
                     let scaled = self.reg();

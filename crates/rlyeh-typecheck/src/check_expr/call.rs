@@ -10,7 +10,7 @@ use crate::context::type_matches;
 /// HIR 层与 `&str` 的 StrFat **同构**（布局同为 `{i8*, i64}` 双槽）：
 /// `Alloc{slots:2, by_value:true, is_strfat:true}` 后 `FieldSet` 槽 0 = 数据指针、
 /// 槽 1 = 长度。整块包在 `Block` 中返回临时变量。
-pub(super) fn make_slice_fat(ctx: &mut TypeContext, data: HirExpr, len: i128) -> HirExpr {
+pub(crate) fn make_slice_fat(ctx: &mut TypeContext, data: HirExpr, len: i128) -> HirExpr {
     let sf = ctx.fresh_temp();
     let stmts = vec![
         HirStmt::Let {

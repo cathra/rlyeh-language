@@ -16,6 +16,10 @@ use crate::error::TypeError;
 use crate::in_expr;
 use crate::types::{field_scalar_of, type_mono_key, FnSignature, ImplDef, Mutability, Type};
 
+/// S2：切片胖指针构造（`&[T; N]` → `&[T]` unsize coercion 的 HIR 结果），
+/// 供 `check_stmt`（let 绑定标注位置）与 `check_expr::call`（实参位置）共用。
+pub(crate) use call::make_slice_fat;
+
 /// 查询内建函数签名；`None` 表示不是内建。
 ///
 /// - `print` / `println`：任意类型参数（`Infer` 与一切兼容）、返回 `()`

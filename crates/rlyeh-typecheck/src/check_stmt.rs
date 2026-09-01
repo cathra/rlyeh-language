@@ -5,7 +5,7 @@ use rlyeh_hir::{FieldScalar, HirBlock, HirExpr, HirStmt};
 
 use crate::check_expr::{
     check_closure_expected, check_closure_value_binding, check_deferred_closure_binding, coerce_to_dyn,
-    infer_expr, resolve_ast_type,
+    infer_expr, make_slice_fat, resolve_ast_type,
 };
 use crate::context::TypeContext;
 use crate::error::TypeError;
@@ -148,6 +148,17 @@ pub(crate) fn check_stmt(
                             let member_ty = us[idx].clone();
                             h_init = make_union_ctor(ctx, h_init, idx, &member_ty);
                             ty = at.clone();
+                        }
+                    }
+                    // S2 unsize coercion：let s: &[T] = &arr; —— &[T; N] 经 unsize
+                    // 降级为切片胖指针 {data, len}（len = 编译期数组长度），与
+                    // check_expr::call 实参位置同构；仅当元素类型兼容时转换。
+                    if let (Type::Ref(ia, _), Type::Ref(ib, _)) = (&ty, &at) {
+                        if let (Type::Array(_, n), Type::Slice(_)) = (&**ia, &**ib) {
+                            if ty.compatible_with(&at) {
+                                h_init = make_slice_fat(ctx, h_init, *n as i128);
+                                ty = at.clone();
+                            }
                         }
                     }
                     if !at.compatible_with(&ty) {

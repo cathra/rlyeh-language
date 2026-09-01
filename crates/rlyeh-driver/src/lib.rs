@@ -438,7 +438,7 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     std::fs::create_dir_all(&dir).map_err(DriverError::Io)?;
     let ll_path = dir.join("main.ll");
     // 注入平台内建（`__rlyeh_target_os`）后写盘——codegen 对 `__rlyeh_` 前缀 extern 不生成 declare。
-    let llvm_with_builtins = format!("{llvm}\n{}", platform_builtin_ir(target));
+    let llvm_with_builtins = format!("{llvm}\n{}", platform_builtin_ir(target, &llvm));
     // L4b: wasm 目标注入 actor 符号解析表（静态查表替代 dlsym，见 actor_resolve_ir）。
     let llvm_final = match target {
         Some(t) if is_wasm_triple(t) => {

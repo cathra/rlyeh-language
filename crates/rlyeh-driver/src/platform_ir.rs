@@ -5,8 +5,19 @@
 use super::*;
 
 /// 注入平台内建的 LLVM IR 定义文本（`__rlyeh_target_os` 返回当前目标 OS 码）。
-pub(crate) fn platform_builtin_ir(target: Option<&str>) -> String {
+///
+/// `llvm` 为 codegen 已生成的 IR 文本：用于判断切片 IO 转发内建是否必要。
+/// `__rlyeh_fread_ptr`/`__rlyeh_fwrite_ptr` 内部 `call @fread`/`@fwrite`，而
+/// `fread`/`fwrite` 是 core.rl 声明的 Rlyeh extern——仅当程序用到切片 IO（codegen
+/// 已为 extern 生成 `declare @fread`）时才注入这层转发，避免不用 std 的程序出现
+/// `use of undefined value '@fread'`；同时避免与 codegen 的 declare 重复声明冲突。
+pub(crate) fn platform_builtin_ir(target: Option<&str>, llvm: &str) -> String {
     let os = target_os_code(target);
+    let slice_io = if llvm.contains("__rlyeh_fread_ptr") || llvm.contains("__rlyeh_fwrite_ptr") {
+        slice_io_builtin_ir()
+    } else {
+        String::new()
+    };
     format!(
         "\n; --- 平台内建（driver 按目标注入）---\ndefine internal i32 @__rlyeh_target_os() {{\nentry:\n  ret i32 {}\n}}\n{}\n{}\n{}\n{}\n{}\n{}\n",
         os,
@@ -15,7 +26,7 @@ pub(crate) fn platform_builtin_ir(target: Option<&str>) -> String {
         time_builtin_ir(os),
         file_stat_builtin_ir(os),
         kqueue_builtin_ir(os),
-        slice_io_builtin_ir()
+        slice_io
     )
 }
 
