@@ -34,7 +34,7 @@
 | **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 部分完成 | 嵌套模块（既有）+ `pub use`/组导入/glob 已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
 | **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | 🟢 核心落地 | process 模块（system/exec/output/exec_combined）+ clang FFI 印证，全量回归 253/253 |
-| **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | ⏳ 规划 | 运行时表达力地基 |
+| **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | 🟢 完成 | unsafe 块/裸指针/E-M1 bump 分配器 + E2 repr(C)（sub8+嵌套聚合内联）+ E3 FFI 门禁全部落地，全量 253/253 |
 | **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
 | **0.2.0-G** | `dyn Trait` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | 🟢 完成 | actor 消息协议地基 |
 | **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | 🟢 完成 | 运行时并发地基 |
@@ -101,7 +101,8 @@
 
 ### 3.5 E `unsafe` 块 / 裸指针 / `#[repr(C)]`（P0-1）
 - E1 `unsafe` 块作用域与裸指针（`*const T`/`*mut T`）读写 / E2 `#[repr(C)]` 内存布局 / E3 FFI 安全边界约定。
-- 验证：Rlyeh 侧用 `unsafe` 封装手动 bump 分配器（等价于 `rlyeh-region-alloc`），证明运行时表达力地基可用。
+- **（🟢 已完成，2026-09-01）** E-M1：`unsafe { }` 块表达式 + 裸指针读写/索引（跨 ast/hir/parser/typecheck/mir/borrowck/regionck/desugar/fmt/check）；E2：`#[repr(C)]` 真布局（sub-8 标量 C 打包 + 嵌套聚合内联 + 裸指针 1 字节步长字节语义）；E3：`extern fn` 调用强制 `unsafe` 门禁（prelude 受信任 FFI 豁免）。
+- 验证：Rlyeh 侧用 `unsafe` 封装手动 bump 分配器（等价于 `rlyeh-region-alloc`），证明运行时表达力地基可用；run-pass `unsafe-raw-ptr`/`unsafe-bump-allocator`/`repr-c-struct`/`repr-c-packing`/`repr-c-packing-bytes`/`repr-c-nested`/`unsafe-extern-call` + compile-fail `repr-c-sub8`/`unsafe-extern-call-outside`；全量 `rlyeh test tests` **253/253 通过**。
 > **关联文档**：[SH-P0-1 `unsafe` 块 / 裸指针 / `#[repr(C)]`](tasks/leaf/sh-p0-1-unsafe.md)
 
 ### 3.6 F 跨函数边界闭包 + `move` + `'static`（P0-2）
