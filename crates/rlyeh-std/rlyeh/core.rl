@@ -2326,6 +2326,34 @@ impl<K, V> HashMapIter<K, V> {
     }
 }
 
+// ===== HashSetIter<T>：HashSet 只读引用迭代器（V5c） =====
+// `iter() -> HashSetIter<T>`，`next()` 返回 `Option<&T>`（指向原 items 真实槽，
+// 零拷贝）。遍历跳过空/墓碑槽（states != 1）。复用 HashMapIter 同式裸指针视图；
+// 迭代期间不得对 HashSet 做结构性修改（insert/remove/grow 触发重哈希会使指针悬垂）。
+// 接入 for 循环（inherent next 检测，无需 Iterator trait——`type Item = &T` 引用
+// 类型对适配器框架不友好，for 循环仅需 inherent next）。
+struct HashSetIter<T> {
+    states: *const i64,
+    items: *const T,
+    idx: i64,
+    cap: i64,
+}
+
+impl<T> HashSetIter<T> {
+    // 取下一存活槽元素的引用（指向原 items 真实槽）并推进；耗尽返回 None。
+    fn next(&mut self) -> Option<&T> {
+        while self.idx < self.cap {
+            if self.states[self.idx] == 1 {
+                let r: &T = &self.items[self.idx];
+                self.idx = self.idx + 1;
+                return Option::Some(r);
+            }
+            self.idx = self.idx + 1;
+        }
+        Option::None
+    }
+}
+
 // ===== HashSet<T>：开放寻址哈希集合（V5） =====
 // 精简线性探测（无 Robin Hood 距离数组）：items 数组存元素、states 数组标
 // 状态（0=空 1=占用 2=墓碑）。`hash_value` 内建（i64 直哈希 / String djb2
@@ -2474,6 +2502,14 @@ impl<T> HashSet<T> {
             i = i + 1;
         }
         es
+    }
+
+    // V5c：只读引用迭代器——返回 `HashSetIter<T>`（零拷贝视图，next() -> Option<&T>）。
+    // 迭代期间不得对集合做结构性修改（指针悬垂）。
+    fn iter(&self) -> HashSetIter<T> {
+        let sp: *const i64 = &self.states[0];
+        let ip: *const T = &self.items[0];
+        HashSetIter { states: sp, items: ip, idx: 0, cap: self.cap }
     }
 
     // ===== V5b 集合运算（对标 Python set，零新增语言特性） =====

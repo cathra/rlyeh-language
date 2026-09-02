@@ -37,6 +37,8 @@
 
 - **HashSet 集合运算（V5b，对标 Python `set`，2026-09-02）**：`HashSet<T>` 新增 13 个集合代数方法——返回新集合 `union`/`intersection`/`difference`/`symmetric_difference`；关系判断 `is_subset`/`is_superset`/`is_proper_subset`/`is_proper_superset`/`is_disjoint`；原地变体 `union_with`/`intersect_with`/`difference_with`/`symmetric_with`。基于既有 `elements()`/`contains`/`insert`/`remove`/`clear` 实现，零新增语言特性（Rlyeh 无运算符重载，故以命名方法对标 Python 命名方法，运算符糖 `|`/`&`/`-`/`^`/`<`/`>` 列为可选增强）。验收：`tests/run-pass/hashset_setops.{rl,out}`（14 行输出：各集合规模 + 关系判断 + 原地变体规模，对拍 Python `set` 语义）；全量 `rlyeh test tests` 256/256 通过。
 
+- **HashSet 只读引用迭代器 `iter`（V5c，2026-09-02）**：`HashSet<T>` 新增 `iter() -> HashSetIter<T>` 零拷贝引用迭代器——`HashSetIter` 持 `states`/`items` 裸指针 + 游标 + 容量，`next() -> Option<&T>` 跳过空/墓碑槽（`states != 1`）、返回指向原 items 真实槽的元素引用；复用 `HashMapIter`/`IterRef` 同式裸指针视图，接入 `for` 循环（inherent `next` 检测，无需 `Iterator` trait）。至此 `std-lib.md §3.4` 标注的 HashSet MVP 限制仅余键哈希范围（`i64`/`String`）。验收：`tests/run-pass/hashset_iter.{rl,out}`（规模 `3` / 求和 `60` / 引用解引用命中 `true` / 空集合迭代 `0` 次）；全量 `rlyeh test tests` 257/257 通过。
+
 ## [0.1.0] 补充记录（2026-08-23 开发迭代，随 v0.1.0 首发）
 
 ### 新增

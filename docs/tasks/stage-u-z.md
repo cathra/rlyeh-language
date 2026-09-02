@@ -12,7 +12,7 @@
 | 阶段 | 主题 | 子任务 | 子任务数 | 依赖 | 状态 |
 |------|------|--------|:---:|------|------|
 | **U** | 编译器地基 | U1 作用域栈、U2 关联类型、U3 泛型约束、U4 `-> Self`、U5 AddrOf、U6 Cast IR、U7 方法级泛型、U8 泛型结构体 + 泛型 trait | 8 | G、T | ✅ 全部完成（U1–U6 + U7/U8） |
-| **V** | 集合与迭代器完整化 | V1 借用迭代器、V2 String 码点迭代器、V3 默认方法 + 适配器迁移、V4 `get_mut`、V5 新集合 | 5 | U1/U2/U3 | ✅ 已完成（V1/V2/V3/V4/V5 全部完成；V3 自定义迭代器适配器已迁移为 trait 默认方法 + 包装迭代器，数组/`Vec` 适配器因数组非命名类型保留内建 desugar，记为已知语言限制） |
+| **V** | 集合与迭代器完整化 | V1 借用迭代器、V2 String 码点迭代器、V3 默认方法 + 适配器迁移、V4 `get_mut`、V5 新集合、V5b 集合运算、V5c 借用迭代器 | 7 | U1/U2/U3 | ✅ 已完成（V1/V2/V3/V4/V5/V5b/V5c 全部完成；V3 自定义迭代器适配器已迁移为 trait 默认方法 + 包装迭代器，数组/`Vec` 适配器因数组非命名类型保留内建 desugar，记为已知语言限制） |
 | **W** | 异步运行时完整化 | W1 Future 泛型化、W2 await 状态机、W3 事件驱动 executor、W4 join_all/timeout、W5 recv_async/HTTP async、W6 async 泛型/递归 | 6 | U、R、S1c | ✅ 全部完成（W1–W6；async_if_await/async_neg poll 死循环已于 2026-08-29 验收修复并解除 skip；2026-08-30 验收全绿：W 相关集成测试 25 用例 + 全量 .rl 套件 suite_test 通过） |
 | **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime、X2 标准 TOML、X3 Deserialize + Serializer、X4 Formatter | 4 | U3/U4、Q | ✅ 已完成（X1/X2/X3/X4 全部完成：X3 `json::try_parse`/`toml::try_parse` Err 路径 + `Deserialize` trait + Serializer/Deserializer 框架全落地，2026-08-30） |
 | **Y** | IO/网络/并发/智能指针收尾 | Y1 File API、Y2 NIO 高性能后端、Y3 HTTP 连接复用 + sendfile、Y4 guard 完整 + Channel 泛型化、Y5 `Box::leak`、Y6 `Error::source`、Y7 UDP、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 🔧 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分——Y1 `read/write` 切片实参挂 U1、Y3 sendfile Windows 不可验证、Y4 Y4b-3/4 RwLock/DerefMut/有界队列/错误类型/Arc 待办） |
@@ -62,6 +62,7 @@
 | V4 `get_mut` 引用语义 | [`v4-get-mut.md`](leaf/v4-get-mut.md) | ✅ 已完成 |
 | V5 新集合：VecDeque / HashSet / BTreeMap | [`v5-new-collections.md`](leaf/v5-new-collections.md) | ✅ 已完成 |
 | V5b HashSet 集合运算（参考 Python `set`） | [`v5b-set-operations.md`](leaf/v5b-set-operations.md) | ✅ 已完成 |
+| V5c HashSet 只读引用迭代器（`iter`） | [`v5c-hashset-iter.md`](leaf/v5c-hashset-iter.md) | ✅ 已完成 |
 | V2-A：`&str` 语义统一为 StrFat 双槽 | [`v2-a-semantics.md`](leaf/v2-a-semantics.md) | ✅ 已完成（审计 + 文档澄清，2026-08-26） |
 | V2-B：`&str` 子区间视图（trim/trim_start/trim_end） | [`v2-b-substring.md`](leaf/v2-b-substring.md) | ✅ 已完成（trim/trim_start/trim_end + 链式 &str 方法，2026-08-26） |
 | V2-C：`&str` 打印链路修复（含 by_value StrFat 运行时） | [`v2-c-print.md`](leaf/v2-c-print.md) | ✅ 已完成（方案 A，2026-08-26） |

@@ -30,6 +30,7 @@ dist/
 !tests/run-pass/arena-ir-traversal.out
 !tests/run-pass/refcell.out
 !tests/run-pass/hashset_setops.out
+!tests/run-pass/hashset_iter.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib
