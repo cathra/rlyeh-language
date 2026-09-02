@@ -329,7 +329,7 @@ impl String {
 
 ### 3.4 HashSet<T>
 
-> **V5 ✅（2026-08-26，`core.rl`）**：开放寻址哈希集合（目标架构 `collections/hashset.rl`）。**布局 5 槽**——槽 0 = items 指针（`[T; 0]`）、槽 1 = states 指针（`[i64; 0]`，0=空 1=占用 2=墓碑）、槽 2 = len、槽 3 = used、槽 4 = cap（2 的幂）。**算法**：线性探测 + 墓碑复用（插入贪心首个墓碑）+ 负载因子 `used/cap >= 7/8` 翻倍扩容重哈希（墓碑丢弃）。键哈希 `hash_value` 内建（i64 直哈希 / String djb2 内容哈希，与 HashMap 同构）。**方法**：`new`/`with_capacity`（构造器编译器特判，cap 经 `next_pow2` 规整）/`insert`（已存在忽略）/`contains`/`remove`（墓碑标记）/`clear`/`elements -> Vec<T>`/`len`/`cap`/`is_empty`。**MVP 限制**：键哈希支持 i64/String（`hash_value` 内建范围）；`union`/`intersection`/`difference` 集合运算与借用迭代器 `iter -> Iter<'_, T>` 规划中。
+> **V5 ✅（2026-08-26，`core.rl`）**：开放寻址哈希集合（目标架构 `collections/hashset.rl`）。**布局 5 槽**——槽 0 = items 指针（`[T; 0]`）、槽 1 = states 指针（`[i64; 0]`，0=空 1=占用 2=墓碑）、槽 2 = len、槽 3 = used、槽 4 = cap（2 的幂）。**算法**：线性探测 + 墓碑复用（插入贪心首个墓碑）+ 负载因子 `used/cap >= 7/8` 翻倍扩容重哈希（墓碑丢弃）。键哈希 `hash_value` 内建（i64 直哈希 / String djb2 内容哈希，与 HashMap 同构）。**方法**：`new`/`with_capacity`（构造器编译器特判，cap 经 `next_pow2` 规整）/`insert`（已存在忽略）/`contains`/`remove`（墓碑标记）/`clear`/`elements -> Vec<T>`/`len`/`cap`/`is_empty`。**MVP 限制**：键哈希支持 i64/String（`hash_value` 内建范围）；借用迭代器 `iter -> Iter<'_, T>` 规划中。**集合代数运算（`union`/`intersection`/`difference`/`symmetric_difference`、子集/超集/不相交，对标 Python `set`）已拆为独立任务 [`v5b-set-operations`](../tasks/leaf/v5b-set-operations.md)（⏳ 规划中）**。
 
 ### 3.5 BTreeMap<K, V>
 

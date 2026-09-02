@@ -61,6 +61,7 @@
 | V1 借用迭代器瘦指针 MVP | [`v1-borrow-iter.md`](leaf/v1-borrow-iter.md) | ✅ 已完成（`Vec::iter`/`iter_mut`/`iter_ref` + `HashMap::iter_pairs` 零拷贝引用迭代 ✅ 2026-08-29；元组运行时未就绪，KV 对以 `KVRef` 结构体承载，等价 `(&K,&V)`） |
 | V4 `get_mut` 引用语义 | [`v4-get-mut.md`](leaf/v4-get-mut.md) | ✅ 已完成 |
 | V5 新集合：VecDeque / HashSet / BTreeMap | [`v5-new-collections.md`](leaf/v5-new-collections.md) | ✅ 已完成 |
+| V5b HashSet 集合运算（参考 Python `set`） | [`v5b-set-operations.md`](leaf/v5b-set-operations.md) | ⏳ 规划中 |
 | V2-A：`&str` 语义统一为 StrFat 双槽 | [`v2-a-semantics.md`](leaf/v2-a-semantics.md) | ✅ 已完成（审计 + 文档澄清，2026-08-26） |
 | V2-B：`&str` 子区间视图（trim/trim_start/trim_end） | [`v2-b-substring.md`](leaf/v2-b-substring.md) | ✅ 已完成（trim/trim_start/trim_end + 链式 &str 方法，2026-08-26） |
 | V2-C：`&str` 打印链路修复（含 by_value StrFat 运行时） | [`v2-c-print.md`](leaf/v2-c-print.md) | ✅ 已完成（方案 A，2026-08-26） |
