@@ -138,6 +138,12 @@ trait Clone {
 trait PartialEq {
     fn eq(&self, other: &Self) -> bool;
 }
+trait PartialOrd {
+    fn lt(&self, other: &Self) -> bool;
+    fn le(&self, other: &Self) -> bool;
+    fn gt(&self, other: &Self) -> bool;
+    fn ge(&self, other: &Self) -> bool;
+}
 
 // 动态数组（Vec<T>）
 //
@@ -2375,8 +2381,9 @@ impl<T> HashSetIter<T> {
 // ===== V5d HashSet 运算符糖（2026-09-02） =====
 // `|`/`&`/`-`/`^` 经运算符重载降级为集合代数方法（V5b）。`self` 按值消费（与
 // Rust std::ops 一致），内部 `union`/`intersection`/`difference`/`symmetric_difference`
-// 经 `&self` 自动借用读原集、返回全新集合。关系运算符 `<`/`>`（子集/超集）走
-// 比较链独立路径，本期仍以命名方法 `is_subset`/`is_superset` 表达。
+// 经 `&self` 自动借用读原集、返回全新集合。关系运算符 `<`/`>`（子集/超集）经
+// 比较链独立路径 + 运算符重载降级为命名方法（V5d+，2026-09-02）：`<`=真子集
+// `<=`=子集 `>`=真超集 `>=`=超集；见下方 `impl PartialOrd for HashSet<T>`。
 impl<T> BitOr for HashSet<T> {
     type Output = HashSet<T>;
     fn bitor(self, other: HashSet<T>) -> HashSet<T> { self.union(&other) }
@@ -2392,6 +2399,16 @@ impl<T> Sub for HashSet<T> {
 impl<T> BitXor for HashSet<T> {
     type Output = HashSet<T>;
     fn bitxor(self, other: HashSet<T>) -> HashSet<T> { self.symmetric_difference(&other) }
+}
+// 关系运算符 `<`/`>` 子集/超集（V5d+，2026-09-02）：走比较链独立路径，经运算符
+// 重载降级为集合关系命名方法（与 Python `set` 语义一致：`<`=真子集 `<=`=子集
+// `>`=真超集 `>=`=超集）。方法按引用（`&self`/`&other`）以避免 `a < b < c` 链式
+// 复用操作数时的二次 move。
+impl<T> PartialOrd for HashSet<T> {
+    fn lt(&self, other: &HashSet<T>) -> bool { self.is_proper_subset(other) }
+    fn le(&self, other: &HashSet<T>) -> bool { self.is_subset(other) }
+    fn gt(&self, other: &HashSet<T>) -> bool { self.is_proper_superset(other) }
+    fn ge(&self, other: &HashSet<T>) -> bool { self.is_superset(other) }
 }
 
 // ===== HashSet<T>：开放寻址哈希集合（V5） =====

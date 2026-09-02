@@ -32,6 +32,7 @@ dist/
 !tests/run-pass/hashset_setops.out
 !tests/run-pass/hashset_iter.out
 !tests/run-pass/hashset_ops_symbol.out
+!tests/run-pass/hashset_cmp_symbol.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib

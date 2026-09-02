@@ -97,11 +97,6 @@ pub(crate) fn check_comparison_chain(
             };
             return Ok((hir, Type::Bool));
         }
-        // 字符串组合（Str 值 / `&str` 视图 / String）跳过类型兼容检查
-        // （`check_comparison` 仅放行数值与字符；字符串内容比较在下方统一处理）
-        if !(lhs_str && rhs_str) {
-            check_comparison(&items[0].2, &items[1].2, op, span)?;
-        }
         // String 对象相等 / 不等：内容比较 desugar
         // `s1 == s2` → `s1.len == s2.len && bytes_eq(s1.data, s2.data, s1.len)`
         if matches!(op, CompareOp::Eq | CompareOp::Ne) && lhs_str && rhs_str {
@@ -164,6 +159,24 @@ pub(crate) fn check_comparison_chain(
                 span,
             });
         }
+        // 排序运算符重载回退（V5d+，2026-09-02）：Lt/Le/Gt/Ge 且实现了 `PartialOrd`
+        // 的非数值/字符/字符串类型，降级为 `lt`/`le`/`gt`/`ge` 方法调用（复用既有
+        // method-call 全链路，codegen 零改动）；命中直接采用，否则退回内建比较。
+        if matches!(op, CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge)
+            && !items[0].2.is_numeric()
+            && items[0].2 != Type::Char
+            && !lhs_str
+            && !rhs_str
+            && has_partial_ord(ctx, &items[0].2)
+        {
+            if let Some((hir, _)) = try_ordering_overload(ctx, &items[0].0, op, &items[1].0, span) {
+                return Ok((hir, Type::Bool));
+            }
+        }
+        // 其余（数值/字符比较、未重载的排序、结构体 ==/!= 已上方处理）：类型校验 + 生成比较 HIR
+        if !(lhs_str && rhs_str) {
+            check_comparison(&items[0].2, &items[1].2, op, span)?;
+        }
         let hir = compare_hir(&items[0].1, op, &items[1].1);
         return Ok((hir, Type::Bool));
     }
@@ -171,15 +184,16 @@ pub(crate) fn check_comparison_chain(
     // 2. 方向检查
     let direction = chain_direction(&operators, span)?;
 
-    // 3. 相邻元素类型检查
+    // 3. 逐对：类型检查 + 生成比较 HIR（排序运算符尝试重载 lt/le/gt/ge）
+    let mut pair_hirs = Vec::with_capacity(operators.len());
     for (i, op) in operators.iter().enumerate() {
-        check_comparison(&items[i].2, &items[i + 1].2, *op, span)?;
+        pair_hirs.push(check_build_pair(ctx, &items[i], *op, &items[i + 1], span)?);
     }
 
-    // 4. 展开
+    // 4. 展开（复用已生成的逐对 HIR，含可能的重载调用）
     let hir = match direction {
-        ChainDirection::Forward => expand_forward(&items, &operators),
-        ChainDirection::Backward => expand_backward(&items, &operators, span)?,
+        ChainDirection::Forward => expand_forward(&pair_hirs),
+        ChainDirection::Backward => expand_backward(&pair_hirs, span)?,
     };
     Ok((hir, Type::Bool))
 }
@@ -240,37 +254,29 @@ pub(crate) fn check_comparison(
     Ok(())
 }
 
-/// 正向链展开：`e0 op0 e1 && e1 op1 e2 && ...`
-fn expand_forward(items: &[(AstExpr, HirExpr, Type)], operators: &[CompareOp]) -> HirExpr {
-    let mut acc = compare_hir(&items[0].1, operators[0], &items[1].1);
-    for (i, op) in operators.iter().enumerate().skip(1) {
-        let cmp = compare_hir(&items[i].1, *op, &items[i + 1].1);
-        acc = HirExpr::Binary(HirBinaryOp::And, Box::new(acc), Box::new(cmp));
+/// 正向链展开：`e0 op0 e1 && e1 op1 e2 && ...`（逐对 HIR 已含可能的重载调用）
+fn expand_forward(pair_hirs: &[HirExpr]) -> HirExpr {
+    let mut acc = pair_hirs[0].clone();
+    for cmp in pair_hirs.iter().skip(1) {
+        acc = HirExpr::Binary(HirBinaryOp::And, Box::new(acc), Box::new(cmp.clone()));
     }
     acc
 }
 
-/// 反向链展开：`a > b > c` → `(b < a) || (b > c)`（b 在区间外）。
-///
-/// 反向链语义由 ADR-001 定义，仅支持 3 个元素（2 个比较运算符）。
-fn expand_backward(
-    items: &[(AstExpr, HirExpr, Type)],
-    operators: &[CompareOp],
-    span: Span,
-) -> Result<HirExpr, TypeError> {
-    if items.len() != 3 {
+/// 反向链展开：`a > b > c` → `(a > b) || (b > c)`（b 在区间外；与 `(b < a) || (b > c)`
+/// 等价，因 `a > b` ≡ `b < a`）。反向链语义由 ADR-001 定义，仅支持 3 个元素
+/// （2 个比较运算符）。逐对 HIR 已含可能的重载调用。
+fn expand_backward(pair_hirs: &[HirExpr], span: Span) -> Result<HirExpr, TypeError> {
+    if pair_hirs.len() != 2 {
         return Err(TypeError::Unsupported {
             what: "反向比较链仅支持 3 个元素（2 个比较运算符）".to_string(),
             span,
         });
     }
-    let rev = reverse_op(operators[0]);
-    let left = compare_hir(&items[1].1, rev, &items[0].1);
-    let right = compare_hir(&items[1].1, operators[1], &items[2].1);
     Ok(HirExpr::Binary(
         HirBinaryOp::Or,
-        Box::new(left),
-        Box::new(right),
+        Box::new(pair_hirs[0].clone()),
+        Box::new(pair_hirs[1].clone()),
     ))
 }
 
@@ -288,15 +294,6 @@ pub(crate) fn compare_hir(left: &HirExpr, op: CompareOp, right: &HirExpr) -> Hir
         CompareOp::Ne => HirBinaryOp::Ne,
     };
     HirExpr::Binary(hir_op, Box::new(left.clone()), Box::new(right.clone()))
-}
-
-/// 取反方向的比较运算符（`>` ↔ `<`，`>=` ↔ `<=`）。
-fn reverse_op(op: CompareOp) -> CompareOp {
-    match op {
-        CompareOp::Gt => CompareOp::Lt,
-        CompareOp::Ge => CompareOp::Le,
-        _ => op,
-    }
 }
 
 /// 判断类型是否为 `String` 对象（Named 类型，解析后全名 == "String"）。
@@ -342,6 +339,85 @@ fn has_partial_eq(ctx: &TypeContext, ty: &Type) -> bool {
     ctx.impl_defs
         .iter()
         .any(|d| d.trait_name.as_deref() == Some("PartialEq") && d.self_type == *ty)
+}
+
+/// 类型是否实现了 `PartialOrd`（手写或 `#[derive(PartialOrd)]`）。
+///
+/// 用于排序运算符（`Lt`/`Le`/`Gt`/`Ge`）重载回退的门控，避免对无该 trait 的类型
+/// 误发「方法未找到」诊断。经 `find_impl_candidates`（内含 `type_matches`，可处理
+/// 泛型 impl 的实参反推）判定。
+fn has_partial_ord(ctx: &TypeContext, ty: &Type) -> bool {
+    ctx.find_impl_candidates(ty, "lt")
+        .iter()
+        .any(|d| d.trait_name.as_deref() == Some("PartialOrd"))
+}
+
+/// V5d+（2026-09-02）：排序运算符重载回退。对非数值/字符/字符串操作数，尝试
+/// `lt`/`le`/`gt`/`ge`（对应 `trait PartialOrd`）方法调用；命中且返回 `bool` 则返回
+/// 其 HIR，否则返回 `None` 交由内建比较处理。复用既有 method-call 全链路，codegen 零改动。
+///
+/// 参数按引用传递（`&other`），与 `PartialOrd` 方法签名一致——既匹配 `is_subset` 等
+/// 集合关系方法的 `&other` 形参，也避免 `a < b < c` 链式复用操作数时的二次 move。
+fn try_ordering_overload(
+    ctx: &mut TypeContext,
+    left: &AstExpr,
+    op: CompareOp,
+    right: &AstExpr,
+    span: Span,
+) -> Option<(HirExpr, Type)> {
+    let method = match op {
+        CompareOp::Lt => "lt",
+        CompareOp::Le => "le",
+        CompareOp::Gt => "gt",
+        CompareOp::Ge => "ge",
+        _ => return None,
+    };
+    let arg = AstExpr::new(
+        ExprKind::Unary {
+            op: UnaryOp::AddrOf,
+            operand: right.clone(),
+        },
+        span,
+    );
+    let method_ast = AstExpr::new(
+        ExprKind::MethodCall {
+            receiver: left.clone(),
+            method: method.to_string(),
+            args: vec![arg],
+            trait_hint: None,
+        },
+        span,
+    );
+    match check_expr::infer_expr(ctx, &method_ast) {
+        Ok((hir, ty)) if ty == Type::Bool => Some((hir, ty)),
+        _ => None,
+    }
+}
+
+/// 生成单对比较 HIR：排序运算符（Lt/Le/Gt/Ge）且类型实现了 `PartialOrd` 时优先尝试
+/// `lt`/`le`/`gt`/`ge` 重载（V5d+，2026-09-02），返回须为 `bool`；否则退回内建数值/字符
+/// 类型检查的 `compare_hir`。供比较链逐对复用。
+fn check_build_pair(
+    ctx: &mut TypeContext,
+    left: &(AstExpr, HirExpr, Type),
+    op: CompareOp,
+    right: &(AstExpr, HirExpr, Type),
+    span: Span,
+) -> Result<HirExpr, TypeError> {
+    if matches!(op, CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge)
+        && !left.2.is_numeric()
+        && left.2 != Type::Char
+        && !is_string_type(ctx, &left.2)
+        && !is_str_view(&left.2)
+        && !is_str_value(&left.2)
+        && has_partial_ord(ctx, &left.2)
+    {
+        if let Some((hir, _)) = try_ordering_overload(ctx, &left.0, op, &right.0, span) {
+            return Ok(hir);
+        }
+    }
+    check_comparison(&left.2, &right.2, op, span)?;
+    Ok(compare_hir(&left.1, op, &right.1))
 }
 
 /// 生成 String 内容相等的比较 HIR：`s1 == s2` →

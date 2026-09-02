@@ -61,7 +61,7 @@ impl<T> BitOr for HashSet<T> {
 
 - **仅 `BinaryOp` 可重载**：算术 `+ - * / %`、位运算 `& | ^ << >>`。
 - **逻辑 `&&`/`||`**：短路语义，不可重载（不进入回退）。
-- **比较链 `<`/`>`/`<=`/`>=`/`==`/`!=`**：走 `CompareOp` 独立路径（支持比较链 `0 < x < 10`），本期不重载——故集合的子集/超集仍以命名方法 `is_subset`/`is_superset` 表达（后续可作为独立项扩展）。
+- **比较链 `<`/`>`/`<=`/`>=`/`==`/`!=`**：走 `CompareOp` 独立路径（支持比较链 `0 < x < 10`）。其中 `==`/`!=` 早已经 `PartialEq`（`a.eq(&b)`）重载；`Lt`/`Le`/`Gt`/`Ge` 的集合子集/超集语义已由 **V5d+ 补遗（[`v5d1-comparison-overload`](./v5d1-comparison-overload.md)，2026-09-02）** 经 `PartialOrd` trait 重载交付（`A < B`=真子集 … `A >= B`=超集），其余非集合类型仍报 `MissingPartialOrd`。
 - impl 方法签名建议用具体类型（如 `HashSet<T>`）而非 `Self` 作参数（见下「踩坑」）。
 
 ## 踩坑记录
