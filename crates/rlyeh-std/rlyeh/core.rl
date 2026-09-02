@@ -2771,6 +2771,7 @@ module fs;
 module thread;
 module serde;
 module fmt;
+module process;   // D（SH-P2-2）：进程调用 / 外部工具链 FFI
 
 // 重新导出到根命名空间，保持用户 API 不变（裸名即用，无需前缀）。
 // 目录化（2026-08）：子模块按 std-lib.md §1 目标架构拆分为目录形式，
@@ -2848,4 +2849,11 @@ import future::TimeoutError;
 import fmt::Display;
 import fmt::Debug;
 import fmt::Formatter;
+
+// D（SH-P2-2）：进程调用 / 外部工具链 FFI
+import process::exec;
+import process::system;
+import process::output;
+import process::exec_combined;
+import process::Output;
 

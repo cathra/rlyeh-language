@@ -33,7 +33,7 @@
 | **0.2.0-A** | 泛型 trait/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-trait.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
 | **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 部分完成 | 嵌套模块（既有）+ `pub use`/组导入/glob 已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
 | **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252 |
-| **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | ⏳ 规划 | 后端 assemble 自举 |
+| **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | 🟢 核心落地 | process 模块（system/exec/output/exec_combined）+ clang FFI 印证，全量回归 253/253 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | ⏳ 规划 | 运行时表达力地基 |
 | **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
 | **0.2.0-G** | `dyn Trait` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | 🟢 完成 | actor 消息协议地基 |
@@ -92,6 +92,11 @@
 
 ### 3.4 D 进程调用 / 外部工具链 FFI（P2-2）
 - D1 `system`/`exec` / D2 捕获 stdout/stderr / D3 对接 driver `assemble()`（调 `clang`，保留"生成 LLVM IR 文本 + 调 clang"策略，见评估报告 §6 路径 A）。
+- **（🟢 2026-09-02 核心落地）** 新增 `rlyeh-std/rlyeh/process/module.rl`：
+  - D1 `system(cmd) -> i32`：经 `popen`+`pclose` 实现，返回归一化退出码 `(status >> 8) & 0xFF`。
+  - D2 `exec(cmd) -> Output{status,stdout}` / `output(cmd) -> String` / `exec_combined(cmd)`（`2>&1` 合并 stderr），`fread` 块读捕获 stdout。
+  - D3 印证：`process::exec("clang --version")` 返回 status 0，外部工具链 FFI 可用；Rlyeh 版 driver `assemble()` 完整自举留待 0.3.0。
+  - 验证：新增 `process_exec.rl`（含 `.out`）；全量 `rlyeh test tests` **253/253 通过**。
 > **关联文档**：[SH-P2-2 进程调用 / 外部工具链 FFI](tasks/leaf/sh-p2-2-process-ffi.md)
 
 ### 3.5 E `unsafe` 块 / 裸指针 / `#[repr(C)]`（P0-1）
