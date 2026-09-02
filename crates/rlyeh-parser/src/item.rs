@@ -37,13 +37,18 @@ impl<'src> Parser<'src> {
         // `r#` 前缀为关键字转义 / 根命名空间显式引用标记；声明名归一化为无前缀名
         // （调用处保留 `r#` 前缀，typecheck resolve_callable 去前缀后绑定根命名空间）。
         let name = name.strip_prefix("r#").unwrap_or(&name).to_string();
-        let generics = self.parse_generics()?;
+        let mut generics = self.parse_generics()?;
         let params = self.parse_params()?;
         let return_type = if self.eat(&Token::Arrow) {
             Some(self.parse_type()?)
         } else {
             None
         };
+        // A4（SH-P1-1，2026-09-02）：函数 / 方法级 `where` 子句——
+        // `fn f<T>(x: T) -> i64 where T: Speak { .. }`。此前仅 impl 块支持
+        // `where`（`parse_impl`），函数声明遇到 `where` 会直接报语法错误。
+        // 约束按参数名合并进 `generics`（不存在名忽略），复用既有 bound 校验路径。
+        self.parse_where_clause(&mut generics)?;
         let body = if self.check(&Token::LBrace) {
             Some(self.parse_block()?)
         } else {

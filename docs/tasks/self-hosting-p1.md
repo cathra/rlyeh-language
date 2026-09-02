@@ -9,7 +9,7 @@
 
 | ID | 缺口 | 对应 0.2.0 阶段 | 受影响组件 | 叶子 | 状态 |
 |----|------|----------------|-----------|------|------|
-| SH-P1-1 | 泛型 trait / impl 完整化 | 0.2.0-A | typecheck（注释编译器自身需泛型 trait） | [leaf](./leaf/sh-p1-1-generic-trait.md) | ⏳ 规划中 |
+| SH-P1-1 | 泛型 trait / impl 完整化 | 0.2.0-A | typecheck（注释编译器自身需泛型 trait） | [leaf](./leaf/sh-p1-1-generic-trait.md) | 🟢 完成（A1/A3 经复核为既有能力；A4 两处缺口已补；A2 剩两处限制单独立项） |
 | SH-P1-2 | trait derive 宏 | 0.2.0-C | AST / HIR / MIR / LIR（`derive`×70+） | [leaf](./leaf/sh-p1-2-derive.md) | ⏳ 规划中 |
 | SH-P1-3 | 嵌套模块 / `pub use` / `super` | 0.2.0-B | 所有大型 crate（driver / typecheck 多级模块） | [leaf](./leaf/sh-p1-3-nested-module.md) | ⏳ 规划中 |
 | SH-P1-4 | `Deref` / `DerefMut` 用户类型自动解引用强制 | 0.2.0-R | typecheck / std（MutexGuard / `Box<dyn Trait>`） | [leaf](./leaf/sh-p1-4-deref.md) | ⏳ 规划中 |

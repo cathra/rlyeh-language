@@ -453,9 +453,9 @@ pub self_type: Type,
 pub trait_type_args: Vec<Type>,
 /// 泛型参数名
     pub type_params: Vec<String>,
-    /// 泛型参数 → 约束 trait 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并；
-    /// MVP 记录不校验——impl 泛型实例化时的方法调用 bound 校验规划中）
-    #[allow(dead_code)]
+    /// 泛型参数 → 约束 trait 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并）。
+    /// A4（SH-P1-1，2026-09-02）：impl 方法调用点实例化前经
+    /// `check_generic_bounds` 强制校验（此前仅记录不校验）。
     pub bounds: HashMap<String, Vec<String>>,
     /// 关联类型定义（`type Item = Concrete;`，U2）
     pub assoc_types: Vec<(String, Type)>,

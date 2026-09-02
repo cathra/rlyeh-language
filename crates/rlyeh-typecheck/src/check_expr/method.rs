@@ -890,6 +890,12 @@ pub(super) fn check_method_call(
         });
     };
     let base_fn = format!("{base_name}::{method}");
+    // A4（SH-P1-1，2026-09-02）：**impl 块级泛型约束强制校验**。
+    // 此前 impl 的 `where` / 内联 bound 只被解析与记录（`ImplDef.bounds`），
+    // 实例化方法时并不校验——违反约束时不在调用点报错，而是直接实例化方法体、
+    // 在体内部报出误导性的「`i64::speak` not found」。函数级 bound 早已有
+    // `check_generic_bounds` 校验，此处复用同一套诊断补齐 impl 级。
+    crate::check_expr::generic::check_generic_bounds(ctx, &impl_def.bounds, &subst, span)?;
     // 无论是否泛型，都在调用点实例化方法体（非泛型为无后缀的 `Type::method`）
     let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &subst, span)?;
 

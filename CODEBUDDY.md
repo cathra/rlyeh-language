@@ -413,6 +413,38 @@ fn main() {
 > `Arc` 尚无 `Drop`，故 `MutexGuard` 自动解锁仍走 `lock_guard` 方法名特判的
 > 既有注入路径。
 
+### 3.5.5 泛型 trait / impl 与约束（SH-P1-1 ✅ A4，2026-09-02）
+
+```rlyeh
+// 泛型 trait 声明 + 泛型 impl（A1 / A2，既有能力）
+trait Wrap<T> { fn wrap(&self, v: T) -> i64; }
+impl<T> Wrap<T> for Pair<T> { fn wrap(&self, v: T) -> i64 { .. } }
+
+// 含 `Self` 返回（A3，既有能力）
+trait From2<T> { fn from2(v: T) -> Self; }
+
+// 函数 / 方法级 `where` 子句（A4-①，本项新增）
+fn loud<T>(x: T) -> i64 where T: Speak { x.speak() }
+fn both<T>(x: T) -> i64 where T: Speak + Named { x.speak() + x.name_id() }
+fn mixed<T: Speak, U>(x: T, y: U) -> i64 where U: Named { x.speak() + y.name_id() }
+
+// impl 块级约束（内联与 `where` 两种写法，A4-② 起强制校验）
+impl<T> Wrap for Pair<T> where T: Speak { fn wrap(&self) -> i64 { self.a.speak() } }
+```
+
+要点：
+- `where` 子句可用于**函数、impl 块内方法、trait 抽象方法、impl 块**，与内联
+  bound（`<T: B>`）等价且可混用；约束按参数名合并，诊断统一为
+  ``type `X` does not implement trait `B` (bound on generic parameter `T`)``。
+- impl 级约束在**调用点实例化方法体之前**校验（此前只记录不校验，违反时在方法体
+  内部报出误导性的 `i64::speak not found`）。
+
+> 已知限制：① 同一类型的同一泛型 trait 的**多 impl 无法按 trait 类型实参选择**
+> （`impl Wrap<i64> for W` 与 `impl Wrap<bool> for W` 并存时选错；
+> `find_impl_for_method` 为首匹配）；② impl 的类型参数**只能由接收者类型推导**
+> ，故 `impl<T> Wrap<T> for W`（`W` 非泛型）中 `T` 无来源。二者同源——subst 的
+> 唯一来源是 `unify(impl_def.self_type, self_ty)`。
+
 ### 3.6 模块系统
 
 ```rlyeh
