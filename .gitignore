@@ -27,6 +27,8 @@ dist/
 !tests/run-pass/drop_raii.out
 !tests/run-pass/generic_where_clause.out
 !tests/run-pass/generic_impl_multi.out
+!tests/run-pass/arena-ir-traversal.out
+!tests/run-pass/refcell.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib

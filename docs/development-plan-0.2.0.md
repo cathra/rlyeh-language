@@ -38,7 +38,7 @@
 | **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
 | **0.2.0-G** | `dyn Trait` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | 🟢 完成 | actor 消息协议地基 |
 | **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | 🟢 完成 | 运行时并发地基 |
-| **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | ⏳ 规划 | IR 可变遍历 |
+| **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | 🟢 核心落地 | I2 arena+NodeId + I1 RefCell 验证，全量 255/255 |
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ⏳ 规划 | Rlyeh 产物链接 Rust 运行时 |
 | **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | ⏳ 规划 | 引导器 + 对拍验证 |
 | **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | ⏳ 规划 | span 诊断复刻 |
@@ -124,6 +124,9 @@
 
 ### 3.9 I 内部可变性 / arena 表示（P2-3）
 - I1 引入 `RefCell` 等价或 I2 arena + 整数索引（`Arena<T>` + `NodeId`）表示树形 IR（与 Rlyeh 索引式倾向一致，避免运行时引用计数开销）。
+- **（🟢 核心落地，2026-09-02）** I2：泛型 `Arena<T>` + `NodeId`（`Vec<T>` 槽区 + 1-based 下标），整型二叉树 IR 经显式工作栈完成可变重写遍历；I1：`RefCell<T>` 安全内部可变性封装（`unsafe` 裸指针 + `alloc_array` 堆缓冲，`get(&self)`/`set(&self)` 经共享引用 mutate，即得 `Rc<RefCell<T>>` 共享可变状态）。两者均提供 Rlyeh 侧 IR 可变遍历 / 共享可变状态能力，替代 Rust 的 `Rc`/`Arc`/`RefCell` 内部可变性模式。
+- 验证：`tests/run-pass/arena-ir-traversal.rl`（arena 可变遍历）+ `tests/run-pass/refcell.rl`（RefCell 内部可变性）；全量 `rlyeh test tests` **255/255 通过**。
+- 已知限制：泛型 impl 关联静态方法 MVP 不支持（`Vec::new()` 特判在泛型关联函数内无法解析元素类型），空 `Arena` 在调用方顶层以 `Arena { slots: Vec::new() }` 构造。
 > **关联文档**：[SH-P2-3 内部可变性 / arena 表示](tasks/leaf/sh-p2-3-internal-mut.md)
 
 ### 3.10 J FFI/ABI 链接桥（新增，关键）
