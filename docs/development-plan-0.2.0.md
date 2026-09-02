@@ -44,7 +44,7 @@
 | **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | ⏳ 规划 | span 诊断复刻 |
 | **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | ⏳ 规划 | 交付物（dogfood） |
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
-| **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | ⏳ 规划 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
+| **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | ⏳ 规划 | **复审补遗**：字符分类/判别分支依赖 |
 | **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | ⏳ 规划 | **复审补遗**：MutexGuard/arena/智能指针自动释放 |
 | **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：智能指针/MutexGuard 透传 |
@@ -143,8 +143,12 @@
 > **关联文档**：[SH-P0-5 元组值构造 + 解构](tasks/leaf/sh-p0-5-tuple-value.md)
 
 ### 3.15 O `if let` / `while let` 模式控制流（P0-6）
-语言完全缺失；解析器/类型检查器重写依赖。`desugar` 为 `match`/`let+if`（零新增 IR）。
-- O1 语法解析 → O2 desugar（零新增 IR）→ O3 `while let` → O4 嵌套/链；typecheck `if let` 重写。
+语言此前完全缺失；解析器/类型检查器重写依赖。地基复核完备（`match` / `Option`+`?` / `loop`+`break`+`continue` 均已具备），故实现降为 **parser 层 desugar、零新增 IR 节点（typecheck / codegen 无改动）**。
+- ✅ O1 `if let Pat = e { A } else { B }` ⟶ `match e { Pat => { A }, _ => { B } }`（缺 `else` 兜底空块求值 `()`）；`else if` / `else if let` 链由 `if` 解析递归处理。
+- ✅ O2 `while let Pat = e { A }` ⟶ `loop { match e { Pat => { A }, _ => break } }`（每轮重求值；体内 `break` / `continue` 落在 `loop` 上）。
+- ✅ O3 嵌套 `if let`（递归自然支持）+ 作表达式使用（`let v = if let .. { x } else { 0 };`，因 desugar 结果即 `match`）。
+- ❌ O4 **let 链**（`if let a = .. && let b = ..`）按「先单模式」暂不支持；元组 / 结构体模式受限（继承 `match` 臂能力）。
+- ⏳ O-L1 差分对拍 Rust 参考（随 K 阶段 harness 落地后补）。
 > **关联文档**：[SH-P0-6 `if let` / `while let`](tasks/leaf/sh-p0-6-if-let.md)
 
 ### 3.16 P `match` 守卫 + 范围/或模式（P0-7）
@@ -321,12 +325,13 @@ PoC 解析器 `(tok, rest)` 前置；类型层（`Type::Tuple`/单元 `()`）已
 > **关联文档**：[SH-P0-5 元组值构造 + 解构](tasks/leaf/sh-p0-5-tuple-value.md)
 
 ### 7.9 O `if let` / `while let`（SH-P0-6，🔴 高）
-语言完全缺失；解析器/类型检查器重写依赖。
-- **O-M1（中）** `if let Pat = expr { .. }` desugar 为「`let Pat = expr; if 绑定成功 { .. } else { .. }`」（零新增 IR）。
-- **O-M2（中）** `while let Pat = expr { .. }` 循环头绑定 + 条件重评估。
-- **O-M3（低）** 嵌套/链。
-- **O-L1（低）** 差分对拍 Rust 参考。
-- **关键 checkpoint**：typecheck `if let` 重写。
+语言此前完全缺失；解析器/类型检查器重写依赖。
+- ✅ **O-M1（中）** `if let Pat = expr { .. } else { .. }` desugar 为 **`match expr { Pat => { .. }, _ => { .. } }`**（零新增 IR；缺 `else` 兜底空块）。落点 `crates/rlyeh-parser/src/expr/control.rs::parse_if_let_expr`。
+- ✅ **O-M2（中）** `while let Pat = expr { .. }` desugar 为 **`loop { match expr { Pat => { .. }, _ => break } }`**（每轮条件重评估；体内 `break` / `continue` 落在 `loop` 上，语义同 Rust）。
+- ✅ **O-M3（低）** 嵌套 / `else if let` 链（`if` 解析递归自然支持）；**let 链**（`&& let`）暂不支持。
+- ⏳ **O-L1（低）** 差分对拍 Rust 参考（随 K 阶段 harness 落地后补）。
+- **关键 checkpoint**：`tests/run-pass/if_while_let.{rl,out}` 10 行输出全绿 + `tests/compile-fail/if-let-tuple-pattern.rl` 门禁；全量 740 用例全绿。
+- **已知限制**：模式能力继承 `match` 臂（元组 / 结构体模式不支持）；无 let 链。
 > **关联文档**：[SH-P0-6 `if let` / `while let`](tasks/leaf/sh-p0-6-if-let.md)
 
 ### 7.10 P `match` 守卫 + 范围/或模式（SH-P0-7，🔴 中高）

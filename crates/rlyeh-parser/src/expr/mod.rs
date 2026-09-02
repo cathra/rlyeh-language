@@ -4,7 +4,7 @@ use crate::error::ParseError;
 use crate::parser::{Parser, MAX_MACRO_DEPTH};
 use rlyeh_ast::{
     AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, BinaryOp, CaptureMode, CompareOp, ExprKind,
-    UnaryOp,
+    MatchArm, UnaryOp,
 };
 use rlyeh_lexer::{LocatedToken, Span, Token};
 use rlyeh_macro::expand as expand_macro;

@@ -351,6 +351,32 @@ PrimaryExpr ::= Literal
               | ClosureExpr
 ```
 
+### 2.9.1 控制流表达式（`if` / `while` / `loop` / `match`，含 `if let` / `while let`）
+
+```
+IfExpr      ::= 'let' Pattern '=' Expr Block ('else' (Block | 'if' IfExpr))?   (* `if let` *)
+              | Expr Block ('else' (Block | 'if' IfExpr))?
+
+WhileExpr   ::= 'let' Pattern '=' Expr Block      (* `while let` *)
+              | Expr Block
+
+LoopExpr    ::= Block
+MatchExpr   ::= '{' MatchArm* '}'
+MatchArm    ::= Pattern ('if' Expr)? '=>' Expr ','?
+```
+
+`if let` / `while let` 为**纯语法糖**（parser 层展开，零新增 IR 节点）：
+
+```text
+if let Pat = e { A } else { B }   ⟶   match e { Pat => { A }, _ => { B } }
+while let Pat = e { A }           ⟶   loop { match e { Pat => { A }, _ => break } }
+```
+
+缺 `else` 时兜底空块（求值 `()`），保证 `match` 穷尽；`else if` / `else if let`
+链由 `IfExpr` 递归处理。模式能力继承 `MatchArm`——元组 / 结构体模式尚不支持
+（`if let (a, b) = t` 报 `unsupported syntax: 元组 / 结构体模式在 MVP 阶段`）；
+无 let 链（`if let a = .. && let b = ..`）。
+
 ### 2.10 比较链语义规则
 
 ```

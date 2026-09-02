@@ -14,7 +14,7 @@
 | SH-P0-3 | `dyn Trait` 含 `Self` 方法 + `Any` 类型擦除 | 0.2.0-G | actor 消息协议 | [leaf](./leaf/sh-p0-3-dyn-any.md) | 🟢 完成 |
 | SH-P0-4 | 并发原语（Arc<Mutex>/atomic/线程 spawn） | 0.2.0-H | actor-runtime / driver 并发 | [leaf](./leaf/sh-p0-4-concurrency.md) | 🟢 完成 |
 | SH-P0-5 | 元组值构造 + 解构（多返回值） | 0.2.0-N | lexer / parser（PoC 重写）、typecheck / codegen | [leaf](./leaf/sh-p0-5-tuple-value.md) | 🟢 完成 |
-| SH-P0-6 | `if let` / `while let` 模式控制流 | 0.2.0-O | lexer / parser / typecheck（PoC 重写） | [leaf](./leaf/sh-p0-6-if-let.md) | ⏳ 规划中 |
+| SH-P0-6 | `if let` / `while let` 模式控制流 | 0.2.0-O | lexer / parser / typecheck（PoC 重写） | [leaf](./leaf/sh-p0-6-if-let.md) | 🟢 完成 |
 | SH-P0-7 | `match` 守卫 + 范围/或模式 | 0.2.0-P | parser / typecheck（字符分类/判别分支） | [leaf](./leaf/sh-p0-7-match-guard.md) | ⏳ 规划中 |
 | SH-P0-8 | `Drop` trait / 析构 / RAII | 0.2.0-Q | typecheck / codegen / std（MutexGuard/arena/智能指针） | [leaf](./leaf/sh-p0-8-drop.md) | ⏳ 规划中 |
 
@@ -22,7 +22,7 @@
 
 ## 进度
 
-P0 共 8 项：**SH-P0-1 ~ SH-P0-5 🟢 完成**，其余 SH-P0-6~8 ⏳ 规划中（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。
+P0 共 8 项：**SH-P0-1 ~ SH-P0-6 🟢 完成**，其余 SH-P0-7~8 ⏳ 规划中（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。
 
 ---
 
@@ -34,3 +34,7 @@ P0 共 8 项：**SH-P0-1 ~ SH-P0-5 🟢 完成**，其余 SH-P0-6~8 ⏳ 规划�
 | 2026-09-01 | 修正：P0 上移为 0.2.0 必须项（语言特性）；新增 SH-P0-4 并发原语 |
 | 2026-09-01 | SH-P0-1 状态由 ⏳ 规划中 更新为 🟢 完成（E-M1 / E2 真布局含嵌套聚合内联 / E3 FFI 门禁均落地） |
 | 2026-09-01 | SH-P0-2 状态由 ⏳ 规划中 更新为 🟢 完成（F-M1/F-M2 `move` 字段化/F-M3 `'static` 校验/F-M4 `Thread::start(move || ..)` 跨线程执行；完整套件 218/218 通过） |
+| 2026-09-02 | SH-P0-3 状态更新为 🟢 完成（`dyn Trait` 含 `Self` 方法 + `Any` 类型擦除） |
+| 2026-09-02 | SH-P0-4 状态更新为 🟢 完成（原子类型 `AtomicI64` + `Ordering` 内存序，走 driver 注入 `atomicrmw`/`cmpxchg`；规划称「Mutex/线程 spawn 亦缺失」，复核后二者已具备，仅原子为真缺口） |
+| 2026-09-02 | SH-P0-5 状态更新为 🟢 完成（元组解构绑定 M2；复核确认值构造与多返回已具备，仅解构为真缺口） |
+| 2026-09-02 | SH-P0-6 状态由 ⏳ 规划中 更新为 🟢 完成（`if let` / `while let` 于 parser 层 desugar 为 `match` / `loop`，零新增 IR 节点；含 `else if let` 链与体内 `break`/`continue`） |

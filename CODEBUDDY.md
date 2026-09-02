@@ -289,6 +289,39 @@ let (name, len) = split_name(String::from("rlyeh"));   // len = 5
 > （`let ((a, b), c) = ..` 报错）、无 `(mut a, b)`（parser 不接受元组模式内的
 > `mut`）、无 `..` 剩余模式；结构体 / 枚举解构模式仍不支持。
 
+### 3.5.2 `if let` / `while let` 模式控制流（SH-P0-6 ✅，2026-09-02）
+
+```rlyeh
+// 匹配成功则绑定，失败走 else（else 可省，此时不匹配即跳过）
+if let Option::Some(v) = opt_value() {
+    println(v);
+} else if let Option::Some(w) = other() {   // else if let 链
+    println(w);
+} else {
+    println(-1);
+}
+
+// 作表达式使用（desugar 结果即 match，天然是表达式）
+let v = if let Option::Some(x) = o { x } else { 0 };
+
+// 每轮重新求值，模式不再匹配即跳出；体内 break / continue 落在循环上
+while let Option::Some(got) = rx.recv() {
+    println(got);
+}
+```
+
+语义：**纯语法糖，parser 层展开、零新增 IR 节点**——
+`if let Pat = e { A } else { B }` ⟶ `match e { Pat => { A }, _ => { B } }`；
+`while let Pat = e { A }` ⟶ `loop { match e { Pat => { A }, _ => break } }`。
+缺 `else` 时兜底空块（求值 `()`），保证 `match` 始终穷尽；`else if` /
+`else if let` 链由 `if` 解析递归处理。落点仅
+`crates/rlyeh-parser/src/expr/control.rs`，typecheck / codegen 无改动。
+
+> 已知限制：模式能力继承 `match` 臂——元组 / 结构体模式在 match 位置尚不支持
+> （`if let (a, b) = t` 报 `unsupported syntax: 元组 / 结构体模式在 MVP 阶段`，
+> 可解构绑定 `let (a, b) = t;` 走另一路径不受此限）；
+> 无 let 链 `if let a = .. && let b = ..`。
+
 ### 3.6 模块系统
 
 ```rlyeh

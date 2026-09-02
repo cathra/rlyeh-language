@@ -6,6 +6,10 @@ use super::*;
 impl <'src> Parser<'src> {
     pub(super) fn parse_if_expr(&mut self) -> Result<AstExpr, ParseError> {
         let start = self.expect(&Token::If, "'if'")?.span;
+        // O1（SH-P0-6）：`if let Pat = expr { .. }` —— 走模式绑定分支
+        if self.check(&Token::Let) {
+            return self.parse_if_let_expr(start);
+        }
         let cond = self.parse_expr()?;
         let then_block = self.parse_block()?;
         let else_block = if self.eat(&Token::Else) {
@@ -38,6 +42,64 @@ impl <'src> Parser<'src> {
         ))
     }
 
+    /// O1（SH-P0-6，2026-09-02）：`if let Pat = expr { .. } [else { .. }]`。
+    ///
+    /// **纯语法糖，desugar 为既有 `match`，零新增 IR 节点**：
+    /// ```text
+    /// if let Pat = e { A } else { B }   ⟶   match e { Pat => { A }, _ => { B } }
+    /// ```
+    /// 模式绑定与判别（枚举 tag 比较、类型臂收窄、守卫）全部交由既有
+    /// `check_match` 处理；缺 `else` 时兜底为空块（`Unit`）。
+    /// `else if` / `else if let` 链由 `parse_if_expr` 递归处理（作为 `_` 臂体）。
+    fn parse_if_let_expr(&mut self, start: Span) -> Result<AstExpr, ParseError> {
+        self.expect(&Token::Let, "'let'")?;
+        let pattern = self.parse_pattern()?;
+        self.expect(&Token::Assign, "'='")?;
+        let expr = self.parse_expr()?;
+        let then_block = self.parse_block()?;
+        let then_span = then_block.span;
+        let mut arms = vec![MatchArm {
+            pattern,
+            guard: None,
+            body: AstExpr::new(ExprKind::Block(then_block), then_span),
+            span: then_span,
+        }];
+        let end = if self.eat(&Token::Else) {
+            let (else_expr, else_span) = if self.check(&Token::If) {
+                let inner = self.parse_if_expr()?;
+                let s = inner.span;
+                (inner, s)
+            } else {
+                let b = self.parse_block()?;
+                let s = b.span;
+                (AstExpr::new(ExprKind::Block(b), s), s)
+            };
+            arms.push(MatchArm {
+                pattern: AstPattern::Wildcard,
+                guard: None,
+                body: else_expr,
+                span: else_span,
+            });
+            else_span
+        } else {
+            // 无 else：兜底为空块（求值 Unit）
+            let empty = AstBlock {
+                stmts: Vec::new(),
+                final_expr: None,
+                span: then_span,
+            };
+            arms.push(MatchArm {
+                pattern: AstPattern::Wildcard,
+                guard: None,
+                body: AstExpr::new(ExprKind::Block(empty), then_span),
+                span: then_span,
+            });
+            then_span
+        };
+        let span = self.merge_span(start, end);
+        Ok(AstExpr::new(ExprKind::Match { expr, arms }, span))
+    }
+
     pub(super) fn parse_match_expr(&mut self) -> Result<AstExpr, ParseError> {
         let start = self.expect(&Token::Match, "'match'")?.span;
         let expr = self.parse_expr()?;
@@ -56,6 +118,39 @@ impl <'src> Parser<'src> {
 
     pub(super) fn parse_while_expr(&mut self) -> Result<AstExpr, ParseError> {
         let start = self.expect(&Token::While, "'while'")?.span;
+        // O2（SH-P0-6）：`while let Pat = expr { .. }` —— 走模式绑定分支
+        if self.check(&Token::Let) {
+            self.expect(&Token::Let, "'let'")?;
+            let pattern = self.parse_pattern()?;
+            self.expect(&Token::Assign, "'='")?;
+            let expr = self.parse_expr()?;
+            let body = self.parse_block()?;
+            let body_span = body.span;
+            // desugar：`loop { match expr { Pat => { body }, _ => break } }`
+            let arms = vec![
+                MatchArm {
+                    pattern,
+                    guard: None,
+                    body: AstExpr::new(ExprKind::Block(body), body_span),
+                    span: body_span,
+                },
+                MatchArm {
+                    pattern: AstPattern::Wildcard,
+                    guard: None,
+                    // 模式不再匹配即跳出循环
+                    body: AstExpr::new(ExprKind::Break(None), body_span),
+                    span: body_span,
+                },
+            ];
+            let inner = AstExpr::new(ExprKind::Match { expr, arms }, body_span);
+            let loop_body = AstBlock {
+                stmts: Vec::new(),
+                final_expr: Some(inner),
+                span: body_span,
+            };
+            let span = self.merge_span(start, body_span);
+            return Ok(AstExpr::new(ExprKind::Loop { body: loop_body }, span));
+        }
         let cond = self.parse_expr()?;
         let body = self.parse_block()?;
         let span = self.merge_span(start, body.span);
