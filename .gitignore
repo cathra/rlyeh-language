@@ -26,6 +26,7 @@ dist/
 !tests/run-pass/match_guard_range_or.out
 !tests/run-pass/drop_raii.out
 !tests/run-pass/generic_where_clause.out
+!tests/run-pass/generic_impl_multi.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib

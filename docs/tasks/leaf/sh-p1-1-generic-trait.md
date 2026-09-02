@@ -21,7 +21,7 @@
 | 子任务 | 规划描述 | 复核结果 |
 |--------|---------|---------|
 | **A1** 泛型 trait 声明 | 待实现 | ✅ **已具备**（U8）。std 已用 `trait From<T>` / `trait Into<T>`（`io/error.rl`）；测试有 `trait Wrap<T>`（`generic_ctor_trait.rl`）、`trait Deref<T>`（`y4b_deref.rl`）。parser `parse_trait` 早接 `parse_generics` |
-| **A2** 泛型 impl | 待实现 | ⚠️ **基本已具备，两处缺口**。std 已用 `impl<T> Iterator for Iter<T>` / `impl<T> Future for RecvAsync<T>`。缺口见「已知限制」 |
+| **A2** 泛型 impl | 待实现 | ✅ **已具备（含两处限制已修复，2026-09-02 第二轮）**。std 已用 `impl<T> Iterator for Iter<T>` / `impl<T> Future for RecvAsync<T>` |
 | **A3** 含 `Self` 返回 | 待实现 | ✅ **已具备**（SH-P0-3 G-M1 的 `replace_type_self` + 按值 `Self` 返回 codegen 修复）。std `error_conversion.rl` 即 `trait From<T> { fn from(v: T) -> Self; }` |
 | **A4** 约束 `where`/`:` | 待收尾 | ❌ **两处真实缺口**：① **函数级 `where` 完全缺失**——尽管 `grammar.md` §2.3 早已写入 `FnDecl ::= ... RetType? WhereClause? Block`，`parse_fn` 却未接 `parse_where_clause`，函数声明遇 `where` 报语法错误；② **impl 级约束（内联 `<T: B>` 与 `where` 两种写法）均只记录不校验**——`ImplDef.bounds` 的文档注释自陈「MVP 记录不校验」 |
 
@@ -50,25 +50,36 @@ bound **完全相同**的校验路径与诊断（`GenericBoundMismatch`）。
   体内部的 `i64::speak not found`）。
 - 全量 `cargo test --workspace -- --test-threads=1` 无失败（含 `.rl` 套件）。
 
-## 已知限制（A2 的两处缺口，未在本轮处理）
+## 已知限制（A2 两处已修复，2026-09-02 第二轮）
+
+> 此前记录的两处限制已在本轮修复，记录如下供追溯。
+
 1. **同一类型的同一泛型 trait 多 impl 无法按 trait 类型实参选择**——
    `impl Wrap<i64> for W` 与 `impl Wrap<bool> for W` 并存时，`w.wrap(true)` 会选中
    先注册的 `Wrap<i64>` 并报 `argument 1 expects i64, found bool`。
-   根因：`ctx.find_impl_for_method` 为**首匹配即返回**，候选 impl 不参与实参类型
-   比对。修复需把实参 `infer_expr` 提到候选选择之前（当前 subst 依赖 impl 签名，
-   存在鸡生蛋），属对方法解析主路径的较大重构——`method.rs` 已 930 行，接近
-   §7.0 上限，宜先按阶段下沉再改。
+   **根因（双重）**：① `ctx.find_impl_for_method` 为**首匹配即返回**，候选 impl 不参与
+   实参类型比对；② 即使选对 impl，`instantiate_impl_method` 的 mono 键只含
+   `impl_def.type_params`（此处为空），**未含 `trait_type_args`**，导致两个 impl 的
+   mono 键完全相同 → `mono_instances` 缓存命中复用首个实例，方法体 / 接收者错配
+   （表现为跨调用结果异常：`w1.wrap(5)` 在 `w1.wrap(true)` 之后返回 5 而非 8）。
+   **修复**：`check_method_call` 改为收集全部候选 impl，按「代入 trait 类型实参后
+   的方法签名与实参类型兼容」选取首个匹配者；`instantiate_impl_method` 的 mono 键 /
+   后缀并入 `trait_type_args`（经 subst 代入后）。
 2. **impl 的类型参数只能由接收者类型 unify 推导**，trait 类型实参不参与绑定——
    故 `impl<T> Wrap<T> for W`（`W` 非泛型，且 `T` 仅出现在 trait 实参位置）报
    `undefined type T`；`impl<T> Wrap<T> for Pair<T>` 则正常（`T` 由 `Pair<T>` 绑定）。
-   与缺口 1 同源（subst 的唯一来源是 `unify(impl_def.self_type, self_ty)`）。
+   **修复**：选取候选时，将 impl / 方法级未定泛型参数（`cand.type_params` ∪ 方法
+   泛型）由对应实参类型 `unify` 反推绑定，使 `impl<T> Wrap<T> for W` 的 `T` 可由
+   实参推导。
 
 ## 状态
 ✅ 已完成（0.2.0 必须项，阶段 A）。A1 / A3 经复核为既有能力；A4 两处缺口已补；
-A2 的两处限制见上，单独立项。
+A2 两处限制（多 impl 按实参选择 + impl 泛型由实参推导 + 同 trait 多 impl 单态化
+缓存碰撞）均已于 2026-09-02 第二轮修复。
 
 ## 变更记录
 | 日期 | 变更 |
 |------|------|
 | 2026-09-01 | 从评估报告 P1-4 拆出为叶子 |
 | 2026-09-02 | 缺口复核（A1/A3 已具备、A2 剩两处限制、A4 两处真实缺口）；实现函数/方法级 `where` 子句与 impl 级约束强制校验；run-pass + 2 项 compile-fail 用例与全量回归 |
+| 2026-09-02 | **A2 两处限制修复（第二轮）**：① 方法解析改为收集全部候选 impl，按「代入 trait 类型实参后的方法签名与实参兼容」选取首个匹配者（`check_method_call` 重构 + `find_impl_candidates` / `find_trait_method_candidates`）；② impl / 方法级泛型参数由对应实参反推绑定；③ `instantiate_impl_method` 的 mono 键 / 后缀并入 `trait_type_args`，修复同 trait 多 impl 单态化缓存碰撞（此前 `w1.wrap(5)` 在 `w1.wrap(true)` 之后返回 5 而非 8）。新增 `generic_impl_multi.rl`（5 行输出）+ `generic-impl-mismatch.rl` 门禁，全量套件通过 |

@@ -588,6 +588,45 @@ impl TypeContext {
             .find(|d| type_matches(d, self_type) && d.methods.iter().any(|m| m.sig.name == method))
     }
 
+    /// A2（SH-P1-1，2026-09-02）：按目标类型 + 方法名查找**全部**匹配的 impl
+    /// （inherent 优先于 trait）。用于同一 `self_type` 上同一泛型 trait 的**多
+    /// impl**（如 `impl Wrap<i64> for W` 与 `impl Wrap<bool> for W`），解析点
+    /// 需按 trait 类型实参 / 实参类型选取正确的 impl，而非首匹配。
+    pub fn find_impl_candidates(&self, self_type: &Type, method: &str) -> Vec<ImplDef> {
+        let mut inherent = Vec::new();
+        let mut trait_impls = Vec::new();
+        for d in &self.impl_defs {
+            if type_matches(d, self_type) && d.methods.iter().any(|m| m.sig.name == method) {
+                if d.trait_name.is_none() {
+                    inherent.push(d.clone());
+                } else {
+                    trait_impls.push(d.clone());
+                }
+            }
+        }
+        inherent.extend(trait_impls);
+        inherent
+    }
+
+    /// A2：按 trait 名 + 目标类型 + 方法名查找全部匹配的 trait impl（X4
+    /// `trait_hint` 路径的候选集）。
+    pub fn find_trait_method_candidates(
+        &self,
+        self_type: &Type,
+        trait_name: &str,
+        method: &str,
+    ) -> Vec<ImplDef> {
+        self.impl_defs
+            .iter()
+            .filter(|d| {
+                d.trait_name.as_deref() == Some(trait_name)
+                    && type_matches(d, self_type)
+                    && d.methods.iter().any(|m| m.sig.name == method)
+            })
+            .cloned()
+            .collect()
+    }
+
     /// X4：按目标类型 + trait 名查找含指定方法的 trait impl 块。
     /// 用于同名方法分属不同 trait 时（如 `Display::fmt` 与 `Debug::fmt`），
     /// 按 trait 名精确区分；`trait_name` 为解析后的完整符号名（如 `fmt::Display`）。

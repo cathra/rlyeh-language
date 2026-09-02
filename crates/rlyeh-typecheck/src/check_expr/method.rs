@@ -366,56 +366,146 @@ pub(super) fn check_method_call(
         }
     }
 
-    // 查找含该方法的 impl 块（inherent 优先，trait 次之）。
-    // V3（2026-08-26）：`find_impl_for_method` 找不到"实现了该方法的 impl"时，
+    // 查找含该方法的 impl 块候选（inherent 优先，trait 次之）。
+    // V3（2026-08-26）：类型匹配的 trait impl 且 trait 声明了该方法默认实现时，
     // 回退到 `find_trait_default_impl`——类型匹配的 trait impl 且 trait 声明了
     // 该方法的默认实现（`impl Trait for X {}` 未显式实现该方法）。
     // X4：`trait_hint`（如 `fmt::Display` / `fmt::Debug`）时按 trait 名区分——
     // 同名 trait 方法（Display::fmt 与 Debug::fmt）经此精确分派。
-    let impl_def = if let Some(tn) = trait_hint {
-        ctx.find_impl_for_trait_method(&self_ty, tn, method)
-            .cloned()
+    // A2（SH-P1-1，2026-09-02）：同一 `self_type` 上同一泛型 trait 的**多 impl**
+    // （`impl Wrap<i64> for W` 与 `impl Wrap<bool> for W`）此前按首匹配选取，
+    // 无法按 trait 类型实参 / 实参类型区分。现收集全部候选，按「代入 trait 类型
+    // 实参后的方法签名与实参类型兼容」选取首个匹配者。
+    let candidates: Vec<ImplDef> = if let Some(tn) = trait_hint {
+        ctx.find_trait_method_candidates(&self_ty, tn, method)
     } else {
-        ctx.find_impl_for_method(&self_ty, method)
+        ctx.find_impl_candidates(&self_ty, method)
+    };
+
+    // 选取首个「签名与实参兼容」的候选。
+    // 每候选：先代入 trait 类型实参、再 unify 接收者类型、再由实参反推 impl /
+    // 方法级未定泛型，最后校验各实参类型与（代入后的）预期参数兼容。
+    let mut selected: Option<(ImplDef, crate::types::ImplMethod, HashMap<String, Type>)> = None;
+    for cand in &candidates {
+        let Some(mdef) = cand
+            .methods
+            .iter()
+            .find(|m| m.sig.name == method)
             .cloned()
-            .or_else(|| ctx.find_trait_default_impl(&self_ty, method).cloned())
-    }
-    .ok_or_else(|| TypeError::FunctionNotFound {
-        name: format!("{self_ty}::{method}"),
-        span,
-    })?;
-    let method_def = impl_def
-        .methods
-        .iter()
-        .find(|m| m.sig.name == method)
-        .cloned()
-        // V3 回退：impl 未实现该方法但 trait 有默认实现 → 构造 ImplMethod
-        // （签名取 trait 方法签名，body 取 trait 默认实现 AST）。
-        .or_else(|| trait_default_method(ctx, &impl_def, method))
-        .ok_or_else(|| TypeError::FunctionNotFound {
-            name: format!("{self_ty}::{method}"),
-            span,
-        })?;
-
-    // 由接收者类型统一 impl 泛型参数
-    let mut subst: HashMap<String, Type> = HashMap::new();
-    unify(&impl_def.self_type, &self_ty, &mut subst)?;
-
-    // 参数类型（`self` 之后的显式参数）
-    let mut expected: Vec<Type> = method_def
-        .sig
-        .params
-        .iter()
-        .skip(1)
-        .map(|p| substitute(p, &subst))
-        .collect();
-    // 显式泛型参数的方法（如 `fn f<T>(...)`）由实参类型推断
-    if method_def.body.as_ref().is_some_and(|b| !b.generics.is_empty()) {
-        for (pty, a) in expected.iter().zip(args.iter()) {
-            let (_, arg_ty) = infer_expr(ctx, a)?;
-            unify(pty, &arg_ty, &mut subst)?;
+            // V3 回退：impl 未实现该方法但 trait 有默认实现 → 构造 ImplMethod
+            // （签名取 trait 方法签名，body 取 trait 默认实现 AST）。
+            .or_else(|| trait_default_method(ctx, cand, method))
+        else {
+            continue;
+        };
+        // 实参类型（仅取类型用于兼容性校验；最终实参 HIR 仍由下方实参循环重建）。
+        // 推论失败（罕见：实参是脱离上下文无法定型的裸闭包）则跳过该候选，
+        // 不阻塞调用——回退路径会沿用既有逐实参检查。
+        let Ok(arg_types) = args
+            .iter()
+            .map(|a| infer_expr(ctx, a).map(|(_, t)| t))
+            .collect::<Result<Vec<Type>, _>>()
+        else {
+            continue;
+        };
+        let mut subst = HashMap::new();
+        // A2：trait 类型实参代入方法签名（先于 self_type unify，避免同名泛型被
+        // 覆盖）。`impl Wrap<bool> for W` 的 `wrap(&self, v: T)` 经此变为
+        // `wrap(&self, v: bool)`，使多 impl 按实参区分；`impl<T> Wrap<T> for W`
+        // 的 `T` 替换为 impl 泛型参数（同名），留待下方由实参反推。
+        if let Some(tn) = &cand.trait_name {
+            if let Some(td) = ctx.trait_defs.get(tn) {
+                for (pn, ta) in td.type_params.iter().zip(&cand.trait_type_args) {
+                    subst.insert(pn.clone(), ta.clone());
+                }
+            }
+        }
+        unify(&cand.self_type, &self_ty, &mut subst)?;
+        // impl / 方法级泛型参数由对应实参反推（A2：`impl<T> Wrap<T> for W` 的
+        // T 此前仅能从接收者类型推导，`self_type` 非泛型时无来源 → undefined type T）。
+        let mut generics = cand.type_params.clone();
+        if let Some(b) = &mdef.body {
+            for g in &b.generics {
+                if !generics.contains(&g.name) {
+                    generics.push(g.name.clone());
+                }
+            }
+        }
+        let expected: Vec<Type> = mdef
+            .sig
+            .params
+            .iter()
+            .skip(1)
+            .map(|p| substitute(p, &subst))
+            .collect();
+        for (pty, aty) in expected.iter().zip(&arg_types) {
+            // 形参为 fn 类型（实参可能是无注解闭包）时跳过兼容性判定，
+            // 交由下方实参循环按预期签名检查，避免误拒合法闭包实参。
+            if !matches!(pty, Type::Fn(_))
+                && crate::check_expr::generic::contains_generic_named(pty, &generics)
+            {
+                let _ = unify(pty, aty, &mut subst);
+            }
+        }
+        let expected: Vec<Type> = mdef
+            .sig
+            .params
+            .iter()
+            .skip(1)
+            .map(|p| substitute(p, &subst))
+            .collect();
+        let compatible = arg_types.len() == expected.len()
+            && arg_types
+                .iter()
+                .zip(&expected)
+                .all(|(aty, pty)| aty.compatible_with(pty));
+        if compatible {
+            selected = Some((cand.clone(), mdef, subst));
+            break;
         }
     }
+
+    let (impl_def, method_def, mut subst) = match selected {
+        Some(s) => s,
+        None => {
+            // 无兼容候选：回退到首个候选（V3 默认 impl / 首匹配），由下方兼容
+            // 性检查产出清晰的类型不匹配诊断。
+            let fallback = candidates
+                .into_iter()
+                .next()
+                .or_else(|| {
+                    if trait_hint.is_none() {
+                        ctx.find_trait_default_impl(&self_ty, method).cloned()
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| TypeError::FunctionNotFound {
+                    name: format!("{self_ty}::{method}"),
+                    span,
+                })?;
+            let mdef = fallback
+                .methods
+                .iter()
+                .find(|m| m.sig.name == method)
+                .cloned()
+                .or_else(|| trait_default_method(ctx, &fallback, method))
+                .ok_or_else(|| TypeError::FunctionNotFound {
+                    name: format!("{self_ty}::{method}"),
+                    span,
+                })?;
+            let mut subst = HashMap::new();
+            if let Some(tn) = &fallback.trait_name {
+                if let Some(td) = ctx.trait_defs.get(tn) {
+                    for (pn, ta) in td.type_params.iter().zip(&fallback.trait_type_args) {
+                        subst.insert(pn.clone(), ta.clone());
+                    }
+                }
+            }
+            unify(&fallback.self_type, &self_ty, &mut subst)?;
+            (fallback, mdef, subst)
+        }
+    };
 
     // 参数类型推断 + Infer 回填：期望类型含未定型 `_`（如裸 `Result::Err(7)`
     // 的 `unwrap_or(default: T)`，T 经接收者 unified 后仍为 Infer）时，用实参
@@ -463,7 +553,7 @@ pub(super) fn check_method_call(
     // V3-B（2026-08-27）：参数类型中的 `Self`（如 `chain(self, other: Self)`）同样
     // 替换为 impl 目标具体类型——否则默认方法参数 `Self` 占位无法与实参匹配。
     let impl_self_ty = substitute(&impl_def.self_type, &subst);
-    expected = method_def
+    let expected: Vec<Type> = method_def
         .sig
         .params
         .iter()

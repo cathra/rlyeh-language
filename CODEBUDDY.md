@@ -439,11 +439,19 @@ impl<T> Wrap for Pair<T> where T: Speak { fn wrap(&self) -> i64 { self.a.speak()
 - impl 级约束在**调用点实例化方法体之前**校验（此前只记录不校验，违反时在方法体
   内部报出误导性的 `i64::speak not found`）。
 
-> 已知限制：① 同一类型的同一泛型 trait 的**多 impl 无法按 trait 类型实参选择**
-> （`impl Wrap<i64> for W` 与 `impl Wrap<bool> for W` 并存时选错；
-> `find_impl_for_method` 为首匹配）；② impl 的类型参数**只能由接收者类型推导**
-> ，故 `impl<T> Wrap<T> for W`（`W` 非泛型）中 `T` 无来源。二者同源——subst 的
-> 唯一来源是 `unify(impl_def.self_type, self_ty)`。
+> **A2 两处限制已修复（2026-09-02）**：
+> - ① 同一类型的同一泛型 trait 的**多 impl 可按 trait 类型实参 / 实参类型选择**——
+>   `check_method_call` 改为收集全部候选 impl（`find_impl_candidates` /
+>   `find_trait_method_candidates`），按「代入 `trait_type_args` 后的方法签名与
+>   实参类型兼容」选取首个匹配者。
+> - ② impl 的类型参数**可由实参反推**——选取候选时把 impl / 方法级未定泛型
+>   （`cand.type_params` ∪ 方法泛型）由对应实参 `unify` 绑定，故 `impl<T> Wrap<T>
+>   for W`（`W` 非泛型）的 `T` 可由实参推导。
+> - 附带修复：同 trait 多 impl 的**单态化缓存碰撞**——`instantiate_impl_method`
+>   的 mono 键 / 后缀此前只含 `impl_def.type_params`（此处为空），未含
+>   `trait_type_args`，导致 `impl Wrap<i64> for W` 与 `impl Wrap<bool> for W` 产生
+>   相同 mono 键 → 缓存命中复用首个实例，方法体 / 接收者错配。现 mono 键并入
+>   `trait_type_args`，该回归用例见 `tests/run-pass/generic_impl_multi.rl`。
 
 ### 3.6 模块系统
 

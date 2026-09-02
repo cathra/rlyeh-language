@@ -30,7 +30,7 @@
 
 | 阶段 | 主题 | 对应缺口 | 关联文档 | 风险 | 状态 | 说明 |
 |------|------|----------|----------|------|------|------|
-| **0.2.0-A** | 泛型 trait/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-trait.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；本轮补 A4，A2 剩两处限制） |
+| **0.2.0-A** | 泛型 trait/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-trait.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
 | **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | ⏳ 规划 | 大型 crate 组织 |
 | **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | ⏳ 规划 | 消除 AST 样板 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | ⏳ 规划 | 后端 assemble 自举 |
@@ -68,7 +68,7 @@
 ### 3.1 A 泛型 trait/impl 完整化（P1-1）
 关联类型（U2）已在 0.1.0 落地，叠加泛型参数化。**动手前复核（2026-09-02）**修正了「trait+impl 必须非泛型」的过时判断：
 - ✅ A1 泛型 trait 声明——**已具备**（U8）：std 已用 `trait From<T>` / `trait Into<T>`，测试有 `trait Wrap<T>` / `trait Deref<T>`。
-- ⚠️ A2 泛型 impl——**基本已具备**（std 已用 `impl<T> Iterator for Iter<T>` / `impl<T> Future for RecvAsync<T>`），剩两处限制：① 同类型同泛型 trait 的多 impl 无法按 trait 类型实参选择（`find_impl_for_method` 首匹配）；② impl 类型参数只能由接收者类型 unify 推导，trait 类型实参不参与。
+- ✅ A2 泛型 impl——**已具备**（std 已用 `impl<T> Iterator for Iter<T>` / `impl<T> Future for RecvAsync<T>`）。**两轮待修复的两处限制已修复（2026-09-02 第二轮）**：① 同类型同泛型 trait 的多 impl 可按 trait 类型实参 / 实参类型选择（`check_method_call` 收集候选 impl 按签名兼容性选取）；② impl 类型参数可由实参反推（`impl<T> Wrap<T> for W` 的 `T` 不再报 `undefined type T`）；附带修复同 trait 多 impl 单态化缓存碰撞（`instantiate_impl_method` 的 mono 键并入 `trait_type_args`）。
 - ✅ A3 含 `Self` 返回——**已具备**（SH-P0-3 G-M1 + 按值 `Self` 返回 codegen 修复）。
 - ✅ A4 约束收尾——**本轮补两处真实缺口**：函数/方法级 `where` 子句（parser `parse_fn` 未接 `parse_where_clause`，而 `grammar.md` §2.3 早已写入该产生式）；impl 级约束强制校验（此前 `ImplDef.bounds` 只记录不校验，违反时在方法体内部报误导性错误）。
 

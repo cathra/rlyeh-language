@@ -293,6 +293,15 @@ pub(super) fn instantiate_impl_method(
                 .unwrap_or_else(|| tp.clone())
         })
         .collect();
+    // A2（SH-P1-1，2026-09-02）：trait 类型实参须并入 mono 键 / 后缀。
+    // 同一 self_type 上同一泛型 trait 的多个 impl（如 `impl Wrap<i64> for W` 与
+    // `impl Wrap<bool> for W`）此前仅含 impl 泛型参数（此处为空），产生相同
+    // mono 键 → `mono_instances` 缓存命中复用首个实例，后续 impl 被错误复用
+    // （方法体 / 接收者错配，表现为跨调用结果异常）。`impl<T> Wrap<T> for Pair<T>`
+    // 之类则由 self_type 的 T 实例化后使键不同，天然无碰撞。
+    for ta in &impl_def.trait_type_args {
+        mono_parts.push(type_mono_key(&substitute(ta, subst)));
+    }
     for mp in &body_ast.generics {
         mono_parts.push(
             subst
@@ -478,6 +487,25 @@ pub(super) fn contains_infer(ty: &Type) -> bool {
         Type::Ref(inner, _) => contains_infer(inner),
         Type::Tuple(ts) => ts.iter().any(contains_infer),
         Type::Array(inner, _) => contains_infer(inner),
+        _ => false,
+    }
+}
+
+/// 类型是否包含名为 `names` 之一的泛型参数（`Type::Generic`）。
+/// A2：判断方法预期参数类型中是否还存在未绑定的 impl / 方法级泛型参数，
+/// 以决定能否由对应实参类型反推绑定。
+pub(super) fn contains_generic_named(ty: &Type, names: &[String]) -> bool {
+    match ty {
+        Type::Generic(n) => names.contains(n),
+        Type::Named(_, ps) => ps.iter().any(|p| contains_generic_named(p, names)),
+        Type::Ref(inner, _) => contains_generic_named(inner, names),
+        Type::RawPtr(inner, _) => contains_generic_named(inner, names),
+        Type::Fn(sig) => {
+            sig.params.iter().any(|p| contains_generic_named(p, names))
+                || contains_generic_named(&sig.return_type, names)
+        }
+        Type::Tuple(ts) => ts.iter().any(|p| contains_generic_named(p, names)),
+        Type::Array(inner, _) => contains_generic_named(inner, names),
         _ => false,
     }
 }
