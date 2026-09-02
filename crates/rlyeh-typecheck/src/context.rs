@@ -53,6 +53,9 @@ pub struct Scope {
     /// 保证下游 HIR/MIR/LIR/codegen 按槽名区分变量（下游按字符串名分配存储槽，
     /// 遮蔽必须靠槽名隔离，否则同名槽互相覆盖）。
     pub vars: HashMap<String, (String, Type)>,
+    /// Q-M2（SH-P0-8）：本层变量的**声明顺序**（原名）。`vars` 是 `HashMap`
+    /// 无序，而析构必须按逆声明序（Rust 语义），故另存一份顺序表。
+    pub decl_order: Vec<String>,
     /// 初始化表达式表（原名 → 初始化 HIR，供 `String::from(s)` 追踪字面量值）。
     pub inits: HashMap<String, HirExpr>,
     /// 是否函数边界（隔离：变量查找不穿透该层，函数/闭包体看不到外层局部变量）。
@@ -212,12 +215,34 @@ impl TypeContext {
     /// 记录一个变量绑定，返回存储槽名（块级遮蔽时 mangle 为 `name$N`）。
     pub fn insert_variable(&mut self, name: String, type_: Type) -> String {
         let stored = self.stored_name(&name);
-        self.scopes
-            .last_mut()
-            .expect("作用域栈为空")
-            .vars
-            .insert(name, (stored.clone(), type_));
+        let scope = self.scopes.last_mut().expect("作用域栈为空");
+        // 同层重复绑定（`let x` 覆盖）沿用同一槽名，声明顺序不重复登记
+        if !scope.vars.contains_key(&name) {
+            scope.decl_order.push(name.clone());
+        }
+        scope.vars.insert(name, (stored.clone(), type_));
         stored
+    }
+
+    /// Q-M2（SH-P0-8）：当前作用域**本层**声明的变量，按声明顺序返回
+    /// `(原名, 存储槽名, 类型)`。
+    ///
+    /// 块尾析构据此按逆声明序插入 `x.drop()`；作用域弹出时本层变量随之消失，
+    /// 故外层变量不会被误析构。
+    pub fn current_scope_decls(&self) -> Vec<(String, String, Type)> {
+        let Some(scope) = self.scopes.last() else {
+            return Vec::new();
+        };
+        scope
+            .decl_order
+            .iter()
+            .filter_map(|n| {
+                scope
+                    .vars
+                    .get(n)
+                    .map(|(slot, ty)| (n.clone(), slot.clone(), ty.clone()))
+            })
+            .collect()
     }
 
     /// 查找变量的（存储槽名, 类型）。fn 边界不穿透（函数/闭包体隔离）。

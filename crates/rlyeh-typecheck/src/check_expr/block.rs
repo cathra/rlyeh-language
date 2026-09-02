@@ -49,5 +49,32 @@ pub(crate) fn check_block_inner(
         final_ty = ty;
         final_expr = Some(hir);
     }
+    // Q-M2（SH-P0-8）：块尾析构——本层实现 `Drop` 的拥有所有权变量，逆声明序
+    // 插入 `x.drop()`。无 Drop 实现时不产生任何语句，行为与拆分前完全一致。
+    //
+    // `Never` 结尾（如 `return`）块不会正常走到结尾，跳过注入以免在终结指令
+    // 之后追加不可达语句。
+    if final_ty != Type::Never {
+        let drop_stmts = crate::check_expr::misc::build_scope_drops(ctx, block.span)?;
+        if !drop_stmts.is_empty() {
+            if let Some(fe) = final_expr.take() {
+                if final_ty == Type::Unit {
+                    // 无值可保存：直接作为尾语句求值，再析构
+                    stmts.push(HirStmt::Expr(fe));
+                } else {
+                    // 有值：先求块值存入临时，再析构，最后以该临时作为块结果
+                    // （保证析构发生在块值计算**之后**，与 Rust 作用域语义一致）
+                    let tmp = ctx.fresh_temp();
+                    stmts.push(HirStmt::Let {
+                        name: tmp.clone(),
+                        init: fe,
+                        mutable: false,
+                    });
+                    final_expr = Some(HirExpr::Variable(tmp));
+                }
+            }
+            stmts.extend(drop_stmts);
+        }
+    }
     Ok((HirBlock { stmts, final_expr }, final_ty))
 }

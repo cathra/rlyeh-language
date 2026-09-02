@@ -46,7 +46,7 @@
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
-| **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | ⏳ 规划 | **复审补遗**：MutexGuard/arena/智能指针自动释放 |
+| **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | 🟢 完成（Q1–Q3） | **复审补遗**：MutexGuard/arena/智能指针自动释放；Q4 智能指针接入待办 |
 | **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：智能指针/MutexGuard 透传 |
 | **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：拷贝模型对齐 |
 | **0.2.0-T** | `?` 经 `From`/`Into` 错误自动转换 | P1-6 | [SH-P1-6](tasks/leaf/sh-p1-6-question-from.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：分层错误传播 |
@@ -163,7 +163,12 @@
 
 ### 3.17 Q `Drop` trait / 析构 / RAII（P0-8）
 `MutexGuard` 自动解锁、`arena` 自动释放需 `Drop`/RAII。
-- Q1 `Drop` 声明 → Q2 作用域尾插入 `drop` → Q3 字段递归 → Q4 智能指针接入；离开作用域自动释放。
+- ✅ Q1 `Drop` **内置** trait（`is_drop_trait`，同 `Any`，不依赖 `trait Drop` 声明）+ `has_drop_impl` 按类型查 `impl_defs`。复核修正：原注「需 A 泛型 trait 落地后接」非阻塞——`Drop` 是非泛型 trait，仅泛型类型（如 `Vec<T>`）的 Drop 才依赖 A。
+- ✅ Q2 作用域尾插入 `x.drop()`——**逆声明序**（新增 `Scope.decl_order`，`vars` 是 HashMap 无序）、仅拥有所有权绑定（引用跳过）、块值先求后析构；调用经 `check_stmt` 走常规方法解析，**零新增 IR**。复核修正：块尾注入机制本已存在（`rlyeh-desugar/src/guard.rs`），但按方法名 `lock_guard` 硬编码，本项将其泛化为按类型 / Drop impl。
+- ✅ Q3 字段级递归（`build_drop_glue`）：先 `T::drop()` 再逆字段序递归，仅具名 struct 参与，深度上限 4 防自引用无限展开。
+- ⏳ Q4 智能指针接入（`Box` 释放堆 / `Rc`/`Arc` 计数-1 / `Gc` 逃逸登记）——需先定堆释放与计数递减的调用约定，且泛型类型 Drop 依赖 A 阶段。
+- ⏳ Q-L1 差分对拍 Rust 参考。
+- **零影响存量**：无 `Drop` 实现的类型不产生任何语句，std 当前无 `Drop` 实现，故既有代码行为不变。
 > **关联文档**：[SH-P0-8 `Drop` / 析构 / RAII](tasks/leaf/sh-p0-8-drop.md)
 
 ### 3.18 R `Deref`/`DerefMut` 用户类型自动解引用（P1-4）
@@ -352,12 +357,13 @@ PoC 解析器 `(tok, rest)` 前置；类型层（`Type::Tuple`/单元 `()`）已
 
 ### 7.11 Q `Drop` trait / 析构 / RAII（SH-P0-8，🔴 高）
 MutexGuard 自动解锁、arena 自动释放需 `Drop`/RAII；Rlyeh 0.1.0 完全无析构机制。
-- **Q-M1（中）** `trait Drop { fn drop(&mut self); }` 声明 + `impl Drop for T`（复用 A 泛型 trait 落地后接）。
-- **Q-M2（中）** 作用域尾自动插入 `x.drop()`：仅拥有所有权栈变量、声明逆序、临时/借用跳过（与 G1 借用检查协同）。
-- **Q-M3（中）** 字段级递归 drop（struct 拥有字段如 `Vec` 内部堆指针）。
-- **Q-M4（中）** 智能指针接入（`Box` 释放堆、`Rc`/`Arc` 计数-1、`Gc` 逃逸登记）。
-- **Q-L1（低）** 差分对拍 Rust 参考。
-- **关键 checkpoint**：离开作用域自动释放（MutexGuard 解锁 / arena 释放）。
+- ✅ **Q-M1（中）** `Drop` 作为**内置** trait（`is_drop_trait` / `has_drop_impl`），不依赖 `trait Drop` 显式声明，也不依赖 A 阶段（`Drop` 为非泛型 trait）。
+- ✅ **Q-M2（中）** 作用域尾自动插入 `x.drop()`：逆声明序（`Scope.decl_order`）、仅拥有所有权绑定（引用跳过）、块值先求后析构、`Never` 结尾跳过。调用经 `check_stmt` 走常规方法解析，零新增 IR。
+- ✅ **Q-M3（中）** 字段级递归 `build_drop_glue`：先 `T::drop()` 再逆字段序递归；仅具名 struct 参与，`MAX_DROP_DEPTH = 4` 防自引用无限展开。
+- ⏳ **Q-M4（中）** 智能指针接入（`Box` 释放堆、`Rc`/`Arc` 计数-1、`Gc` 逃逸登记）——待办，需先定调用约定且泛型 Drop 依赖 A 阶段。
+- ⏳ **Q-L1（低）** 差分对拍 Rust 参考。
+- **关键 checkpoint**：`tests/run-pass/drop_raii.{rl,out}` 22 行输出全绿（逆声明序 / 嵌套块 / 块值时序 / 引用跳过 / 逆字段序 / drop glue / 多层嵌套）；全量 128 个测试目标全绿。
+- **已知限制**：不跟踪 move（被 return 移出的变量仍析构）；函数形参不析构（位于外层 fn 作用域）；`return`/`break` 提前退出路径不注入（同既有 `guard.rs` 约束）。
 > **关联文档**：[SH-P0-8 `Drop` / 析构 / RAII](tasks/leaf/sh-p0-8-drop.md)
 
 ---

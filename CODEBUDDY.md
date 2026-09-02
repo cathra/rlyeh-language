@@ -372,6 +372,47 @@ match s {
 > 备选（`_ | 1` 报错）且各备选须绑定同名同序变量；范围模式仅数值与字符、
 > 边界须为字面量。
 
+### 3.5.4 `Drop` trait / 析构 / RAII（SH-P0-8 ✅ Q1–Q3，2026-09-02）
+
+```rlyeh
+struct Resource { id: i64 }
+
+impl Drop for Resource {
+    fn drop(&mut self) { println(self.id); }   // 离开作用域时自动调用
+}
+
+// 逆字段序递归（drop glue）：自身无 Drop 的 struct 析构其拥有字段
+struct Outer { a: Resource, b: Resource }
+
+fn main() {
+    {
+        let a = Resource { id: 1 };
+        let b = Resource { id: 2 };
+        println(100);
+    }                          // 逆声明序析构：先 b(2)，再 a(1)
+
+    let v = { let r = Resource { id: 3 }; r.id };
+    println(v);                // 块值先求（3），再析构 r
+}
+```
+
+语义要点：
+- `Drop` 是**编译器内置 trait**（与 `Any` 同构），无需显式 `trait Drop` 声明；
+  `impl Drop for T` 即注册析构，`&mut self` 无需 `let mut` 绑定。
+- 析构在**块尾**按**逆声明序**插入，仅对拥有所有权的绑定（引用 `&T` 跳过）；
+  嵌套块按词法作用域各自在块尾析构。
+- **块值先求后析构**：有值块先把尾表达式存入临时，析构后再以该临时作为块结果。
+- **字段级 drop glue**：先 `T::drop()`，再按逆字段序递归析构拥有字段（仅具名
+  struct 参与，深度上限 4 防 `A{b:B}` / `B{a:A}` 自引用无限展开）。
+- 析构调用经常规方法解析（`x.drop()`），**零新增 IR 节点**；**无 `Drop` 实现的
+  类型不产生任何语句**，故存量代码零影响。
+
+> 已知限制：不跟踪 move（被 `return` 移出或转移给其他值的变量仍会被析构）；
+> 函数**形参不析构**（位于外层 fn 作用域）；`return` / `break` 提前退出路径不
+> 注入（与既有 `guard.rs` 同一约束）；**Q-M4 智能指针未接入**——`Box` / `Rc` /
+> `Arc` 尚无 `Drop`，故 `MutexGuard` 自动解锁仍走 `lock_guard` 方法名特判的
+> 既有注入路径。
+
 ### 3.6 模块系统
 
 ```rlyeh

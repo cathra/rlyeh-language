@@ -43,6 +43,114 @@ pub(crate) fn is_any_trait(name: &str) -> bool {
     name == "Any" || name.ends_with("::Any")
 }
 
+/// Q-M1（SH-P0-8）：析构 trait 标签（编译器内置，不依赖 trait 声明）。
+///
+/// 与 `Any` 同构——`impl Drop for T` 无论 `trait Drop` 是否显式声明都生效，
+/// 避免因「trait 未声明」阻断析构注册。`Drop` 的解析名可能带模块前缀
+/// （`collect.rs` 的路径解析），故两种形式都要匹配。
+pub(crate) fn is_drop_trait(name: &str) -> bool {
+    name == "Drop" || name.ends_with("::Drop")
+}
+
+/// Q-M1（SH-P0-8）：类型 `ty` 是否实现了 `Drop`（存在 `impl Drop for ty`）。
+///
+/// 仅按 trait 名 + 目标类型匹配，不要求 `drop` 方法已单态化——具体方法解析
+/// 交由 `check_method_call` 在块尾插入 `x.drop()` 时完成。
+pub(crate) fn has_drop_impl(ctx: &TypeContext, ty: &Type) -> bool {
+    ctx.impl_defs.iter().any(|d| {
+        d.trait_name.as_deref().is_some_and(is_drop_trait)
+            && crate::context::type_matches(d, ty)
+    })
+}
+
+/// Q-M2（SH-P0-8）：为当前作用域本层声明的变量生成块尾析构语句。
+///
+/// 规则：
+/// - **逆声明序**（与 Rust 一致：后声明者先析构）；
+/// - 仅**拥有所有权**的绑定——引用（`Ref`）不持有所有权，跳过；
+/// - 仅类型存在 `impl Drop for T` 的变量；**无 Drop 实现的类型完全不受影响**
+///   （当前 std 无任何 Drop 实现，故本机制对存量代码零影响）；
+/// - 析构调用经 `check_stmt` 走常规方法解析（`x.drop()`），故 `&mut self`
+///   借用、泛型单态化、trait 分派等全部复用既有路径，零新增 IR。
+///
+/// 已知限制（MVP）：不跟踪 move——被 `return` 移出或转移给其他值的变量仍会被
+/// 析构；函数**形参**在外层 fn 作用域，不在本层，故不析构。
+pub(crate) fn build_scope_drops(
+    ctx: &mut TypeContext,
+    span: Span,
+) -> Result<Vec<HirStmt>, TypeError> {
+    let decls = ctx.current_scope_decls();
+    let mut drops = Vec::new();
+    for (name, _slot, ty) in decls.into_iter().rev() {
+        let base = AstExpr::new(ExprKind::Ident(name), span);
+        build_drop_glue(ctx, &base, &ty, 0, &mut drops, span)?;
+    }
+    Ok(drops)
+}
+
+/// 字段析构递归深度上限。
+///
+/// 结构体内嵌自身（`struct A { b: B }` / `struct B { a: A }`）会让 drop glue
+/// 无限展开，故设上限；超出即停止（MVP 不处理递归类型的完整析构链）。
+const MAX_DROP_DEPTH: usize = 4;
+
+/// Q-M3（SH-P0-8）：为值表达式 `base` 生成类型 `ty` 的析构 glue（drop glue）。
+///
+/// 顺序与 Rust 一致：**先 `T::drop()`，再按字段逆序递归析构各字段**。
+/// 仅具名 struct 参与字段递归（枚举 / 元组 / 内建类型不在 `ctx.structs` 内，
+/// 自然终止）；引用不持有所有权，整支跳过。
+fn build_drop_glue(
+    ctx: &mut TypeContext,
+    base: &AstExpr,
+    ty: &Type,
+    depth: usize,
+    out: &mut Vec<HirStmt>,
+    span: Span,
+) -> Result<(), TypeError> {
+    if depth > MAX_DROP_DEPTH || matches!(ty, Type::Ref(..)) {
+        return Ok(());
+    }
+    // 1) 自身 Drop 实现
+    if has_drop_impl(ctx, ty) {
+        let call = AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: base.clone(),
+                method: "drop".to_string(),
+                args: Vec::new(),
+                trait_hint: None,
+            },
+            span,
+        );
+        let (hir_stmts, _) = crate::check_stmt::check_stmt(ctx, &AstStmt::Semi(call))?;
+        out.extend(hir_stmts);
+    }
+    // 2) 字段递归（drop glue）
+    let Type::Named(name, args) = ty else {
+        return Ok(());
+    };
+    let Some(def) = ctx.structs.get(name).cloned() else {
+        return Ok(());
+    };
+    let subst: HashMap<String, Type> = def
+        .type_params
+        .iter()
+        .cloned()
+        .zip(args.iter().cloned())
+        .collect();
+    for (fname, fty) in def.fields.iter().rev() {
+        let fty = crate::check_expr::util::substitute(fty, &subst);
+        let fexpr = AstExpr::new(
+            ExprKind::FieldAccess {
+                expr: base.clone(),
+                field: fname.clone(),
+            },
+            span,
+        );
+        build_drop_glue(ctx, &fexpr, &fty, depth + 1, out, span)?;
+    }
+    Ok(())
+}
+
 /// `&T → dyn Any` 强制转换（G-M2）。
 ///
 /// 与通用 `dyn Trait` 的区别：不查 trait 声明、不填充方法表——vtable 仅保留
