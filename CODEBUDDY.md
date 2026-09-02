@@ -882,15 +882,20 @@ fn main() {
 | `tools/rlyeh-fmt/src/lib.rs` | 1316 | `lib.rs` + `fmt_expr` + `fmt_pattern`（3 文件：762/362/211） | ✅ 已完成（2026-09-02） |
 | `crates/rlyeh-codegen/src/llvm.rs`（二次拆分） | 1068 | region 分支 → 既有 `llvm/llvm_region.rs`（361→492）；字段/索引/指针/解引用分支 → 新增 `llvm/llvm_field.rs`（543）；`llvm.rs` 461 | ✅ 已完成（2026-09-02） |
 
-**复现超限（2026-09-02 扫描，待拆分）**：以下 5 个文件再次越过 1000 行（多为后续特性累积），按「逐步拆分」原则逐项立项处理：
+**复现超限（2026-09-02 扫描 + 同日拆分完毕）**：以下 5 个文件曾再次越过 1000 行，已于同日按簇下沉至子模块，均已回归 ≤1000 行：
 
-| 文件 | 行数 | 建议切分方向 | 状态 |
-|------|:---:|------------|------|
-| `crates/rlyeh-typecheck/src/check_expr/toml.rs` | 1444 | 按 TOML 值/表/解析/序列化分簇 | ⏳ 待拆分 |
-| `crates/rlyeh-typecheck/src/check_expr/method.rs` | 1433 | 内建方法与 trait 方法分簇 | ⏳ 待拆分 |
-| `crates/rlyeh-driver/src/lib.rs`（二次超限） | 1208 | 再拆出独立子模块 | ⏳ 待拆分 |
-| `crates/rlyeh-typecheck/src/check_expr/construct.rs` | 1124 | 结构体/枚举/联合体构造分簇 | ⏳ 待拆分 |
-| `crates/rlyeh-typecheck/src/check_expr/mod.rs` | 1082 | 继续按职责下沉 | ⏳ 待拆分 |
+| 文件 | 拆分前 | 拆分后 | 状态 |
+|------|:---:|--------|------|
+| `crates/rlyeh-typecheck/src/check_expr/toml.rs` | 1444 | `toml.rs` 939 + `toml/try_parse` 241 + `toml/build` 283 | ✅ 已完成（2026-09-02） |
+| `crates/rlyeh-typecheck/src/check_expr/method.rs` | 1433 | `method.rs` 924 + `method/thread` 331 + `method/dyn_call` 196 | ✅ 已完成（2026-09-02） |
+| `crates/rlyeh-driver/src/lib.rs`（二次超限） | 1208 | `lib.rs` 546 + `link` 679 | ✅ 已完成（2026-09-02） |
+| `crates/rlyeh-typecheck/src/check_expr/construct.rs` | 1124 | `construct.rs` 606 + `construct/collection` 293 + `construct/string` 243 | ✅ 已完成（2026-09-02） |
+| `crates/rlyeh-typecheck/src/check_expr/mod.rs` | 1082 | `mod.rs` 595 + `ctrl` 515（`infer_expr` 尾部分支下沉） | ✅ 已完成（2026-09-02） |
+
+> 至此 `crates/`、`tools/`、`dagon/` 下已无超过 1000 行的 Rust 源文件
+> （2026-09-02 全量扫描确认）。`toml.rs` / `method.rs` 仍接近上限（939 / 924），
+> 二者主体各是一个大函数（`toml_parse_ast` / `check_method_call`），
+> 若后续继续增长应优先按阶段抽取而非整函数下沉。
 
 > **拆分规范**：保持语义等价；`mod`/`use` 改为子模块（`mod xxx;` + `use xxx::*`，子模块私有函数提升为 `pub(super)`/`pub(crate)`，对外 API 从 mod.rs 显式 re-export）；每个文件拆分后须通过全量回归（`rlyeh test` 194 用例 + `cargo test`）。新增代码一律不得再扩大超限文件。
 
