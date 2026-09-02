@@ -1,6 +1,6 @@
 //! 比较链（`0 < x < 10`）方向检查与展开。
 
-use rlyeh_ast::{AstExpr, CompareOp};
+use rlyeh_ast::{AstExpr, CompareOp, ExprKind, UnaryOp};
 use rlyeh_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirStmt, HirUnaryOp,
 };
@@ -128,9 +128,37 @@ pub(crate) fn check_comparison_chain(
         }
         // 其余聚合对象（结构体 / Vec 等）的 `==` / `!=`：MVP 仅 String 支持内容比较
         if matches!(op, CompareOp::Eq | CompareOp::Ne) && is_struct_object(ctx, &items[0].2) {
+            // SH-P1-2（0.2.0-C）：类型实现了 `PartialEq`（手写或 `#[derive(PartialEq)]`）
+            // 时，将 `a == b` / `a != b` desugar 为 `a.eq(&b)` / `!a.eq(&b)`（与 Rust 对齐）。
+            if has_partial_eq(ctx, &items[0].2) {
+                let recv = items[0].0.clone();
+                let arg = AstExpr::new(
+                    ExprKind::Unary {
+                        op: UnaryOp::AddrOf,
+                        operand: items[1].0.clone(),
+                    },
+                    span,
+                );
+                let method_ast = AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: recv,
+                        method: "eq".to_string(),
+                        args: vec![arg],
+                        trait_hint: None,
+                    },
+                    span,
+                );
+                let (eq_hir, _) = check_expr::infer_expr(ctx, &method_ast)?;
+                let hir = if op == CompareOp::Ne {
+                    HirExpr::Unary(HirUnaryOp::Not, Box::new(eq_hir))
+                } else {
+                    eq_hir
+                };
+                return Ok((hir, Type::Bool));
+            }
             return Err(TypeError::Unsupported {
                 what: format!(
-                    "{} 对象的 == / !=（MVP 阶段仅 String 支持内容相等比较）",
+                    "{} 对象的 == / !=（MVP 阶段仅 String 支持内容相等比较；为自定义结构体派生相等性请 #[derive(PartialEq)]）",
                     items[0].2
                 ),
                 span,
@@ -304,6 +332,16 @@ fn is_struct_object(ctx: &TypeContext, ty: &Type) -> bool {
         return ctx.lookup_struct(&full).is_some();
     }
     false
+}
+
+/// 类型是否实现了 `PartialEq`（`#[derive(PartialEq)]` 或手写 `impl PartialEq`）。
+///
+/// 用于结构体 `==` / `!=` 的 desugar（SH-P1-2，0.2.0-C）：有实现则落点为
+/// `a.eq(&b)`；否则保留「仅 String 支持内容相等比较」的错误。
+fn has_partial_eq(ctx: &TypeContext, ty: &Type) -> bool {
+    ctx.impl_defs
+        .iter()
+        .any(|d| d.trait_name.as_deref() == Some("PartialEq") && d.self_type == *ty)
 }
 
 /// 生成 String 内容相等的比较 HIR：`s1 == s2` →

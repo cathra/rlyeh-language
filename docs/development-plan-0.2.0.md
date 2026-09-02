@@ -32,7 +32,7 @@
 |------|------|----------|----------|------|------|------|
 | **0.2.0-A** | 泛型 trait/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-trait.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
 | **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 部分完成 | 嵌套模块（既有）+ `pub use`/组导入/glob 已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
-| **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | ⏳ 规划 | 消除 AST 样板 |
+| **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | ⏳ 规划 | 后端 assemble 自举 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | ⏳ 规划 | 运行时表达力地基 |
 | **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
@@ -81,7 +81,13 @@
 > **关联文档**：[SH-P1-3 嵌套模块系统](tasks/leaf/sh-p1-3-nested-module.md)
 
 ### 3.3 C trait derive 宏（P1-2）
-- C1 `Debug` / C2 `Clone` / C3 `PartialEq` / C4 derive 框架。扩展 `macro_rules!`（I1）为属性宏 + 编译期 trait 自动实现，消除 `derive`×70+ 样板。
+- C1 `Debug` / C2 `Clone` / C3 `PartialEq` / C4 derive 框架。**（🟢 2026-09-02 struct 核心落地）**
+  - 机制：derive 展开**零新增 IR 节点**——`expand_derives_for_struct`（`check_item/derive.rs`）为每个受支持 trait 合成 `AstImplBlock` 走既有 `collect_impl`，方法体调用点实例化。
+  - C2 `Clone`/`C3 `PartialEq` trait 在 `core.rl` 顶层新增；结构体 `==`/`!=` 经 `comparison.rs` desugar 为 `a.eq(&b)`。
+  - C1 `Debug` 复用 `fmt` 模块既有 trait，`dbg!`（`{:?}` 语义）输出 `Name { f: <Debug>, ... }`。
+  - C4：未知 derive 名（serde `Serialize`/`Deserialize`）宽松忽略，与既有行为兼容。
+  - 验证：新增 `derive_clone`/`derive_partialeq`/`derive_debug` run-pass（含 `.out`）；全量 `rlyeh test tests` **252/252 通过**。
+  - 已知限制：仅 struct（enum derive 待办）；泛型字段须自身实现对应 trait（MVP 未强制 bound）；char 字段 Debug 需 `fmt::Debug for char`（未提供）。
 > **关联文档**：[SH-P1-2 trait derive 宏](tasks/leaf/sh-p1-2-derive.md)
 
 ### 3.4 D 进程调用 / 外部工具链 FFI（P2-2）

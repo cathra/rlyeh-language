@@ -126,6 +126,19 @@ impl<T, E> Result<T, E> {
     }
 }
 
+// SH-P1-2（0.2.0-C）：derive 宏所依赖的 trait 声明。
+//
+// 编译器在 `#[derive(Clone/PartialEq)]` 处自动合成对应 `impl`（见
+// `rlyeh-typecheck` 的 derive 展开）；用户亦可直接手写
+// `impl Clone / PartialEq for T`。`Debug` trait 已在 `fmt` 模块声明
+// （`fmt::Debug`，供 `dbg!` / `{:?}` 引擎接入）。
+trait Clone {
+    fn clone(&self) -> Self;
+}
+trait PartialEq {
+    fn eq(&self, other: &Self) -> bool;
+}
+
 // 动态数组（Vec<T>）
 //
 // - `data` 字段类型 `[T; 0]`：约定长度 0 = 运行时长度（动态数组指针）

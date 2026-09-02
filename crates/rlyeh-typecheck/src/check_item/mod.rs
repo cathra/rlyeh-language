@@ -82,7 +82,10 @@ fn collect_item_decls(
     prefix: &str,
 ) -> Result<(), TypeError> {
     match item {
-        AstItem::StructDecl(s) => collect_struct(ctx, s, prefix)?,
+        AstItem::StructDecl(s) => {
+            collect_struct(ctx, s, prefix)?;
+            expand_derives_for_struct(ctx, s, prefix)?;
+        }
         AstItem::FnDecl(f) => {
             if !f.generics.is_empty() {
                 // 泛型函数注册为模板，调用点按实参实例化
@@ -445,10 +448,12 @@ pub(crate) fn check_item(
 mod collect;
 mod actor;
 mod fn_sig;
+mod derive;
 
 use collect::*;
 use actor::*;
 use fn_sig::*;
+use derive::expand_derives_for_struct;
 
 // 对外 API：被 lib.rs / check_expr / check_stmt 经 `crate::check_item::` 访问
 pub use fn_sig::collect_fn_signatures;
