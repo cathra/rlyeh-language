@@ -1,5 +1,6 @@
-// V5d+ HashMap 按键集合运算符糖（2026-09-02）：`|`=并集 `&`=交集
-// 对标 Python dict 合并：`a | b` 冲突键取 b（右操作数）的值；`a & b` 值取 a（左操作数）。
+// V5d+ HashMap 按键集合运算符糖（2026-09-02）：`|`=并集 `&`=交集 `-`=差集 `^`=对称差
+// 对标 Python dict 合并：`a | b` 冲突键取 b（右操作数）的值；`a & b`、`a - b` 值取 a
+// （左操作数）；`a ^ b` 各方独有键取各自的值。
 fn main() {
     // 并集 `|`：冲突键（3）取右操作数 b 的值（300），其余按存在性并入
     let mut a: HashMap<i64, i64> = HashMap::new();
@@ -36,4 +37,23 @@ fn main() {
     n.insert(5, 50); n.insert(6, 60);
     let un = m | n;
     println(un.len());           // 4
+
+    // 差集 `-`：仅保留 a 独有键（1,2），值取左操作数 a
+    let mut d1: HashMap<i64, i64> = HashMap::new();
+    d1.insert(1, 10); d1.insert(2, 20); d1.insert(3, 30);
+    let mut d2: HashMap<i64, i64> = HashMap::new();
+    d2.insert(3, 300); d2.insert(4, 40);
+    let df = d1 - d2;
+    println(df.len());           // 2  (a={1,2,3}, b={3,4} → a-b={1,2})
+    println(df.get(1).unwrap()); // 10 (a 的值)
+
+    // 对称差 `^`：仅存在于一方的键（1,2,4）；a 独有取 a 值、b 独有取 b 值
+    let mut s1: HashMap<i64, i64> = HashMap::new();
+    s1.insert(1, 10); s1.insert(2, 20); s1.insert(3, 30);
+    let mut s2: HashMap<i64, i64> = HashMap::new();
+    s2.insert(3, 300); s2.insert(4, 40);
+    let sy = s1 ^ s2;
+    println(sy.len());           // 3  ({1,2,4})
+    println(sy.get(1).unwrap()); // 10 (a 的值)
+    println(sy.get(4).unwrap()); // 40 (b 的值)
 }

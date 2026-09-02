@@ -2250,6 +2250,42 @@ impl<K, V> HashMap<K, V> {
         }
         r
     }
+    // 差集 `a - b`：键集合 A - B（仅保留存在于 a 但不存在于 b 的键）；值取左操作数
+    // a（结果 ⊆ a，自然保留 a 的值）。返回新 map。
+    fn difference(&self, other: &HashMap<K, V>) -> HashMap<K, V> {
+        let mut r: HashMap<K, V> = HashMap::new();
+        let ka = self.keys();
+        let mut i = 0;
+        while i < ka.len() {
+            if !other.contains_key(ka[i]) {
+                r.insert(ka[i], self.get(ka[i]).unwrap());
+            }
+            i = i + 1;
+        }
+        r
+    }
+    // 对称差 `a ^ b`：键集合 (A - B) ∪ (B - A)（仅存在于一方、不共享的键）；a 独有键
+    // 取 a 的值，b 独有键取 b 的值。返回新 map。
+    fn symmetric_difference(&self, other: &HashMap<K, V>) -> HashMap<K, V> {
+        let mut r: HashMap<K, V> = HashMap::new();
+        let ka = self.keys();
+        let mut i = 0;
+        while i < ka.len() {
+            if !other.contains_key(ka[i]) {
+                r.insert(ka[i], self.get(ka[i]).unwrap());
+            }
+            i = i + 1;
+        }
+        let kb = other.keys();
+        let mut j = 0;
+        while j < kb.len() {
+            if !self.contains_key(kb[j]) {
+                r.insert(kb[j], other.get(kb[j]).unwrap());
+            }
+            j = j + 1;
+        }
+        r
+    }
 }
 
 // ===== V5 新集合（2026-08-26）：VecDeque / HashSet / BTreeMap =====
@@ -2442,6 +2478,14 @@ impl<K, V> BitOr for HashMap<K, V> {
 impl<K, V> BitAnd for HashMap<K, V> {
     type Output = HashMap<K, V>;
     fn bitand(self, other: HashMap<K, V>) -> HashMap<K, V> { self.intersection(&other) }
+}
+impl<K, V> Sub for HashMap<K, V> {
+    type Output = HashMap<K, V>;
+    fn sub(self, other: HashMap<K, V>) -> HashMap<K, V> { self.difference(&other) }
+}
+impl<K, V> BitXor for HashMap<K, V> {
+    type Output = HashMap<K, V>;
+    fn bitxor(self, other: HashMap<K, V>) -> HashMap<K, V> { self.symmetric_difference(&other) }
 }
 // 关系运算符 `<`/`>` 子集/超集（V5d+，2026-09-02）：走比较链独立路径，经运算符
 // 重载降级为集合关系命名方法（与 Python `set` 语义一致：`<`=真子集 `<=`=子集
