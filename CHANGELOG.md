@@ -39,6 +39,8 @@
 
 - **HashSet 只读引用迭代器 `iter`（V5c，2026-09-02）**：`HashSet<T>` 新增 `iter() -> HashSetIter<T>` 零拷贝引用迭代器——`HashSetIter` 持 `states`/`items` 裸指针 + 游标 + 容量，`next() -> Option<&T>` 跳过空/墓碑槽（`states != 1`）、返回指向原 items 真实槽的元素引用；复用 `HashMapIter`/`IterRef` 同式裸指针视图，接入 `for` 循环（inherent `next` 检测，无需 `Iterator` trait）。至此 `std-lib.md §3.4` 标注的 HashSet MVP 限制仅余键哈希范围（`i64`/`String`）。验收：`tests/run-pass/hashset_iter.{rl,out}`（规模 `3` / 求和 `60` / 引用解引用命中 `true` / 空集合迭代 `0` 次）；全量 `rlyeh test tests` 257/257 通过。
 
+- **运算符重载（语言机制）+ 集合运算符糖（V5d，2026-09-02）**：交付通用运算符重载——`check_expr/binary.rs` 新增 `overload_method(BinaryOp)`（`Add→add`…`BitOr→bitor`…`Mod→rem`；`&&`/`||` 短路不可重载），`check_expr/mod.rs` 的 `Binary` 派发在内建 `check_binary` 失败处加回退：可重载运算符降级为 `left.<method>(right)` 方法调用（复用既有 method-call 全链路，**codegen 零改动**）；`core.rl` 新增 10 个运算符 trait（`Add`/`Sub`/`Mul`/`Div`/`Rem`/`BitAnd`/`BitOr`/`BitXor`/`Shl`/`Shr`，含 `type Output` 关联类型，对标 P009 设计稿），并为 `HashSet<T>` 实现 `BitOr`/`BitAnd`/`Sub`/`BitXor`（降级到 V5b 的 `union`/`intersection`/`difference`/`symmetric_difference`）。范围：仅 `BinaryOp`（`+ - * / % & | ^ << >>`）可重载；逻辑 `&&`/`||` 与比较链 `<`/`>` 等走独立路径（集合子集/超集仍以命名方法 `is_subset`/`is_superset` 表达）。验收：`tests/run-pass/hashset_ops_symbol.{rl,out}`（`| & - ^` 集合运算规模 4/1/2/3 + 自定义 `Point` 的 `+` 算术重载 11/22）；全量 `rlyeh test tests` 258/258 通过。
+
 ## [0.1.0] 补充记录（2026-08-23 开发迭代，随 v0.1.0 首发）
 
 ### 新增

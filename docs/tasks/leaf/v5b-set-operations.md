@@ -34,7 +34,7 @@
 
 ### 建议 Rlyeh API（命名方法优先，运算符糖可选）
 
-Rlyeh 现有容器 API 均为命名方法（如 `Vec::push`、`HashSet::insert`），运算符重载机制尚待确认；本期以**命名方法**为一级 API（与 Python 命名方法一致），运算符糖（`|`/`&`/`-`/`^`/`<`/`>` 作集合语义）列为可选增强：
+Rlyeh 现有容器 API 均为命名方法（如 `Vec::push`、`HashSet::insert`）。运算符重载机制已由 **V5d（2026-09-02）** 落地（通用语言机制，对标 P009 设计稿）；其中 `|`/`&`/`-`/`^` 集合语义由 V5d 实现（降级为下列集合代数方法），`<`/`>`（子集/超集）因走比较链独立路径仍暂以命名方法 `is_subset`/`is_superset` 表达：
 
 ```rlyeh
 impl<T> HashSet<T> {
@@ -70,7 +70,7 @@ impl<T> HashSet<T> {
 ## 约束 / 已知限制
 
 - **元素类型**：受 `hash_value` 内建范围限制，仅 `i64` / `String` 可作 `T`（与现有 HashSet 一致）。
-- **运算符糖**：`|`/`&`/`-`/`^`/`<`/`>` 作集合语义需语言层运算符重载支持，本期仅落地命名方法；多集合参数（Python `a.union(b, c)`）亦因可变参数未支持，改以链式 `a.union(b).union(c)` 表达。
+- **运算符糖**：`|`/`&`/`-`/`^` 集合语义已由 **V5d** 经运算符重载实现（`A | B`=`union`/`A & B`=`intersection`/`A - B`=`difference`/`A ^ B`=`symmetric_difference`）；`<`/`>`（子集/超集）因走比较链独立路径，本期仍以命名方法 `is_subset`/`is_superset` 表达（后续可扩展比较链重载）。多集合参数（Python `a.union(b, c)`）因可变参数未支持，命名方法改以链式 `a.union(b).union(c)` 表达。
 - **借用迭代器**：`iter -> Iter<'_, T>` 仍规划中；本任务用 `elements()` 返回的 `Vec<T>` 遍历即可实现全部运算。
 
 ## 验证

@@ -269,9 +269,26 @@ pub(crate) fn infer_expr(
                 }));
                 return Ok((hir, l_ty));
             }
-            let (hir_op, result_ty) = check_binary(*op, &l_ty, &r_ty, span)?;
-            let hir = HirExpr::Binary(hir_op, Box::new(l_hir), Box::new(r_hir));
-            Ok((hir, result_ty))
+            match check_binary(*op, &l_ty, &r_ty, span) {
+                Ok((hir_op, result_ty)) => Ok((
+                    HirExpr::Binary(hir_op, Box::new(l_hir), Box::new(r_hir)),
+                    result_ty,
+                )),
+                Err(builtin_err) => {
+                    // V5d（2026-09-02）：运算符重载回退——内建路径失败且为可重载
+                    // 二元运算符时，降级为 `left.<method>(right)` 方法调用
+                    //（复用既有 method-call 全链路，codegen 无需改动）。重载成功则
+                    // 采用；重载失败（无对应 trait impl 等）则维持内建错误，保留既有
+                    // 诊断、不破坏存量行为。
+                    if let Some(method) = overload_method(*op) {
+                        let args = [right.clone()];
+                        if let Ok((hir, ty)) = check_method_call(ctx, left, method, &args, None, span) {
+                            return Ok((hir, ty));
+                        }
+                    }
+                    Err(builtin_err)
+                }
+            }
         }
         ExprKind::Unary { op, operand } => {
             let (o_hir, o_ty) = infer_expr(ctx, operand)?;

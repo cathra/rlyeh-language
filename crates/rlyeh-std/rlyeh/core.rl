@@ -765,6 +765,24 @@ trait Iterator {
     }
 }
 
+// ===== V5d 运算符重载 traits（2026-09-02） =====
+// 对标 P009 设计稿：每个可重载二元运算符对应一个 trait + `type Output` 关联类型
+// + `fn <op>(self, other: Self) -> Self::Output`。`a OP b` 由 typecheck 在内建
+// 路径失败后降级为 `a.<op>(b)` 方法调用（复用既有 method-call 全链路，codegen
+// 无需改动）。仅 BinaryOp 运算符可重载（逻辑 &&/|| 短路、比较链 < > 等走独立
+// 路径，本期不重载）。方法名对齐 Rust std::ops（add/sub/mul/div/rem/bitand/bitor/
+// bitxor/shl/shr）。
+trait Add { type Output; fn add(self, other: Self) -> Self::Output; }
+trait Sub { type Output; fn sub(self, other: Self) -> Self::Output; }
+trait Mul { type Output; fn mul(self, other: Self) -> Self::Output; }
+trait Div { type Output; fn div(self, other: Self) -> Self::Output; }
+trait Rem { type Output; fn rem(self, other: Self) -> Self::Output; }
+trait BitAnd { type Output; fn bitand(self, other: Self) -> Self::Output; }
+trait BitOr { type Output; fn bitor(self, other: Self) -> Self::Output; }
+trait BitXor { type Output; fn bitxor(self, other: Self) -> Self::Output; }
+trait Shl { type Output; fn shl(self, other: Self) -> Self::Output; }
+trait Shr { type Output; fn shr(self, other: Self) -> Self::Output; }
+
 // ===== V3-C 包装迭代器（2026-08-27）：惰性适配器基础设施 =====
 // 泛型包装迭代器持底层迭代器 `I` + 参数槽，`next()` 实现变换逻辑。
 // MVP 元素固定 i64（`type Item = i64`，与 V3-A3 默认方法一致）；泛型 `I::Item`
@@ -2352,6 +2370,28 @@ impl<T> HashSetIter<T> {
         }
         Option::None
     }
+}
+
+// ===== V5d HashSet 运算符糖（2026-09-02） =====
+// `|`/`&`/`-`/`^` 经运算符重载降级为集合代数方法（V5b）。`self` 按值消费（与
+// Rust std::ops 一致），内部 `union`/`intersection`/`difference`/`symmetric_difference`
+// 经 `&self` 自动借用读原集、返回全新集合。关系运算符 `<`/`>`（子集/超集）走
+// 比较链独立路径，本期仍以命名方法 `is_subset`/`is_superset` 表达。
+impl<T> BitOr for HashSet<T> {
+    type Output = HashSet<T>;
+    fn bitor(self, other: HashSet<T>) -> HashSet<T> { self.union(&other) }
+}
+impl<T> BitAnd for HashSet<T> {
+    type Output = HashSet<T>;
+    fn bitand(self, other: HashSet<T>) -> HashSet<T> { self.intersection(&other) }
+}
+impl<T> Sub for HashSet<T> {
+    type Output = HashSet<T>;
+    fn sub(self, other: HashSet<T>) -> HashSet<T> { self.difference(&other) }
+}
+impl<T> BitXor for HashSet<T> {
+    type Output = HashSet<T>;
+    fn bitxor(self, other: HashSet<T>) -> HashSet<T> { self.symmetric_difference(&other) }
 }
 
 // ===== HashSet<T>：开放寻址哈希集合（V5） =====
