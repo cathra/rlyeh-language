@@ -27,7 +27,7 @@ pub fn collect_fn_signatures(
             AstItem::TraitDecl(t) => collect_trait(&mut ctx, t, "")?,
             AstItem::ImplBlock(imp) => collect_impl(&mut ctx, imp, "")?,
             AstItem::ModDecl(m) => collect_mod_types(&mut ctx, m)?,
-            AstItem::UseDecl(u) => register_use(&mut ctx, u)?,
+            AstItem::UseDecl(u) => register_use(&mut ctx, u, "")?,
             _ => {}
         }
     }

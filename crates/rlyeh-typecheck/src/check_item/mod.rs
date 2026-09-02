@@ -148,7 +148,7 @@ fn collect_item_decls(
             }
             ctx.module_prefix = old_prefix;
         }
-        AstItem::UseDecl(u) => register_use(ctx, u)?,
+        AstItem::UseDecl(u) => register_use(ctx, u, prefix)?,
         // 收集阶段注册模块常量（供函数体 / 其它 const 引用）
         AstItem::ConstDecl(c) => {
             let (value, ty) = infer_expr(ctx, &c.value)?;
@@ -183,30 +183,108 @@ pub(crate) fn type_to_extern_name(ty: &Type) -> String {
     }
 }
 
-/// 注册 use 导入别名（`use path::to::item [as alias];`）。
+/// 注册 use 导入别名（`use path::to::item [as alias];` / 组导入 `a::{b, c}` /
+/// glob 导入 `a::*` / `pub use` 重导出）。
 ///
-/// MVP 限制：路径从根开始解析；暂不支持 glob 导入（`use a::*;`）。
-fn register_use(ctx: &mut TypeContext, u: &AstUseDecl) -> Result<(), TypeError> {
+/// `prefix` 为当前模块前缀（`mod math` 内为 `"math"`），用于 `pub use` 重导出时
+/// 登记 `prefix::local → 目标全名`，使外部模块 `import math::local` 可经
+/// `resolve_full_name` 的别名链解析到真实符号。
+fn register_use(
+    ctx: &mut TypeContext,
+    u: &AstUseDecl,
+    prefix: &str,
+) -> Result<(), TypeError> {
     // `r#` 前缀（关键字转义 / 根命名空间显式引用标记）在符号注册时归一化，
     // 与 extern 声明注册名保持一致（`use r#rename` → 目标 "rename"）。
     let norm = |s: &str| s.strip_prefix("r#").unwrap_or(s).to_string();
+    // 登记一条 `local → full`；`pub` 时额外登记 `prefix::local → full` 重导出。
+    let register_one = |ctx: &mut TypeContext, local: String, full: String, prefix: &str, is_pub: bool| {
+        ctx.insert_use_alias(local.clone(), full.clone());
+        if is_pub {
+            ctx.insert_use_alias(full_name(prefix, &local), full);
+        }
+    };
+    if let Some(members) = &u.group {
+        let base = u
+            .path
+            .iter()
+            .map(|s| norm(s))
+            .collect::<Vec<String>>()
+            .join("::");
+        for (mname, malias) in members {
+            let m = norm(mname);
+            let full = format!("{base}::{m}");
+            let local = match malias {
+                Some(a) => norm(a),
+                None => m.clone(),
+            };
+            register_one(ctx, local, full, prefix, u.is_pub);
+        }
+        return Ok(());
+    }
+    if u.path.last().map(String::as_str) == Some("*") {
+        // glob 导入 `a::*`：枚举 `a` 的直接子项（不含 `a::b::` 嵌套），逐一定位全名。
+        let base = u
+            .path
+            .iter()
+            .take(u.path.len() - 1)
+            .map(|s| norm(s))
+            .collect::<Vec<String>>()
+            .join("::");
+        let prefix2 = base.clone();
+        let mut members: Vec<String> = Vec::new();
+        for k in ctx.fn_signatures.keys() {
+            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
+                if !rest.contains("::") {
+                    members.push(rest.to_string());
+                }
+            }
+        }
+        for k in ctx.structs.keys() {
+            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
+                if !rest.contains("::") {
+                    members.push(rest.to_string());
+                }
+            }
+        }
+        for k in ctx.enum_defs.keys() {
+            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
+                if !rest.contains("::") {
+                    members.push(rest.to_string());
+                }
+            }
+        }
+        for k in ctx.constants.keys() {
+            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
+                if !rest.contains("::") {
+                    members.push(rest.to_string());
+                }
+            }
+        }
+        for k in ctx.actors.keys() {
+            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
+                if !rest.contains("::") {
+                    members.push(rest.to_string());
+                }
+            }
+        }
+        for m in members {
+            let full = format!("{base}::{m}");
+            register_one(ctx, m.clone(), full, prefix, u.is_pub);
+        }
+        return Ok(());
+    }
     let path = u
         .path
         .iter()
         .map(|s| norm(s))
         .collect::<Vec<String>>()
         .join("::");
-    if u.path.last().map(String::as_str) == Some("*") {
-        return Err(TypeError::Unsupported {
-            what: "glob 导入 use a::*".to_string(),
-            span: u.span,
-        });
-    }
     let local = match &u.alias {
         Some(a) => norm(a),
         None => u.path.last().map(|s| norm(s)).unwrap_or_default(),
     };
-    ctx.insert_use_alias(local, path);
+    register_one(ctx, local, path, prefix, u.is_pub);
     Ok(())
 }
 

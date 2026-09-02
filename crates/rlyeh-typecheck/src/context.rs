@@ -377,19 +377,32 @@ impl TypeContext {
 
     /// 将局部名解析为完整符号名。
     ///
-    /// 优先级：直接存在的符号名（函数 / 结构体 / actor / 常量 / 枚举）→ use 导入别名。
+    /// 优先级：直接存在的符号名（函数 / 结构体 / actor / 常量 / 枚举）→ use 导入别名
+    /// （含 `pub use` 重导出的多级链，如 `c → M::c → a::b`，经 `use_aliases` 传递追踪
+    /// 直至命中真实符号或回退模块前缀；`visited` 防环）。
     /// 无法解析时返回 `None`（由调用方决定如何报错）。
     pub fn resolve_full_name(&self, name: &str) -> Option<String> {
-        if self.structs.contains_key(name)
-            || self.fn_signatures.contains_key(name)
-            || self.actors.contains_key(name)
-            || self.constants.contains_key(name)
-            || self.enum_defs.contains_key(name)
-        {
-            return Some(name.to_string());
-        }
-        if let Some(a) = self.use_aliases.get(name) {
-            return Some(a.clone());
+        let is_direct = |k: &str| {
+            self.structs.contains_key(k)
+                || self.fn_signatures.contains_key(k)
+                || self.actors.contains_key(k)
+                || self.constants.contains_key(k)
+                || self.enum_defs.contains_key(k)
+                || self.fn_templates.contains_key(k)
+        };
+        let mut current = name.to_string();
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        loop {
+            if is_direct(&current) {
+                return Some(current);
+            }
+            match self.use_aliases.get(&current) {
+                Some(next) if !visited.contains(next) => {
+                    visited.insert(next.clone());
+                    current = next.clone();
+                }
+                _ => break,
+            }
         }
         // Q3a 修复：模块内 trait/impl 方法签名在收集阶段解析参数类型时 use 段
         // 尚未注册，模块内短名须按 `module::Name` 前缀定位（如 `fmt/module.rl` 中
@@ -398,12 +411,7 @@ impl TypeContext {
         // （`fn encode(m: Msg)`）与 match 模式解析失败。
         if !name.contains("::") && !self.module_prefix.is_empty() {
             let full = format!("{}::{}", self.module_prefix, name);
-            if self.structs.contains_key(&full)
-                || self.fn_signatures.contains_key(&full)
-                || self.actors.contains_key(&full)
-                || self.constants.contains_key(&full)
-                || self.enum_defs.contains_key(&full)
-            {
+            if is_direct(&full) {
                 return Some(full);
             }
         }

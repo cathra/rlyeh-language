@@ -31,7 +31,7 @@
 | 阶段 | 主题 | 对应缺口 | 关联文档 | 风险 | 状态 | 说明 |
 |------|------|----------|----------|------|------|------|
 | **0.2.0-A** | 泛型 trait/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-trait.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
-| **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | ⏳ 规划 | 大型 crate 组织 |
+| **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 部分完成 | 嵌套模块（既有）+ `pub use`/组导入/glob 已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
 | **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | ⏳ 规划 | 消除 AST 样板 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | ⏳ 规划 | 后端 assemble 自举 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | ⏳ 规划 | 运行时表达力地基 |
@@ -75,7 +75,9 @@
 > **关联文档**：[SH-P1-1 泛型 trait/impl 完整化](tasks/leaf/sh-p1-1-generic-trait.md)
 
 ### 3.2 B 嵌套模块系统（P1-3）
-- B1 嵌套模块 / B2 `pub use` / B3 `super`/`crate::` / B4 可见性细化。补齐层级化命名空间（见 `docs/guide/13-references-limits.md` §模块）。
+- B1 嵌套模块（**既有** ✅，内联 + 多文件）/ B2 `pub use` 重导出（✅ 2026-09-02）/ 组导入 `import a::{b,c}`（✅ 2026-09-02）/ glob 导入 `import a::*`（✅ 2026-09-02）。
+- **B3 `super`/`crate::` 相对路径：排除**。依据 `docs/module-system.md` v1.1 扁平名字空间决策，路径首段恒为模块名，现实行 `模块名::Item` 编码，不引入 `crate::`/`super::`/`self::`。
+- **B4 模块级可见性（默认私有 + `pub` 校验）：暂缓**。当前 std 全量依赖"跨模块全部可达"，启用可见性需先为 std 全部跨模块引用补齐 `pub`，风险高、易引发大范围回归。
 > **关联文档**：[SH-P1-3 嵌套模块系统](tasks/leaf/sh-p1-3-nested-module.md)
 
 ### 3.3 C trait derive 宏（P1-2）

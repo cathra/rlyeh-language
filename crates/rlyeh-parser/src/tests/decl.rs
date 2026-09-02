@@ -82,3 +82,33 @@ fn test_use_and_mod() {
     assert_eq!(m.name, "m");
     assert_eq!(m.items.len(), 1);
 }
+
+#[test]
+fn test_use_group_and_pub() {
+    // 0.2.0-B-1/B-2：组导入与 `pub use` 重导出的 AST 形状。
+    // `pub import a::{b, c as d};` → path=["a"], group=[("b",None),("c",Some("d"))], is_pub=true
+    let program = parse_ok("pub import a::{b, c as d};");
+    let AstItem::UseDecl(u) = &program.items[0] else {
+        panic!();
+    };
+    assert!(u.is_pub);
+    assert_eq!(u.path, &["a".to_string()]);
+    assert_eq!(
+        u.group,
+        Some(vec![
+            ("b".to_string(), None),
+            ("c".to_string(), Some("d".to_string()))
+        ])
+    );
+    assert_eq!(u.alias, None);
+
+    // 简单导入仍保持 path 全路径 + 可选 alias，is_pub=false
+    let program2 = parse_ok("import a::b as c;");
+    let AstItem::UseDecl(u2) = &program2.items[0] else {
+        panic!();
+    };
+    assert!(!u2.is_pub);
+    assert_eq!(u2.path, &["a".to_string(), "b".to_string()]);
+    assert_eq!(u2.alias.as_deref(), Some("c"));
+    assert_eq!(u2.group, None);
+}

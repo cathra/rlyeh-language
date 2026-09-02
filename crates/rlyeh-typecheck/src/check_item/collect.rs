@@ -357,7 +357,7 @@ pub(crate) fn collect_mod_types_inner(
             AstItem::TraitDecl(t) => collect_trait(ctx, t, &new_prefix)?,
             AstItem::ImplBlock(imp) => collect_impl(ctx, imp, &new_prefix)?,
             AstItem::ModDecl(inner_mod) => collect_mod_types_inner(ctx, inner_mod, &new_prefix)?,
-            AstItem::UseDecl(u) => register_use(ctx, u)?,
+            AstItem::UseDecl(u) => register_use(ctx, u, prefix)?,
             _ => {}
         }
     }

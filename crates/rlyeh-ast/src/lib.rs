@@ -245,10 +245,14 @@ pub struct AstModDecl {
 /// use 导入。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstUseDecl {
-    /// 导入路径（`use a::b::c;` → `["a", "b", "c"]`）
+    /// 导入路径前缀（`use a::b::c;` → `["a", "b", "c"]`；组导入 `a::{b, c}` → `["a"]`）
     pub path: Vec<String>,
-    /// 重命名别名（`as alias`）
+    /// 重命名别名（`as alias`，仅简单导入）
     pub alias: Option<String>,
+    /// 组导入成员（`import a::{b, c as d}` → `Some([("b", None), ("c", Some("d"))])`）
+    pub group: Option<Vec<(String, Option<String>)>>,
+    /// 是否为 `pub`（重导出，对外部模块可见）
+    pub is_pub: bool,
     /// 源码位置
     pub span: Span,
 }

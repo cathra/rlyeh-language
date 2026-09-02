@@ -36,9 +36,9 @@ pub(super) fn resolve_callable(ctx: &TypeContext, name: &str) -> String {
             return full;
         }
     }
-    ctx.use_aliases
-        .get(name)
-        .cloned()
+    // 经 use 别名（含 `pub use` 重导出的多级链，如 `r → outer::revealed →
+    // inner::secret`）传递追踪到完整符号名；`resolve_full_name` 已做传递解析。
+    ctx.resolve_full_name(name)
         .unwrap_or_else(|| name.to_string())
 }
 

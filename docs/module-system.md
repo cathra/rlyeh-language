@@ -37,9 +37,9 @@
 | 文本级模块展开 | ✅ | `rlyeh-driver/src/module.rs` 递归替换 `module name;` → 内联子模块源码 |
 | 循环引用检测 | ✅ | 文本加载期 visited 集合 |
 | 可见性控制 | 🔧 | `pub` 有语法，**无模块级可见性检查**（扁平名字空间，全部可达） |
-| `import a::{b, c}` 组导入 | 📋 | EBNF 已有（§2.2 `ImportTree ::= Path ':' ':' '{' ImportList '}'`），parser 未实现 |
-| `import a::*` glob 导入 | 📋 | parse 接受末段 `*`，typecheck 报 Unsupported |
-| `pub import` 再导出 | 📋 | 未实现 |
+| `import a::{b, c}` 组导入 | ✅ | 2026-09-02 实现（`parse_use` 组解析 + `register_use` 逐成员登记） |
+| `import a::*` glob 导入 | ✅ | 2026-09-02 实现（`register_use` 枚举模块直接子项） |
+| `pub import` 再导出 | ✅ | 2026-09-02 实现（`is_pub` 登记 `prefix::local → 目标全名`，`resolve_full_name` 传递追踪链） |
 | 外部包依赖编译 | 📋 | dagon 已能 resolve/lock，但 `rlyeh build` 未注入依赖模块路径 |
 
 **现有实现要点**（供设计对齐）：
@@ -139,7 +139,7 @@ Visibility  ::= 'pub'
 1. **本地作用域**：函数参数 / 局部绑定 / `for` 模式（现有 ✅）。
 2. **当前模块符号与直接 `import` 别名**（现有 ✅）。
 3. **模块名路径**：路径首段查扁平模块名空间，命中则逐段下钻（`模块名::子模块::item`，现有 `module_prefix` 拼接，扩展为名字空间表查找）；未命中 → 步骤 4。
-4. **glob 注入**（📋）：`import m::*` 在当前模块注册 m 的全部可见符号；与显式符号冲突时显式优先（glob 不遮蔽显式绑定）。
+4. **glob 注入**（✅）：`import m::*` 在当前模块注册 m 的全部可见符号；与显式符号冲突时显式优先（glob 不遮蔽显式绑定）。
 5. **未找到** → 报 `NameNotFound`（给出候选：拼写相近符号 + 依赖未声明提示）。
 
 > 注意：无 `crate` / `super` / `self` 前缀分支——路径首段就是模块名，扁平解析，无相对层级。
@@ -227,7 +227,7 @@ rlyeh build 时：
 | 阶段 | 内容 | 主要改动 | 验收 |
 |------|------|----------|------|
 | **P0 关键字更名** | `mod` → `module`、`use` → `import` 全链路迁移（✅ 2026-08-25 已随本设计落地） | lexer 关键字表 / driver 展开 / std / examples / tests / docs | 全量测试回归通过 |
-| **P1 语法补齐** | 组导入 / glob / `pub import` / `pub module` | parser（parse_module / parse_import）+ AST + typecheck 路径解析 | 全部形态可解析、可 typecheck、可生成可运行代码 |
+| **P1 语法补齐** | 组导入 / glob / `pub import`（✅ 2026-09-02）· `pub module`（⏳ 未实现） | parser（parse_module / parse_import）+ AST + typecheck 路径解析 | 组/glob/pub-import 全部形态可解析、可 typecheck、可生成可运行代码 |
 | **P2 可见性** | 默认私有 + `pub` 检查（仅两档） | typecheck 可见性表 + 检查器 | 私有访问报错；`tests/compile-fail` 用例通过 |
 | **P3 编译模型** | 模块图编译 + 模块接口缓存 + 增量 | `rlyeh-driver` module.rs 重构 + incremental 扩展 | 模块级增量生效；环形模块报错 |
 | **P4 包集成** | dagon 依赖注入编译 + 依赖命名空间 | dagon build + driver `--dep-root` | `rlyeh build` 直接编译含第三方依赖的项目 |

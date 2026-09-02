@@ -565,12 +565,16 @@ impl<'src> Parser<'src> {
         })
     }
 
-    /// use 导入：`use path::to::item [as alias];`（末段允许 `*` glob）
-    pub(crate) fn parse_use(&mut self) -> Result<AstUseDecl, ParseError> {
+    /// use 导入：`use path::to::item [as alias];` / 组导入 `use a::{b, c as d};` /
+    /// glob 导入 `use a::*;`（末段 `*` 由 typecheck 解析为模块全部可见符号）。
+    ///
+    /// `is_pub` 由 `parse_item` 的分派层在消费 `pub` 后传入（本函数不再自行消费
+    /// `pub`，避免与 `pub fn` 等不消费 `pub` 的路径不一致）。
+    pub(crate) fn parse_use(&mut self, is_pub: bool) -> Result<AstUseDecl, ParseError> {
         let start = self.expect(&Token::Use, "'use'")?.span;
         let mut path = Vec::new();
         loop {
-            // 路径末段允许 `*`（glob 导入，由 typecheck 报不支持）
+            // 路径末段允许 `*`（glob 导入）
             let seg = if self.check(&Token::Star) {
                 self.bump();
                 "*".to_string()
@@ -578,13 +582,45 @@ impl<'src> Parser<'src> {
                 self.expect_ident()?
             };
             path.push(seg);
-            if self.eat_colon_colon() {
-                continue;
+            if !self.eat_colon_colon() {
+                break;
             }
-            break;
+            // `a::{...}`：遇到 `{` 即停止前缀解析，转入组导入
+            if self.check(&Token::LBrace) {
+                break;
+            }
         }
-        let alias = if self.eat(&Token::As) {
-            Some(self.expect_ident()?)
+        // 组导入：`base::{m1, m2 as a2, ...}`
+        let group = if self.check(&Token::LBrace) {
+            self.bump();
+            let mut members = Vec::new();
+            while !self.check(&Token::RBrace) {
+                if self.at_eof() {
+                    return Err(self.unexpected("'}'"));
+                }
+                let mname = self.expect_ident()?;
+                let malias = if self.eat(&Token::As) {
+                    Some(self.expect_ident()?)
+                } else {
+                    None
+                };
+                members.push((mname, malias));
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(&Token::RBrace, "'}'")?;
+            Some(members)
+        } else {
+            None
+        };
+        // 简单导入的 `as` 别名（组导入的别名在成员上各自指定）
+        let alias = if group.is_none() {
+            if self.eat(&Token::As) {
+                Some(self.expect_ident()?)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -593,6 +629,8 @@ impl<'src> Parser<'src> {
         Ok(AstUseDecl {
             path,
             alias,
+            group,
+            is_pub,
             span: self.merge_span(start, end),
         })
     }

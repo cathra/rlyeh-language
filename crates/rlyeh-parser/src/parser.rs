@@ -200,7 +200,7 @@ impl<'src> Parser<'src> {
             Some(Token::Trait) => Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?))),
             Some(Token::Impl) => Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?))),
             Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod()?))),
-            Some(Token::Use) => Ok(AstItem::UseDecl(Box::new(self.parse_use()?))),
+            Some(Token::Use) => Ok(AstItem::UseDecl(Box::new(self.parse_use(false)?))),
             Some(Token::Const) | Some(Token::Static) => {
                 Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
             }
@@ -240,7 +240,7 @@ impl<'src> Parser<'src> {
                     }
                     Some(Token::Use) => {
                         self.bump();
-                        Ok(AstItem::UseDecl(Box::new(self.parse_use()?)))
+                        Ok(AstItem::UseDecl(Box::new(self.parse_use(true)?)))
                     }
                     Some(Token::Actor) => {
                         self.bump();
