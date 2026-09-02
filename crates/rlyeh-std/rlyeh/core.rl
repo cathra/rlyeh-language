@@ -2475,6 +2475,157 @@ impl<T> HashSet<T> {
         }
         es
     }
+
+    // ===== V5b 集合运算（对标 Python set，零新增语言特性） =====
+    // 返回新集合：并集 A ∪ B
+    fn union(&self, other: &HashSet<T>) -> HashSet<T> {
+        let mut r: HashSet<T> = HashSet::new();
+        let a = self.elements();
+        let mut i = 0;
+        while i < a.len() {
+            r.insert(a[i]);
+            i = i + 1;
+        }
+        let b = other.elements();
+        let mut j = 0;
+        while j < b.len() {
+            r.insert(b[j]);
+            j = j + 1;
+        }
+        r
+    }
+    // 返回新集合：交集 A ∩ B
+    fn intersection(&self, other: &HashSet<T>) -> HashSet<T> {
+        let mut r: HashSet<T> = HashSet::new();
+        let a = self.elements();
+        let mut i = 0;
+        while i < a.len() {
+            if other.contains(a[i]) {
+                r.insert(a[i]);
+            }
+            i = i + 1;
+        }
+        r
+    }
+    // 返回新集合：差集 A - B
+    fn difference(&self, other: &HashSet<T>) -> HashSet<T> {
+        let mut r: HashSet<T> = HashSet::new();
+        let a = self.elements();
+        let mut i = 0;
+        while i < a.len() {
+            if !other.contains(a[i]) {
+                r.insert(a[i]);
+            }
+            i = i + 1;
+        }
+        r
+    }
+    // 返回新集合：对称差 A Δ B = (A-B) ∪ (B-A)
+    fn symmetric_difference(&self, other: &HashSet<T>) -> HashSet<T> {
+        let mut r: HashSet<T> = HashSet::new();
+        let a = self.elements();
+        let mut i = 0;
+        while i < a.len() {
+            if !other.contains(a[i]) {
+                r.insert(a[i]);
+            }
+            i = i + 1;
+        }
+        let b = other.elements();
+        let mut j = 0;
+        while j < b.len() {
+            if !self.contains(b[j]) {
+                r.insert(b[j]);
+            }
+            j = j + 1;
+        }
+        r
+    }
+    // 关系：A ⊆ B
+    fn is_subset(&self, other: &HashSet<T>) -> bool {
+        let a = self.elements();
+        let mut i = 0;
+        while i < a.len() {
+            if !other.contains(a[i]) {
+                return false;
+            }
+            i = i + 1;
+        }
+        true
+    }
+    // 关系：A ⊇ B
+    fn is_superset(&self, other: &HashSet<T>) -> bool {
+        other.is_subset(self)
+    }
+    // 关系：A ⊂ B（真子集：A⊆B 且 |A|<|B|）
+    fn is_proper_subset(&self, other: &HashSet<T>) -> bool {
+        if self.len() < other.len() {
+            self.is_subset(other)
+        } else {
+            false
+        }
+    }
+    // 关系：A ⊃ B（真超集：A⊇B 且 |A|>|B|）
+    fn is_proper_superset(&self, other: &HashSet<T>) -> bool {
+        if self.len() > other.len() {
+            self.is_superset(other)
+        } else {
+            false
+        }
+    }
+    // 关系：A ∩ B = ∅
+    fn is_disjoint(&self, other: &HashSet<T>) -> bool {
+        let a = self.elements();
+        let mut i = 0;
+        while i < a.len() {
+            if other.contains(a[i]) {
+                return false;
+            }
+            i = i + 1;
+        }
+        true
+    }
+    // 原地：A |= B
+    fn union_with(&mut self, other: &HashSet<T>) {
+        let b = other.elements();
+        let mut j = 0;
+        while j < b.len() {
+            self.insert(b[j]);
+            j = j + 1;
+        }
+    }
+    // 原地：A &= B
+    fn intersect_with(&mut self, other: &HashSet<T>) {
+        let a = self.elements();
+        self.clear();
+        let mut i = 0;
+        while i < a.len() {
+            if other.contains(a[i]) {
+                self.insert(a[i]);
+            }
+            i = i + 1;
+        }
+    }
+    // 原地：A -= B
+    fn difference_with(&mut self, other: &HashSet<T>) {
+        let b = other.elements();
+        let mut j = 0;
+        while j < b.len() {
+            self.remove(b[j]);
+            j = j + 1;
+        }
+    }
+    // 原地：A ^= B
+    fn symmetric_with(&mut self, other: &HashSet<T>) {
+        let r = self.symmetric_difference(other);
+        let elems = r.elements();
+        self.clear();
+        let mut i = 0;
+        while i < elems.len() {
+            self.insert(elems[i]);
+            i = i + 1;
+        }
+    }
 }
 
 // ===== BTreeMap<K, V>：有序映射（数组二分 + 移动，V5） =====

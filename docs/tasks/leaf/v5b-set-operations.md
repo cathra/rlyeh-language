@@ -1,7 +1,7 @@
 # V5b HashSet 集合运算（参考 Python `set`）
 
 > **所属阶段**：阶段 V（V5 新集合的延期子任务）
-> **状态**：⏳ 规划中
+> **状态**：✅ 已完成
 > **依赖**：V5（`HashSet<T>` ✅，见 [`v5-new-collections.md`](./v5-new-collections.md)）
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 > **参考**：Python `set` 集合代数语义
@@ -86,3 +86,4 @@ impl<T> HashSet<T> {
 | 日期 | 变更 |
 |------|------|
 | 2026-09-02 | 由用户需求「集合支持集合运算，参考 Python」拆出为 V5 延期子任务叶子；对标 Python `set` 集合代数，定义命名方法优先 API 与基于 `elements()`/`contains` 的实现路径 |
+| 2026-09-02 | **实现并验证**：在 `crates/rlyeh-std/rlyeh/core.rl` 的 `HashSet<T>` 注入 13 个方法（`union`/`intersection`/`difference`/`symmetric_difference`/`is_subset`/`is_superset`/`is_proper_subset`/`is_proper_superset`/`is_disjoint`/`union_with`/`intersect_with`/`difference_with`/`symmetric_with`），基于 `elements()`/`contains`/`insert`/`remove`/`clear` 零新增语言特性；新增 `tests/run-pass/hashset_setops.rl`（14 输出对拍 Python 语义）；全量 `rlyeh test tests` **256/256 通过** |
