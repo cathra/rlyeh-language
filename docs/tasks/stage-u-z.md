@@ -63,7 +63,7 @@
 | V5 新集合：VecDeque / HashSet / BTreeMap | [`v5-new-collections.md`](leaf/v5-new-collections.md) | ✅ 已完成 |
 | V5b HashSet 集合运算（参考 Python `set`） | [`v5b-set-operations.md`](leaf/v5b-set-operations.md) | ✅ 已完成 |
 | V5c HashSet 只读引用迭代器（`iter`） | [`v5c-hashset-iter.md`](leaf/v5c-hashset-iter.md) | ✅ 已完成 |
-| V5d 运算符重载（语言机制）+ 集合运算符糖 | [`v5d-operator-overload.md`](leaf/v5d-operator-overload.md) · [`v5d1-comparison-overload.md`](leaf/v5d1-comparison-overload.md) | ✅ 已完成 |
+| V5d 运算符重载（语言机制）+ 集合运算符糖 | [`v5d-operator-overload.md`](leaf/v5d-operator-overload.md) · [`v5d1-comparison-overload.md`](leaf/v5d1-comparison-overload.md) · [`v5d2-hashmap-opsymbol.md`](leaf/v5d2-hashmap-opsymbol.md) | ✅ 已完成 |
 | V2-A：`&str` 语义统一为 StrFat 双槽 | [`v2-a-semantics.md`](leaf/v2-a-semantics.md) | ✅ 已完成（审计 + 文档澄清，2026-08-26） |
 | V2-B：`&str` 子区间视图（trim/trim_start/trim_end） | [`v2-b-substring.md`](leaf/v2-b-substring.md) | ✅ 已完成（trim/trim_start/trim_end + 链式 &str 方法，2026-08-26） |
 | V2-C：`&str` 打印链路修复（含 by_value StrFat 运行时） | [`v2-c-print.md`](leaf/v2-c-print.md) | ✅ 已完成（方案 A，2026-08-26） |

@@ -2217,6 +2217,39 @@ impl<K, V> HashMap<K, V> {
             Option::Some(&mut self.vals[idx])
         }
     }
+    // ===== 按键集合运算（V5d+，2026-09-02）：对标 Python dict 合并 =====
+    // 并集 `a | b`：键集合 A ∪ B（所有键来自 a 与 b）；冲突键取右操作数 b 的值
+    // （b 胜，与 Python `dict | dict` 语义一致，b 在 a 之后插入自然覆盖）。返回新 map。
+    fn union(&self, other: &HashMap<K, V>) -> HashMap<K, V> {
+        let mut r: HashMap<K, V> = HashMap::new();
+        let ka = self.keys();
+        let mut i = 0;
+        while i < ka.len() {
+            r.insert(ka[i], self.get(ka[i]).unwrap());
+            i = i + 1;
+        }
+        let kb = other.keys();
+        let mut j = 0;
+        while j < kb.len() {
+            r.insert(kb[j], other.get(kb[j]).unwrap());
+            j = j + 1;
+        }
+        r
+    }
+    // 交集 `a & b`：键集合 A ∩ B（仅保留同时存在于 a、b 的键）；值取左操作数 a
+    // （结果 ⊆ a，自然保留 a 的值）。返回新 map。
+    fn intersection(&self, other: &HashMap<K, V>) -> HashMap<K, V> {
+        let mut r: HashMap<K, V> = HashMap::new();
+        let ka = self.keys();
+        let mut i = 0;
+        while i < ka.len() {
+            if other.contains_key(ka[i]) {
+                r.insert(ka[i], self.get(ka[i]).unwrap());
+            }
+            i = i + 1;
+        }
+        r
+    }
 }
 
 // ===== V5 新集合（2026-08-26）：VecDeque / HashSet / BTreeMap =====
@@ -2399,6 +2432,16 @@ impl<T> Sub for HashSet<T> {
 impl<T> BitXor for HashSet<T> {
     type Output = HashSet<T>;
     fn bitxor(self, other: HashSet<T>) -> HashSet<T> { self.symmetric_difference(&other) }
+}
+// HashMap 按键集合运算符糖（V5d+，2026-09-02）：`|`=并集 `&`=交集，降级到上方
+// `union`/`intersection` 命名方法（冲突键语义见方法注释）。
+impl<K, V> BitOr for HashMap<K, V> {
+    type Output = HashMap<K, V>;
+    fn bitor(self, other: HashMap<K, V>) -> HashMap<K, V> { self.union(&other) }
+}
+impl<K, V> BitAnd for HashMap<K, V> {
+    type Output = HashMap<K, V>;
+    fn bitand(self, other: HashMap<K, V>) -> HashMap<K, V> { self.intersection(&other) }
 }
 // 关系运算符 `<`/`>` 子集/超集（V5d+，2026-09-02）：走比较链独立路径，经运算符
 // 重载降级为集合关系命名方法（与 Python `set` 语义一致：`<`=真子集 `<=`=子集
