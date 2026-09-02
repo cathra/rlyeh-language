@@ -175,7 +175,14 @@ fn chain_direction(operators: &[CompareOp], span: Span) -> Result<ChainDirection
 }
 
 /// 检查两个操作数在给定运算符下的类型兼容性。
-fn check_comparison(left: &Type, right: &Type, op: CompareOp, span: Span) -> Result<(), TypeError> {
+/// `pub(crate)`：范围模式（SH-P0-7 P-M2）复用之，使模式侧边界类型校验与
+/// 普通比较完全一致（排序仅放行数值与字符，其余报 `MissingPartialOrd`）。
+pub(crate) fn check_comparison(
+    left: &Type,
+    right: &Type,
+    op: CompareOp,
+    span: Span,
+) -> Result<(), TypeError> {
     // U3 核心项（2026-08-30）：比较对称——标量枚举值即 tag，可与整数双向比较
     // （`c == 1` 与 `1 == c` 均允许）。注意赋值仍由 `check_stmt` 单向判定
     // （`let c: Color = 1` 禁止），此处对称性不影响之。
@@ -240,7 +247,10 @@ fn expand_backward(
 }
 
 /// 生成单个比较：`left op right`。
-fn compare_hir(left: &HirExpr, op: CompareOp, right: &HirExpr) -> HirExpr {
+///
+/// `pub(crate)`：范围模式（SH-P0-7 P-M2，见 `check_expr/index_enum.rs`）复用之，
+/// 使模式侧比较与 `in 0..<10` 走同一套 HIR 构造。
+pub(crate) fn compare_hir(left: &HirExpr, op: CompareOp, right: &HirExpr) -> HirExpr {
     let hir_op = match op {
         CompareOp::Lt => HirBinaryOp::Lt,
         CompareOp::Le => HirBinaryOp::Le,

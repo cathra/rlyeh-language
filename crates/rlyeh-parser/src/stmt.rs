@@ -109,7 +109,8 @@ impl<'src> Parser<'src> {
             Some(lt) => lt.span,
             None => return Err(ParseError::UnexpectedEof),
         };
-        let pattern = self.parse_pattern()?;
+        // SH-P0-7 P-M3：match 臂支持或模式 `A | B => ..`
+        let pattern = self.parse_or_pattern()?;
         let guard = if self.eat(&Token::If) {
             Some(self.parse_expr()?)
         } else {

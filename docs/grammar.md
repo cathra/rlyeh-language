@@ -363,7 +363,30 @@ WhileExpr   ::= 'let' Pattern '=' Expr Block      (* `while let` *)
 LoopExpr    ::= Block
 MatchExpr   ::= '{' MatchArm* '}'
 MatchArm    ::= Pattern ('if' Expr)? '=>' Expr ','?
+
+Pattern      ::= OrPattern
+OrPattern    ::= PatternNoOr ('|' PatternNoOr)*        (* `A | B`，SH-P0-7 P-M3 *)
+PatternNoOr  ::= PatternAtom (RangeOp PatternAtom)?    (* 范围模式 *)
+RangeOp      ::= '..<' | '...' | '<..'                 (* 上开 / 双闭 / 下开 *)
+PatternAtom  ::= Literal
+               | 'true' | 'false'
+               | '_'
+               | Ident                                  (* 绑定 / 无参变体 *)
+               | Ident '(' PatternList? ')'             (* 变体模式 *)
+               | Ident ('::' Ident)+ ('(' PatternList? ')')?   (* 路径变体 `Option::Some(x)` *)
+               | Ident '{' FieldPatList '}'             (* 结构体模式 *)
+               | '(' PatternList? ')'                   (* 元组模式 *)
+               | 'ref' 'mut'? Pattern                   (* 引用模式 *)
+PatternList  ::= Pattern (',' Pattern)*
+FieldPatList ::= Ident (':' Pattern)? (',' Ident (':' Pattern)?)*
 ```
+
+**或模式的 `|` 只在 match 臂与 `if let` / `while let` 的模式位置生效**（解析器入口
+`parse_or_pattern`）——闭包参数列表以 `|` 作分隔符与结束符（`|x, y| ..`），模式解析
+吞 `|` 会误食参数列表结束符。`||` 是独立 token，不会被 `|` 误匹配。
+
+**范围模式边界须为字面量**；语义与 `x in lo..<hi` 完全一致（排序仅放行数值与字符）。
+**或模式各备选必须绑定同名同序的变量集**（`Shape::Circle(x) | Shape::Square(y)` 非法）。
 
 `if let` / `while let` 为**纯语法糖**（parser 层展开，零新增 IR 节点）：
 

@@ -31,7 +31,7 @@
 - 🟢 [SH-P0-4 并发原语（Arc<Mutex>/atomic/线程 spawn）](./leaf/sh-p0-4-concurrency.md) → 0.2.0-H
 - 🟢 [SH-P0-5 元组值构造 + 解构（多返回值）](./leaf/sh-p0-5-tuple-value.md) → 0.2.0-N（复审补遗；复核后仅解构为真缺口）
 - 🟢 [SH-P0-6 `if let` / `while let` 模式控制流](./leaf/sh-p0-6-if-let.md) → 0.2.0-O（复审补遗；语言此前完全缺失，parser 层 desugar 落地）
-- ⏳ [SH-P0-7 `match` 守卫 + 范围/或模式](./leaf/sh-p0-7-match-guard.md) → 0.2.0-P（复审补遗）
+- 🟢 [SH-P0-7 `match` 守卫 + 范围/或模式](./leaf/sh-p0-7-match-guard.md) → 0.2.0-P（复审补遗；M1 修复缺陷、M2 补 typecheck、M3 或模式全链路新增）
 - ⏳ [SH-P0-8 `Drop` trait / 析构 / RAII](./leaf/sh-p0-8-drop.md) → 0.2.0-Q（复审补遗；语言完全缺失）
 
 ### P1 — 需新增语言/标准库特性（0.2.0 必须项）

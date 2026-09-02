@@ -21,6 +21,12 @@ pub enum CodegenError {
     },
     /// `main` 函数定义不合法（MVP 要求无参数）。
     InvalidMain,
+    /// 内部不变量被破坏——LLVM 发射按 `LirStmt` 变体分派到子模块时，
+    /// 收到的变体与调用点的 or-pattern 约定不符。
+    ///
+    /// 调用点已保证只有约定变体会进入对应子模块，故本变体**不可达**；
+    /// 保留它是为了在分派表被误改时给出明确诊断而非静默跳过发射。
+    Internal(String),
 }
 
 impl fmt::Display for CodegenError {
@@ -34,6 +40,9 @@ impl fmt::Display for CodegenError {
             }
             CodegenError::InvalidMain => {
                 write!(f, "`main` 函数必须无参数（MVP 约束）")
+            }
+            CodegenError::Internal(msg) => {
+                write!(f, "编译器内部错误：{msg}")
             }
         }
     }

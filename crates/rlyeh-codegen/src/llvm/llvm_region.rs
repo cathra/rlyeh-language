@@ -358,4 +358,135 @@ impl LlvmEmitter {
         body.push_str(&format!(
             "  %nlim_{hdr} = phi i64 [ %hlim_{hdr}, %{fast} ], [ %{rl}, %{slow} ]\n"
         ));
-    }}
+    }
+
+    /// L3 region 接线：`emit_stmt` 的 region 分支下沉。
+    ///
+    /// `llvm.rs` 的 `emit_stmt` 以 or-pattern 把这 5 种 region 语句**整体**分派到
+    /// 此处，故其余变体不可达（违反即报 `CodegenError::Internal`，而非静默跳过
+    /// 发射）。区域句柄槽 `%{key}.rh` 已在入口块预分配。
+    pub(super) fn emit_region_stmt(
+        &mut self,
+        stmt: &LirStmt,
+        f: &LirFunction,
+        body: &mut String,
+    ) -> Result<(), CodegenError> {
+        match stmt {
+            // L3 region 接线：region 指令 → rlyeh-region-alloc 运行时调用
+            // （区域句柄槽 `%{key}.rh` 已在入口块预分配）
+            LirStmt::RegionEnter { name, options } => {
+                let key = match name {
+                    Some(n) if !n.is_empty() => n.clone(),
+                    _ => "__anon".to_string(),
+                };
+                let handle = format!("{key}.rh");
+                // 区域名指针：Apple clang 21 不认 `%r = getelementptr inbounds
+                // ([N x i8], ...)` 独立指令（报 "expected type"），改用 bitcast
+                // 指令形式取字符串首地址，再以 `i8* %r` 作实参引用。
+                let nptr_arg = if key == "__anon" {
+                    "i8* null".to_string()
+                } else {
+                    let nptr_reg = self.emit_string_global_ptr(body, &key)?;
+                    format!("i8* {nptr_reg}")
+                };
+                let nlen = key.len();
+                let initial = options.size.unwrap_or(0) as u64;
+                let allow_growth = if options.allow_growth { 1 } else { 0 };
+                let factor = options.growth_factor.unwrap_or(2.0);
+                let factor_s = if factor.fract() == 0.0 {
+                    format!("{factor:.1}")
+                } else {
+                    format!("{factor}")
+                };
+                let exact = if options.exact { 1 } else { 0 };
+                let adaptive = if options.adaptive { 1 } else { 0 };
+                let strategy = if options.strategy.is_some() { 1 } else { 0 };
+                let r = self.reg();
+                body.push_str(&format!(
+                    "  %{r} = call i8* @rlyeh_region_enter({nptr_arg}, i64 {nlen}, i64 {initial}, i8 {allow_growth}, double {factor_s}, i8 {exact}, i8 {adaptive}, i8 {strategy}) nounwind\n"
+                ));
+                body.push_str(&format!("  store i8* %{r}, i8** %{handle}\n"));
+            }
+            LirStmt::RegionExit { name } => {
+                let key = match name {
+                    Some(n) if !n.is_empty() => n.clone(),
+                    _ => "__anon".to_string(),
+                };
+                let handle = format!("{key}.rh");
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
+                body.push_str(&format!("  call void @rlyeh_region_exit(i8* %{r}) nounwind\n"));
+            }
+            LirStmt::AllocInRegion { target, region, size } => {
+                // 仅聚合对象（Ptr 槽）接线：区域内 bump 分配 + 值镜像；
+                // 标量 `in 'r` 无区域分配语义（MVP 保持栈上副本）。
+                if *size > 0 && local_type(f, target) == LirType::Ptr {
+                    let slot = self.alloc_slots[self.alloc_slot_cursor].clone();
+                    self.alloc_slot_cursor += 1;
+                    let handle = format!("{region}.rh");
+                    let p = if let Some(hdr) = self.promo_header_for(region) {
+                        self.emit_region_bump_promoted(hdr, &handle, *size, &slot, body)
+                    } else {
+                        self.emit_inline_region_bump(&handle, *size, &slot, body)
+                    };
+                    let v = self.operand_value(
+                        &LirOperand::Local(target.clone()),
+                        LirType::Ptr,
+                        body,
+                        f,
+                    )?;
+                    body.push_str(&format!(
+                        "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{p}, i8* {v}, i64 {size}, i1 false), !tbaa !3\n"
+                    ));
+                    // 提升模式下 cont 为预分配 label（header phi 引用它）
+                    let cont = if self.promo_header_for(region).is_some() {
+                        self.promo.as_ref().unwrap().cont_label.clone()
+                    } else {
+                        self.label()
+                    };
+                    body.push_str(&format!("  br label %{cont}\n"));
+                    body.push_str(&format!("{cont}:\n"));
+                }
+            }
+            LirStmt::AllocInRegionDirect { target, region, size } => {
+                // 字面量直接构造（inline_region_literal 变换产物）：
+                // 聚合字段在区域指针上直接写入，无中间堆临时、无值镜像。
+                if *size > 0 && local_type(f, target) == LirType::Ptr {
+                    let slot = self.alloc_slots[self.alloc_slot_cursor].clone();
+                    self.alloc_slot_cursor += 1;
+                    let handle = format!("{region}.rh");
+                    let p = if let Some(hdr) = self.promo_header_for(region) {
+                        self.emit_region_bump_promoted(hdr, &handle, *size, &slot, body)
+                    } else {
+                        self.emit_inline_region_bump(&handle, *size, &slot, body)
+                    };
+                    // target 槽 = 区域指针（后续 FieldSet 直接写区域内存）
+                    body.push_str(&format!("  store i8* %{p}, i8** %{target}.addr\n"));
+                    // 提升模式下 cont 为预分配 label（header phi 引用它）
+                    let cont = if self.promo_header_for(region).is_some() {
+                        self.promo.as_ref().unwrap().cont_label.clone()
+                    } else {
+                        self.label()
+                    };
+                    body.push_str(&format!("  br label %{cont}\n"));
+                    body.push_str(&format!("{cont}:\n"));
+                }
+            }
+            LirStmt::Transfer { place, region } => {
+                let handle = format!("{region}.rh");
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = load i8*, i8** %{handle}\n"));
+                let v = self.operand_value(&LirOperand::Local(place.clone()), LirType::Ptr, body, f)?;
+                body.push_str(&format!(
+                    "  call void @rlyeh_region_transfer(i8* %{r}, i8* {v}) nounwind\n"
+                ));
+            }
+            _ => {
+                return Err(CodegenError::Internal(format!(
+                    "emit_region_stmt 收到非 region 语句：{stmt:?}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}

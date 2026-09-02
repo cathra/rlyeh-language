@@ -15,14 +15,14 @@
 | SH-P0-4 | 并发原语（Arc<Mutex>/atomic/线程 spawn） | 0.2.0-H | actor-runtime / driver 并发 | [leaf](./leaf/sh-p0-4-concurrency.md) | 🟢 完成 |
 | SH-P0-5 | 元组值构造 + 解构（多返回值） | 0.2.0-N | lexer / parser（PoC 重写）、typecheck / codegen | [leaf](./leaf/sh-p0-5-tuple-value.md) | 🟢 完成 |
 | SH-P0-6 | `if let` / `while let` 模式控制流 | 0.2.0-O | lexer / parser / typecheck（PoC 重写） | [leaf](./leaf/sh-p0-6-if-let.md) | 🟢 完成 |
-| SH-P0-7 | `match` 守卫 + 范围/或模式 | 0.2.0-P | parser / typecheck（字符分类/判别分支） | [leaf](./leaf/sh-p0-7-match-guard.md) | ⏳ 规划中 |
+| SH-P0-7 | `match` 守卫 + 范围/或模式 | 0.2.0-P | parser / typecheck（字符分类/判别分支） | [leaf](./leaf/sh-p0-7-match-guard.md) | 🟢 完成 |
 | SH-P0-8 | `Drop` trait / 析构 / RAII | 0.2.0-Q | typecheck / codegen / std（MutexGuard/arena/智能指针） | [leaf](./leaf/sh-p0-8-drop.md) | ⏳ 规划中 |
 
 ---
 
 ## 进度
 
-P0 共 8 项：**SH-P0-1 ~ SH-P0-6 🟢 完成**，其余 SH-P0-7~8 ⏳ 规划中（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。
+P0 共 8 项：**SH-P0-1 ~ SH-P0-7 🟢 完成**，其余 SH-P0-8 ⏳ 规划中（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。
 
 ---
 
@@ -38,3 +38,4 @@ P0 共 8 项：**SH-P0-1 ~ SH-P0-6 🟢 完成**，其余 SH-P0-7~8 ⏳ 规划�
 | 2026-09-02 | SH-P0-4 状态更新为 🟢 完成（原子类型 `AtomicI64` + `Ordering` 内存序，走 driver 注入 `atomicrmw`/`cmpxchg`；规划称「Mutex/线程 spawn 亦缺失」，复核后二者已具备，仅原子为真缺口） |
 | 2026-09-02 | SH-P0-5 状态更新为 🟢 完成（元组解构绑定 M2；复核确认值构造与多返回已具备，仅解构为真缺口） |
 | 2026-09-02 | SH-P0-6 状态由 ⏳ 规划中 更新为 🟢 完成（`if let` / `while let` 于 parser 层 desugar 为 `match` / `loop`，零新增 IR 节点；含 `else if let` 链与体内 `break`/`continue`） |
+| 2026-09-02 | SH-P0-7 状态由 ⏳ 规划中 更新为 🟢 完成（复核：M1 守卫已存在但有「绑定在守卫内不可见」缺陷→修复；M2 范围模式仅缺 typecheck；M3 或模式为全链路缺口→新增 `AstPattern::Or` + `parse_or_pattern` + typecheck 分支 + fmt/check 适配；连带修复 codegen `Assign` 未按目标槽类型转换致 8 字节写穿 1 字节 bool 槽） |

@@ -246,6 +246,40 @@ impl LlvmEmitter {
         }
     }
 
+    /// 局部值在**类型不同的存储槽之间搬运**时插入转换（当前仅 bool ↔ i64）。
+    ///
+    /// 背景：`LirStmt::Assign` 按**源**槽类型宽度直接 store，而源槽与目标槽的
+    /// LLVM 宽度可能不同——bool 形参与具名 bool 局部的槽是 `i64`（8 字节），
+    /// 按值推断出的 bool 临时槽却是 `i1`（1 字节），`store i64 %v, i1* %t` 会
+    /// **写穿 1 字节槽破坏相邻栈**（match 守卫值并入 bool 临时槽即经此路径，
+    /// 表现为守卫恒假，见 SH-P0-7 P-M1）。
+    ///
+    /// 返回 `Some(新寄存器名)` 表示已发射转换指令（结果即为 `dst` 类型）；
+    /// `None` 表示无需转换，调用方按源类型原样 store。
+    pub(super) fn coerce_local_slot(
+        &mut self,
+        reg: &str,
+        src: LirType,
+        dst: LirType,
+        body: &mut String,
+    ) -> Option<String> {
+        let c = match (src, dst) {
+            (LirType::I64, LirType::Bool) => {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = icmp ne i64 %{reg}, 0\n"));
+                r
+            }
+            (LirType::Bool, LirType::I64) => {
+                let r = self.reg();
+                body.push_str(&format!("  %{r} = zext i1 %{reg} to i64\n"));
+                r
+            }
+            // 其余组合保持原样（现状行为），避免波及既有路径
+            _ => return None,
+        };
+        Some(c)
+    }
+
     pub(super) fn emit_string_global(&mut self, s: &str) -> Result<String, CodegenError> {
         let idx = self.global_counter;
         self.global_counter += 1;

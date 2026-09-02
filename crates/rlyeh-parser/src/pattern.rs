@@ -38,6 +38,25 @@ impl<'src> Parser<'src> {
         Ok(atom)
     }
 
+    /// 或模式 `A | B | ..`（SH-P0-7 P-M3）。
+    ///
+    /// **仅用于 match 臂与 `if let` / `while let` 的模式位置**——不可并入
+    /// `parse_pattern` 本身：闭包参数列表以 `|` 作分隔符与结束符
+    /// （`|x, y| ..`），若让模式解析吞 `|` 会误食参数列表结束符（与类型注解处
+    /// 不收集 `|` 联合同理，见 `expr/control.rs::parse_closure`）。
+    /// `||` 是独立 token（`Token::OrOr`），不会被此处的 `BitOr` 误匹配。
+    pub(crate) fn parse_or_pattern(&mut self) -> Result<AstPattern, ParseError> {
+        let first = self.parse_pattern()?;
+        if !self.check(&Token::BitOr) {
+            return Ok(first);
+        }
+        let mut alts = vec![first];
+        while self.eat(&Token::BitOr) {
+            alts.push(self.parse_pattern()?);
+        }
+        Ok(AstPattern::Or(alts))
+    }
+
     /// 解析模式原子（不含范围后缀）
     fn parse_pattern_atom(&mut self) -> Result<AstPattern, ParseError> {
         match self.current().cloned() {

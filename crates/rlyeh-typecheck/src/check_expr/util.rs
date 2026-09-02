@@ -685,3 +685,25 @@ pub(super) fn string_hash_hir(ctx: &mut TypeContext, s: &HirExpr) -> HirExpr {
         final_expr: Some(HirExpr::Variable(h_name)),
     }))
 }
+
+/// 收集模式绑定的**源码层变量名**（SH-P0-7 P-M3，或模式一致性校验用）。
+///
+/// Rust 要求 `A | B` 的各备选绑定**同名同序**的变量集（`Some(x) | Some(y)`
+/// 非法）。校验须基于源码名而非 `insert_variable` 生成的槽名——槽名会随
+/// 作用域深度 mangle，同一源码名在不同作用域内检查会得到不同槽名。
+pub(super) fn pattern_bind_names(pat: &rlyeh_ast::AstPattern) -> Vec<String> {
+    use rlyeh_ast::AstPattern;
+    match pat {
+        AstPattern::Ident(name) => vec![name.clone()],
+        AstPattern::Wildcard | AstPattern::Literal(_) | AstPattern::Range { .. } => Vec::new(),
+        AstPattern::Tuple(subs) | AstPattern::Enum(_, subs) | AstPattern::EnumPath(_, subs) => {
+            subs.iter().flat_map(pattern_bind_names).collect()
+        }
+        AstPattern::Struct(_, fields) => fields
+            .iter()
+            .flat_map(|(_, p)| pattern_bind_names(p))
+            .collect(),
+        AstPattern::Ref(inner, _) => pattern_bind_names(inner),
+        AstPattern::Or(alts) => alts.iter().flat_map(pattern_bind_names).collect(),
+    }
+}

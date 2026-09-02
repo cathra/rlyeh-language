@@ -45,7 +45,7 @@
 | **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | ⏳ 规划 | 交付物（dogfood） |
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
-| **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | ⏳ 规划 | **复审补遗**：字符分类/判别分支依赖 |
+| **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
 | **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | ⏳ 规划 | **复审补遗**：MutexGuard/arena/智能指针自动释放 |
 | **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：智能指针/MutexGuard 透传 |
 | **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：拷贝模型对齐 |
@@ -152,8 +152,13 @@
 > **关联文档**：[SH-P0-6 `if let` / `while let`](tasks/leaf/sh-p0-6-if-let.md)
 
 ### 3.16 P `match` 守卫 + 范围/或模式（P0-7）
-字符分类/判别分支依赖。守卫 desugar 为「绑定临时 + `if cond`」，范围复用 `in` 语义，或模式复用 union 优先级。
-- P1 守卫表达式 → P2 范围模式 → P3 或模式 → P4 组合；差分对拍 Rust 参考。
+字符分类/判别分支依赖。
+- ✅ P1 守卫表达式——**语法与 typecheck 本已存在，但存在缺陷**：绑定位于臂体块内、晚于条件求值，致引用绑定的守卫读到未初始化值。修复为以 `if <模式条件> { <绑定>; <守卫> } else { false }` 作条件（MIR 的 `&&` 非短路，故不可直接 And 合并）。
+- ✅ P2 范围模式——`AstPattern::Range` 的 AST 变体与 parser 本已具备，补齐 `check_pattern` 分支；复用比较链的 `check_comparison` / `compare_hir`，与 `in` 区间语义完全一致。
+- ✅ P3 或模式——新增 `AstPattern::Or` + `parse_or_pattern`（不并入 `parse_pattern`，避免误食闭包参数列表的 `|`）+ typecheck 分支（绑定取首个备选，其余在临时作用域内只取条件，源码名序须一致）+ `rlyeh-fmt` / `rlyeh-check` 适配。
+- ✅ P4 组合——守卫 + 范围 / 或模式由上述分支天然合流。
+- ⏳ 差分对拍 Rust 参考（随 K 阶段 harness 落地后补）。
+- 连带修复：codegen `Assign` 未按目标槽类型转换（bool 槽 8 字节 → 1 字节写穿）。
 > **关联文档**：[SH-P0-7 `match` 守卫 + 范围/或模式](tasks/leaf/sh-p0-7-match-guard.md)
 
 ### 3.17 Q `Drop` trait / 析构 / RAII（P0-8）
@@ -336,12 +341,13 @@ PoC 解析器 `(tok, rest)` 前置；类型层（`Type::Tuple`/单元 `()`）已
 
 ### 7.10 P `match` 守卫 + 范围/或模式（SH-P0-7，🔴 中高）
 字符分类/判别分支依赖。
-- **P-M1（中）** 守卫表达式 desugar 为「绑定临时 + `if cond`」（零新增 IR）。
-- **P-M2（中）** 范围模式（复用 `in` 区间语义）。
-- **P-M3（中）** 或模式（复用 union 优先级规则）。
-- **P-M4（低）** 守卫 + 范围/或组合。
-- **P-L1（低）** 差分对拍 Rust 参考。
-- **关键 checkpoint**：字符分类 `match` 重写。
+- ✅ **P-M1（中）** 守卫——**本已存在但有缺陷**：绑定在 `then_block` 内、晚于条件求值，致引用绑定的守卫读到未初始化值。修复为以 `if <模式条件> { <绑定>; <守卫> } else { false }` 作条件（MIR `&&` 非短路，故不可直接 And 合并；`HirExpr::If` 提供真实 CFG 分叉）。零新增 IR 节点。
+- ✅ **P-M2（中）** 范围模式——AST 变体与 parser 本已具备，补 `check_pattern` 分支；复用比较链 `check_comparison` / `compare_hir`，与 `in` 区间语义一致（排序仅数值与字符）。
+- ✅ **P-M3（中）** 或模式——新增 `AstPattern::Or` + `parse_or_pattern`（不并入 `parse_pattern`，避免误食闭包参数列表的 `|`）+ typecheck 分支（绑定取首个备选、其余在临时作用域内只取条件、源码名序须一致）+ `rlyeh-fmt` / `rlyeh-check` 适配。
+- ✅ **P-M4（低）** 守卫 + 范围/或组合（条件合流为单一表达式，天然支持）。
+- ⏳ **P-L1（低）** 差分对拍 Rust 参考（随 K 阶段 harness 落地后补）。
+- **关键 checkpoint**：`tests/run-pass/match_guard_range_or.{rl,out}` 28 行输出全绿（含字符分类 `'a'...'z' | 'A'...'Z' if upper` 形态）+ 4 项 compile-fail 门禁；全量回归无失败。
+- **连带修复**：codegen `LirStmt::Assign` 未按目标槽类型转换——bool 形参与具名 bool 局部槽为 `i64`（8 字节），按值推断的 bool 临时槽为 `i1`（1 字节），`store i64 .., i1*` 写穿 1 字节槽破坏相邻栈（守卫值即经此路径）。已按 I64↔Bool 插入 `icmp ne` / `zext`。
 > **关联文档**：[SH-P0-7 `match` 守卫 + 范围/或模式](tasks/leaf/sh-p0-7-match-guard.md)
 
 ### 7.11 Q `Drop` trait / 析构 / RAII（SH-P0-8，🔴 高）

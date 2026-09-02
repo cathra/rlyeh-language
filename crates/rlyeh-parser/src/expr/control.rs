@@ -53,7 +53,8 @@ impl <'src> Parser<'src> {
     /// `else if` / `else if let` 链由 `parse_if_expr` 递归处理（作为 `_` 臂体）。
     fn parse_if_let_expr(&mut self, start: Span) -> Result<AstExpr, ParseError> {
         self.expect(&Token::Let, "'let'")?;
-        let pattern = self.parse_pattern()?;
+        // SH-P0-7 P-M3：与 match 臂一致，支持或模式 `if let A | B = e { .. }`
+        let pattern = self.parse_or_pattern()?;
         self.expect(&Token::Assign, "'='")?;
         let expr = self.parse_expr()?;
         let then_block = self.parse_block()?;
@@ -121,7 +122,8 @@ impl <'src> Parser<'src> {
         // O2（SH-P0-6）：`while let Pat = expr { .. }` —— 走模式绑定分支
         if self.check(&Token::Let) {
             self.expect(&Token::Let, "'let'")?;
-            let pattern = self.parse_pattern()?;
+            // SH-P0-7 P-M3：与 match 臂一致，支持或模式
+            let pattern = self.parse_or_pattern()?;
             self.expect(&Token::Assign, "'='")?;
             let expr = self.parse_expr()?;
             let body = self.parse_block()?;

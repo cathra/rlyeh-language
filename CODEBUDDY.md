@@ -322,6 +322,56 @@ while let Option::Some(got) = rx.recv() {
 > 可解构绑定 `let (a, b) = t;` 走另一路径不受此限）；
 > 无 let 链 `if let a = .. && let b = ..`。
 
+### 3.5.3 `match` 守卫 / 范围模式 / 或模式（SH-P0-7 ✅，2026-09-02）
+
+```rlyeh
+// 守卫 `pat if cond`（绑定变量在守卫内可见）
+match o {
+    Option::Some(v) if v > 10 => 1,
+    Option::Some(v) if v > 5  => 2,
+    Option::Some(_)           => 3,
+    Option::None              => 4,
+}
+
+// 范围模式 `lo..<hi`（上开） / `lo...hi`（双闭） / `lo<..hi`（下开）
+fn classify(n: i64) -> i64 {
+    match n {
+        0        => 0,
+        1...9    => 1,   // [1, 9]
+        10..<20  => 2,   // [10, 20)
+        20<..30  => 3,   // (20, 30]
+        _        => -1,
+    }
+}
+
+// 或模式 `A | B`（解析器字符分类的典型形态）
+match c {
+    'a'...'z' | 'A'...'Z' if upper => 1,   // 与守卫组合
+    'a'...'z' | 'A'...'Z'          => 2,
+    '0'...'9'                      => 3,
+    _                              => 0,
+}
+
+// 或模式各备选可绑定同名同序变量
+match s {
+    Shape::Circle(r) | Shape::Square(r) => r,
+    _ => -1,
+}
+```
+
+语义要点：
+- **守卫**在绑定**之后**求值——条件构造为 `if <模式条件> { <绑定>; <守卫> } else { false }`。
+  不可直接 And 合并：MIR 的 `&&` 是**非短路**的（`lower_expr` 对 `Binary` 两侧无条件
+  求值），会让绑定被无条件执行；借 HIR `If` 的真实 CFG 分叉才获得短路语义。
+- **范围模式**复用比较链的 `check_comparison` / `compare_hir`，与 `x in lo..<hi` 同语义。
+- **或模式**的 `|` 仅在 match 臂与 `if let` / `while let` 的模式位置生效——闭包参数
+  列表的 `|` 是分隔符，模式解析吞 `|` 会误食参数列表结束符。
+
+> 已知限制：守卫**仅对可反驳模式可用**（标识符 / `_` 兜底模式报
+> `对兜底模式使用守卫条件`，与 Rust 的 `x if cond` 不同）；或模式不支持不可反驳
+> 备选（`_ | 1` 报错）且各备选须绑定同名同序变量；范围模式仅数值与字符、
+> 边界须为字面量。
+
 ### 3.6 模块系统
 
 ```rlyeh
@@ -829,6 +879,18 @@ fn main() {
 | `crates/rlyeh-lir/src/lower.rs` | 1168 | `lower/mod.rs` + lower_stmts.rs | ✅ 已完成 |
 | `crates/rlyeh-parser/src/tests.rs` | 1108 | `tests/mod.rs` + region/control/decl | ✅ 已完成 |
 | `crates/rlyeh-std/rlyeh/core.rl` | 2186 | —（预置单一语言源码，暂不拆分） | ⏸ 专项处理 |
+| `tools/rlyeh-fmt/src/lib.rs` | 1316 | `lib.rs` + `fmt_expr` + `fmt_pattern`（3 文件：762/362/211） | ✅ 已完成（2026-09-02） |
+| `crates/rlyeh-codegen/src/llvm.rs`（二次拆分） | 1068 | region 分支 → 既有 `llvm/llvm_region.rs`（361→492）；字段/索引/指针/解引用分支 → 新增 `llvm/llvm_field.rs`（543）；`llvm.rs` 461 | ✅ 已完成（2026-09-02） |
+
+**复现超限（2026-09-02 扫描，待拆分）**：以下 5 个文件再次越过 1000 行（多为后续特性累积），按「逐步拆分」原则逐项立项处理：
+
+| 文件 | 行数 | 建议切分方向 | 状态 |
+|------|:---:|------------|------|
+| `crates/rlyeh-typecheck/src/check_expr/toml.rs` | 1444 | 按 TOML 值/表/解析/序列化分簇 | ⏳ 待拆分 |
+| `crates/rlyeh-typecheck/src/check_expr/method.rs` | 1433 | 内建方法与 trait 方法分簇 | ⏳ 待拆分 |
+| `crates/rlyeh-driver/src/lib.rs`（二次超限） | 1208 | 再拆出独立子模块 | ⏳ 待拆分 |
+| `crates/rlyeh-typecheck/src/check_expr/construct.rs` | 1124 | 结构体/枚举/联合体构造分簇 | ⏳ 待拆分 |
+| `crates/rlyeh-typecheck/src/check_expr/mod.rs` | 1082 | 继续按职责下沉 | ⏳ 待拆分 |
 
 > **拆分规范**：保持语义等价；`mod`/`use` 改为子模块（`mod xxx;` + `use xxx::*`，子模块私有函数提升为 `pub(super)`/`pub(crate)`，对外 API 从 mod.rs 显式 re-export）；每个文件拆分后须通过全量回归（`rlyeh test` 194 用例 + `cargo test`）。新增代码一律不得再扩大超限文件。
 

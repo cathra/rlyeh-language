@@ -805,6 +805,9 @@ pub enum AstPattern {
     },
     /// 引用模式 `ref pat` / `ref mut pat`
     Ref(Box<AstPattern>, bool),
+    /// 或模式 `A | B`（SH-P0-7 P-M3）：任一备选命中即进入 arm。
+    /// 各备选必须绑定**数量与类型均相同**的变量集（与 Rust 一致）。
+    Or(Vec<AstPattern>),
 }
 
 /// 字面量值（用于模式匹配）。

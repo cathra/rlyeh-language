@@ -192,6 +192,12 @@ impl Checker {
                 }
             }
             AstPattern::Ref(inner, _) => self.bind_pattern(inner, span),
+            // 或模式：各备选绑定同名变量（typecheck 已强制），绑定一次即可
+            AstPattern::Or(alts) => {
+                if let Some(first) = alts.first() {
+                    self.bind_pattern(first, span);
+                }
+            }
             AstPattern::Wildcard | AstPattern::Literal(_) | AstPattern::Range { .. } => {}
         }
     }

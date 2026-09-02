@@ -2,7 +2,9 @@
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
 use super::*;
-use crate::check_expr::util::type_to_ast;
+use crate::check_expr::util::{pattern_bind_names, type_to_ast};
+use crate::comparison::{check_comparison, compare_hir};
+use rlyeh_ast::CompareOp;
 use rlyeh_hir::FieldScalar;
 
 pub(super) fn check_index(
@@ -512,15 +514,33 @@ pub(super) fn check_match_with_scrutinee(
         let (cond, binds, is_binding, _bound_tys) =
             check_pattern(ctx, &arm.pattern, &pat_ty, tmp_var.clone(), span)?;
         let arm_result: Result<(Option<HirExpr>, HirExpr, Type), TypeError> = (|| {
-            // 守卫条件（`pattern if guard => body`）：与模式条件 And 合并
+            // 守卫条件（`pattern if guard => body`）：与模式条件合并。
+            //
+            // **守卫必须在绑定之后求值**——`Option::Some(v) if v > 10` 的 `v`
+            // 由模式绑定产生，而绑定语句位于臂体块内、晚于条件求值。
+            // 不可直接 `模式条件 && 守卫`：MIR 的 `&&` 是**非短路**的
+            // （`lower_expr` 对 `Binary` 两侧无条件求值），绑定会被无条件
+            // 执行，指针类负载上还会解引用到未初始化值。
+            // 改为以 `if <模式条件> { <绑定>; <守卫> } else { false }` 作条件，
+            // 借用 HIR `If` 的真实 CFG 分叉获得短路语义——绑定与守卫仅在
+            // 模式命中后求值。代价：绑定被求值两次（条件内一次、臂体内
+            // 一次），均为纯字段读取 / 取址，无副作用。
             let cond = match (&arm.guard, cond) {
                 (Some(guard), Some(c)) => {
                     let (g_hir, _) = infer_expr(ctx, guard)?;
-                    Some(HirExpr::Binary(
-                        HirBinaryOp::And,
-                        Box::new(c),
-                        Box::new(g_hir),
-                    ))
+                    Some(HirExpr::If {
+                        cond: Box::new(c),
+                        then_block: Box::new(HirBlock {
+                            stmts: binds.clone(),
+                            final_expr: Some(g_hir),
+                        }),
+                        // 兜底分支用 `BoolLiteral(false)`：bool 的 LLVM 表示为
+                        // i1（`llvm_type(LirType::Bool) == "i1"`），与守卫值同源。
+                        else_block: Some(Box::new(HirBlock {
+                            stmts: Vec::new(),
+                            final_expr: Some(HirExpr::BoolLiteral(false)),
+                        })),
+                    })
                 }
                 (None, c) => c,
                 (Some(_), None) => {
@@ -771,10 +791,98 @@ pub(super) fn check_pattern(
             what: "元组 / 结构体模式在 MVP 阶段".to_string(),
             span,
         }),
-        AstPattern::Range { .. } => Err(TypeError::Unsupported {
-            what: "范围模式在 MVP 阶段".to_string(),
-            span,
-        }),
+        AstPattern::Range {
+            lower,
+            upper,
+            lower_inclusive,
+            upper_inclusive,
+        } => {
+            // P-M2（SH-P0-7）：范围模式 `lo..<hi` / `lo...hi` / `lo<..hi`。
+            // 边界由 parser 从字面量模式转写为表达式，此处经 `infer_expr` 求值；
+            // 类型校验与 HIR 构造分别复用比较链的 `check_comparison` /
+            // `compare_hir`，故模式侧语义与 `x in lo..<hi` 完全一致
+            // （排序仅放行数值与字符，其余报 `MissingPartialOrd`）。
+            let (lower_hir, lower_ty) = infer_expr(ctx, lower)?;
+            let (upper_hir, upper_ty) = infer_expr(ctx, upper)?;
+            let lo_op = if *lower_inclusive {
+                CompareOp::Ge
+            } else {
+                CompareOp::Gt
+            };
+            let hi_op = if *upper_inclusive {
+                CompareOp::Le
+            } else {
+                CompareOp::Lt
+            };
+            check_comparison(pat_ty, &lower_ty, lo_op, span)?;
+            check_comparison(pat_ty, &upper_ty, hi_op, span)?;
+            let lo = compare_hir(&scrutinee, lo_op, &lower_hir);
+            let hi = compare_hir(&scrutinee, hi_op, &upper_hir);
+            Ok((
+                Some(HirExpr::Binary(
+                    HirBinaryOp::And,
+                    Box::new(lo),
+                    Box::new(hi),
+                )),
+                Vec::new(),
+                false,
+                Vec::new(),
+            ))
+        }
+        AstPattern::Or(alts) => {
+            // P-M3（SH-P0-7）：或模式 `A | B`——任一备选命中即进入 arm。
+            // 绑定**只取首个备选**（其变量注册在当前 arm 作用域内）；其余备选在
+            // 临时作用域内检查，仅取条件，注册随即丢弃（条件只依赖 scrutinee，
+            // 不引用被丢弃的槽名）。
+            // 一致性：各备选须绑定同名同序的变量集（与 Rust 一致，
+            // `Some(x) | None` / `Some(x) | Some(y)` 均报 Unsupported）。
+            let first = alts.first().ok_or_else(|| TypeError::Unsupported {
+                what: "空或模式".to_string(),
+                span,
+            })?;
+            let (first_cond, binds, first_binding, bound_tys) =
+                check_pattern(ctx, first, pat_ty, scrutinee.clone(), span)?;
+            if first_binding {
+                return Err(TypeError::Unsupported {
+                    what: "或模式含不可反驳备选（标识符 / `_`）".to_string(),
+                    span,
+                });
+            }
+            let expect_names = pattern_bind_names(first);
+            let mut cond = first_cond.ok_or_else(|| TypeError::Unsupported {
+                what: "或模式备选缺少匹配条件".to_string(),
+                span,
+            })?;
+            for alt in &alts[1..] {
+                ctx.push_scope(false);
+                let checked = check_pattern(ctx, alt, pat_ty, scrutinee.clone(), span);
+                ctx.pop_scope();
+                let (alt_cond, _, alt_binding, _) = checked?;
+                if alt_binding {
+                    return Err(TypeError::Unsupported {
+                        what: "或模式含不可反驳备选（标识符 / `_`）".to_string(),
+                        span,
+                    });
+                }
+                let got_names = pattern_bind_names(alt);
+                if got_names != expect_names {
+                    return Err(TypeError::Unsupported {
+                        what: format!(
+                            "或模式各备选绑定不一致（首个备选绑定 [{}]，此备选绑定 [{}]）",
+                            expect_names.join(", "),
+                            got_names.join(", ")
+                        ),
+                        span,
+                    });
+                }
+                let alt_cond = alt_cond.ok_or_else(|| TypeError::Unsupported {
+                    what: "或模式备选缺少匹配条件".to_string(),
+                    span,
+                })?;
+                cond = HirExpr::Binary(HirBinaryOp::Or, Box::new(cond), Box::new(alt_cond));
+            }
+            Ok((Some(cond), binds, false, bound_tys))
+        }
         AstPattern::Ref(inner, is_mut) => {
             // `ref [mut] pat`：绑定变量为对匹配值的引用（`&T` / `&mut T`），
             // 而非值拷贝。递归检查内层模式后，将绑定语句的初始化改为取匹配
