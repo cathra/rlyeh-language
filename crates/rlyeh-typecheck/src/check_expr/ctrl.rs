@@ -65,7 +65,7 @@ pub(crate) fn infer_expr_tail(
                     let (_, o_ty) = infer_expr(ctx, operand)?;
                     if ctx.find_impl_for_method(&o_ty, "deref_mut").is_some() {
                         let (dm_hir, dm_ty) =
-                            check_method_call(ctx, operand, "deref_mut", &[], None, span)?;
+                            check_method_call(ctx, operand, "deref_mut", &[], None, span, 0)?;
                         let (v_hir, v_ty) = infer_expr(ctx, value)?;
                         let inner = match &dm_ty {
                             Type::Ref(inner, _) => (**inner).clone(),
@@ -385,7 +385,7 @@ pub(crate) fn infer_expr_tail(
             method,
             args,
             trait_hint,
-        } => check_method_call(ctx, receiver, method, args, trait_hint.as_deref(), span),
+        } => check_method_call(ctx, receiver, method, args, trait_hint.as_deref(), span, 0),
         ExprKind::StructCtor {
             type_name,
             type_args,
@@ -393,10 +393,9 @@ pub(crate) fn infer_expr_tail(
         } => check_struct_construct(ctx, type_name, type_args, fields, span),
         ExprKind::TupleLit(elems) => check_tuple_construct(ctx, elems, span),
         ExprKind::FieldAccess { expr, field } => {
-            let (base_hir, base_ty) = infer_expr(ctx, expr)?;
-            check_field_access(ctx, base_hir, base_ty, field, span)
+            check_field_access(ctx, expr, field, span, 0)
         }
-        ExprKind::Index { expr, index } => check_index(ctx, expr, index, span),
+        ExprKind::Index { expr, index } => check_index(ctx, expr, index, span, 0),
         ExprKind::ArrayLit(elems) => check_array_lit(ctx, elems, span),
         ExprKind::Closure { .. } => Err(TypeError::Unsupported {
             what: "闭包缺少 fn 类型上下文（H2 无捕获闭包：用作 fn 形参实参，或 `let f: fn(..) = |..| ..` 注解绑定；捕获闭包 H3 规划中）"

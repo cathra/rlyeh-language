@@ -48,6 +48,27 @@ pub(crate) use call::make_slice_fat;
 /// H4 辅助：类型是否引用了 `Self`。trait 方法签名含关联类型（`Self`）时，
 /// trait 对象调用无法确定具体类型，MVP 报 Unsupported。
 
+// SH-P1-4（M2，2026-09-04）：自动解引用强制辅助。
+/// 自动解引用最大递归深度（对齐 Rust 强制链的有界展开）。
+pub(super) const MAX_DEREF_DEPTH: usize = 16;
+
+/// 构造自动解引用回退的接收者表达式 `recv.deref()`，用于字段 / 方法 / 索引
+/// 解析失败时递归重试（限深度，避免无限）。`deref` 既可是 `Deref` trait 方法
+/// （`-> &Target`，聚合 Target 在 HIR 即对象指针，无需再剥 `*`），也可是内建
+/// 智能指针 `deref`（`-> T` 值，见 sync/module.rl）。返回 `&Target` 引用后，
+/// 下游方法 / 字段解析经 `peel_refs_and_heap` 透明按 `Target` 处理（零新增 IR 节点）。
+pub(super) fn make_deref_receiver(receiver: &AstExpr, span: Span) -> AstExpr {
+    AstExpr::new(
+        ExprKind::MethodCall {
+            receiver: receiver.clone(),
+            method: "deref".to_string(),
+            args: vec![],
+            trait_hint: None,
+        },
+        span,
+    )
+}
+
 /// 推断表达式的类型并生成对应 HIR。
 pub(crate) fn infer_expr(
     ctx: &mut TypeContext,
@@ -282,7 +303,7 @@ pub(crate) fn infer_expr(
                     // 诊断、不破坏存量行为。
                     if let Some(method) = overload_method(*op) {
                         let args = [right.clone()];
-                        if let Ok((hir, ty)) = check_method_call(ctx, left, method, &args, None, span) {
+                        if let Ok((hir, ty)) = check_method_call(ctx, left, method, &args, None, span, 0) {
                             return Ok((hir, ty));
                         }
                     }
@@ -322,7 +343,7 @@ pub(crate) fn infer_expr(
                                 // （返回 `deref()` 的目标类型）；否则维持内建类型限制报错。
                                 if ctx.find_impl_for_method(&o_ty, "deref").is_some() {
                                     let (deref_hir, t) = check_method_call(
-                                        ctx, operand, "deref", &[], None, span,
+                                        ctx, operand, "deref", &[], None, span, 0,
                                     )?;
                                     return Ok((deref_hir, t));
                                 }

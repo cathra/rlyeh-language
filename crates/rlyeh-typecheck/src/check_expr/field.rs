@@ -6,6 +6,31 @@ use super::*;
 
 pub(super) fn check_field_access(
     ctx: &mut TypeContext,
+    expr: &AstExpr,
+    field: &str,
+    span: Span,
+    depth: usize,
+) -> Result<(HirExpr, Type), TypeError> {
+    let (base_hir, base_ty) = infer_expr(ctx, expr)?;
+    match check_field_access_inner(ctx, base_hir, base_ty.clone(), field, span) {
+        Ok(r) => Ok(r),
+        // M2（SH-P1-4）：字段未命中且接收者类型实现了 `deref` 时，对接收者插入
+        // `*(recv.deref())` 递归重试（限深度，避免无限）。零新增 IR 节点。
+        Err(_)
+            if depth < MAX_DEREF_DEPTH
+                && ctx
+                    .find_impl_for_method(&peel_refs_and_heap(&base_ty), "deref")
+                    .is_some() =>
+        {
+            let deref_ast = make_deref_receiver(expr, span);
+            check_field_access(ctx, &deref_ast, field, span, depth + 1)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+pub(super) fn check_field_access_inner(
+    ctx: &mut TypeContext,
     base_hir: HirExpr,
     base_ty: Type,
     field: &str,

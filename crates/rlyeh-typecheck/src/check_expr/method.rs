@@ -130,6 +130,7 @@ pub(super) fn check_method_call(
     args: &[AstExpr],
     trait_hint: Option<&str>,
     span: Span,
+    depth: usize,
 ) -> Result<(HirExpr, Type), TypeError> {
     // `r#` 前缀（关键字转义，如 `fn r#send`）在方法调用处去前缀，
     // 与定义侧 parse_fn 归一化（`r#send` → `send`）保持一致。
@@ -468,6 +469,13 @@ pub(super) fn check_method_call(
     let (impl_def, method_def, mut subst) = match selected {
         Some(s) => s,
         None => {
+            // M2（SH-P1-4）：自动解引用强制——无任何方法候选时，若接收者类型
+            // 实现了 `deref`（Deref trait 或内建智能指针 deref），对接收者插入
+            // `*(recv.deref())` 递归重试解析（限深度，避免无限）。零新增 IR 节点。
+            if depth < MAX_DEREF_DEPTH && ctx.find_impl_for_method(&self_ty, "deref").is_some() {
+                let deref_ast = make_deref_receiver(receiver, span);
+                return check_method_call(ctx, &deref_ast, method, args, trait_hint, span, depth + 1);
+            }
             // 无兼容候选：回退到首个候选（V3 默认 impl / 首匹配），由下方兼容
             // 性检查产出清晰的类型不匹配诊断。
             let fallback = candidates

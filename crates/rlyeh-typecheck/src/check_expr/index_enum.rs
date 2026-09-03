@@ -12,6 +12,31 @@ pub(super) fn check_index(
     expr: &AstExpr,
     index: &AstExpr,
     span: Span,
+    depth: usize,
+) -> Result<(HirExpr, Type), TypeError> {
+    let (_, b_ty) = infer_expr(ctx, expr)?;
+    match check_index_inner(ctx, expr, index, span) {
+        Ok(r) => Ok(r),
+        // M2（SH-P1-4）：索引对象未命中且接收者类型实现了 `deref` 时，对接收者
+        // 插入 `*(recv.deref())` 递归重试（限深度，避免无限）。零新增 IR 节点。
+        Err(_)
+            if depth < MAX_DEREF_DEPTH
+                && ctx
+                    .find_impl_for_method(&peel_refs_and_heap(&b_ty), "deref")
+                    .is_some() =>
+        {
+            let deref_ast = make_deref_receiver(expr, span);
+            check_index(ctx, &deref_ast, index, span, depth + 1)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+pub(super) fn check_index_inner(
+    ctx: &mut TypeContext,
+    expr: &AstExpr,
+    index: &AstExpr,
+    span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     // 范围切片 `s[lo..<hi]` / `s[lo...hi]` / `s[lo<..hi]`：索引表达式为
     // Range 时改走切片路径（`infer_expr` 对 Range 仅返回 Unit，须先行特判）
