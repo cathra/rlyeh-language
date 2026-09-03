@@ -55,7 +55,7 @@ AST（`AstUseDecl` 增加 `group` / `is_pub`）。driver 模块展开不受影�
 - parser 单测：`test_use_group_and_pub` 锁定 AST 形状（`group` / `is_pub` / 简单路径）。
 
 **已知限制（本次未解）**
-- 嵌套组导入 `import a::{b::{x, y}, c}`（组内含子组）未实现，仅单层组。
+- 嵌套组导入 `import a::{b::{x, y}, c}`（组内含子组）**已于 2026-09-04 补齐**（见下方「实现纪要（2026-09-04）」与变更记录）。
 - 可见性（B4）未实现：跨模块访问仍不校验 `pub`，全部可达。
 - `crate::`/`super::` 按扁平决策不实现。
 
@@ -71,3 +71,4 @@ AST（`AstUseDecl` 增加 `group` / `is_pub`）。driver 模块展开不受影�
 |------|------|
 | 2026-09-01 | 从评估报告 P1-6 拆出为叶子 |
 | 2026-09-02 | B1 嵌套（既有确认）/ B2 `pub use` / 组导入 / glob 实现；B3 按扁平决策排除；B4 暂缓；全量套件 0 失败 |
+| 2026-09-04 | **补齐嵌套组导入** `import a::{b::{x, y}, c}`：`AstUseDecl.group` 改递归 `AstUseMember`；parser `parse_use_group` 递归解析任意深度子组；typecheck `register_use_group` 递归登记（仅叶子名入作用域，`pub` 重导出同构）；新增 `tests/run-pass/import_nested_group.{rl,out}` + parser 单测 `test_use_nested_group`；全量 `cargo test --workspace` 无回归。叶子「已知限制」中原「仅单层组」标记已消解 |

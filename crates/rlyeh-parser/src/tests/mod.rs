@@ -1,7 +1,7 @@
 //! 语法分析器单元测试。
 
 use crate::{ParseError, Parser};
-use rlyeh_ast::{AstItem, AstPattern, AstProgram, AstStmt, AstType, BinaryOp, CompareOp, ExprKind};
+use rlyeh_ast::{AstItem, AstPattern, AstProgram, AstStmt, AstType, AstUseMember, BinaryOp, CompareOp, ExprKind};
 use rlyeh_lexer::Token;
 
 /// 解析成功并返回程序

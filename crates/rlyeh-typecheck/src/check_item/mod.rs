@@ -3,7 +3,7 @@
 
 use rlyeh_ast::{
     AstActorDecl, AstEnumDecl, AstFnDecl, AstImplBlock, AstItem, AstModDecl, AstProgram,
-    AstStructDecl, AstTraitDecl, AstUseDecl,
+    AstStructDecl, AstTraitDecl, AstUseDecl, AstUseMember,
 };
 use rlyeh_hir::{
     FieldScalar, HirBinaryOp, HirBlock, HirConstDecl, HirExpr, HirFnDecl, HirItem, HirItemKind,
@@ -214,15 +214,7 @@ fn register_use(
             .map(|s| norm(s))
             .collect::<Vec<String>>()
             .join("::");
-        for (mname, malias) in members {
-            let m = norm(mname);
-            let full = format!("{base}::{m}");
-            let local = match malias {
-                Some(a) => norm(a),
-                None => m.clone(),
-            };
-            register_one(ctx, local, full, prefix, u.is_pub);
-        }
+        register_use_group(ctx, members, &base, prefix, u.is_pub);
         return Ok(());
     }
     if u.path.last().map(String::as_str) == Some("*") {
@@ -289,6 +281,39 @@ fn register_use(
     };
     register_one(ctx, local, path, prefix, u.is_pub);
     Ok(())
+}
+
+/// 递归登记组导入成员（`import a::{b::{x, y}, c}`）。
+///
+/// 嵌套子组 `name::{ ... }` 仅将 `name` 作为新前缀下钻，叶子名（最内层成员）才入
+/// 作用域；`pub` 重导出时同样只重导出叶子名（与 Rust `use a::b::{x, y}` 仅暴露
+/// `x`/`y` 一致）。`r#` 前缀在注册时归一化。
+fn register_use_group(
+    ctx: &mut TypeContext,
+    members: &[AstUseMember],
+    base: &str,
+    prefix: &str,
+    is_pub: bool,
+) {
+    let norm = |s: &str| s.strip_prefix("r#").unwrap_or(s).to_string();
+    for mem in members {
+        let m = norm(&mem.name);
+        if let Some(nested) = &mem.nested {
+            // `name::{ ... }`：name 作为新前缀递归，仅叶子名入作用域
+            let child_base = format!("{base}::{m}");
+            register_use_group(ctx, nested, &child_base, prefix, is_pub);
+        } else {
+            let full = format!("{base}::{m}");
+            let local = match &mem.alias {
+                Some(a) => norm(a),
+                None => m.clone(),
+            };
+            ctx.insert_use_alias(local.clone(), full.clone());
+            if is_pub {
+                ctx.insert_use_alias(full_name(prefix, &local), full);
+            }
+        }
+    }
 }
 
 /// 第二遍：检查函数体 / const，生成 HIR 项（递归处理嵌套模块）。

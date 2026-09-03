@@ -249,12 +249,26 @@ pub struct AstUseDecl {
     pub path: Vec<String>,
     /// 重命名别名（`as alias`，仅简单导入）
     pub alias: Option<String>,
-    /// 组导入成员（`import a::{b, c as d}` → `Some([("b", None), ("c", Some("d"))])`）
-    pub group: Option<Vec<(String, Option<String>)>>,
+    /// 组导入成员（`import a::{b, c as d, e::{f, g}}` → 见 `AstUseMember`）
+    pub group: Option<Vec<AstUseMember>>,
     /// 是否为 `pub`（重导出，对外部模块可见）
     pub is_pub: bool,
     /// 源码位置
     pub span: Span,
+}
+
+/// use 组导入成员（`a::{b, c as d, e::{f, g}}`）。
+///
+/// `nested` 非空时表示 `name::{ ... }` 嵌套子组（如 `e::{f, g}`），
+/// 此时 `alias` 恒为 `None`（嵌套组不可重命名，与 Rust 一致）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct AstUseMember {
+    /// 成员名（或嵌套子组前缀名）
+    pub name: String,
+    /// 重命名别名（仅简单成员，嵌套组为 `None`）
+    pub alias: Option<String>,
+    /// 嵌套子组（`name::{ ... }`），非空表示此成员为子组前缀
+    pub nested: Option<Vec<AstUseMember>>,
 }
 
 /// const/static 声明。

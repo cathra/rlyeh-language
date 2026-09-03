@@ -4,7 +4,7 @@ use crate::error::ParseError;
 use crate::parser::Parser;
 use rlyeh_ast::{
     AstConstDecl, AstEnumDecl, AstEnumVariant, AstFnDecl, AstImplBlock, AstModDecl, AstParam,
-    AstStructDecl, AstStructField, AstTraitDecl, AstType, AstTypeParam, AstUseDecl,
+    AstStructDecl, AstStructField, AstTraitDecl, AstType, AstTypeParam, AstUseDecl, AstUseMember,
 };
 use rlyeh_lexer::Token;
 
@@ -590,27 +590,9 @@ impl<'src> Parser<'src> {
                 break;
             }
         }
-        // 组导入：`base::{m1, m2 as a2, ...}`
+        // 组导入：`base::{m1, m2 as a2, m3::{x, y}, ...}`
         let group = if self.check(&Token::LBrace) {
-            self.bump();
-            let mut members = Vec::new();
-            while !self.check(&Token::RBrace) {
-                if self.at_eof() {
-                    return Err(self.unexpected("'}'"));
-                }
-                let mname = self.expect_ident()?;
-                let malias = if self.eat(&Token::As) {
-                    Some(self.expect_ident()?)
-                } else {
-                    None
-                };
-                members.push((mname, malias));
-                if !self.eat(&Token::Comma) {
-                    break;
-                }
-            }
-            self.expect(&Token::RBrace, "'}'")?;
-            Some(members)
+            Some(self.parse_use_group()?)
         } else {
             None
         };
@@ -633,6 +615,43 @@ impl<'src> Parser<'src> {
             is_pub,
             span: self.merge_span(start, end),
         })
+    }
+
+    /// 解析组导入的 `{ ... }` 成员列表，支持嵌套子组 `name::{ ... }`。
+    ///
+    /// 每个成员为 `ident`（可选 `as alias`）或 `ident::{ 嵌套成员 }`；嵌套子组
+    /// 不可 `as` 重命名（与 Rust 一致）。递归处理任意深度嵌套（如 `a::{b::{c::{x, y}}}}`）。
+    fn parse_use_group(&mut self) -> Result<Vec<AstUseMember>, ParseError> {
+        self.expect(&Token::LBrace, "'{'")?;
+        let mut members = Vec::new();
+        while !self.check(&Token::RBrace) {
+            if self.at_eof() {
+                return Err(self.unexpected("'}'"));
+            }
+            let mname = self.expect_ident()?;
+            // 嵌套子组 `name::{ ... }`：吞掉 `::{` 后递归解析
+            let nested = if self.eat_colon_colon() && self.check(&Token::LBrace) {
+                Some(self.parse_use_group()?)
+            } else {
+                None
+            };
+            // 嵌套组不可 `as` 重命名；仅简单成员支持别名
+            let malias = if nested.is_none() && self.eat(&Token::As) {
+                Some(self.expect_ident()?)
+            } else {
+                None
+            };
+            members.push(AstUseMember {
+                name: mname,
+                alias: malias,
+                nested,
+            });
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        self.expect(&Token::RBrace, "'}'")?;
+        Ok(members)
     }
 
     /// const / static 声明

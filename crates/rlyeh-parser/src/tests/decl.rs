@@ -86,7 +86,7 @@ fn test_use_and_mod() {
 #[test]
 fn test_use_group_and_pub() {
     // 0.2.0-B-1/B-2：组导入与 `pub use` 重导出的 AST 形状。
-    // `pub import a::{b, c as d};` → path=["a"], group=[("b",None),("c",Some("d"))], is_pub=true
+    // `pub import a::{b, c as d};` → path=["a"], group=[{b,None},{c,Some(d)}], is_pub=true
     let program = parse_ok("pub import a::{b, c as d};");
     let AstItem::UseDecl(u) = &program.items[0] else {
         panic!();
@@ -96,8 +96,16 @@ fn test_use_group_and_pub() {
     assert_eq!(
         u.group,
         Some(vec![
-            ("b".to_string(), None),
-            ("c".to_string(), Some("d".to_string()))
+            AstUseMember {
+                name: "b".into(),
+                alias: None,
+                nested: None
+            },
+            AstUseMember {
+                name: "c".into(),
+                alias: Some("d".into()),
+                nested: None
+            },
         ])
     );
     assert_eq!(u.alias, None);
@@ -111,4 +119,41 @@ fn test_use_group_and_pub() {
     assert_eq!(u2.path, &["a".to_string(), "b".to_string()]);
     assert_eq!(u2.alias.as_deref(), Some("c"));
     assert_eq!(u2.group, None);
+}
+
+#[test]
+fn test_use_nested_group() {
+    // 0.2.0-B 嵌套组导入：`import a::{b::{x, y}, c}`。
+    // 叶子名 x/y/c 入作用域；`b` 仅作子组前缀，不在组内注册。
+    let program = parse_ok("import a::{b::{x, y}, c};");
+    let AstItem::UseDecl(u) = &program.items[0] else {
+        panic!();
+    };
+    assert_eq!(u.path, &["a".to_string()]);
+    assert_eq!(
+        u.group,
+        Some(vec![
+            AstUseMember {
+                name: "b".into(),
+                alias: None,
+                nested: Some(vec![
+                    AstUseMember {
+                        name: "x".into(),
+                        alias: None,
+                        nested: None
+                    },
+                    AstUseMember {
+                        name: "y".into(),
+                        alias: None,
+                        nested: None
+                    },
+                ])
+            },
+            AstUseMember {
+                name: "c".into(),
+                alias: None,
+                nested: None
+            },
+        ])
+    );
 }

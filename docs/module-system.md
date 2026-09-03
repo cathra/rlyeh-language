@@ -37,7 +37,7 @@
 | 文本级模块展开 | ✅ | `rlyeh-driver/src/module.rs` 递归替换 `module name;` → 内联子模块源码 |
 | 循环引用检测 | ✅ | 文本加载期 visited 集合 |
 | 可见性控制 | 🔧 | `pub` 有语法，**无模块级可见性检查**（扁平名字空间，全部可达） |
-| `import a::{b, c}` 组导入 | ✅ | 2026-09-02 实现（`parse_use` 组解析 + `register_use` 逐成员登记） |
+| `import a::{b, c}` 组导入 | ✅ | 2026-09-02 实现（`parse_use` 组解析 + `register_use` 逐成员登记）；2026-09-04 支持**嵌套子组** `import a::{b::{x, y}, c}`（`AstUseMember` 递归结构 + `parse_use_group`/`register_use_group` 递归，仅叶子名入作用域） |
 | `import a::*` glob 导入 | ✅ | 2026-09-02 实现（`register_use` 枚举模块直接子项） |
 | `pub import` 再导出 | ✅ | 2026-09-02 实现（`is_pub` 登记 `prefix::local → 目标全名`，`resolve_full_name` 传递追踪链） |
 | 外部包依赖编译 | 📋 | dagon 已能 resolve/lock，但 `rlyeh build` 未注入依赖模块路径 |

@@ -160,7 +160,7 @@ fn main() {
 }
 
 #[test]
-fn test_glob_import_unsupported() {
+fn test_glob_import_supported() {
     let source = r#"
 module math {
     fn add(a: i64, b: i64) -> i64 {
@@ -175,8 +175,9 @@ fn main() {
     let _ = x;
 }
 "#;
-    let err = check(source).expect_err("glob import is unsupported in MVP");
-    assert!(matches!(err, TypeError::Unsupported { .. }));
+    // glob 导入（SH-P1-3，2026-09-02 实现）应将模块内全部可见符号注入当前作用域，
+    // 故裸名 `add` 可解析（此前该测试断言 glob 不支持，与已落地行为矛盾，已更正）。
+    check(source).expect("glob import should resolve math::add");
 }
 
 #[test]
