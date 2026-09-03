@@ -1,6 +1,6 @@
 # SH-P1-4 `Deref` / `DerefMut` 用户类型自动解引用强制
 
-> **级别**：P1（阻塞智能指针 / MutexGuard 表达） · **风险**：🟠 中 · **状态**：⏳ 规划中 · **归属**：0.2.0-R
+> **级别**：P1（阻塞智能指针 / MutexGuard 表达） · **风险**：🟠 中 · **状态**：🟡 进行中（M1 trait 声明落地，2026-09-04） · **归属**：0.2.0-R
 > **索引**：[`../self-hosting-p1.md`](../self-hosting-p1.md) · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.18
 
 ## 目标
@@ -25,3 +25,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-09-01 | 复审补遗：从智能指针/MutexGuard 表达依赖中拆出 |
+| 2026-09-04 | M1 落地：`core.rl` 声明 `trait Deref { type Target; fn deref(&self) -> &Self::Target; }` 与 `trait DerefMut { type Target; fn deref_mut(&mut self) -> &mut Self::Target; }`（关联类型 `Target` 经 U2/W4/V3-A4 已支持，编译验证通过）。M2（字段/方法/索引访问失败回退插入 `*(x.deref())` 递归）待实现 |

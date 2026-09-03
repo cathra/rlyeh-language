@@ -153,6 +153,19 @@ trait PartialOrd {
 trait Copy {
 }
 
+// SH-P1-4（0.2.0-R，2026-09-04 起步）：`Deref` / `DerefMut` 用户类型自动解引用
+// 强制所需的核心 trait 声明（关联类型 `Target` + `deref` / `deref_mut`）。具体
+// 自动解引用强制（字段/方法/索引访问失败时插入 `*(x.deref())` 递归，限深度）见
+// `rlyeh-typecheck` 解析回退（M2）；此处先落地 trait + 关联类型（M1）。
+trait Deref {
+    type Target;
+    fn deref(&self) -> &Self::Target;
+}
+trait DerefMut {
+    type Target;
+    fn deref_mut(&mut self) -> &mut Self::Target;
+}
+
 // 动态数组（Vec<T>）
 //
 // - `data` 字段类型 `[T; 0]`：约定长度 0 = 运行时长度（动态数组指针）

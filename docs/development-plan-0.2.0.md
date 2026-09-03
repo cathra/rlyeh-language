@@ -47,7 +47,7 @@
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
 | **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | 🟢 完成（Q1–Q3） | **复审补遗**：MutexGuard/arena/智能指针自动释放；Q4 智能指针接入待办 |
-| **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：智能指针/MutexGuard 透传 |
+| **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | 🟡 进行中 | M1 `Deref`/`DerefMut` trait 声明落地（2026-09-04）；M2 自动解引用强制待实现 |
 | **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | 🟢 完成 | `trait Copy {}` + `#[derive(Copy)]` 展开 `impl Copy for T` + `T: Copy` 约束（2026-09-04） |
 | **0.2.0-T** | `?` 经 `From`/`Into` 错误自动转换 | P1-6 | [SH-P1-6](tasks/leaf/sh-p1-6-question-from.md) | 🟠 中 | 🟢 完成 | `?`+`From` 转换 P6c（2026-08-29）已落地，`check_question` 在 `E1≠E2` 时插入 `From::<E1>::from` |
 | **0.2.0-U** | `mem::swap` / `mem::replace` 内建 | P2-8 | [SH-P2-8](tasks/leaf/sh-p2-8-mem-swap.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：IR 重写免借用冲突 |
