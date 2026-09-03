@@ -145,6 +145,14 @@ trait PartialOrd {
     fn ge(&self, other: &Self) -> bool;
 }
 
+// SH-P1-5（0.2.0-S，2026-09-04）：`Copy` 标记 trait（无方法）。值语义标记：
+// 标记为 Copy 的类型在赋值 / 传参时按位拷贝。Rlyeh 默认聚合即按值拷贝（无 move
+// 语义），故 `Copy` 主要作为泛型约束 `T: Copy` 与 `#[derive(Copy)]` 的标记，与
+// Rust `Copy` 语义对齐。`#[derive(Copy)]` 由 typecheck 展开为 `impl Copy for T {}`
+// （见 `rlyeh-typecheck/src/check_item/derive.rs`）。
+trait Copy {
+}
+
 // 动态数组（Vec<T>）
 //
 // - `data` 字段类型 `[T; 0]`：约定长度 0 = 运行时长度（动态数组指针）

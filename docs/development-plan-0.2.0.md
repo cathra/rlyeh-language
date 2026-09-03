@@ -31,7 +31,7 @@
 | 阶段 | 主题 | 对应缺口 | 关联文档 | 风险 | 状态 | 说明 |
 |------|------|----------|----------|------|------|------|
 | **0.2.0-A** | 泛型 trait/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-trait.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
-| **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 部分完成 | 嵌套模块（既有）+ `pub use`/组导入/glob 已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
+| **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 完成 | 嵌套模块（既有）+ `pub use`/组导入/glob/嵌套组导入已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
 | **0.2.0-C** | trait derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | 🟢 核心落地 | process 模块（system/exec/output/exec_combined）+ clang FFI 印证，全量回归 253/253 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | 🟢 完成 | unsafe 块/裸指针/E-M1 bump 分配器 + E2 repr(C)（sub8+嵌套聚合内联）+ E3 FFI 门禁全部落地，全量 253/253 |
@@ -48,8 +48,8 @@
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
 | **0.2.0-Q** | `Drop` trait / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | 🟢 完成（Q1–Q3） | **复审补遗**：MutexGuard/arena/智能指针自动释放；Q4 智能指针接入待办 |
 | **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：智能指针/MutexGuard 透传 |
-| **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：拷贝模型对齐 |
-| **0.2.0-T** | `?` 经 `From`/`Into` 错误自动转换 | P1-6 | [SH-P1-6](tasks/leaf/sh-p1-6-question-from.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：分层错误传播 |
+| **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | 🟢 完成 | `trait Copy {}` + `#[derive(Copy)]` 展开 `impl Copy for T` + `T: Copy` 约束（2026-09-04） |
+| **0.2.0-T** | `?` 经 `From`/`Into` 错误自动转换 | P1-6 | [SH-P1-6](tasks/leaf/sh-p1-6-question-from.md) | 🟠 中 | 🟢 完成 | `?`+`From` 转换 P6c（2026-08-29）已落地，`check_question` 在 `E1≠E2` 时插入 `From::<E1>::from` |
 | **0.2.0-U** | `mem::swap` / `mem::replace` 内建 | P2-8 | [SH-P2-8](tasks/leaf/sh-p2-8-mem-swap.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：IR 重写免借用冲突 |
 | **0.2.0-V** | `const` / `static` 全局项 | P2-9 | [SH-P2-9](tasks/leaf/sh-p2-9-const-static.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：运行时 FFI 全局状态 |
 | **0.2.0-W** | `panic!`/`assert!`/`unreachable!`/`todo!` 宏 | P2-10 | [SH-P2-10](tasks/leaf/sh-p2-10-assert-macros.md) | 🟡 低 | ⏳ 规划 | **复审补遗**：编译器内部断言 |

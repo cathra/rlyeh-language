@@ -3,7 +3,7 @@
 //! 为带 `#[derive(Clone / PartialEq / Debug)]` 的结构体自动合成对应的 `impl`
 //! 块，并复用既有 `collect_impl` 注册（方法体在调用点实例化，零新增 IR 节点）。
 //!
-//! 受支持：struct 的 `Clone` / `PartialEq` / `Debug`。
+//! 受支持：struct 的 `Clone` / `PartialEq` / `Copy` / `Debug`。
 //! - `Clone`：逐字段拷贝（标量 / 引用直接拷贝，其余调用 `.clone()`）。
 //! - `PartialEq`：逐字段 `==` 链；`==`/`!=` 经 `comparison` 落点为 `a.eq(&b)`。
 //! - `Debug`：构造 `Name { f0: <Debug>, ... }` 形式（标量走 `int_to_string` /
@@ -29,6 +29,7 @@ fn canonical_trait(name: &str) -> Option<&'static str> {
     match name {
         "Clone" => Some("Clone"),
         "PartialEq" => Some("PartialEq"),
+        "Copy" => Some("Copy"),
         "Debug" => Some("fmt::Debug"),
         _ => None,
     }
@@ -217,6 +218,22 @@ fn build_clone_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         trait_type_args: vec![],
         types: vec![],
         methods: vec![clone_fn],
+        span,
+    }
+}
+
+// ---------- Copy（标记 trait，无方法） ----------
+
+fn build_copy_impl(s: &AstStructDecl, _prefix: &str, span: Span) -> AstImplBlock {
+    // `Copy` 是零方法标记 trait：`#[derive(Copy)]` 展开为 `impl Copy for T {}`，
+    // 供泛型约束 `T: Copy` 经 `type_implements_trait` 命中（与 Rust 语义对齐）。
+    AstImplBlock {
+        trait_name: Some("Copy".to_string()),
+        type_name: s.name.clone(),
+        generics: s.generics.clone(),
+        trait_type_args: vec![],
+        types: vec![],
+        methods: vec![],
         span,
     }
 }
@@ -428,6 +445,7 @@ pub(crate) fn expand_derives_for_struct(
         let impl_block = match trait_full {
             "Clone" => build_clone_impl(s, prefix, span),
             "PartialEq" => build_partialeq_impl(s, prefix, span),
+            "Copy" => build_copy_impl(s, prefix, span),
             "fmt::Debug" => build_debug_impl(s, prefix, span),
             _ => continue,
         };
