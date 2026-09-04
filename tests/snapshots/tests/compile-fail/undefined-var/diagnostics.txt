@@ -1,0 +1,1 @@
+错误: [typecheck] 7155:13: error: undefined variable `undefined_var`

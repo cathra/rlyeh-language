@@ -13,8 +13,8 @@
 | SH-P2-2 | 进程调用 / 外部工具链 FFI | 0.2.0-D | rlyeh-driver `assemble()` | [leaf](./leaf/sh-p2-2-process-ffi.md) | ⏳ 规划中 |
 | SH-P2-3 | `Box` 深树 + 内部可变性（arena/RefCell 等价） | 0.2.0-I | AST/HIR/MIR/LIR 可变遍历 | [leaf](./leaf/sh-p2-3-internal-mut.md) | ⏳ 规划中 |
 | SH-P2-4 | FFI/ABI 链接桥（Rlyeh 产物链接 Rust 运行时） | 0.2.0-J | codegen + Rust 运行时 rlib | [leaf](./leaf/sh-p2-4-linkage-bridge.md) | ⏳ 规划中 |
-| SH-P2-5 | 分阶段自举 + 差分测试基础设施 | 0.2.0-K | 引导器 + 测试 harness | [leaf](./leaf/sh-p2-5-staged-bootstrap.md) | ⏳ 规划中 |
-| SH-P2-6 | 诊断信息质量对齐 | 0.2.0-L | typecheck / check 诊断 | [leaf](./leaf/sh-p2-6-diagnostics.md) | ⏳ 规划中 |
+| SH-P2-5 | 分阶段自举 + 差分测试基础设施 | 0.2.0-K | 引导器 + 测试 harness | [leaf](./leaf/sh-p2-5-staged-bootstrap.md) | 🟢 0.2.0 PoC(CD) |
+| SH-P2-6 | 诊断信息质量对齐 | 0.2.0-L | typecheck / check 诊断 | [leaf](./leaf/sh-p2-6-diagnostics.md) | 🟡 进行中 |
 | SH-P2-7 | driver 自举（增量编译 / 线程 / 缓存） | 0.2.0-M/K | rlyeh-driver | [leaf](./leaf/sh-p2-7-driver.md) | ⏳ 规划中 |
 | SH-P2-8 | `mem::swap` / `mem::replace` 内建 | 0.2.0-U | typecheck / borrowck / desugar / regionck | [leaf](./leaf/sh-p2-8-mem-swap.md) | ⏳ 规划中 |
 | SH-P2-9 | `const` / `static` 全局项（编译期常量 + 全局符号） | 0.2.0-V | typecheck / codegen / 运行时 FFI | [leaf](./leaf/sh-p2-9-const-static.md) | ⏳ 规划中 |

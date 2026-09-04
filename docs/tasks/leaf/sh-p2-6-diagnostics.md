@@ -19,10 +19,18 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 ## 验证
 - 对拍：错误用例经 Rust/Rlyeh 编译器产出诊断结构（错误码 + span）一致。
 
+## 实现纪要（L0，2026-09-04）
+- harness 新增 `diagnostics` 维度（`scripts/diff_harness.py`）：捕获 `rlyeh run <file>` 的 stderr 诊断文本（类型检查 / 借用检查错误），无论退出码均记为已获取，诊断文本本身即快照标的。
+- 新增 `tests/snapshot-baseline-diag-probe.txt`（12 例 compile-fail 代表性用例，覆盖类型不匹配 / 方法未找到 / 未定义变量·函数 / 借用冲突 / 泛型 where 约束 / match 守卫兜底 / 元组解构元数 / `?` 非 Option / 未知字段 / trait 约束 / 类型联合收窄），仅存 `diagnostics` 维度快照。
+- CI（`.github/workflows/ci.yml`）新增 `Diagnostics probe regression (diff harness)` 步骤。
+- 验证：diagnostics 探针连续两次 `check` 均 12/0/0/0，无诊断级非确定性。
+- 已知缺口（后续项）：当前诊断 span 坐标为**合并源码（含 std 前缀）坐标**，非用户文件坐标（如 `type-mismatch.rl` 报 `7155:18`，实为 std 预置偏移后的行号）。**L1（用户态 span 对齐）** 需让 typecheck/borrowck/regionck 诊断减去 `prelude_len` 还原为用户行号；**L2（结构化诊断：稳定错误码 + 修复建议）** 亦为后续项。本增量仅为 L3 诊断对拍建立 harness 侧回归网。
+
 ## 状态
-⏳ 规划中（0.2.0 必须项，阶段 L）。
+🟡 进行中（L0 harness 诊断维度 + 探针基线已落地；L1 用户态 span / L2 结构化诊断待办）。
 
 ## 变更记录
 | 日期 | 变更 |
 |------|------|
 | 2026-09-01 | 新增（评审发现：诊断质量对齐未在原评估缺口中单列） |
+| 2026-09-04 | L0 落地：harness `diagnostics` 维度 + 诊断探针基线（12 例）+ CI 步骤；记录 L1 用户态 span / L2 结构化诊断为后续项 |

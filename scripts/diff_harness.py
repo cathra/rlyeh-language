@@ -10,6 +10,9 @@
     hir   : `rlyeh build --emit hir`   → HIR 文本（`{:#?}`）
     ast-user / hir-user : 仅用户源码项（排除 std 前缀），体积小、适合快照基线
     run   : `rlyeh run`                → 程序标准输出（行为）
+    diagnostics : `rlyeh run <file>` 的 stderr（类型检查 / 借用检查诊断文本，
+                 SH-P2-6 L3 诊断对拍的 harness 侧；编译失败文件在类型检查阶段
+                 即中止，stderr 即诊断文本，无论退出码均记为已获取）
 
 0.2.0 内为「单编译器快照对拍」：以 Rust 编译器自身产物作参考快照。
 当未来 Rlyeh 自写编译器就位，可用 `--rlyeh-b <另一编译器>` 触发「双编译器差分」
@@ -48,7 +51,7 @@ import os
 import subprocess
 import sys
 
-DIMS = ["ir", "ast", "hir", "ast-user", "hir-user", "run"]
+DIMS = ["ir", "ast", "hir", "ast-user", "hir-user", "run", "diagnostics"]
 DEFAULT_RLYEH = os.path.join("target", "debug", "rlyeh")
 DEFAULT_SNAP_DIR = os.path.join("tests", "snapshots")
 # IR 探针基线清单：精选「小子集」用例（见下），因单程序 IR 被 std 前缀主导
@@ -77,16 +80,24 @@ def run_cmd(rlyeh, args, timeout):
 def capture(rlyeh, path, timeout, dims):
     """捕获单文件指定维度产物，返回 {dim: (ok, text)}。
 
-    dims 为 {"ir","ast","hir","run"} 的子集。ok 表示该维度成功获取
-    （编译/运行成功）。run 维度对编译失败文件记为失败。
+    dims 为 {"ir","ast","hir","run","diagnostics"} 的子集。ok 表示该维度
+    成功获取（编译/运行成功）。run 维度对编译失败文件记为失败；
+    diagnostics 维度捕获 `rlyeh run` 的 stderr（类型检查 / 借用检查诊断），
+    无论退出码均记为已获取（诊断文本本身即回归标的）。
     """
     out = {}
     for dim in dims:
-        if dim == "run":
+        if dim == "diagnostics":
+            # 编译失败文件在类型检查阶段即中止，stderr 即诊断文本；
+            # 视为已获取（ok=True），诊断文本本身即快照标的。
             rc, so, se = run_cmd(rlyeh, ["run", path], timeout)
+            out[dim] = (True, se)
+        elif dim == "run":
+            rc, so, se = run_cmd(rlyeh, ["run", path], timeout)
+            out[dim] = (rc == 0, so if rc == 0 else se)
         else:
             rc, so, se = run_cmd(rlyeh, ["build", path, "--emit", dim], timeout)
-        out[dim] = (rc == 0, so if rc == 0 else se)
+            out[dim] = (rc == 0, so if rc == 0 else se)
     return out
 
 

@@ -56,6 +56,10 @@ jobs:
       - name: HIR-user probe regression (diff harness)
         run: python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-hir-probe.txt --dims hir-user
 
+      # SH-P2-6 L3：诊断对拍回归（捕获 rlyeh run 的 stderr 诊断文本，小子集基线）
+      - name: Diagnostics probe regression (diff harness)
+        run: python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-diag-probe.txt --dims diagnostics
+
       # E1：macOS 双架构交叉编译冒烟（本机 clang 直链 SDK，已在本机验证）
       - name: Cross-compile smoke (macOS dual-arch)
         if: runner.os == 'macOS'

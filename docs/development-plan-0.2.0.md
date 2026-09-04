@@ -40,8 +40,8 @@
 | **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | 🟢 完成 | 运行时并发地基 |
 | **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | 🟢 核心落地 | I2 arena+NodeId + I1 RefCell 验证，全量 255/255 |
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ⏳ 规划 | Rlyeh 产物链接 Rust 运行时 |
-| **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | ⏳ 规划 | 引导器 + 对拍验证 |
-| **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | ⏳ 规划 | span 诊断复刻 |
+| **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | 🟢 PoC(CD) | harness + 单编译器快照基线（C0/C1/C2）落地；三阶段自举 K-M1..K-M3 推迟 0.3.0 |
+| **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | 🟡 进行中 | L0 harness 诊断维度 + 探针基线落地；L1 用户态 span / L2 结构化诊断待办 |
 | **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | ⏳ 规划 | 交付物（dogfood） |
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
