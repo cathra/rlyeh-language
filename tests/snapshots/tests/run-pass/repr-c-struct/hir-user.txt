@@ -1,0 +1,119 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "p",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp501",
+                                                    init: Alloc {
+                                                        slots: 2,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 0,
+                                                        value: IntLiteral(
+                                                            3,
+                                                        ),
+                                                        ty: ReprCField {
+                                                            offset: 0,
+                                                            field_ty: "i64",
+                                                            conv: None,
+                                                        },
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            4,
+                                                        ),
+                                                        ty: ReprCField {
+                                                            offset: 8,
+                                                            field_ty: "i64",
+                                                            conv: None,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp501",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "p",
+                                                ),
+                                                index: 0,
+                                                ty: ReprCField {
+                                                    offset: 0,
+                                                    field_ty: "i64",
+                                                    conv: None,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "p",
+                                                ),
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 8,
+                                                    field_ty: "i64",
+                                                    conv: None,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271299,
+                end: 271301,
+                line: 7161,
+                col: 1,
+            },
+        },
+    ],
+}

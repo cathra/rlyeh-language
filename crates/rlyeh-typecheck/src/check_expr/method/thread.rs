@@ -313,6 +313,7 @@ pub(super) fn emit_thread_entry(
         },
     );
     ctx.mono_items.push(HirItem {
+        span: crate::DUMMY_SPAN,
         name: name.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params: vec![HirParam {

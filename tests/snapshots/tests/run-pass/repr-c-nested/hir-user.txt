@@ -1,0 +1,961 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "l",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp501",
+                                                    init: Alloc {
+                                                        slots: 2,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 0,
+                                                        value: Block(
+                                                            HirBlock {
+                                                                stmts: [
+                                                                    Let {
+                                                                        name: "__tmp502",
+                                                                        init: Alloc {
+                                                                            slots: 1,
+                                                                            by_value: false,
+                                                                            is_strfat: false,
+                                                                        },
+                                                                        mutable: false,
+                                                                    },
+                                                                    Semi(
+                                                                        FieldSet {
+                                                                            base: Variable(
+                                                                                "__tmp502",
+                                                                            ),
+                                                                            index: 0,
+                                                                            value: IntLiteral(
+                                                                                1,
+                                                                            ),
+                                                                            ty: ReprCField {
+                                                                                offset: 0,
+                                                                                field_ty: "i32",
+                                                                                conv: Sext,
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                    Semi(
+                                                                        FieldSet {
+                                                                            base: Variable(
+                                                                                "__tmp502",
+                                                                            ),
+                                                                            index: 1,
+                                                                            value: IntLiteral(
+                                                                                2,
+                                                                            ),
+                                                                            ty: ReprCField {
+                                                                                offset: 4,
+                                                                                field_ty: "i32",
+                                                                                conv: Sext,
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                                final_expr: Some(
+                                                                    Variable(
+                                                                        "__tmp502",
+                                                                    ),
+                                                                ),
+                                                            },
+                                                        ),
+                                                        ty: ReprCSubPtr {
+                                                            offset: 0,
+                                                            size: 8,
+                                                        },
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            3,
+                                                        ),
+                                                        ty: ReprCField {
+                                                            offset: 8,
+                                                            field_ty: "i32",
+                                                            conv: Sext,
+                                                        },
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 2,
+                                                        value: IntLiteral(
+                                                            4,
+                                                        ),
+                                                        ty: ReprCField {
+                                                            offset: 12,
+                                                            field_ty: "i8",
+                                                            conv: Zext,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp501",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: true,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: Variable(
+                                                        "l",
+                                                    ),
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 8,
+                                                    },
+                                                },
+                                                index: 0,
+                                                ty: ReprCField {
+                                                    offset: 0,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: Variable(
+                                                        "l",
+                                                    ),
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 8,
+                                                    },
+                                                },
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 4,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "l",
+                                                ),
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 8,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "l",
+                                                ),
+                                                index: 2,
+                                                ty: ReprCField {
+                                                    offset: 12,
+                                                    field_ty: "i8",
+                                                    conv: Zext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    FieldSet {
+                                        base: Variable(
+                                            "l",
+                                        ),
+                                        index: 0,
+                                        value: Block(
+                                            HirBlock {
+                                                stmts: [
+                                                    Let {
+                                                        name: "__tmp503",
+                                                        init: Alloc {
+                                                            slots: 1,
+                                                            by_value: false,
+                                                            is_strfat: false,
+                                                        },
+                                                        mutable: false,
+                                                    },
+                                                    Semi(
+                                                        FieldSet {
+                                                            base: Variable(
+                                                                "__tmp503",
+                                                            ),
+                                                            index: 0,
+                                                            value: IntLiteral(
+                                                                7,
+                                                            ),
+                                                            ty: ReprCField {
+                                                                offset: 0,
+                                                                field_ty: "i32",
+                                                                conv: Sext,
+                                                            },
+                                                        },
+                                                    ),
+                                                    Semi(
+                                                        FieldSet {
+                                                            base: Variable(
+                                                                "__tmp503",
+                                                            ),
+                                                            index: 1,
+                                                            value: IntLiteral(
+                                                                8,
+                                                            ),
+                                                            ty: ReprCField {
+                                                                offset: 4,
+                                                                field_ty: "i32",
+                                                                conv: Sext,
+                                                            },
+                                                        },
+                                                    ),
+                                                ],
+                                                final_expr: Some(
+                                                    Variable(
+                                                        "__tmp503",
+                                                    ),
+                                                ),
+                                            },
+                                        ),
+                                        ty: ReprCSubPtr {
+                                            offset: 0,
+                                            size: 8,
+                                        },
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: Variable(
+                                                        "l",
+                                                    ),
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 8,
+                                                    },
+                                                },
+                                                index: 0,
+                                                ty: ReprCField {
+                                                    offset: 0,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: Variable(
+                                                        "l",
+                                                    ),
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 8,
+                                                    },
+                                                },
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 4,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "q",
+                                    init: FieldGet {
+                                        base: Variable(
+                                            "l",
+                                        ),
+                                        index: 0,
+                                        ty: ReprCSubPtr {
+                                            offset: 0,
+                                            size: 8,
+                                        },
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "q",
+                                                ),
+                                                index: 0,
+                                                ty: ReprCField {
+                                                    offset: 0,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "q",
+                                                ),
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 4,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "s",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp504",
+                                                    init: Alloc {
+                                                        slots: 3,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp504",
+                                                        ),
+                                                        index: 0,
+                                                        value: Block(
+                                                            HirBlock {
+                                                                stmts: [
+                                                                    Let {
+                                                                        name: "__tmp505",
+                                                                        init: Alloc {
+                                                                            slots: 2,
+                                                                            by_value: false,
+                                                                            is_strfat: false,
+                                                                        },
+                                                                        mutable: false,
+                                                                    },
+                                                                    Semi(
+                                                                        FieldSet {
+                                                                            base: Variable(
+                                                                                "__tmp505",
+                                                                            ),
+                                                                            index: 0,
+                                                                            value: Block(
+                                                                                HirBlock {
+                                                                                    stmts: [
+                                                                                        Let {
+                                                                                            name: "__tmp506",
+                                                                                            init: Alloc {
+                                                                                                slots: 1,
+                                                                                                by_value: false,
+                                                                                                is_strfat: false,
+                                                                                            },
+                                                                                            mutable: false,
+                                                                                        },
+                                                                                        Semi(
+                                                                                            FieldSet {
+                                                                                                base: Variable(
+                                                                                                    "__tmp506",
+                                                                                                ),
+                                                                                                index: 0,
+                                                                                                value: IntLiteral(
+                                                                                                    11,
+                                                                                                ),
+                                                                                                ty: ReprCField {
+                                                                                                    offset: 0,
+                                                                                                    field_ty: "i32",
+                                                                                                    conv: Sext,
+                                                                                                },
+                                                                                            },
+                                                                                        ),
+                                                                                        Semi(
+                                                                                            FieldSet {
+                                                                                                base: Variable(
+                                                                                                    "__tmp506",
+                                                                                                ),
+                                                                                                index: 1,
+                                                                                                value: IntLiteral(
+                                                                                                    22,
+                                                                                                ),
+                                                                                                ty: ReprCField {
+                                                                                                    offset: 4,
+                                                                                                    field_ty: "i32",
+                                                                                                    conv: Sext,
+                                                                                                },
+                                                                                            },
+                                                                                        ),
+                                                                                    ],
+                                                                                    final_expr: Some(
+                                                                                        Variable(
+                                                                                            "__tmp506",
+                                                                                        ),
+                                                                                    ),
+                                                                                },
+                                                                            ),
+                                                                            ty: ReprCSubPtr {
+                                                                                offset: 0,
+                                                                                size: 8,
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                    Semi(
+                                                                        FieldSet {
+                                                                            base: Variable(
+                                                                                "__tmp505",
+                                                                            ),
+                                                                            index: 1,
+                                                                            value: IntLiteral(
+                                                                                33,
+                                                                            ),
+                                                                            ty: ReprCField {
+                                                                                offset: 8,
+                                                                                field_ty: "i32",
+                                                                                conv: Sext,
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                    Semi(
+                                                                        FieldSet {
+                                                                            base: Variable(
+                                                                                "__tmp505",
+                                                                            ),
+                                                                            index: 2,
+                                                                            value: IntLiteral(
+                                                                                44,
+                                                                            ),
+                                                                            ty: ReprCField {
+                                                                                offset: 12,
+                                                                                field_ty: "i8",
+                                                                                conv: Zext,
+                                                                            },
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                                final_expr: Some(
+                                                                    Variable(
+                                                                        "__tmp505",
+                                                                    ),
+                                                                ),
+                                                            },
+                                                        ),
+                                                        ty: ReprCSubPtr {
+                                                            offset: 0,
+                                                            size: 16,
+                                                        },
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp504",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            55,
+                                                        ),
+                                                        ty: ReprCField {
+                                                            offset: 16,
+                                                            field_ty: "i32",
+                                                            conv: Sext,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp504",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: FieldGet {
+                                                        base: Variable(
+                                                            "s",
+                                                        ),
+                                                        index: 0,
+                                                        ty: ReprCSubPtr {
+                                                            offset: 0,
+                                                            size: 16,
+                                                        },
+                                                    },
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 8,
+                                                    },
+                                                },
+                                                index: 0,
+                                                ty: ReprCField {
+                                                    offset: 0,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: FieldGet {
+                                                        base: Variable(
+                                                            "s",
+                                                        ),
+                                                        index: 0,
+                                                        ty: ReprCSubPtr {
+                                                            offset: 0,
+                                                            size: 16,
+                                                        },
+                                                    },
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 8,
+                                                    },
+                                                },
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 4,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: Variable(
+                                                        "s",
+                                                    ),
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 16,
+                                                    },
+                                                },
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 8,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: FieldGet {
+                                                    base: Variable(
+                                                        "s",
+                                                    ),
+                                                    index: 0,
+                                                    ty: ReprCSubPtr {
+                                                        offset: 0,
+                                                        size: 16,
+                                                    },
+                                                },
+                                                index: 2,
+                                                ty: ReprCField {
+                                                    offset: 12,
+                                                    field_ty: "i8",
+                                                    conv: Zext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "s",
+                                                ),
+                                                index: 1,
+                                                ty: ReprCField {
+                                                    offset: 16,
+                                                    field_ty: "i32",
+                                                    conv: Sext,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: Some(
+                                UnsafeBlock(
+                                    HirBlock {
+                                        stmts: [
+                                            Let {
+                                                name: "p",
+                                                init: Ref {
+                                                    expr: Variable(
+                                                        "l",
+                                                    ),
+                                                    is_mut: false,
+                                                    pointee: Ptr,
+                                                },
+                                                mutable: false,
+                                            },
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "p",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        0,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "p",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        4,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "p",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        8,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "p",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        12,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Let {
+                                                name: "sp",
+                                                init: Ref {
+                                                    expr: Variable(
+                                                        "s",
+                                                    ),
+                                                    is_mut: false,
+                                                    pointee: Ptr,
+                                                },
+                                                mutable: false,
+                                            },
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "sp",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        0,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "sp",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        4,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "sp",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        8,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "sp",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        12,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                            Expr(
+                                                Call {
+                                                    callee: "println",
+                                                    args: [
+                                                        Cast {
+                                                            expr: Deref {
+                                                                expr: PtrAdd {
+                                                                    base: Variable(
+                                                                        "sp",
+                                                                    ),
+                                                                    offset: IntLiteral(
+                                                                        16,
+                                                                    ),
+                                                                    elem: Str,
+                                                                },
+                                                                ty: ReprCField {
+                                                                    offset: 0,
+                                                                    field_ty: "i8",
+                                                                    conv: Zext,
+                                                                },
+                                                            },
+                                                            to: "u32",
+                                                        },
+                                                    ],
+                                                },
+                                            ),
+                                        ],
+                                        final_expr: None,
+                                    },
+                                ),
+                            ),
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271509,
+                end: 271511,
+                line: 7172,
+                col: 1,
+            },
+        },
+    ],
+}

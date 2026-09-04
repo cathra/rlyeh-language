@@ -371,6 +371,7 @@ pub(crate) fn check_item(
                     is_extern: f.is_extern,
                     extern_sig,
                 }),
+                span: f.span,
             });
         }
         AstItem::ConstDecl(c) => {
@@ -381,6 +382,7 @@ pub(crate) fn check_item(
             out.push(HirItem {
                 name: full_name(prefix, &c.name),
                 kind: HirItemKind::Const(HirConstDecl { value }),
+                span: c.span,
             });
         }
         AstItem::ModDecl(m) => {

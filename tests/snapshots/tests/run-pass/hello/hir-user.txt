@@ -1,0 +1,37 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            StringLiteral(
+                                                "Hello, Rlyeh!",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271083,
+                end: 271085,
+                line: 7153,
+                col: 1,
+            },
+        },
+    ],
+}

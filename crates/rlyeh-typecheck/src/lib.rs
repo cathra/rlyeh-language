@@ -31,6 +31,16 @@ pub use error::TypeError;
 pub use types::{FnSignature, Mutability, StructDef, Type};
 
 use rlyeh_hir::HirProgram;
+use rlyeh_lexer::Span;
+
+/// 合成源码位置：用于编译器生成项（单态化实例等），其无对应源文件位置。
+/// 这类项的 `span.start` 为 0，< `prelude_len`，故在「用户代码过滤」时被排除。
+pub(crate) const DUMMY_SPAN: Span = Span {
+    start: 0,
+    end: 0,
+    line: 0,
+    col: 0,
+};
 
 pub use crate::check_item::{collect_fn_signatures, typecheck, typecheck_with_region_hints};
 

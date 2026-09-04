@@ -1,0 +1,115 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "kind",
+                                    init: IntLiteral(
+                                        5,
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "e1",
+                                    init: Call {
+                                        callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
+                                        args: [
+                                            Variable(
+                                                "kind",
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Call {
+                                                callee: "io::error::IoError::message",
+                                                args: [
+                                                    Variable(
+                                                        "e1",
+                                                    ),
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "e2",
+                                    init: Call {
+                                        callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
+                                        args: [
+                                            Variable(
+                                                "kind",
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Call {
+                                                callee: "io::error::IoError::message",
+                                                args: [
+                                                    Variable(
+                                                        "e2",
+                                                    ),
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "e3",
+                                    init: Call {
+                                        callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
+                                        args: [
+                                            Variable(
+                                                "kind",
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Call {
+                                                callee: "io::error::IoError::message",
+                                                args: [
+                                                    Variable(
+                                                        "e3",
+                                                    ),
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271218,
+                end: 271220,
+                line: 7155,
+                col: 1,
+            },
+        },
+    ],
+}

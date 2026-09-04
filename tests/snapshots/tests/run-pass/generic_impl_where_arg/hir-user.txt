@@ -1,0 +1,117 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "c",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp501",
+                                                    init: Alloc {
+                                                        slots: 1,
+                                                        by_value: true,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 0,
+                                                        value: IntLiteral(
+                                                            100,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp501",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "n",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp502",
+                                                    init: Alloc {
+                                                        slots: 1,
+                                                        by_value: true,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp502",
+                                                        ),
+                                                        index: 0,
+                                                        value: IntLiteral(
+                                                            7,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp502",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Call {
+                                                callee: "C::convert__Convert__IntN_IntN",
+                                                args: [
+                                                    Variable(
+                                                        "c",
+                                                    ),
+                                                    Variable(
+                                                        "n",
+                                                    ),
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 272082,
+                end: 272084,
+                line: 7173,
+                col: 1,
+            },
+        },
+    ],
+}

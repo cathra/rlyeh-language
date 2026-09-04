@@ -1,0 +1,71 @@
+AstProgram {
+    items: [
+        FnDecl(
+            AstFnDecl {
+                name: "main",
+                generics: [],
+                params: [],
+                return_type: None,
+                body: Some(
+                    AstBlock {
+                        stmts: [
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 82,
+                                                end: 89,
+                                                line: 3,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: StringLiteral(
+                                                    "Hello, Rlyeh!",
+                                                ),
+                                                span: Span {
+                                                    start: 90,
+                                                    end: 105,
+                                                    line: 3,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 82,
+                                        end: 106,
+                                        line: 3,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                        ],
+                        final_expr: None,
+                        span: Span {
+                            start: 76,
+                            end: 109,
+                            line: 2,
+                            col: 11,
+                        },
+                    },
+                ),
+                is_pub: false,
+                is_async: false,
+                is_extern: false,
+                span: Span {
+                    start: 66,
+                    end: 68,
+                    line: 2,
+                    col: 1,
+                },
+            },
+        ),
+    ],
+}

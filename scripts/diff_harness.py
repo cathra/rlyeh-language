@@ -8,6 +8,7 @@
     ir    : `rlyeh build --emit ir`    → LLVM IR 文本
     ast   : `rlyeh build --emit ast`   → AST 文本（`{:#?}`）
     hir   : `rlyeh build --emit hir`   → HIR 文本（`{:#?}`）
+    ast-user / hir-user : 仅用户源码项（排除 std 前缀），体积小、适合快照基线
     run   : `rlyeh run`                → 程序标准输出（行为）
 
 0.2.0 内为「单编译器快照对拍」：以 Rust 编译器自身产物作参考快照。
@@ -47,7 +48,7 @@ import os
 import subprocess
 import sys
 
-DIMS = ["ir", "ast", "hir", "run"]
+DIMS = ["ir", "ast", "hir", "ast-user", "hir-user", "run"]
 DEFAULT_RLYEH = os.path.join("target", "debug", "rlyeh")
 DEFAULT_SNAP_DIR = os.path.join("tests", "snapshots")
 # IR 探针基线清单：精选「小子集」用例（见下），因单程序 IR 被 std 前缀主导

@@ -1,0 +1,608 @@
+AstProgram {
+    items: [
+        TraitDecl(
+            AstTraitDecl {
+                name: "Convert",
+                generics: [
+                    AstTypeParam {
+                        name: "T",
+                        bounds: [],
+                    },
+                ],
+                types: [],
+                methods: [
+                    AstFnDecl {
+                        name: "convert",
+                        generics: [],
+                        params: [
+                            AstParam {
+                                name: "self",
+                                type_: Ref(
+                                    Path(
+                                        "Self",
+                                        [],
+                                    ),
+                                    false,
+                                ),
+                                default: None,
+                                is_mut: false,
+                                span: Span {
+                                    start: 808,
+                                    end: 813,
+                                    line: 11,
+                                    col: 31,
+                                },
+                            },
+                            AstParam {
+                                name: "v",
+                                type_: Path(
+                                    "T",
+                                    [],
+                                ),
+                                default: None,
+                                is_mut: false,
+                                span: Span {
+                                    start: 815,
+                                    end: 819,
+                                    line: 11,
+                                    col: 38,
+                                },
+                            },
+                        ],
+                        return_type: Some(
+                            Path(
+                                "i64",
+                                [],
+                            ),
+                        ),
+                        body: None,
+                        is_pub: false,
+                        is_async: false,
+                        is_extern: false,
+                        span: Span {
+                            start: 797,
+                            end: 829,
+                            line: 11,
+                            col: 20,
+                        },
+                    },
+                ],
+                span: Span {
+                    start: 778,
+                    end: 830,
+                    line: 11,
+                    col: 1,
+                },
+            },
+        ),
+        TraitDecl(
+            AstTraitDecl {
+                name: "Num",
+                generics: [],
+                types: [],
+                methods: [
+                    AstFnDecl {
+                        name: "val",
+                        generics: [],
+                        params: [
+                            AstParam {
+                                name: "self",
+                                type_: Ref(
+                                    Path(
+                                        "Self",
+                                        [],
+                                    ),
+                                    false,
+                                ),
+                                default: None,
+                                is_mut: false,
+                                span: Span {
+                                    start: 850,
+                                    end: 855,
+                                    line: 12,
+                                    col: 20,
+                                },
+                            },
+                        ],
+                        return_type: Some(
+                            Path(
+                                "i64",
+                                [],
+                            ),
+                        ),
+                        body: None,
+                        is_pub: false,
+                        is_async: false,
+                        is_extern: false,
+                        span: Span {
+                            start: 843,
+                            end: 865,
+                            line: 12,
+                            col: 13,
+                        },
+                    },
+                ],
+                span: Span {
+                    start: 831,
+                    end: 866,
+                    line: 12,
+                    col: 1,
+                },
+            },
+        ),
+        StructDecl(
+            AstStructDecl {
+                name: "IntN",
+                generics: [],
+                fields: [
+                    AstStructField {
+                        name: "v",
+                        type_: Path(
+                            "i64",
+                            [],
+                        ),
+                        is_pub: false,
+                        span: Span {
+                            start: 882,
+                            end: 889,
+                            line: 14,
+                            col: 15,
+                        },
+                    },
+                ],
+                derive: [],
+                repr_c: false,
+                span: Span {
+                    start: 868,
+                    end: 890,
+                    line: 14,
+                    col: 1,
+                },
+            },
+        ),
+        ImplBlock(
+            AstImplBlock {
+                trait_name: Some(
+                    "Num",
+                ),
+                type_name: "IntN",
+                generics: [],
+                trait_type_args: [],
+                types: [],
+                methods: [
+                    AstFnDecl {
+                        name: "val",
+                        generics: [],
+                        params: [
+                            AstParam {
+                                name: "self",
+                                type_: Ref(
+                                    Path(
+                                        "Self",
+                                        [],
+                                    ),
+                                    false,
+                                ),
+                                default: None,
+                                is_mut: false,
+                                span: Span {
+                                    start: 918,
+                                    end: 923,
+                                    line: 15,
+                                    col: 28,
+                                },
+                            },
+                        ],
+                        return_type: Some(
+                            Path(
+                                "i64",
+                                [],
+                            ),
+                        ),
+                        body: Some(
+                            AstBlock {
+                                stmts: [],
+                                final_expr: Some(
+                                    AstExpr {
+                                        kind: FieldAccess {
+                                            expr: AstExpr {
+                                                kind: Ident(
+                                                    "self",
+                                                ),
+                                                span: Span {
+                                                    start: 934,
+                                                    end: 938,
+                                                    line: 15,
+                                                    col: 44,
+                                                },
+                                            },
+                                            field: "v",
+                                        },
+                                        span: Span {
+                                            start: 934,
+                                            end: 941,
+                                            line: 15,
+                                            col: 44,
+                                        },
+                                    },
+                                ),
+                                span: Span {
+                                    start: 932,
+                                    end: 942,
+                                    line: 15,
+                                    col: 42,
+                                },
+                            },
+                        ),
+                        is_pub: false,
+                        is_async: false,
+                        is_extern: false,
+                        span: Span {
+                            start: 911,
+                            end: 943,
+                            line: 15,
+                            col: 21,
+                        },
+                    },
+                ],
+                span: Span {
+                    start: 891,
+                    end: 944,
+                    line: 15,
+                    col: 1,
+                },
+            },
+        ),
+        StructDecl(
+            AstStructDecl {
+                name: "C",
+                generics: [],
+                fields: [
+                    AstStructField {
+                        name: "k",
+                        type_: Path(
+                            "i64",
+                            [],
+                        ),
+                        is_pub: false,
+                        span: Span {
+                            start: 957,
+                            end: 964,
+                            line: 17,
+                            col: 12,
+                        },
+                    },
+                ],
+                derive: [],
+                repr_c: false,
+                span: Span {
+                    start: 946,
+                    end: 965,
+                    line: 17,
+                    col: 1,
+                },
+            },
+        ),
+        ImplBlock(
+            AstImplBlock {
+                trait_name: Some(
+                    "Convert",
+                ),
+                type_name: "C",
+                generics: [
+                    AstTypeParam {
+                        name: "T",
+                        bounds: [
+                            "Num",
+                        ],
+                    },
+                ],
+                trait_type_args: [
+                    Path(
+                        "T",
+                        [],
+                    ),
+                ],
+                types: [],
+                methods: [
+                    AstFnDecl {
+                        name: "convert",
+                        generics: [],
+                        params: [
+                            AstParam {
+                                name: "self",
+                                type_: Ref(
+                                    Path(
+                                        "Self",
+                                        [],
+                                    ),
+                                    false,
+                                ),
+                                default: None,
+                                is_mut: false,
+                                span: Span {
+                                    start: 1021,
+                                    end: 1026,
+                                    line: 19,
+                                    col: 16,
+                                },
+                            },
+                            AstParam {
+                                name: "v",
+                                type_: Path(
+                                    "T",
+                                    [],
+                                ),
+                                default: None,
+                                is_mut: false,
+                                span: Span {
+                                    start: 1028,
+                                    end: 1032,
+                                    line: 19,
+                                    col: 23,
+                                },
+                            },
+                        ],
+                        return_type: Some(
+                            Path(
+                                "i64",
+                                [],
+                            ),
+                        ),
+                        body: Some(
+                            AstBlock {
+                                stmts: [],
+                                final_expr: Some(
+                                    AstExpr {
+                                        kind: Binary {
+                                            op: Add,
+                                            left: AstExpr {
+                                                kind: MethodCall {
+                                                    receiver: AstExpr {
+                                                        kind: Ident(
+                                                            "v",
+                                                        ),
+                                                        span: Span {
+                                                            start: 1043,
+                                                            end: 1044,
+                                                            line: 19,
+                                                            col: 38,
+                                                        },
+                                                    },
+                                                    method: "val",
+                                                    args: [],
+                                                    trait_hint: None,
+                                                },
+                                                span: Span {
+                                                    start: 1043,
+                                                    end: 1050,
+                                                    line: 19,
+                                                    col: 38,
+                                                },
+                                            },
+                                            right: AstExpr {
+                                                kind: FieldAccess {
+                                                    expr: AstExpr {
+                                                        kind: Ident(
+                                                            "self",
+                                                        ),
+                                                        span: Span {
+                                                            start: 1053,
+                                                            end: 1057,
+                                                            line: 19,
+                                                            col: 48,
+                                                        },
+                                                    },
+                                                    field: "k",
+                                                },
+                                                span: Span {
+                                                    start: 1053,
+                                                    end: 1060,
+                                                    line: 19,
+                                                    col: 48,
+                                                },
+                                            },
+                                        },
+                                        span: Span {
+                                            start: 1043,
+                                            end: 1060,
+                                            line: 19,
+                                            col: 38,
+                                        },
+                                    },
+                                ),
+                                span: Span {
+                                    start: 1041,
+                                    end: 1061,
+                                    line: 19,
+                                    col: 36,
+                                },
+                            },
+                        ),
+                        is_pub: false,
+                        is_async: false,
+                        is_extern: false,
+                        span: Span {
+                            start: 1010,
+                            end: 1062,
+                            line: 19,
+                            col: 5,
+                        },
+                    },
+                ],
+                span: Span {
+                    start: 966,
+                    end: 1063,
+                    line: 18,
+                    col: 1,
+                },
+            },
+        ),
+        FnDecl(
+            AstFnDecl {
+                name: "main",
+                generics: [],
+                params: [],
+                return_type: None,
+                body: Some(
+                    AstBlock {
+                        stmts: [
+                            Let {
+                                pattern: Ident(
+                                    "c",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: StructCtor {
+                                        type_name: [
+                                            "C",
+                                        ],
+                                        type_args: [],
+                                        fields: [
+                                            (
+                                                "k",
+                                                AstExpr {
+                                                    kind: IntLiteral(
+                                                        100,
+                                                    ),
+                                                    span: Span {
+                                                        start: 1096,
+                                                        end: 1100,
+                                                        line: 23,
+                                                        col: 20,
+                                                    },
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                    span: Span {
+                                        start: 1089,
+                                        end: 1101,
+                                        line: 23,
+                                        col: 13,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Let {
+                                pattern: Ident(
+                                    "n",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: StructCtor {
+                                        type_name: [
+                                            "IntN",
+                                        ],
+                                        type_args: [],
+                                        fields: [
+                                            (
+                                                "v",
+                                                AstExpr {
+                                                    kind: IntLiteral(
+                                                        7,
+                                                    ),
+                                                    span: Span {
+                                                        start: 1125,
+                                                        end: 1127,
+                                                        line: 24,
+                                                        col: 23,
+                                                    },
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                    span: Span {
+                                        start: 1115,
+                                        end: 1128,
+                                        line: 24,
+                                        col: 13,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 1134,
+                                                end: 1141,
+                                                line: 25,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: MethodCall {
+                                                    receiver: AstExpr {
+                                                        kind: Ident(
+                                                            "c",
+                                                        ),
+                                                        span: Span {
+                                                            start: 1142,
+                                                            end: 1143,
+                                                            line: 25,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                    method: "convert",
+                                                    args: [
+                                                        AstExpr {
+                                                            kind: Ident(
+                                                                "n",
+                                                            ),
+                                                            span: Span {
+                                                                start: 1152,
+                                                                end: 1153,
+                                                                line: 25,
+                                                                col: 23,
+                                                            },
+                                                        },
+                                                    ],
+                                                    trait_hint: None,
+                                                },
+                                                span: Span {
+                                                    start: 1142,
+                                                    end: 1154,
+                                                    line: 25,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 1134,
+                                        end: 1155,
+                                        line: 25,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                        ],
+                        final_expr: None,
+                        span: Span {
+                            start: 1075,
+                            end: 1215,
+                            line: 22,
+                            col: 11,
+                        },
+                    },
+                ),
+                is_pub: false,
+                is_async: false,
+                is_extern: false,
+                span: Span {
+                    start: 1065,
+                    end: 1067,
+                    line: 22,
+                    col: 1,
+                },
+            },
+        ),
+    ],
+}

@@ -28,6 +28,7 @@ pub use incremental::cache::CacheStats;
 use incremental::cache::IncrementalCache;
 use incremental::hash::{compute_interface_hash, compute_source_hash, extract_interface};
 use rlyeh_borrowck::BorrowChecker;
+use rlyeh_hir::{HirItem, HirProgram};
 use rlyeh_regionck::RegionChecker;
 
 /// 一次编译的结果（含缓存状态，供 CLI 报告）。
@@ -120,6 +121,38 @@ pub fn emit_hir(entry: &Path) -> Result<String, DriverError> {
     )
     .map_err(|e| DriverError::Typecheck(e.to_string()))?;
     Ok(format!("{:#?}", hir))
+}
+
+/// 解析入口文件（仅用户源码，不含标准库预置）为 AST 文本。
+///
+/// 与 [`emit_ast`] 不同：不拼接 std 预置，产物仅含用户源码顶层项，体积小、
+/// 适合作为快照基线（SH-P2-5 K4/K5 加固）。用于差分 harness 的 `ast-user` 维度。
+pub fn emit_ast_user(entry: &Path) -> Result<String, DriverError> {
+    let source = module::load_combined_source(entry)?;
+    let ast = rlyeh_parser::parse(&source).map_err(|e| DriverError::Typecheck(e.to_string()))?;
+    Ok(format!("{:#?}", ast))
+}
+
+/// 类型检查入口文件为 HIR 文本，但仅保留用户源码项（排除 std 前缀）。
+///
+/// 复用 [`emit_hir`] 的完整类型检查（仍需 std 解析类型），再按 `HirItem.span`
+/// 的字节偏移过滤掉落在 `prelude_len` 之前的 std 预置项，使产物体积可控、
+/// 适合作为快照基线（SH-P2-5 K4/K5 加固）。用于差分 harness 的 `hir-user` 维度。
+pub fn emit_hir_user(entry: &Path) -> Result<String, DriverError> {
+    let source = module::load_combined_source(entry)?;
+    let (combined, prelude_len) = source_with_std(source, false)?;
+    let hir = rlyeh_typecheck::typecheck_source_with_region_hints(
+        &combined,
+        &std::collections::HashMap::new(),
+        prelude_len,
+    )
+    .map_err(|e| DriverError::Typecheck(e.to_string()))?;
+    let items: Vec<HirItem> = hir
+        .items
+        .into_iter()
+        .filter(|it| it.span.start >= prelude_len)
+        .collect();
+    Ok(format!("{:#?}", HirProgram { items }))
 }
 
 /// 编译入口文件（含外部模块）为可执行文件，无缓存。

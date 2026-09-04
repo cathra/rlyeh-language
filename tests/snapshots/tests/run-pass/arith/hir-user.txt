@@ -1,0 +1,186 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "add",
+            kind: Fn(
+                HirFnDecl {
+                    params: [
+                        HirParam {
+                            name: "a",
+                        },
+                        HirParam {
+                            name: "b",
+                        },
+                    ],
+                    body: Some(
+                        HirBlock {
+                            stmts: [],
+                            final_expr: Some(
+                                Binary(
+                                    Add,
+                                    Variable(
+                                        "a",
+                                    ),
+                                    Variable(
+                                        "b",
+                                    ),
+                                ),
+                            ),
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271088,
+                end: 271133,
+                line: 7153,
+                col: 1,
+            },
+        },
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "x",
+                                    init: IntLiteral(
+                                        6,
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "y",
+                                    init: IntLiteral(
+                                        7,
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "sum",
+                                    init: Call {
+                                        callee: "add",
+                                        args: [
+                                            Variable(
+                                                "x",
+                                            ),
+                                            Variable(
+                                                "y",
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "sum",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            StringLiteral(
+                                                "6 * 7 = ",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Binary(
+                                                Mul,
+                                                Variable(
+                                                    "x",
+                                                ),
+                                                Variable(
+                                                    "y",
+                                                ),
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [],
+                                    },
+                                ),
+                                Expr(
+                                    If {
+                                        cond: Binary(
+                                            Gt,
+                                            Variable(
+                                                "sum",
+                                            ),
+                                            IntLiteral(
+                                                10,
+                                            ),
+                                        ),
+                                        then_block: HirBlock {
+                                            stmts: [
+                                                Expr(
+                                                    Call {
+                                                        callee: "println",
+                                                        args: [
+                                                            StringLiteral(
+                                                                "sum is big",
+                                                            ),
+                                                        ],
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: None,
+                                        },
+                                        else_block: None,
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            BoolLiteral(
+                                                true,
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            BoolLiteral(
+                                                false,
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271133,
+                end: 271135,
+                line: 7157,
+                col: 1,
+            },
+        },
+    ],
+}

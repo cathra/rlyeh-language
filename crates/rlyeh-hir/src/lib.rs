@@ -16,7 +16,8 @@
 //! - 节点不携带源码位置与类型标注（类型由 typecheck 侧返回）。
 
 #![warn(missing_docs)]
-#![warn(unsafe_code)]
+
+use rlyeh_lexer::Span;
 
 /// 类型检查完成后的程序。
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +33,9 @@ pub struct HirItem {
     pub name: String,
     /// 项内容
     pub kind: HirItemKind,
+    /// 源码位置（合并源码中的字节偏移；来自 std 预置的项其偏移落在
+    /// `prelude_len` 之前，可用于过滤 std 前缀——SH-P2-5 快照基线用）。
+    pub span: Span,
 }
 
 /// 顶层项内容。

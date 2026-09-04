@@ -1,0 +1,191 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "p",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp501",
+                                                    init: Alloc {
+                                                        slots: 2,
+                                                        by_value: true,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 0,
+                                                        value: IntLiteral(
+                                                            3,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            4,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp501",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "q",
+                                    init: Call {
+                                        callee: "identity__Point",
+                                        args: [
+                                            Variable(
+                                                "p",
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "q",
+                                                ),
+                                                index: 0,
+                                                ty: Int,
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "q",
+                                                ),
+                                                index: 1,
+                                                ty: Int,
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "p",
+                                                ),
+                                                index: 0,
+                                                ty: Int,
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "l",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp502",
+                                                    init: Alloc {
+                                                        slots: 1,
+                                                        by_value: true,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp502",
+                                                        ),
+                                                        index: 0,
+                                                        value: IntLiteral(
+                                                            7,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp502",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "l2",
+                                    init: Call {
+                                        callee: "identity__Label",
+                                        args: [
+                                            Variable(
+                                                "l",
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            FieldGet {
+                                                base: Variable(
+                                                    "l2",
+                                                ),
+                                                index: 0,
+                                                ty: Int,
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271663,
+                end: 271665,
+                line: 7175,
+                col: 1,
+            },
+        },
+    ],
+}

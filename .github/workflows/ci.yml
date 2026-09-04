@@ -50,6 +50,12 @@ jobs:
       - name: IR probe regression (diff harness)
         run: python3 scripts/diff_harness.py check --probe
 
+      # SH-P2-5 C2 扩充·路线 A：AST/HIR 探针回归（排除 std 前缀的小子集快照）
+      - name: AST-user probe regression (diff harness)
+        run: python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-ast-probe.txt --dims ast-user
+      - name: HIR-user probe regression (diff harness)
+        run: python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-hir-probe.txt --dims hir-user
+
       # E1：macOS 双架构交叉编译冒烟（本机 clang 直链 SDK，已在本机验证）
       - name: Cross-compile smoke (macOS dual-arch)
         if: runner.os == 'macOS'

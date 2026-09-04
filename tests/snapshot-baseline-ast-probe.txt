@@ -1,0 +1,44 @@
+# Rlyeh AST 探针基线清单（SH-P2-5 C2 扩充·路线 A，0.2.0 PoC）
+#
+# 每行一个 .rl 相对路径（相对仓库根）；`#` 开头为注释。
+# 用法:
+#   python3 scripts/diff_harness.py update --manifest tests/snapshot-baseline-ast-probe.txt --dims ast-user
+#   python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-ast-probe.txt --dims ast-user
+#
+# 维度说明: `ast-user` 经 driver `emit_ast_user` 仅解析**用户源码**（不含 std 预置），
+# 产物仅含用户顶层项，体积小（单程序数十~千余行，而 full `ast` 达 ~21 万行），
+# 适合作为 AST 快照基线，捕获 AST 结构级回归。
+#
+# 选取原则: 多样性（控制流/枚举/布局/泛型/元组/字符串/联合等）、确定性高、
+# 无并发/无 IO 副作用。新增用例须确认 `ast-user` 产物稳定且体积可控。
+
+# 基础入口 / 算术控制流
+tests/run-pass/hello.rl
+tests/run-pass/arith.rl
+
+# 按值拷贝 / clone（覆盖 by_value_locals 修复点）
+tests/run-pass/copy_clone.rl
+
+# 枚举判别
+tests/run-pass/enum_discriminant.rl
+
+# 内存布局
+tests/run-pass/repr-c-struct.rl
+tests/run-pass/repr-c-nested.rl
+
+# 类型转换 / Into
+tests/run-pass/cast.rl
+tests/run-pass/into_reciprocal.rl
+
+# 元组 / 解构
+tests/run-pass/tuple_value.rl
+
+# 字符串 API
+tests/run-pass/string_api.rl
+
+# 泛型 trait / impl
+tests/run-pass/generic_impl_where_arg.rl
+
+# 结构体 / 联合
+tests/run-pass/struct_field_union.rl
+tests/run-pass/union_basics.rl

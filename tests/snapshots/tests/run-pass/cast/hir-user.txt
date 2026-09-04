@@ -1,0 +1,232 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: FloatLiteral(
+                                                    3.7,
+                                                ),
+                                                to: "i64",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: Unary(
+                                                    Neg,
+                                                    FloatLiteral(
+                                                        3.7,
+                                                    ),
+                                                ),
+                                                to: "i64",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: IntLiteral(
+                                                    5,
+                                                ),
+                                                to: "f64",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: IntLiteral(
+                                                    300,
+                                                ),
+                                                to: "i8",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: Unary(
+                                                    Neg,
+                                                    IntLiteral(
+                                                        300,
+                                                    ),
+                                                ),
+                                                to: "i8",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: IntLiteral(
+                                                    300,
+                                                ),
+                                                to: "u8",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: Unary(
+                                                    Neg,
+                                                    IntLiteral(
+                                                        1,
+                                                    ),
+                                                ),
+                                                to: "u8",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "a",
+                                    init: Unary(
+                                        Neg,
+                                        IntLiteral(
+                                            1,
+                                        ),
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: Variable(
+                                                    "a",
+                                                ),
+                                                to: "i64",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: IntLiteral(
+                                                    5,
+                                                ),
+                                                to: "bool",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: IntLiteral(
+                                                    0,
+                                                ),
+                                                to: "bool",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: BoolLiteral(
+                                                    true,
+                                                ),
+                                                to: "i64",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Cast {
+                                                expr: CharLiteral(
+                                                    'a',
+                                                ),
+                                                to: "i64",
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "c",
+                                    init: Cast {
+                                        expr: IntLiteral(
+                                            66,
+                                        ),
+                                        to: "char",
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "c",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            IntLiteral(
+                                                42,
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271196,
+                end: 271198,
+                line: 7154,
+                col: 1,
+            },
+        },
+    ],
+}

@@ -1,0 +1,45 @@
+# Rlyeh HIR 探针基线清单（SH-P2-5 C2 扩充·路线 A，0.2.0 PoC）
+#
+# 每行一个 .rl 相对路径（相对仓库根）；`#` 开头为注释。
+# 用法:
+#   python3 scripts/diff_harness.py update --manifest tests/snapshot-baseline-hir-probe.txt --dims hir-user
+#   python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-hir-probe.txt --dims hir-user
+#
+# 维度说明: `hir-user` 经 driver `emit_hir_user` 完整类型检查后，按 `HirItem.span`
+# 字节偏移过滤掉落在 `prelude_len`（std 预置）之前的项，仅保留用户源码项。
+# 单程序仅数十~千余行（full `hir` 达 ~3.5 万行），适合作为 HIR 快照基线，
+# 捕获 HIR 结构级回归。注: 单态化生成项（泛型实例/闭包）无真实源位置，被排除，
+# 故泛型/闭包程序的 hir-user 仅含其非泛型用户项。
+#
+# 选取原则: 多样性（控制流/枚举/布局/转换/元组/字符串/泛型/函数指针等）、
+# 确定性高、无并发/无 IO 副作用。新增用例须确认 `hir-user` 产物稳定且体积可控。
+
+# 基础入口 / 算术控制流
+tests/run-pass/hello.rl
+tests/run-pass/arith.rl
+
+# 按值拷贝 / clone（覆盖 by_value_locals 修复点）
+tests/run-pass/copy_clone.rl
+
+# 枚举判别
+tests/run-pass/enum_discriminant.rl
+
+# 内存布局
+tests/run-pass/repr-c-struct.rl
+tests/run-pass/repr-c-nested.rl
+
+# 类型转换 / Into
+tests/run-pass/cast.rl
+tests/run-pass/into_reciprocal.rl
+
+# 元组 / 解构
+tests/run-pass/tuple_value.rl
+
+# 字符串 API
+tests/run-pass/string_api.rl
+
+# 泛型 trait / impl
+tests/run-pass/generic_impl_where_arg.rl
+
+# 函数指针
+tests/run-pass/fn_ptr.rl

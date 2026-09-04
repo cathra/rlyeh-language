@@ -1,0 +1,552 @@
+AstProgram {
+    items: [
+        FnDecl(
+            AstFnDecl {
+                name: "add",
+                generics: [],
+                params: [
+                    AstParam {
+                        name: "a",
+                        type_: Path(
+                            "i64",
+                            [],
+                        ),
+                        default: None,
+                        is_mut: false,
+                        span: Span {
+                            start: 78,
+                            end: 84,
+                            line: 2,
+                            col: 8,
+                        },
+                    },
+                    AstParam {
+                        name: "b",
+                        type_: Path(
+                            "i64",
+                            [],
+                        ),
+                        default: None,
+                        is_mut: false,
+                        span: Span {
+                            start: 86,
+                            end: 92,
+                            line: 2,
+                            col: 16,
+                        },
+                    },
+                ],
+                return_type: Some(
+                    Path(
+                        "i64",
+                        [],
+                    ),
+                ),
+                body: Some(
+                    AstBlock {
+                        stmts: [],
+                        final_expr: Some(
+                            AstExpr {
+                                kind: Binary {
+                                    op: Add,
+                                    left: AstExpr {
+                                        kind: Ident(
+                                            "a",
+                                        ),
+                                        span: Span {
+                                            start: 107,
+                                            end: 109,
+                                            line: 3,
+                                            col: 5,
+                                        },
+                                    },
+                                    right: AstExpr {
+                                        kind: Ident(
+                                            "b",
+                                        ),
+                                        span: Span {
+                                            start: 111,
+                                            end: 113,
+                                            line: 3,
+                                            col: 9,
+                                        },
+                                    },
+                                },
+                                span: Span {
+                                    start: 107,
+                                    end: 113,
+                                    line: 3,
+                                    col: 5,
+                                },
+                            },
+                        ),
+                        span: Span {
+                            start: 101,
+                            end: 114,
+                            line: 2,
+                            col: 31,
+                        },
+                    },
+                ),
+                is_pub: false,
+                is_async: false,
+                is_extern: false,
+                span: Span {
+                    start: 71,
+                    end: 116,
+                    line: 2,
+                    col: 1,
+                },
+            },
+        ),
+        FnDecl(
+            AstFnDecl {
+                name: "main",
+                generics: [],
+                params: [],
+                return_type: None,
+                body: Some(
+                    AstBlock {
+                        stmts: [
+                            Let {
+                                pattern: Ident(
+                                    "x",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: IntLiteral(
+                                        6,
+                                    ),
+                                    span: Span {
+                                        start: 140,
+                                        end: 141,
+                                        line: 7,
+                                        col: 13,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Let {
+                                pattern: Ident(
+                                    "y",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: IntLiteral(
+                                        7,
+                                    ),
+                                    span: Span {
+                                        start: 155,
+                                        end: 156,
+                                        line: 8,
+                                        col: 13,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Let {
+                                pattern: Ident(
+                                    "sum",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "add",
+                                            ),
+                                            span: Span {
+                                                start: 172,
+                                                end: 175,
+                                                line: 9,
+                                                col: 15,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: Ident(
+                                                    "x",
+                                                ),
+                                                span: Span {
+                                                    start: 176,
+                                                    end: 177,
+                                                    line: 9,
+                                                    col: 19,
+                                                },
+                                            },
+                                            AstExpr {
+                                                kind: Ident(
+                                                    "y",
+                                                ),
+                                                span: Span {
+                                                    start: 179,
+                                                    end: 180,
+                                                    line: 9,
+                                                    col: 22,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 172,
+                                        end: 181,
+                                        line: 9,
+                                        col: 15,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 187,
+                                                end: 194,
+                                                line: 10,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: Ident(
+                                                    "sum",
+                                                ),
+                                                span: Span {
+                                                    start: 195,
+                                                    end: 198,
+                                                    line: 10,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 187,
+                                        end: 199,
+                                        line: 10,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 205,
+                                                end: 212,
+                                                line: 11,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: StringLiteral(
+                                                    "6 * 7 = ",
+                                                ),
+                                                span: Span {
+                                                    start: 213,
+                                                    end: 223,
+                                                    line: 11,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 205,
+                                        end: 224,
+                                        line: 11,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 230,
+                                                end: 237,
+                                                line: 12,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: Binary {
+                                                    op: Mul,
+                                                    left: AstExpr {
+                                                        kind: Ident(
+                                                            "x",
+                                                        ),
+                                                        span: Span {
+                                                            start: 238,
+                                                            end: 240,
+                                                            line: 12,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                    right: AstExpr {
+                                                        kind: Ident(
+                                                            "y",
+                                                        ),
+                                                        span: Span {
+                                                            start: 242,
+                                                            end: 243,
+                                                            line: 12,
+                                                            col: 17,
+                                                        },
+                                                    },
+                                                },
+                                                span: Span {
+                                                    start: 238,
+                                                    end: 243,
+                                                    line: 12,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 230,
+                                        end: 244,
+                                        line: 12,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 250,
+                                                end: 257,
+                                                line: 13,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 250,
+                                        end: 259,
+                                        line: 13,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Expr(
+                                AstExpr {
+                                    kind: If {
+                                        cond: AstExpr {
+                                            kind: ComparisonChain {
+                                                elements: [
+                                                    AstExpr {
+                                                        kind: Ident(
+                                                            "sum",
+                                                        ),
+                                                        span: Span {
+                                                            start: 268,
+                                                            end: 272,
+                                                            line: 14,
+                                                            col: 8,
+                                                        },
+                                                    },
+                                                    AstExpr {
+                                                        kind: IntLiteral(
+                                                            10,
+                                                        ),
+                                                        span: Span {
+                                                            start: 274,
+                                                            end: 277,
+                                                            line: 14,
+                                                            col: 14,
+                                                        },
+                                                    },
+                                                ],
+                                                operators: [
+                                                    Gt,
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 268,
+                                                end: 277,
+                                                line: 14,
+                                                col: 8,
+                                            },
+                                        },
+                                        then_block: AstBlock {
+                                            stmts: [
+                                                Expr(
+                                                    AstExpr {
+                                                        kind: Call {
+                                                            callee: AstExpr {
+                                                                kind: Ident(
+                                                                    "println",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 287,
+                                                                    end: 294,
+                                                                    line: 15,
+                                                                    col: 9,
+                                                                },
+                                                            },
+                                                            args: [
+                                                                AstExpr {
+                                                                    kind: StringLiteral(
+                                                                        "sum is big",
+                                                                    ),
+                                                                    span: Span {
+                                                                        start: 295,
+                                                                        end: 307,
+                                                                        line: 15,
+                                                                        col: 17,
+                                                                    },
+                                                                },
+                                                            ],
+                                                            type_args: [],
+                                                        },
+                                                        span: Span {
+                                                            start: 287,
+                                                            end: 308,
+                                                            line: 15,
+                                                            col: 9,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: None,
+                                            span: Span {
+                                                start: 277,
+                                                end: 315,
+                                                line: 14,
+                                                col: 17,
+                                            },
+                                        },
+                                        else_block: None,
+                                    },
+                                    span: Span {
+                                        start: 265,
+                                        end: 315,
+                                        line: 14,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 321,
+                                                end: 328,
+                                                line: 17,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: BoolLiteral(
+                                                    true,
+                                                ),
+                                                span: Span {
+                                                    start: 329,
+                                                    end: 333,
+                                                    line: 17,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 321,
+                                        end: 334,
+                                        line: 17,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 340,
+                                                end: 347,
+                                                line: 18,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: BoolLiteral(
+                                                    false,
+                                                ),
+                                                span: Span {
+                                                    start: 348,
+                                                    end: 353,
+                                                    line: 18,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 340,
+                                        end: 354,
+                                        line: 18,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                        ],
+                        final_expr: None,
+                        span: Span {
+                            start: 126,
+                            end: 357,
+                            line: 6,
+                            col: 11,
+                        },
+                    },
+                ),
+                is_pub: false,
+                is_async: false,
+                is_extern: false,
+                span: Span {
+                    start: 116,
+                    end: 118,
+                    line: 6,
+                    col: 1,
+                },
+            },
+        ),
+    ],
+}

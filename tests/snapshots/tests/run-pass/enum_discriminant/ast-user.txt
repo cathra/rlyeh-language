@@ -1,0 +1,487 @@
+AstProgram {
+    items: [
+        EnumDecl(
+            AstEnumDecl {
+                name: "Code",
+                generics: [],
+                variants: [
+                    AstEnumVariant {
+                        name: "Ok",
+                        tuple_fields: [],
+                        struct_fields: [],
+                        discriminant: Some(
+                            200,
+                        ),
+                        span: Span {
+                            start: 299,
+                            end: 307,
+                            line: 4,
+                            col: 13,
+                        },
+                    },
+                    AstEnumVariant {
+                        name: "NotFound",
+                        tuple_fields: [],
+                        struct_fields: [],
+                        discriminant: Some(
+                            404,
+                        ),
+                        span: Span {
+                            start: 309,
+                            end: 323,
+                            line: 4,
+                            col: 23,
+                        },
+                    },
+                    AstEnumVariant {
+                        name: "Error",
+                        tuple_fields: [],
+                        struct_fields: [],
+                        discriminant: Some(
+                            500,
+                        ),
+                        span: Span {
+                            start: 325,
+                            end: 337,
+                            line: 4,
+                            col: 39,
+                        },
+                    },
+                ],
+                span: Span {
+                    start: 287,
+                    end: 338,
+                    line: 4,
+                    col: 1,
+                },
+            },
+        ),
+        FnDecl(
+            AstFnDecl {
+                name: "main",
+                generics: [],
+                params: [],
+                return_type: None,
+                body: Some(
+                    AstBlock {
+                        stmts: [
+                            Let {
+                                pattern: Ident(
+                                    "c",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Path(
+                                        [
+                                            "Code",
+                                            "NotFound",
+                                        ],
+                                    ),
+                                    span: Span {
+                                        start: 362,
+                                        end: 376,
+                                        line: 7,
+                                        col: 11,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Semi(
+                                AstExpr {
+                                    kind: Match {
+                                        expr: AstExpr {
+                                            kind: Ident(
+                                                "c",
+                                            ),
+                                            span: Span {
+                                                start: 386,
+                                                end: 388,
+                                                line: 8,
+                                                col: 9,
+                                            },
+                                        },
+                                        arms: [
+                                            MatchArm {
+                                                pattern: EnumPath(
+                                                    [
+                                                        "Code",
+                                                        "Ok",
+                                                    ],
+                                                    [],
+                                                ),
+                                                guard: None,
+                                                body: AstExpr {
+                                                    kind: Call {
+                                                        callee: AstExpr {
+                                                            kind: Ident(
+                                                                "println",
+                                                            ),
+                                                            span: Span {
+                                                                start: 406,
+                                                                end: 413,
+                                                                line: 9,
+                                                                col: 17,
+                                                            },
+                                                        },
+                                                        args: [
+                                                            AstExpr {
+                                                                kind: IntLiteral(
+                                                                    1,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 414,
+                                                                    end: 415,
+                                                                    line: 9,
+                                                                    col: 25,
+                                                                },
+                                                            },
+                                                        ],
+                                                        type_args: [],
+                                                    },
+                                                    span: Span {
+                                                        start: 406,
+                                                        end: 416,
+                                                        line: 9,
+                                                        col: 17,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    start: 394,
+                                                    end: 416,
+                                                    line: 9,
+                                                    col: 5,
+                                                },
+                                            },
+                                            MatchArm {
+                                                pattern: EnumPath(
+                                                    [
+                                                        "Code",
+                                                        "NotFound",
+                                                    ],
+                                                    [],
+                                                ),
+                                                guard: None,
+                                                body: AstExpr {
+                                                    kind: Call {
+                                                        callee: AstExpr {
+                                                            kind: Ident(
+                                                                "println",
+                                                            ),
+                                                            span: Span {
+                                                                start: 440,
+                                                                end: 447,
+                                                                line: 10,
+                                                                col: 23,
+                                                            },
+                                                        },
+                                                        args: [
+                                                            AstExpr {
+                                                                kind: IntLiteral(
+                                                                    2,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 448,
+                                                                    end: 449,
+                                                                    line: 10,
+                                                                    col: 31,
+                                                                },
+                                                            },
+                                                        ],
+                                                        type_args: [],
+                                                    },
+                                                    span: Span {
+                                                        start: 440,
+                                                        end: 450,
+                                                        line: 10,
+                                                        col: 23,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    start: 422,
+                                                    end: 450,
+                                                    line: 10,
+                                                    col: 5,
+                                                },
+                                            },
+                                            MatchArm {
+                                                pattern: EnumPath(
+                                                    [
+                                                        "Code",
+                                                        "Error",
+                                                    ],
+                                                    [],
+                                                ),
+                                                guard: None,
+                                                body: AstExpr {
+                                                    kind: Call {
+                                                        callee: AstExpr {
+                                                            kind: Ident(
+                                                                "println",
+                                                            ),
+                                                            span: Span {
+                                                                start: 471,
+                                                                end: 478,
+                                                                line: 11,
+                                                                col: 20,
+                                                            },
+                                                        },
+                                                        args: [
+                                                            AstExpr {
+                                                                kind: IntLiteral(
+                                                                    3,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 479,
+                                                                    end: 480,
+                                                                    line: 11,
+                                                                    col: 28,
+                                                                },
+                                                            },
+                                                        ],
+                                                        type_args: [],
+                                                    },
+                                                    span: Span {
+                                                        start: 471,
+                                                        end: 481,
+                                                        line: 11,
+                                                        col: 20,
+                                                    },
+                                                },
+                                                span: Span {
+                                                    start: 456,
+                                                    end: 481,
+                                                    line: 11,
+                                                    col: 5,
+                                                },
+                                            },
+                                        ],
+                                    },
+                                    span: Span {
+                                        start: 380,
+                                        end: 486,
+                                        line: 8,
+                                        col: 3,
+                                    },
+                                },
+                            ),
+                            Let {
+                                pattern: Ident(
+                                    "e",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Path(
+                                        [
+                                            "Code",
+                                            "Error",
+                                        ],
+                                    ),
+                                    span: Span {
+                                        start: 497,
+                                        end: 508,
+                                        line: 13,
+                                        col: 11,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                        ],
+                        final_expr: Some(
+                            AstExpr {
+                                kind: Match {
+                                    expr: AstExpr {
+                                        kind: Ident(
+                                            "e",
+                                        ),
+                                        span: Span {
+                                            start: 518,
+                                            end: 520,
+                                            line: 14,
+                                            col: 9,
+                                        },
+                                    },
+                                    arms: [
+                                        MatchArm {
+                                            pattern: EnumPath(
+                                                [
+                                                    "Code",
+                                                    "Ok",
+                                                ],
+                                                [],
+                                            ),
+                                            guard: None,
+                                            body: AstExpr {
+                                                kind: Call {
+                                                    callee: AstExpr {
+                                                        kind: Ident(
+                                                            "println",
+                                                        ),
+                                                        span: Span {
+                                                            start: 538,
+                                                            end: 545,
+                                                            line: 15,
+                                                            col: 17,
+                                                        },
+                                                    },
+                                                    args: [
+                                                        AstExpr {
+                                                            kind: IntLiteral(
+                                                                1,
+                                                            ),
+                                                            span: Span {
+                                                                start: 546,
+                                                                end: 547,
+                                                                line: 15,
+                                                                col: 25,
+                                                            },
+                                                        },
+                                                    ],
+                                                    type_args: [],
+                                                },
+                                                span: Span {
+                                                    start: 538,
+                                                    end: 548,
+                                                    line: 15,
+                                                    col: 17,
+                                                },
+                                            },
+                                            span: Span {
+                                                start: 526,
+                                                end: 548,
+                                                line: 15,
+                                                col: 5,
+                                            },
+                                        },
+                                        MatchArm {
+                                            pattern: EnumPath(
+                                                [
+                                                    "Code",
+                                                    "NotFound",
+                                                ],
+                                                [],
+                                            ),
+                                            guard: None,
+                                            body: AstExpr {
+                                                kind: Call {
+                                                    callee: AstExpr {
+                                                        kind: Ident(
+                                                            "println",
+                                                        ),
+                                                        span: Span {
+                                                            start: 572,
+                                                            end: 579,
+                                                            line: 16,
+                                                            col: 23,
+                                                        },
+                                                    },
+                                                    args: [
+                                                        AstExpr {
+                                                            kind: IntLiteral(
+                                                                2,
+                                                            ),
+                                                            span: Span {
+                                                                start: 580,
+                                                                end: 581,
+                                                                line: 16,
+                                                                col: 31,
+                                                            },
+                                                        },
+                                                    ],
+                                                    type_args: [],
+                                                },
+                                                span: Span {
+                                                    start: 572,
+                                                    end: 582,
+                                                    line: 16,
+                                                    col: 23,
+                                                },
+                                            },
+                                            span: Span {
+                                                start: 554,
+                                                end: 582,
+                                                line: 16,
+                                                col: 5,
+                                            },
+                                        },
+                                        MatchArm {
+                                            pattern: EnumPath(
+                                                [
+                                                    "Code",
+                                                    "Error",
+                                                ],
+                                                [],
+                                            ),
+                                            guard: None,
+                                            body: AstExpr {
+                                                kind: Call {
+                                                    callee: AstExpr {
+                                                        kind: Ident(
+                                                            "println",
+                                                        ),
+                                                        span: Span {
+                                                            start: 603,
+                                                            end: 610,
+                                                            line: 17,
+                                                            col: 20,
+                                                        },
+                                                    },
+                                                    args: [
+                                                        AstExpr {
+                                                            kind: IntLiteral(
+                                                                3,
+                                                            ),
+                                                            span: Span {
+                                                                start: 611,
+                                                                end: 612,
+                                                                line: 17,
+                                                                col: 28,
+                                                            },
+                                                        },
+                                                    ],
+                                                    type_args: [],
+                                                },
+                                                span: Span {
+                                                    start: 603,
+                                                    end: 613,
+                                                    line: 17,
+                                                    col: 20,
+                                                },
+                                            },
+                                            span: Span {
+                                                start: 588,
+                                                end: 613,
+                                                line: 17,
+                                                col: 5,
+                                            },
+                                        },
+                                    ],
+                                },
+                                span: Span {
+                                    start: 512,
+                                    end: 618,
+                                    line: 14,
+                                    col: 3,
+                                },
+                            },
+                        ),
+                        span: Span {
+                            start: 350,
+                            end: 620,
+                            line: 6,
+                            col: 11,
+                        },
+                    },
+                ),
+                is_pub: false,
+                is_async: false,
+                is_extern: false,
+                span: Span {
+                    start: 340,
+                    end: 342,
+                    line: 6,
+                    col: 1,
+                },
+            },
+        ),
+    ],
+}

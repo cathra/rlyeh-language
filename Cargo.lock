@@ -847,6 +847,7 @@ dependencies = [
  "rlyeh-codegen",
  "rlyeh-doc",
  "rlyeh-fmt",
+ "rlyeh-hir",
  "rlyeh-lir",
  "rlyeh-lsp",
  "rlyeh-mir",
@@ -877,6 +878,9 @@ dependencies = [
 [[package]]
 name = "rlyeh-hir"
 version = "0.1.0"
+dependencies = [
+ "rlyeh-lexer",
+]
 
 [[package]]
 name = "rlyeh-lexer"

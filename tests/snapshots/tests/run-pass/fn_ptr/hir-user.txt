@@ -1,0 +1,868 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "add",
+            kind: Fn(
+                HirFnDecl {
+                    params: [
+                        HirParam {
+                            name: "a",
+                        },
+                        HirParam {
+                            name: "b",
+                        },
+                    ],
+                    body: Some(
+                        HirBlock {
+                            stmts: [],
+                            final_expr: Some(
+                                Binary(
+                                    Add,
+                                    Variable(
+                                        "a",
+                                    ),
+                                    Variable(
+                                        "b",
+                                    ),
+                                ),
+                            ),
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271111,
+                end: 271156,
+                line: 7153,
+                col: 1,
+            },
+        },
+        HirItem {
+            name: "apply",
+            kind: Fn(
+                HirFnDecl {
+                    params: [
+                        HirParam {
+                            name: "f",
+                        },
+                        HirParam {
+                            name: "x",
+                        },
+                        HirParam {
+                            name: "y",
+                        },
+                    ],
+                    body: Some(
+                        HirBlock {
+                            stmts: [],
+                            final_expr: Some(
+                                CallIndirect {
+                                    callee: Variable(
+                                        "f",
+                                    ),
+                                    args: [
+                                        Variable(
+                                            "x",
+                                        ),
+                                        Variable(
+                                            "y",
+                                        ),
+                                    ],
+                                    param_names: [
+                                        "i64",
+                                        "i64",
+                                    ],
+                                    ret_name: "i64",
+                                },
+                            ),
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271156,
+                end: 271229,
+                line: 7157,
+                col: 1,
+            },
+        },
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "f",
+                                    init: FnPtr(
+                                        "add",
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp503",
+                                                            init: Call {
+                                                                callee: "String::clone",
+                                                                args: [
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp501",
+                                                                                    init: Call {
+                                                                                        callee: "alloc_bytes",
+                                                                                        args: [
+                                                                                            IntLiteral(
+                                                                                                16,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    Call {
+                                                                                        callee: "copy_bytes",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__tmp501",
+                                                                                            ),
+                                                                                            StringLiteral(
+                                                                                                "direct via fp: ",
+                                                                                            ),
+                                                                                            IntLiteral(
+                                                                                                16,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                ),
+                                                                                Let {
+                                                                                    name: "__tmp502",
+                                                                                    init: Alloc {
+                                                                                        slots: 3,
+                                                                                        by_value: false,
+                                                                                        is_strfat: false,
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp502",
+                                                                                        ),
+                                                                                        index: 0,
+                                                                                        value: Variable(
+                                                                                            "__tmp501",
+                                                                                        ),
+                                                                                        ty: Ptr,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp502",
+                                                                                        ),
+                                                                                        index: 1,
+                                                                                        value: IntLiteral(
+                                                                                            15,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp502",
+                                                                                        ),
+                                                                                        index: 2,
+                                                                                        value: IntLiteral(
+                                                                                            15,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                Variable(
+                                                                                    "__tmp502",
+                                                                                ),
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: true,
+                                                        },
+                                                        Expr(
+                                                            Call {
+                                                                callee: "String::push_str",
+                                                                args: [
+                                                                    Variable(
+                                                                        "__tmp503",
+                                                                    ),
+                                                                    Call {
+                                                                        callee: "int_to_string",
+                                                                        args: [
+                                                                            CallIndirect {
+                                                                                callee: Variable(
+                                                                                    "f",
+                                                                                ),
+                                                                                args: [
+                                                                                    IntLiteral(
+                                                                                        3,
+                                                                                    ),
+                                                                                    IntLiteral(
+                                                                                        4,
+                                                                                    ),
+                                                                                ],
+                                                                                param_names: [
+                                                                                    "i64",
+                                                                                    "i64",
+                                                                                ],
+                                                                                ret_name: "i64",
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ],
+                                                    final_expr: Some(
+                                                        Variable(
+                                                            "__tmp503",
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "r",
+                                    init: Call {
+                                        callee: "apply",
+                                        args: [
+                                            FnPtr(
+                                                "add",
+                                            ),
+                                            IntLiteral(
+                                                10,
+                                            ),
+                                            IntLiteral(
+                                                20,
+                                            ),
+                                        ],
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp506",
+                                                            init: Call {
+                                                                callee: "String::clone",
+                                                                args: [
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp504",
+                                                                                    init: Call {
+                                                                                        callee: "alloc_bytes",
+                                                                                        args: [
+                                                                                            IntLiteral(
+                                                                                                9,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    Call {
+                                                                                        callee: "copy_bytes",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__tmp504",
+                                                                                            ),
+                                                                                            StringLiteral(
+                                                                                                "as arg: ",
+                                                                                            ),
+                                                                                            IntLiteral(
+                                                                                                9,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                ),
+                                                                                Let {
+                                                                                    name: "__tmp505",
+                                                                                    init: Alloc {
+                                                                                        slots: 3,
+                                                                                        by_value: false,
+                                                                                        is_strfat: false,
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp505",
+                                                                                        ),
+                                                                                        index: 0,
+                                                                                        value: Variable(
+                                                                                            "__tmp504",
+                                                                                        ),
+                                                                                        ty: Ptr,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp505",
+                                                                                        ),
+                                                                                        index: 1,
+                                                                                        value: IntLiteral(
+                                                                                            8,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp505",
+                                                                                        ),
+                                                                                        index: 2,
+                                                                                        value: IntLiteral(
+                                                                                            8,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                Variable(
+                                                                                    "__tmp505",
+                                                                                ),
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: true,
+                                                        },
+                                                        Expr(
+                                                            Call {
+                                                                callee: "String::push_str",
+                                                                args: [
+                                                                    Variable(
+                                                                        "__tmp506",
+                                                                    ),
+                                                                    Call {
+                                                                        callee: "int_to_string",
+                                                                        args: [
+                                                                            Variable(
+                                                                                "r",
+                                                                            ),
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ],
+                                                    final_expr: Some(
+                                                        Variable(
+                                                            "__tmp506",
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "g",
+                                    init: Variable(
+                                        "f",
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp509",
+                                                            init: Call {
+                                                                callee: "String::clone",
+                                                                args: [
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp507",
+                                                                                    init: Call {
+                                                                                        callee: "alloc_bytes",
+                                                                                        args: [
+                                                                                            IntLiteral(
+                                                                                                11,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    Call {
+                                                                                        callee: "copy_bytes",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__tmp507",
+                                                                                            ),
+                                                                                            StringLiteral(
+                                                                                                "re-bound: ",
+                                                                                            ),
+                                                                                            IntLiteral(
+                                                                                                11,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                ),
+                                                                                Let {
+                                                                                    name: "__tmp508",
+                                                                                    init: Alloc {
+                                                                                        slots: 3,
+                                                                                        by_value: false,
+                                                                                        is_strfat: false,
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp508",
+                                                                                        ),
+                                                                                        index: 0,
+                                                                                        value: Variable(
+                                                                                            "__tmp507",
+                                                                                        ),
+                                                                                        ty: Ptr,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp508",
+                                                                                        ),
+                                                                                        index: 1,
+                                                                                        value: IntLiteral(
+                                                                                            10,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp508",
+                                                                                        ),
+                                                                                        index: 2,
+                                                                                        value: IntLiteral(
+                                                                                            10,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                Variable(
+                                                                                    "__tmp508",
+                                                                                ),
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: true,
+                                                        },
+                                                        Expr(
+                                                            Call {
+                                                                callee: "String::push_str",
+                                                                args: [
+                                                                    Variable(
+                                                                        "__tmp509",
+                                                                    ),
+                                                                    Call {
+                                                                        callee: "int_to_string",
+                                                                        args: [
+                                                                            CallIndirect {
+                                                                                callee: Variable(
+                                                                                    "g",
+                                                                                ),
+                                                                                args: [
+                                                                                    IntLiteral(
+                                                                                        7,
+                                                                                    ),
+                                                                                    IntLiteral(
+                                                                                        8,
+                                                                                    ),
+                                                                                ],
+                                                                                param_names: [
+                                                                                    "i64",
+                                                                                    "i64",
+                                                                                ],
+                                                                                ret_name: "i64",
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ],
+                                                    final_expr: Some(
+                                                        Variable(
+                                                            "__tmp509",
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "typed",
+                                    init: FnPtr(
+                                        "add",
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp512",
+                                                            init: Call {
+                                                                callee: "String::clone",
+                                                                args: [
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp510",
+                                                                                    init: Call {
+                                                                                        callee: "alloc_bytes",
+                                                                                        args: [
+                                                                                            IntLiteral(
+                                                                                                8,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    Call {
+                                                                                        callee: "copy_bytes",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__tmp510",
+                                                                                            ),
+                                                                                            StringLiteral(
+                                                                                                "typed: ",
+                                                                                            ),
+                                                                                            IntLiteral(
+                                                                                                8,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                ),
+                                                                                Let {
+                                                                                    name: "__tmp511",
+                                                                                    init: Alloc {
+                                                                                        slots: 3,
+                                                                                        by_value: false,
+                                                                                        is_strfat: false,
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp511",
+                                                                                        ),
+                                                                                        index: 0,
+                                                                                        value: Variable(
+                                                                                            "__tmp510",
+                                                                                        ),
+                                                                                        ty: Ptr,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp511",
+                                                                                        ),
+                                                                                        index: 1,
+                                                                                        value: IntLiteral(
+                                                                                            7,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp511",
+                                                                                        ),
+                                                                                        index: 2,
+                                                                                        value: IntLiteral(
+                                                                                            7,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                Variable(
+                                                                                    "__tmp511",
+                                                                                ),
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: true,
+                                                        },
+                                                        Expr(
+                                                            Call {
+                                                                callee: "String::push_str",
+                                                                args: [
+                                                                    Variable(
+                                                                        "__tmp512",
+                                                                    ),
+                                                                    Call {
+                                                                        callee: "int_to_string",
+                                                                        args: [
+                                                                            CallIndirect {
+                                                                                callee: Variable(
+                                                                                    "typed",
+                                                                                ),
+                                                                                args: [
+                                                                                    IntLiteral(
+                                                                                        1,
+                                                                                    ),
+                                                                                    IntLiteral(
+                                                                                        2,
+                                                                                    ),
+                                                                                ],
+                                                                                param_names: [
+                                                                                    "i64",
+                                                                                    "i64",
+                                                                                ],
+                                                                                ret_name: "i64",
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ],
+                                                    final_expr: Some(
+                                                        Variable(
+                                                            "__tmp512",
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "r2",
+                                    init: CallIndirect {
+                                        callee: Variable(
+                                            "f",
+                                        ),
+                                        args: [
+                                            IntLiteral(
+                                                5,
+                                            ),
+                                            IntLiteral(
+                                                6,
+                                            ),
+                                        ],
+                                        param_names: [
+                                            "i64",
+                                            "i64",
+                                        ],
+                                        ret_name: "i64",
+                                    },
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp515",
+                                                            init: Call {
+                                                                callee: "String::clone",
+                                                                args: [
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp513",
+                                                                                    init: Call {
+                                                                                        callee: "alloc_bytes",
+                                                                                        args: [
+                                                                                            IntLiteral(
+                                                                                                14,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    Call {
+                                                                                        callee: "copy_bytes",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__tmp513",
+                                                                                            ),
+                                                                                            StringLiteral(
+                                                                                                "store again: ",
+                                                                                            ),
+                                                                                            IntLiteral(
+                                                                                                14,
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                ),
+                                                                                Let {
+                                                                                    name: "__tmp514",
+                                                                                    init: Alloc {
+                                                                                        slots: 3,
+                                                                                        by_value: false,
+                                                                                        is_strfat: false,
+                                                                                    },
+                                                                                    mutable: false,
+                                                                                },
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp514",
+                                                                                        ),
+                                                                                        index: 0,
+                                                                                        value: Variable(
+                                                                                            "__tmp513",
+                                                                                        ),
+                                                                                        ty: Ptr,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp514",
+                                                                                        ),
+                                                                                        index: 1,
+                                                                                        value: IntLiteral(
+                                                                                            13,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                                Semi(
+                                                                                    FieldSet {
+                                                                                        base: Variable(
+                                                                                            "__tmp514",
+                                                                                        ),
+                                                                                        index: 2,
+                                                                                        value: IntLiteral(
+                                                                                            13,
+                                                                                        ),
+                                                                                        ty: Int,
+                                                                                    },
+                                                                                ),
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                Variable(
+                                                                                    "__tmp514",
+                                                                                ),
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: true,
+                                                        },
+                                                        Expr(
+                                                            Call {
+                                                                callee: "String::push_str",
+                                                                args: [
+                                                                    Variable(
+                                                                        "__tmp515",
+                                                                    ),
+                                                                    Call {
+                                                                        callee: "int_to_string",
+                                                                        args: [
+                                                                            Variable(
+                                                                                "r2",
+                                                                            ),
+                                                                        ],
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ],
+                                                    final_expr: Some(
+                                                        Variable(
+                                                            "__tmp515",
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271229,
+                end: 271231,
+                line: 7161,
+                col: 1,
+            },
+        },
+    ],
+}

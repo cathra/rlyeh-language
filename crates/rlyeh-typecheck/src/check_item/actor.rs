@@ -163,6 +163,7 @@ pub(crate) fn expand_actor(
             is_extern: false,
             extern_sig: None,
         }),
+        span: a.span,
     });
 
     // 4. 方法函数 `<actor>::__m<i>(self, p0, p1, p2) -> i64`
@@ -192,6 +193,7 @@ pub(crate) fn expand_actor(
                 is_extern: false,
                 extern_sig: None,
             }),
+            span: a.span,
         });
     }
 
@@ -212,6 +214,7 @@ pub(crate) fn expand_actor(
             is_extern: false,
             extern_sig: None,
         }),
+        span: a.span,
     });
 
     let _ = &state_new;
@@ -333,6 +336,7 @@ pub(crate) fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<Hi
                     (*ret).to_string(),
                 )),
             }),
+            span: crate::DUMMY_SPAN,
         });
     }
 }
@@ -367,6 +371,7 @@ pub(crate) fn emit_gc_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirIt
                     (*ret).to_string(),
                 )),
             }),
+            span: crate::DUMMY_SPAN,
         });
     }
 }

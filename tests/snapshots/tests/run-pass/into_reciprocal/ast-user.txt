@@ -1,0 +1,352 @@
+AstProgram {
+    items: [
+        FnDecl(
+            AstFnDecl {
+                name: "main",
+                generics: [],
+                params: [],
+                return_type: None,
+                body: Some(
+                    AstBlock {
+                        stmts: [
+                            Let {
+                                pattern: Ident(
+                                    "kind",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Path(
+                                        [
+                                            "io",
+                                            "error",
+                                            "IoErrorKind",
+                                            "TimedOut",
+                                        ],
+                                    ),
+                                    span: Span {
+                                        start: 228,
+                                        end: 260,
+                                        line: 5,
+                                        col: 16,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Let {
+                                pattern: Ident(
+                                    "e1",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Path(
+                                                [
+                                                    "Into",
+                                                    "into",
+                                                ],
+                                            ),
+                                            span: Span {
+                                                start: 338,
+                                                end: 342,
+                                                line: 8,
+                                                col: 14,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: Ident(
+                                                    "kind",
+                                                ),
+                                                span: Span {
+                                                    start: 371,
+                                                    end: 375,
+                                                    line: 8,
+                                                    col: 47,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [
+                                            Path(
+                                                "io::error::IoError",
+                                                [],
+                                            ),
+                                        ],
+                                    },
+                                    span: Span {
+                                        start: 338,
+                                        end: 376,
+                                        line: 8,
+                                        col: 14,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 382,
+                                                end: 389,
+                                                line: 9,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: MethodCall {
+                                                    receiver: AstExpr {
+                                                        kind: Ident(
+                                                            "e1",
+                                                        ),
+                                                        span: Span {
+                                                            start: 390,
+                                                            end: 392,
+                                                            line: 9,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                    method: "message",
+                                                    args: [],
+                                                    trait_hint: None,
+                                                },
+                                                span: Span {
+                                                    start: 390,
+                                                    end: 402,
+                                                    line: 9,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 382,
+                                        end: 403,
+                                        line: 9,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Let {
+                                pattern: Ident(
+                                    "e2",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Path(
+                                                [
+                                                    "From",
+                                                    "from",
+                                                ],
+                                            ),
+                                            span: Span {
+                                                start: 473,
+                                                end: 483,
+                                                line: 12,
+                                                col: 14,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: Ident(
+                                                    "kind",
+                                                ),
+                                                span: Span {
+                                                    start: 484,
+                                                    end: 488,
+                                                    line: 12,
+                                                    col: 25,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 473,
+                                        end: 489,
+                                        line: 12,
+                                        col: 14,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 495,
+                                                end: 502,
+                                                line: 13,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: MethodCall {
+                                                    receiver: AstExpr {
+                                                        kind: Ident(
+                                                            "e2",
+                                                        ),
+                                                        span: Span {
+                                                            start: 503,
+                                                            end: 505,
+                                                            line: 13,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                    method: "message",
+                                                    args: [],
+                                                    trait_hint: None,
+                                                },
+                                                span: Span {
+                                                    start: 503,
+                                                    end: 515,
+                                                    line: 13,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 495,
+                                        end: 516,
+                                        line: 13,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                            Let {
+                                pattern: Ident(
+                                    "e3",
+                                ),
+                                type_anno: None,
+                                init: AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Path(
+                                                [
+                                                    "Into",
+                                                    "into",
+                                                ],
+                                            ),
+                                            span: Span {
+                                                start: 585,
+                                                end: 595,
+                                                line: 16,
+                                                col: 14,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: Ident(
+                                                    "kind",
+                                                ),
+                                                span: Span {
+                                                    start: 618,
+                                                    end: 622,
+                                                    line: 16,
+                                                    col: 47,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [
+                                            Path(
+                                                "io::error::IoError",
+                                                [],
+                                            ),
+                                        ],
+                                    },
+                                    span: Span {
+                                        start: 585,
+                                        end: 623,
+                                        line: 16,
+                                        col: 14,
+                                    },
+                                },
+                                mutable: false,
+                            },
+                            Expr(
+                                AstExpr {
+                                    kind: Call {
+                                        callee: AstExpr {
+                                            kind: Ident(
+                                                "println",
+                                            ),
+                                            span: Span {
+                                                start: 629,
+                                                end: 636,
+                                                line: 17,
+                                                col: 5,
+                                            },
+                                        },
+                                        args: [
+                                            AstExpr {
+                                                kind: MethodCall {
+                                                    receiver: AstExpr {
+                                                        kind: Ident(
+                                                            "e3",
+                                                        ),
+                                                        span: Span {
+                                                            start: 637,
+                                                            end: 639,
+                                                            line: 17,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                    method: "message",
+                                                    args: [],
+                                                    trait_hint: None,
+                                                },
+                                                span: Span {
+                                                    start: 637,
+                                                    end: 649,
+                                                    line: 17,
+                                                    col: 13,
+                                                },
+                                            },
+                                        ],
+                                        type_args: [],
+                                    },
+                                    span: Span {
+                                        start: 629,
+                                        end: 650,
+                                        line: 17,
+                                        col: 5,
+                                    },
+                                },
+                            ),
+                        ],
+                        final_expr: None,
+                        span: Span {
+                            start: 211,
+                            end: 653,
+                            line: 4,
+                            col: 11,
+                        },
+                    },
+                ),
+                is_pub: false,
+                is_async: false,
+                is_extern: false,
+                span: Span {
+                    start: 201,
+                    end: 203,
+                    line: 4,
+                    col: 1,
+                },
+            },
+        ),
+    ],
+}

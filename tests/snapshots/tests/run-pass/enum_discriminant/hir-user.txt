@@ -1,0 +1,248 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "c",
+                                    init: IntLiteral(
+                                        404,
+                                    ),
+                                    mutable: false,
+                                },
+                                Semi(
+                                    Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp501",
+                                                    init: Variable(
+                                                        "c",
+                                                    ),
+                                                    mutable: true,
+                                                },
+                                            ],
+                                            final_expr: Some(
+                                                If {
+                                                    cond: Binary(
+                                                        Eq,
+                                                        Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        IntLiteral(
+                                                            200,
+                                                        ),
+                                                    ),
+                                                    then_block: HirBlock {
+                                                        stmts: [],
+                                                        final_expr: Some(
+                                                            Call {
+                                                                callee: "println",
+                                                                args: [
+                                                                    IntLiteral(
+                                                                        1,
+                                                                    ),
+                                                                ],
+                                                            },
+                                                        ),
+                                                    },
+                                                    else_block: Some(
+                                                        HirBlock {
+                                                            stmts: [],
+                                                            final_expr: Some(
+                                                                If {
+                                                                    cond: Binary(
+                                                                        Eq,
+                                                                        Variable(
+                                                                            "__tmp501",
+                                                                        ),
+                                                                        IntLiteral(
+                                                                            404,
+                                                                        ),
+                                                                    ),
+                                                                    then_block: HirBlock {
+                                                                        stmts: [],
+                                                                        final_expr: Some(
+                                                                            Call {
+                                                                                callee: "println",
+                                                                                args: [
+                                                                                    IntLiteral(
+                                                                                        2,
+                                                                                    ),
+                                                                                ],
+                                                                            },
+                                                                        ),
+                                                                    },
+                                                                    else_block: Some(
+                                                                        HirBlock {
+                                                                            stmts: [],
+                                                                            final_expr: Some(
+                                                                                If {
+                                                                                    cond: Binary(
+                                                                                        Eq,
+                                                                                        Variable(
+                                                                                            "__tmp501",
+                                                                                        ),
+                                                                                        IntLiteral(
+                                                                                            500,
+                                                                                        ),
+                                                                                    ),
+                                                                                    then_block: HirBlock {
+                                                                                        stmts: [],
+                                                                                        final_expr: Some(
+                                                                                            Call {
+                                                                                                callee: "println",
+                                                                                                args: [
+                                                                                                    IntLiteral(
+                                                                                                        3,
+                                                                                                    ),
+                                                                                                ],
+                                                                                            },
+                                                                                        ),
+                                                                                    },
+                                                                                    else_block: None,
+                                                                                },
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                },
+                                                            ),
+                                                        },
+                                                    ),
+                                                },
+                                            ),
+                                        },
+                                    ),
+                                ),
+                                Let {
+                                    name: "e",
+                                    init: IntLiteral(
+                                        500,
+                                    ),
+                                    mutable: false,
+                                },
+                            ],
+                            final_expr: Some(
+                                Block(
+                                    HirBlock {
+                                        stmts: [
+                                            Let {
+                                                name: "__tmp502",
+                                                init: Variable(
+                                                    "e",
+                                                ),
+                                                mutable: true,
+                                            },
+                                        ],
+                                        final_expr: Some(
+                                            If {
+                                                cond: Binary(
+                                                    Eq,
+                                                    Variable(
+                                                        "__tmp502",
+                                                    ),
+                                                    IntLiteral(
+                                                        200,
+                                                    ),
+                                                ),
+                                                then_block: HirBlock {
+                                                    stmts: [],
+                                                    final_expr: Some(
+                                                        Call {
+                                                            callee: "println",
+                                                            args: [
+                                                                IntLiteral(
+                                                                    1,
+                                                                ),
+                                                            ],
+                                                        },
+                                                    ),
+                                                },
+                                                else_block: Some(
+                                                    HirBlock {
+                                                        stmts: [],
+                                                        final_expr: Some(
+                                                            If {
+                                                                cond: Binary(
+                                                                    Eq,
+                                                                    Variable(
+                                                                        "__tmp502",
+                                                                    ),
+                                                                    IntLiteral(
+                                                                        404,
+                                                                    ),
+                                                                ),
+                                                                then_block: HirBlock {
+                                                                    stmts: [],
+                                                                    final_expr: Some(
+                                                                        Call {
+                                                                            callee: "println",
+                                                                            args: [
+                                                                                IntLiteral(
+                                                                                    2,
+                                                                                ),
+                                                                            ],
+                                                                        },
+                                                                    ),
+                                                                },
+                                                                else_block: Some(
+                                                                    HirBlock {
+                                                                        stmts: [],
+                                                                        final_expr: Some(
+                                                                            If {
+                                                                                cond: Binary(
+                                                                                    Eq,
+                                                                                    Variable(
+                                                                                        "__tmp502",
+                                                                                    ),
+                                                                                    IntLiteral(
+                                                                                        500,
+                                                                                    ),
+                                                                                ),
+                                                                                then_block: HirBlock {
+                                                                                    stmts: [],
+                                                                                    final_expr: Some(
+                                                                                        Call {
+                                                                                            callee: "println",
+                                                                                            args: [
+                                                                                                IntLiteral(
+                                                                                                    3,
+                                                                                                ),
+                                                                                            ],
+                                                                                        },
+                                                                                    ),
+                                                                                },
+                                                                                else_block: None,
+                                                                            },
+                                                                        ),
+                                                                    },
+                                                                ),
+                                                            },
+                                                        ),
+                                                    },
+                                                ),
+                                            },
+                                        ),
+                                    },
+                                ),
+                            ),
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271357,
+                end: 271359,
+                line: 7157,
+                col: 1,
+            },
+        },
+    ],
+}

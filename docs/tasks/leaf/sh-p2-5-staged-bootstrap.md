@@ -16,7 +16,7 @@
 
 > 现实约束：Rlyeh 自写编译器尚不存在 → 真正的「Rust 参考 vs Rlyeh 编译器」跨编译器对拍属 0.3.0；0.2.0 仅落 **harness 脚手架 + 单编译器快照对拍**（以 Rust 编译器自身产物作参考快照），管道就位后未来无缝升级为双编译器对拍。
 >
-> 体积约束（实测，2026-09-04）：`--emit` 产出的 AST/HIR/IR 文本被 **std 前缀严重主导**——单程序 AST ~21 万行、HIR ~3.4 万行、IR ~1.8 万行，几乎全是前缀，逐程序存储不现实。因此 0.2.0 的**存储式快照基线以 `run`（运行行为）输出为主**（体积小、语义回归信号强）；AST/HIR/IR 三维作为**未来双编译器 `--rlyeh-b` 实时差分维度**（比对两份产物、无需存储）保留。若需 AST/HIR 逐程序快照，后续可增强 `emit_ast`/`emit_hir` 排除前缀（按源文件过滤条目）。
+> 体积约束（实测，2026-09-04）：`--emit` 产出的 AST/HIR/IR 文本被 **std 前缀严重主导**——单程序 AST ~21 万行、HIR ~3.4 万行、IR ~1.8 万行，几乎全是前缀，逐程序存储不现实。因此 0.2.0 的**存储式快照基线以 `run`（运行行为）输出为主**（体积小、语义回归信号强）；AST/HIR/IR 三维作为**未来双编译器 `--rlyeh-b` 实时差分维度**（比对两份产物、无需存储）保留。若需 AST/HIR 逐程序快照，可经 `ast-user`/`hir-user` 维度实现（emit 时排除 std 前缀，C2 扩充·路线 A 已落地）；full `ast`/`hir` 仍保留用于人工审视。
 
 - **C0（前置使能，✅ 已落地 2026-09-04）** driver `--emit <ir|ast|hir>`：停在中间表示文本、导出 stdout 或 `-o`，不调 clang 链接。复用 `compile_file_to_llvm` / `emit_ast` / `emit_hir`（AST/HIR 经 `Debug` `{:#?}` 文本化）。
 - **C1（K4 harness，✅ 已落地 2026-09-04）** 对拍 harness 脚手架 `scripts/diff_harness.py`：跑 `rlyeh` 二进制 → 捕获 {运行行为 / IR / AST / HIR 文本} → 与 golden 快照比对；`--rlyeh-b` 可接入第二编译器触发双编译器差分（未来 Rlyeh 编译器就位即用）。
@@ -61,6 +61,16 @@
   - CI（`.github/workflows/ci.yml`）新增 `IR probe regression (diff harness)` 步骤。
   - 验证：run 基线连续两次 `check` 均 56/0/0/0；IR 探针连续两次 `check` 均 6/0/0/0，无 IR 非确定性。
 
+## 实现纪要（C2 扩充·路线 A，2026-09-04 续）
+- **AST/HIR 排除 std 前缀（按源文件过滤条目）**：原 AST/HIR 文本被 std 前缀主导（单程序 `ast` ~21 万行、`hir` ~3.5 万行），逐程序存储不可行。路线 A 落地「用户代码过滤」：
+  - `ast-user`：driver `emit_ast_user` 仅解析**用户源码**（`module::load_combined_source` 不含 std 预置），产物仅含用户顶层项。`hello` 实测 `ast` 212230 行 → `ast-user` 70 行。
+  - `hir-user`：driver `emit_hir_user` 完整类型检查后，按 `HirItem.span` 字节偏移过滤掉落在 `prelude_len`（std 预置长度）之前的项。为此给 `rlyeh_hir::HirItem` 新增 `span: Span` 字段，并在 typecheck 全部 12 个 `HirItem` 构造点填入真实 decl span（用户项）或 `DUMMY_SPAN`（编译器生成项 / 单态化实例，无真实源位置 → 被排除）。`hello` 实测 `hir` 35354 行 → `hir-user` 36 行。注：泛型/闭包程序的 `hir-user` 仅含其非泛型用户项（实例为生成项）。
+  - `rlyeh-driver` 新增 `EmitTarget::AstUser/HirUser`（`--emit ast-user/hir-user`）与库函数 `emit_ast_user`/`emit_hir_user`；`rlyeh-hir` 新增对 `rlyeh-lexer` 的依赖。
+  - harness `DIMS` 增加 `ast-user`/`hir-user`（capture 自动路由到 `build --emit <dim>`）。
+- **新增 AST/HIR 探针基线**：`tests/snapshot-baseline-ast-probe.txt`（13 例）、`tests/snapshot-baseline-hir-probe.txt`（12 例），仅存 `ast-user`/`hir-user` 维度快照（单文件数十~千余行）。
+- CI 新增 `AST-user probe regression` / `HIR-user probe regression` 两步。
+- 验证：ast-user 连续两次 `check` 均 13/0/0/0；hir-user 连续两次 `check` 均 12/0/0/0，无 AST/HIR 级非确定性。
+
 ## 风险分解（→ 中/低危）
 - **K-M1（中）** 引导器（Rust driver）编译 Rlyeh 版**单组件**（如 `lexer`），经差分 harness 对拍。
 - **K-M2（中）** 扩展为**双组件**（lexer + parser），验证组件间接口在 Rlyeh 侧一致。
@@ -87,3 +97,4 @@
 | 2026-09-04 | 修复 IR 非确定性根因：`by_value_locals` 内层 `HashSet`→`BTreeSet`（+ `propagate_by_value_aliases` 形参），发射顺序稳定；两轮 `--emit ir` 逐字节一致，harness 改为精确比对 |
 | 2026-09-04 | C2 落地：harness 加 `--dims`/`--manifest`；新增 `tests/snapshot-baseline.txt`（精选 ~30 确定性用例）+ `tests/snapshots/` 运行行为基线（120K）；CI 加快照回归步骤；记录 AST/HIR/IR 被 std 前缀主导的体积约束 |
 | 2026-09-04 | C2 扩充：run 基线用例 30→56（新增 26 个经双次运行验证的确定性用例）；新增 IR 探针 `tests/snapshot-baseline-ir-probe.txt`（小子集 6 例，仅存 ir 维度）+ harness `--probe` 便捷模式 + CI `IR probe regression` 步骤；验证 run 56/0/0/0、IR 探针 6/0/0/0 连续两次零差异 |
+| 2026-09-04 | C2 扩充·路线 A：AST/HIR 排除 std 前缀（按源文件过滤条目）。`rlyeh_hir::HirItem` 新增 `span`，typecheck 12 个构造点填真实/合成 span；driver 新增 `--emit ast-user/hir-user`（`emit_ast_user`/`emit_hir_user`）。`hello` 实测 `ast` 212230→`ast-user` 70 行、`hir` 35354→`hir-user` 36 行。新增 AST/HIR 探针清单（13/12 例）+ harness `DIMS` 扩充 + CI 两步回归；验证 ast-user 13/0/0/0、hir-user 12/0/0/0 连续两次零差异 |

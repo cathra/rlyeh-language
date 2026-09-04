@@ -88,6 +88,7 @@ pub(crate) fn emit_closure_fn(
         },
     );
     ctx.mono_items.push(HirItem {
+        span: crate::DUMMY_SPAN,
         name: name.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params: fn_names
@@ -739,6 +740,7 @@ pub(crate) fn check_closure_expected(
         },
     );
     ctx.mono_items.push(HirItem {
+        span: crate::DUMMY_SPAN,
         name: name.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params: names

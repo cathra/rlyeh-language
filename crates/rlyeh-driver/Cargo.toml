@@ -11,6 +11,7 @@ autobins = false
 
 [dependencies]
 rlyeh-typecheck = { workspace = true }
+rlyeh-hir = { workspace = true }
 rlyeh-borrowck = { workspace = true }
 rlyeh-regionck = { workspace = true }
 rlyeh-mir = { workspace = true }

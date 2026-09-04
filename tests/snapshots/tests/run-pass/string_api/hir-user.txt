@@ -1,0 +1,1333 @@
+HirProgram {
+    items: [
+        HirItem {
+            name: "main",
+            kind: Fn(
+                HirFnDecl {
+                    params: [],
+                    body: Some(
+                        HirBlock {
+                            stmts: [
+                                Let {
+                                    name: "s",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp501",
+                                                    init: Call {
+                                                        callee: "alloc_bytes",
+                                                        args: [
+                                                            IntLiteral(
+                                                                4,
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    Call {
+                                                        callee: "copy_bytes",
+                                                        args: [
+                                                            Variable(
+                                                                "__tmp501",
+                                                            ),
+                                                            StringLiteral(
+                                                                "Ab!",
+                                                            ),
+                                                            IntLiteral(
+                                                                4,
+                                                            ),
+                                                        ],
+                                                    },
+                                                ),
+                                                Let {
+                                                    name: "__tmp502",
+                                                    init: Alloc {
+                                                        slots: 3,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp502",
+                                                        ),
+                                                        index: 0,
+                                                        value: Variable(
+                                                            "__tmp501",
+                                                        ),
+                                                        ty: Ptr,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp502",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            3,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp502",
+                                                        ),
+                                                        index: 2,
+                                                        value: IntLiteral(
+                                                            3,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp502",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "count",
+                                    init: IntLiteral(
+                                        0,
+                                    ),
+                                    mutable: true,
+                                },
+                                Let {
+                                    name: "sum",
+                                    init: IntLiteral(
+                                        0,
+                                    ),
+                                    mutable: true,
+                                },
+                                Semi(
+                                    Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__for_it_504",
+                                                    init: Call {
+                                                        callee: "String::chars",
+                                                        args: [
+                                                            Variable(
+                                                                "s",
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: true,
+                                                },
+                                                Semi(
+                                                    Loop {
+                                                        body: HirBlock {
+                                                            stmts: [
+                                                                Semi(
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp512",
+                                                                                    init: Call {
+                                                                                        callee: "Chars::next",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__for_it_504",
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: true,
+                                                                                },
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                If {
+                                                                                    cond: Binary(
+                                                                                        Eq,
+                                                                                        FieldGet {
+                                                                                            base: Variable(
+                                                                                                "__tmp512",
+                                                                                            ),
+                                                                                            index: 0,
+                                                                                            ty: Int,
+                                                                                        },
+                                                                                        IntLiteral(
+                                                                                            1,
+                                                                                        ),
+                                                                                    ),
+                                                                                    then_block: HirBlock {
+                                                                                        stmts: [
+                                                                                            Let {
+                                                                                                name: "__for_elem_505",
+                                                                                                init: FieldGet {
+                                                                                                    base: Variable(
+                                                                                                        "__tmp512",
+                                                                                                    ),
+                                                                                                    index: 1,
+                                                                                                    ty: Char,
+                                                                                                },
+                                                                                                mutable: false,
+                                                                                            },
+                                                                                        ],
+                                                                                        final_expr: Some(
+                                                                                            Block(
+                                                                                                HirBlock {
+                                                                                                    stmts: [
+                                                                                                        Let {
+                                                                                                            name: "c",
+                                                                                                            init: Variable(
+                                                                                                                "__for_elem_505",
+                                                                                                            ),
+                                                                                                            mutable: false,
+                                                                                                        },
+                                                                                                        Expr(
+                                                                                                            Assign {
+                                                                                                                target: "count",
+                                                                                                                op: Assign,
+                                                                                                                value: Binary(
+                                                                                                                    Add,
+                                                                                                                    Variable(
+                                                                                                                        "count",
+                                                                                                                    ),
+                                                                                                                    IntLiteral(
+                                                                                                                        1,
+                                                                                                                    ),
+                                                                                                                ),
+                                                                                                            },
+                                                                                                        ),
+                                                                                                        Expr(
+                                                                                                            Assign {
+                                                                                                                target: "sum",
+                                                                                                                op: Assign,
+                                                                                                                value: Binary(
+                                                                                                                    Add,
+                                                                                                                    Variable(
+                                                                                                                        "sum",
+                                                                                                                    ),
+                                                                                                                    Cast {
+                                                                                                                        expr: Variable(
+                                                                                                                            "c",
+                                                                                                                        ),
+                                                                                                                        to: "i64",
+                                                                                                                    },
+                                                                                                                ),
+                                                                                                            },
+                                                                                                        ),
+                                                                                                    ],
+                                                                                                    final_expr: None,
+                                                                                                },
+                                                                                            ),
+                                                                                        ),
+                                                                                    },
+                                                                                    else_block: Some(
+                                                                                        HirBlock {
+                                                                                            stmts: [],
+                                                                                            final_expr: Some(
+                                                                                                If {
+                                                                                                    cond: Binary(
+                                                                                                        Eq,
+                                                                                                        FieldGet {
+                                                                                                            base: Variable(
+                                                                                                                "__tmp512",
+                                                                                                            ),
+                                                                                                            index: 0,
+                                                                                                            ty: Int,
+                                                                                                        },
+                                                                                                        IntLiteral(
+                                                                                                            0,
+                                                                                                        ),
+                                                                                                    ),
+                                                                                                    then_block: HirBlock {
+                                                                                                        stmts: [],
+                                                                                                        final_expr: Some(
+                                                                                                            Break(
+                                                                                                                None,
+                                                                                                            ),
+                                                                                                        ),
+                                                                                                    },
+                                                                                                    else_block: None,
+                                                                                                },
+                                                                                            ),
+                                                                                        },
+                                                                                    ),
+                                                                                },
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ),
+                                                            ],
+                                                            final_expr: None,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: None,
+                                        },
+                                    ),
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "count",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "sum",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "t",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp513",
+                                                    init: Call {
+                                                        callee: "alloc_bytes",
+                                                        args: [
+                                                            IntLiteral(
+                                                                9,
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    Call {
+                                                        callee: "copy_bytes",
+                                                        args: [
+                                                            Variable(
+                                                                "__tmp513",
+                                                            ),
+                                                            StringLiteral(
+                                                                "a\nbb\nccc",
+                                                            ),
+                                                            IntLiteral(
+                                                                9,
+                                                            ),
+                                                        ],
+                                                    },
+                                                ),
+                                                Let {
+                                                    name: "__tmp514",
+                                                    init: Alloc {
+                                                        slots: 3,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp514",
+                                                        ),
+                                                        index: 0,
+                                                        value: Variable(
+                                                            "__tmp513",
+                                                        ),
+                                                        ty: Ptr,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp514",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            8,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp514",
+                                                        ),
+                                                        index: 2,
+                                                        value: IntLiteral(
+                                                            8,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp514",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "line_count",
+                                    init: IntLiteral(
+                                        0,
+                                    ),
+                                    mutable: true,
+                                },
+                                Let {
+                                    name: "line_len_sum",
+                                    init: IntLiteral(
+                                        0,
+                                    ),
+                                    mutable: true,
+                                },
+                                Semi(
+                                    Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__for_it_516",
+                                                    init: Call {
+                                                        callee: "String::lines",
+                                                        args: [
+                                                            Variable(
+                                                                "t",
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: true,
+                                                },
+                                                Semi(
+                                                    Loop {
+                                                        body: HirBlock {
+                                                            stmts: [
+                                                                Semi(
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp522",
+                                                                                    init: Call {
+                                                                                        callee: "Lines::next",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__for_it_516",
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: true,
+                                                                                },
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                If {
+                                                                                    cond: Binary(
+                                                                                        Eq,
+                                                                                        FieldGet {
+                                                                                            base: Variable(
+                                                                                                "__tmp522",
+                                                                                            ),
+                                                                                            index: 0,
+                                                                                            ty: Int,
+                                                                                        },
+                                                                                        IntLiteral(
+                                                                                            1,
+                                                                                        ),
+                                                                                    ),
+                                                                                    then_block: HirBlock {
+                                                                                        stmts: [
+                                                                                            Let {
+                                                                                                name: "__for_elem_517",
+                                                                                                init: FieldGet {
+                                                                                                    base: Variable(
+                                                                                                        "__tmp522",
+                                                                                                    ),
+                                                                                                    index: 1,
+                                                                                                    ty: Ptr,
+                                                                                                },
+                                                                                                mutable: false,
+                                                                                            },
+                                                                                        ],
+                                                                                        final_expr: Some(
+                                                                                            Block(
+                                                                                                HirBlock {
+                                                                                                    stmts: [
+                                                                                                        Let {
+                                                                                                            name: "l",
+                                                                                                            init: Variable(
+                                                                                                                "__for_elem_517",
+                                                                                                            ),
+                                                                                                            mutable: false,
+                                                                                                        },
+                                                                                                        Expr(
+                                                                                                            Assign {
+                                                                                                                target: "line_count",
+                                                                                                                op: Assign,
+                                                                                                                value: Binary(
+                                                                                                                    Add,
+                                                                                                                    Variable(
+                                                                                                                        "line_count",
+                                                                                                                    ),
+                                                                                                                    IntLiteral(
+                                                                                                                        1,
+                                                                                                                    ),
+                                                                                                                ),
+                                                                                                            },
+                                                                                                        ),
+                                                                                                        Expr(
+                                                                                                            Assign {
+                                                                                                                target: "line_len_sum",
+                                                                                                                op: Assign,
+                                                                                                                value: Binary(
+                                                                                                                    Add,
+                                                                                                                    Variable(
+                                                                                                                        "line_len_sum",
+                                                                                                                    ),
+                                                                                                                    Call {
+                                                                                                                        callee: "String::len",
+                                                                                                                        args: [
+                                                                                                                            Variable(
+                                                                                                                                "l",
+                                                                                                                            ),
+                                                                                                                        ],
+                                                                                                                    },
+                                                                                                                ),
+                                                                                                            },
+                                                                                                        ),
+                                                                                                    ],
+                                                                                                    final_expr: None,
+                                                                                                },
+                                                                                            ),
+                                                                                        ),
+                                                                                    },
+                                                                                    else_block: Some(
+                                                                                        HirBlock {
+                                                                                            stmts: [],
+                                                                                            final_expr: Some(
+                                                                                                If {
+                                                                                                    cond: Binary(
+                                                                                                        Eq,
+                                                                                                        FieldGet {
+                                                                                                            base: Variable(
+                                                                                                                "__tmp522",
+                                                                                                            ),
+                                                                                                            index: 0,
+                                                                                                            ty: Int,
+                                                                                                        },
+                                                                                                        IntLiteral(
+                                                                                                            0,
+                                                                                                        ),
+                                                                                                    ),
+                                                                                                    then_block: HirBlock {
+                                                                                                        stmts: [],
+                                                                                                        final_expr: Some(
+                                                                                                            Break(
+                                                                                                                None,
+                                                                                                            ),
+                                                                                                        ),
+                                                                                                    },
+                                                                                                    else_block: None,
+                                                                                                },
+                                                                                            ),
+                                                                                        },
+                                                                                    ),
+                                                                                },
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ),
+                                                            ],
+                                                            final_expr: None,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: None,
+                                        },
+                                    ),
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "line_count",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "line_len_sum",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "t2",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp523",
+                                                    init: Call {
+                                                        callee: "alloc_bytes",
+                                                        args: [
+                                                            IntLiteral(
+                                                                5,
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    Call {
+                                                        callee: "copy_bytes",
+                                                        args: [
+                                                            Variable(
+                                                                "__tmp523",
+                                                            ),
+                                                            StringLiteral(
+                                                                "x\ny\n",
+                                                            ),
+                                                            IntLiteral(
+                                                                5,
+                                                            ),
+                                                        ],
+                                                    },
+                                                ),
+                                                Let {
+                                                    name: "__tmp524",
+                                                    init: Alloc {
+                                                        slots: 3,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp524",
+                                                        ),
+                                                        index: 0,
+                                                        value: Variable(
+                                                            "__tmp523",
+                                                        ),
+                                                        ty: Ptr,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp524",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            4,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp524",
+                                                        ),
+                                                        index: 2,
+                                                        value: IntLiteral(
+                                                            4,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp524",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Let {
+                                    name: "line_count2",
+                                    init: IntLiteral(
+                                        0,
+                                    ),
+                                    mutable: true,
+                                },
+                                Let {
+                                    name: "line_len_sum2",
+                                    init: IntLiteral(
+                                        0,
+                                    ),
+                                    mutable: true,
+                                },
+                                Semi(
+                                    Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__for_it_525",
+                                                    init: Call {
+                                                        callee: "String::lines",
+                                                        args: [
+                                                            Variable(
+                                                                "t2",
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: true,
+                                                },
+                                                Semi(
+                                                    Loop {
+                                                        body: HirBlock {
+                                                            stmts: [
+                                                                Semi(
+                                                                    Block(
+                                                                        HirBlock {
+                                                                            stmts: [
+                                                                                Let {
+                                                                                    name: "__tmp527",
+                                                                                    init: Call {
+                                                                                        callee: "Lines::next",
+                                                                                        args: [
+                                                                                            Variable(
+                                                                                                "__for_it_525",
+                                                                                            ),
+                                                                                        ],
+                                                                                    },
+                                                                                    mutable: true,
+                                                                                },
+                                                                            ],
+                                                                            final_expr: Some(
+                                                                                If {
+                                                                                    cond: Binary(
+                                                                                        Eq,
+                                                                                        FieldGet {
+                                                                                            base: Variable(
+                                                                                                "__tmp527",
+                                                                                            ),
+                                                                                            index: 0,
+                                                                                            ty: Int,
+                                                                                        },
+                                                                                        IntLiteral(
+                                                                                            1,
+                                                                                        ),
+                                                                                    ),
+                                                                                    then_block: HirBlock {
+                                                                                        stmts: [
+                                                                                            Let {
+                                                                                                name: "__for_elem_526",
+                                                                                                init: FieldGet {
+                                                                                                    base: Variable(
+                                                                                                        "__tmp527",
+                                                                                                    ),
+                                                                                                    index: 1,
+                                                                                                    ty: Ptr,
+                                                                                                },
+                                                                                                mutable: false,
+                                                                                            },
+                                                                                        ],
+                                                                                        final_expr: Some(
+                                                                                            Block(
+                                                                                                HirBlock {
+                                                                                                    stmts: [
+                                                                                                        Let {
+                                                                                                            name: "l",
+                                                                                                            init: Variable(
+                                                                                                                "__for_elem_526",
+                                                                                                            ),
+                                                                                                            mutable: false,
+                                                                                                        },
+                                                                                                        Expr(
+                                                                                                            Assign {
+                                                                                                                target: "line_count2",
+                                                                                                                op: Assign,
+                                                                                                                value: Binary(
+                                                                                                                    Add,
+                                                                                                                    Variable(
+                                                                                                                        "line_count2",
+                                                                                                                    ),
+                                                                                                                    IntLiteral(
+                                                                                                                        1,
+                                                                                                                    ),
+                                                                                                                ),
+                                                                                                            },
+                                                                                                        ),
+                                                                                                        Expr(
+                                                                                                            Assign {
+                                                                                                                target: "line_len_sum2",
+                                                                                                                op: Assign,
+                                                                                                                value: Binary(
+                                                                                                                    Add,
+                                                                                                                    Variable(
+                                                                                                                        "line_len_sum2",
+                                                                                                                    ),
+                                                                                                                    Call {
+                                                                                                                        callee: "String::len",
+                                                                                                                        args: [
+                                                                                                                            Variable(
+                                                                                                                                "l",
+                                                                                                                            ),
+                                                                                                                        ],
+                                                                                                                    },
+                                                                                                                ),
+                                                                                                            },
+                                                                                                        ),
+                                                                                                    ],
+                                                                                                    final_expr: None,
+                                                                                                },
+                                                                                            ),
+                                                                                        ),
+                                                                                    },
+                                                                                    else_block: Some(
+                                                                                        HirBlock {
+                                                                                            stmts: [],
+                                                                                            final_expr: Some(
+                                                                                                If {
+                                                                                                    cond: Binary(
+                                                                                                        Eq,
+                                                                                                        FieldGet {
+                                                                                                            base: Variable(
+                                                                                                                "__tmp527",
+                                                                                                            ),
+                                                                                                            index: 0,
+                                                                                                            ty: Int,
+                                                                                                        },
+                                                                                                        IntLiteral(
+                                                                                                            0,
+                                                                                                        ),
+                                                                                                    ),
+                                                                                                    then_block: HirBlock {
+                                                                                                        stmts: [],
+                                                                                                        final_expr: Some(
+                                                                                                            Break(
+                                                                                                                None,
+                                                                                                            ),
+                                                                                                        ),
+                                                                                                    },
+                                                                                                    else_block: None,
+                                                                                                },
+                                                                                            ),
+                                                                                        },
+                                                                                    ),
+                                                                                },
+                                                                            ),
+                                                                        },
+                                                                    ),
+                                                                ),
+                                                            ],
+                                                            final_expr: None,
+                                                        },
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: None,
+                                        },
+                                    ),
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "line_count2",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Variable(
+                                                "line_len_sum2",
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Call {
+                                                callee: "String::to_uppercase",
+                                                args: [
+                                                    Block(
+                                                        HirBlock {
+                                                            stmts: [
+                                                                Let {
+                                                                    name: "__tmp528",
+                                                                    init: Call {
+                                                                        callee: "alloc_bytes",
+                                                                        args: [
+                                                                            IntLiteral(
+                                                                                7,
+                                                                            ),
+                                                                        ],
+                                                                    },
+                                                                    mutable: false,
+                                                                },
+                                                                Semi(
+                                                                    Call {
+                                                                        callee: "copy_bytes",
+                                                                        args: [
+                                                                            Variable(
+                                                                                "__tmp528",
+                                                                            ),
+                                                                            StringLiteral(
+                                                                                "abc123",
+                                                                            ),
+                                                                            IntLiteral(
+                                                                                7,
+                                                                            ),
+                                                                        ],
+                                                                    },
+                                                                ),
+                                                                Let {
+                                                                    name: "__tmp529",
+                                                                    init: Alloc {
+                                                                        slots: 3,
+                                                                        by_value: false,
+                                                                        is_strfat: false,
+                                                                    },
+                                                                    mutable: false,
+                                                                },
+                                                                Semi(
+                                                                    FieldSet {
+                                                                        base: Variable(
+                                                                            "__tmp529",
+                                                                        ),
+                                                                        index: 0,
+                                                                        value: Variable(
+                                                                            "__tmp528",
+                                                                        ),
+                                                                        ty: Ptr,
+                                                                    },
+                                                                ),
+                                                                Semi(
+                                                                    FieldSet {
+                                                                        base: Variable(
+                                                                            "__tmp529",
+                                                                        ),
+                                                                        index: 1,
+                                                                        value: IntLiteral(
+                                                                            6,
+                                                                        ),
+                                                                        ty: Int,
+                                                                    },
+                                                                ),
+                                                                Semi(
+                                                                    FieldSet {
+                                                                        base: Variable(
+                                                                            "__tmp529",
+                                                                        ),
+                                                                        index: 2,
+                                                                        value: IntLiteral(
+                                                                            6,
+                                                                        ),
+                                                                        ty: Int,
+                                                                    },
+                                                                ),
+                                                            ],
+                                                            final_expr: Some(
+                                                                Variable(
+                                                                    "__tmp529",
+                                                                ),
+                                                            ),
+                                                        },
+                                                    ),
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println_string",
+                                        args: [
+                                            Call {
+                                                callee: "String::to_lowercase",
+                                                args: [
+                                                    Block(
+                                                        HirBlock {
+                                                            stmts: [
+                                                                Let {
+                                                                    name: "__tmp532",
+                                                                    init: Call {
+                                                                        callee: "alloc_bytes",
+                                                                        args: [
+                                                                            IntLiteral(
+                                                                                4,
+                                                                            ),
+                                                                        ],
+                                                                    },
+                                                                    mutable: false,
+                                                                },
+                                                                Semi(
+                                                                    Call {
+                                                                        callee: "copy_bytes",
+                                                                        args: [
+                                                                            Variable(
+                                                                                "__tmp532",
+                                                                            ),
+                                                                            StringLiteral(
+                                                                                "DeF",
+                                                                            ),
+                                                                            IntLiteral(
+                                                                                4,
+                                                                            ),
+                                                                        ],
+                                                                    },
+                                                                ),
+                                                                Let {
+                                                                    name: "__tmp533",
+                                                                    init: Alloc {
+                                                                        slots: 3,
+                                                                        by_value: false,
+                                                                        is_strfat: false,
+                                                                    },
+                                                                    mutable: false,
+                                                                },
+                                                                Semi(
+                                                                    FieldSet {
+                                                                        base: Variable(
+                                                                            "__tmp533",
+                                                                        ),
+                                                                        index: 0,
+                                                                        value: Variable(
+                                                                            "__tmp532",
+                                                                        ),
+                                                                        ty: Ptr,
+                                                                    },
+                                                                ),
+                                                                Semi(
+                                                                    FieldSet {
+                                                                        base: Variable(
+                                                                            "__tmp533",
+                                                                        ),
+                                                                        index: 1,
+                                                                        value: IntLiteral(
+                                                                            3,
+                                                                        ),
+                                                                        ty: Int,
+                                                                    },
+                                                                ),
+                                                                Semi(
+                                                                    FieldSet {
+                                                                        base: Variable(
+                                                                            "__tmp533",
+                                                                        ),
+                                                                        index: 2,
+                                                                        value: IntLiteral(
+                                                                            3,
+                                                                        ),
+                                                                        ty: Int,
+                                                                    },
+                                                                ),
+                                                            ],
+                                                            final_expr: Some(
+                                                                Variable(
+                                                                    "__tmp533",
+                                                                ),
+                                                            ),
+                                                        },
+                                                    ),
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                ),
+                                Let {
+                                    name: "up",
+                                    init: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                Let {
+                                                    name: "__tmp536",
+                                                    init: Call {
+                                                        callee: "alloc_bytes",
+                                                        args: [
+                                                            IntLiteral(
+                                                                6,
+                                                            ),
+                                                        ],
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    Call {
+                                                        callee: "copy_bytes",
+                                                        args: [
+                                                            Variable(
+                                                                "__tmp536",
+                                                            ),
+                                                            StringLiteral(
+                                                                "Hello",
+                                                            ),
+                                                            IntLiteral(
+                                                                6,
+                                                            ),
+                                                        ],
+                                                    },
+                                                ),
+                                                Let {
+                                                    name: "__tmp537",
+                                                    init: Alloc {
+                                                        slots: 3,
+                                                        by_value: false,
+                                                        is_strfat: false,
+                                                    },
+                                                    mutable: false,
+                                                },
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp537",
+                                                        ),
+                                                        index: 0,
+                                                        value: Variable(
+                                                            "__tmp536",
+                                                        ),
+                                                        ty: Ptr,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp537",
+                                                        ),
+                                                        index: 1,
+                                                        value: IntLiteral(
+                                                            5,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                                Semi(
+                                                    FieldSet {
+                                                        base: Variable(
+                                                            "__tmp537",
+                                                        ),
+                                                        index: 2,
+                                                        value: IntLiteral(
+                                                            5,
+                                                        ),
+                                                        ty: Int,
+                                                    },
+                                                ),
+                                            ],
+                                            final_expr: Some(
+                                                Variable(
+                                                    "__tmp537",
+                                                ),
+                                            ),
+                                        },
+                                    ),
+                                    mutable: false,
+                                },
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp538",
+                                                            init: Call {
+                                                                callee: "String::to_uppercase",
+                                                                args: [
+                                                                    Variable(
+                                                                        "up",
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: false,
+                                                        },
+                                                        Let {
+                                                            name: "__tmp539",
+                                                            init: Call {
+                                                                callee: "String::to_upper",
+                                                                args: [
+                                                                    Variable(
+                                                                        "up",
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: false,
+                                                        },
+                                                    ],
+                                                    final_expr: Some(
+                                                        Binary(
+                                                            And,
+                                                            Binary(
+                                                                Eq,
+                                                                FieldGet {
+                                                                    base: Variable(
+                                                                        "__tmp538",
+                                                                    ),
+                                                                    index: 1,
+                                                                    ty: Int,
+                                                                },
+                                                                FieldGet {
+                                                                    base: Variable(
+                                                                        "__tmp539",
+                                                                    ),
+                                                                    index: 1,
+                                                                    ty: Int,
+                                                                },
+                                                            ),
+                                                            Call {
+                                                                callee: "bytes_eq",
+                                                                args: [
+                                                                    FieldGet {
+                                                                        base: Variable(
+                                                                            "__tmp538",
+                                                                        ),
+                                                                        index: 0,
+                                                                        ty: Ptr,
+                                                                    },
+                                                                    FieldGet {
+                                                                        base: Variable(
+                                                                            "__tmp539",
+                                                                        ),
+                                                                        index: 0,
+                                                                        ty: Ptr,
+                                                                    },
+                                                                    FieldGet {
+                                                                        base: Variable(
+                                                                            "__tmp538",
+                                                                        ),
+                                                                        index: 1,
+                                                                        ty: Int,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                                Expr(
+                                    Call {
+                                        callee: "println",
+                                        args: [
+                                            Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        Let {
+                                                            name: "__tmp540",
+                                                            init: Call {
+                                                                callee: "String::to_lowercase",
+                                                                args: [
+                                                                    Variable(
+                                                                        "up",
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: false,
+                                                        },
+                                                        Let {
+                                                            name: "__tmp541",
+                                                            init: Call {
+                                                                callee: "String::to_lower",
+                                                                args: [
+                                                                    Variable(
+                                                                        "up",
+                                                                    ),
+                                                                ],
+                                                            },
+                                                            mutable: false,
+                                                        },
+                                                    ],
+                                                    final_expr: Some(
+                                                        Binary(
+                                                            And,
+                                                            Binary(
+                                                                Eq,
+                                                                FieldGet {
+                                                                    base: Variable(
+                                                                        "__tmp540",
+                                                                    ),
+                                                                    index: 1,
+                                                                    ty: Int,
+                                                                },
+                                                                FieldGet {
+                                                                    base: Variable(
+                                                                        "__tmp541",
+                                                                    ),
+                                                                    index: 1,
+                                                                    ty: Int,
+                                                                },
+                                                            ),
+                                                            Call {
+                                                                callee: "bytes_eq",
+                                                                args: [
+                                                                    FieldGet {
+                                                                        base: Variable(
+                                                                            "__tmp540",
+                                                                        ),
+                                                                        index: 0,
+                                                                        ty: Ptr,
+                                                                    },
+                                                                    FieldGet {
+                                                                        base: Variable(
+                                                                            "__tmp541",
+                                                                        ),
+                                                                        index: 0,
+                                                                        ty: Ptr,
+                                                                    },
+                                                                    FieldGet {
+                                                                        base: Variable(
+                                                                            "__tmp540",
+                                                                        ),
+                                                                        index: 1,
+                                                                        ty: Int,
+                                                                    },
+                                                                ],
+                                                            },
+                                                        ),
+                                                    ),
+                                                },
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ],
+                            final_expr: None,
+                        },
+                    ),
+                    is_extern: false,
+                    extern_sig: None,
+                },
+            ),
+            span: Span {
+                start: 271181,
+                end: 271183,
+                line: 7154,
+                col: 1,
+            },
+        },
+    ],
+}

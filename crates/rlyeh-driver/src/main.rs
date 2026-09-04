@@ -9,7 +9,7 @@
 //! rlyeh run|build <file> --no-std                # 不注入标准库预置（core.rl）
 //! rlyeh run|build <file> --verbose               # 打印缓存命中/未命中与统计
 //! rlyeh build <file> --target <triple>           # 交叉编译（如 arm64-apple-macosx / x86_64-apple-macosx）
-//! rlyeh run|build <file> --emit <ir|ast|hir> [-o <out>]  # 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行
+//! rlyeh run|build <file> --emit <ir|ast|hir|ast-user|hir-user> [-o <out>]  # 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行
 //! ```
 //!
 //! `rlyeh test` 扫描 `<tests-dir>/compile-pass|compile-fail|run-pass` 三个子目录：
@@ -169,7 +169,7 @@ fn main() -> ExitCode {
                  用法:\n  \
                  rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译并运行\n  \
                  rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
-                 rlyeh run|build <file> --emit <ir|ast|hir> [-o <out>] 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行\n  \
+                 rlyeh run|build <file> --emit <ir|ast|hir|ast-user|hir-user> [-o <out>] 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行\n  \
                  rlyeh test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
                  rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
                  rlyeh check <file.rl> 静态分析（未使用变量/恒常条件/冗余比较/不可达代码）\n  \
@@ -192,6 +192,8 @@ enum EmitTarget {
     Ir,
     Ast,
     Hir,
+    AstUser,
+    HirUser,
 }
 
 impl EmitTarget {
@@ -200,14 +202,18 @@ impl EmitTarget {
             "ir" => Ok(EmitTarget::Ir),
             "ast" => Ok(EmitTarget::Ast),
             "hir" => Ok(EmitTarget::Hir),
-            other => Err(format!("未知 --emit 目标: {other}（支持 ir/ast/hir）")),
+            "ast-user" => Ok(EmitTarget::AstUser),
+            "hir-user" => Ok(EmitTarget::HirUser),
+            other => Err(format!("未知 --emit 目标: {other}（支持 ir/ast/hir/ast-user/hir-user）")),
         }
     }
     fn name(&self) -> &'static str {
         match self {
             EmitTarget::Ir => "LLVM IR",
             EmitTarget::Ast => "AST",
+            EmitTarget::AstUser => "AST (user-only)",
             EmitTarget::Hir => "HIR",
+            EmitTarget::HirUser => "HIR (user-only)",
         }
     }
 }
@@ -292,12 +298,14 @@ impl CliOpts {
     }
 }
 
-/// 按 `--emit` 目标导出中间表示文本（Ir/Ast/Hir）。
+/// 按 `--emit` 目标导出中间表示文本（Ir/Ast/Hir 及其 user-only 变体）。
 fn emit_file(path: &str, target: &EmitTarget) -> Result<String, DriverError> {
     match target {
         EmitTarget::Ir => rlyeh_driver::compile_file_to_llvm(Path::new(path)),
         EmitTarget::Ast => rlyeh_driver::emit_ast(Path::new(path)),
         EmitTarget::Hir => rlyeh_driver::emit_hir(Path::new(path)),
+        EmitTarget::AstUser => rlyeh_driver::emit_ast_user(Path::new(path)),
+        EmitTarget::HirUser => rlyeh_driver::emit_hir_user(Path::new(path)),
     }
 }
 

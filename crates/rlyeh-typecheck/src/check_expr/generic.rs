@@ -223,6 +223,7 @@ pub(super) fn instantiate_generic_fn(
         })
         .collect();
     ctx.mono_items.push(HirItem {
+        span: crate::DUMMY_SPAN,
         name: mono_name.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params,
@@ -379,6 +380,7 @@ pub(super) fn instantiate_impl_method(
         })
         .collect();
     ctx.mono_items.push(HirItem {
+        span: crate::DUMMY_SPAN,
         name: mono_name.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params,
