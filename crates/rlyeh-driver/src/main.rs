@@ -9,6 +9,7 @@
 //! rlyeh run|build <file> --no-std                # 不注入标准库预置（core.rl）
 //! rlyeh run|build <file> --verbose               # 打印缓存命中/未命中与统计
 //! rlyeh build <file> --target <triple>           # 交叉编译（如 arm64-apple-macosx / x86_64-apple-macosx）
+//! rlyeh run|build <file> --emit <ir|ast|hir> [-o <out>]  # 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行
 //! ```
 //!
 //! `rlyeh test` 扫描 `<tests-dir>/compile-pass|compile-fail|run-pass` 三个子目录：
@@ -36,6 +37,9 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
+            if let Some(code) = handle_emit(file, &opts) {
+                return code;
+            }
             match run_file(file, &opts) {
                 Ok(output) => {
                     print!("{output}");
@@ -59,6 +63,9 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
+            if let Some(code) = handle_emit(file, &opts) {
+                return code;
+            }
             let out = opts.take_out().unwrap_or_else(|| PathBuf::from("rlyeh-out"));
             let profile = opts.profile.take();
             match build_file(file, &out, &opts) {
@@ -162,6 +169,7 @@ fn main() -> ExitCode {
                  用法:\n  \
                  rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译并运行\n  \
                  rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
+                 rlyeh run|build <file> --emit <ir|ast|hir> [-o <out>] 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行\n  \
                  rlyeh test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
                  rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
                  rlyeh check <file.rl> 静态分析（未使用变量/恒常条件/冗余比较/不可达代码）\n  \
@@ -179,6 +187,31 @@ fn main() -> ExitCode {
 }
 
 /// CLI 选项（缓存目录 / 强制全量 / 禁用标准库 / 详细输出 / 自定义产物路径 / 交叉编译目标）。
+/// `--emit` 目标：导出中间表示文本而非编译运行。
+enum EmitTarget {
+    Ir,
+    Ast,
+    Hir,
+}
+
+impl EmitTarget {
+    fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "ir" => Ok(EmitTarget::Ir),
+            "ast" => Ok(EmitTarget::Ast),
+            "hir" => Ok(EmitTarget::Hir),
+            other => Err(format!("未知 --emit 目标: {other}（支持 ir/ast/hir）")),
+        }
+    }
+    fn name(&self) -> &'static str {
+        match self {
+            EmitTarget::Ir => "LLVM IR",
+            EmitTarget::Ast => "AST",
+            EmitTarget::Hir => "HIR",
+        }
+    }
+}
+
 struct CliOpts {
     cache_dir: PathBuf,
     force: bool,
@@ -187,6 +220,7 @@ struct CliOpts {
     out: Option<PathBuf>,
     target: Option<String>,
     profile: Option<PathBuf>,
+    emit: Option<EmitTarget>,
 }
 
 impl CliOpts {
@@ -203,10 +237,16 @@ impl CliOpts {
         let mut out = None;
         let mut target = None;
         let mut profile = None;
+        let mut emit = None;
 
         let mut i = 0;
         while i < args.len() {
             match args[i].as_str() {
+                "--emit" => {
+                    i += 1;
+                    let e = args.get(i).ok_or("--emit 需要目标（ir/ast/hir）")?;
+                    emit = Some(EmitTarget::parse(e)?);
+                }
                 "--profile" => {
                     i += 1;
                     let p = args.get(i).ok_or("--profile 需要 .rl_profile 路径")?;
@@ -242,12 +282,45 @@ impl CliOpts {
             out,
             target,
             profile,
+            emit,
         })
     }
 
     /// 取出自定义产物路径（build 专用）。
     fn take_out(&mut self) -> Option<PathBuf> {
         self.out.take()
+    }
+}
+
+/// 按 `--emit` 目标导出中间表示文本（Ir/Ast/Hir）。
+fn emit_file(path: &str, target: &EmitTarget) -> Result<String, DriverError> {
+    match target {
+        EmitTarget::Ir => rlyeh_driver::compile_file_to_llvm(Path::new(path)),
+        EmitTarget::Ast => rlyeh_driver::emit_ast(Path::new(path)),
+        EmitTarget::Hir => rlyeh_driver::emit_hir(Path::new(path)),
+    }
+}
+
+/// 若指定 `--emit`，导出中间表示文本并直接返回退出码；否则返回 `None`（继续编译运行）。
+fn handle_emit(file: &str, opts: &CliOpts) -> Option<ExitCode> {
+    let target = opts.emit.as_ref()?;
+    match emit_file(file, target) {
+        Ok(out) => {
+            if let Some(o) = &opts.out {
+                if let Err(e) = std::fs::write(o, &out) {
+                    eprintln!("错误: {e}");
+                    return Some(ExitCode::FAILURE);
+                }
+                println!("已导出 {} 文本: {}", target.name(), o.display());
+            } else {
+                print!("{out}");
+            }
+            Some(ExitCode::SUCCESS)
+        }
+        Err(e) => {
+            eprintln!("错误: {e}");
+            Some(ExitCode::FAILURE)
+        }
     }
 }
 
@@ -631,6 +704,7 @@ fn run_bench(args: &[String]) -> ExitCode {
         out: None,
         target: None,
         profile: None,
+        emit: None,
     };
 
     if let Err(e) = build_file(&file, &out, &opts) {

@@ -43,9 +43,9 @@ impl LlvmEmitter {
         // StrFat 是标量双字值，按方案 A 直接存于 `.addr` 值槽（`{i8*,i64}*`），
         // **不作为 by_value `.obj` 对象**——否则 by_value `Alloc` 会把 `.addr`
         // bitcast 成 `i8**` 写入 `.obj` 地址，污染 data 槽（根因，见 task-v2.md）。
-        let mut by_value_locals: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut by_value_locals: HashMap<String, BTreeSet<String>> = HashMap::new();
         for f in &program.functions {
-            let mut bvs: HashSet<String> = HashSet::new();
+            let mut bvs: BTreeSet<String> = BTreeSet::new();
             for b in &f.blocks {
                 for s in &b.stmts {
                     if let LirStmt::Alloc {

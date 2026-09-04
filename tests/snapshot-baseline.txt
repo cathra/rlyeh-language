@@ -1,0 +1,98 @@
+# Rlyeh 快照基线清单（SH-P2-5 C2，0.2.0 PoC）
+#
+# 每行一个 .rl 相对路径（相对仓库根）；`#` 开头为注释。
+# 用法:
+#   python3 scripts/diff_harness.py update --manifest tests/snapshot-baseline.txt --dims run
+#   python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline.txt --dims run
+#
+# 选取原则: 运行行为（run 输出）确定、无并发/无哈希序依赖/无 IO 副作用
+# 的用例，作为编译器语义回归的轻量基线。AST/HIR/IR 因被 std 前缀主导
+# （单程序 AST ~21 万行），不逐程序存储，留作未来双编译器 `--rlyeh-b` 差分。
+
+# 基础控制流 / 算术
+tests/run-pass/arith.rl
+tests/run-pass/hello.rl
+tests/run-pass/if_while_let.rl
+tests/run-pass/for-slice.rl
+tests/run-pass/iterator_for.rl
+
+# 模式匹配
+tests/run-pass/match_guard_range_or.rl
+
+# 枚举 / 标量存储
+tests/run-pass/enum_discriminant.rl
+tests/run-pass/enum_scalar_storage.rl
+tests/run-pass/enum_scalar_context.rl
+
+# 类型转换 / 派生
+tests/run-pass/cast.rl
+tests/run-pass/copy_clone.rl
+tests/run-pass/derive_clone.rl
+tests/run-pass/derive_debug.rl
+tests/run-pass/derive_partialeq.rl
+tests/run-pass/display_fmt.rl
+
+# 闭包
+tests/run-pass/closure.rl
+tests/run-pass/closure_value.rl
+tests/run-pass/closure_fn_return.rl
+
+# 泛型 / trait
+tests/run-pass/generic_impl_multi.rl
+tests/run-pass/generic_where_clause.rl
+tests/run-pass/method_generic.rl
+tests/run-pass/dyn_trait.rl
+tests/run-pass/borrow_pass.rl
+tests/run-pass/lifetime.rl
+tests/run-pass/ref_pattern.rl
+
+# 错误处理 / 运算符
+tests/run-pass/question.rl
+tests/run-pass/any_downcast.rl
+tests/run-pass/p1_4_autoderef.rl
+
+# 内存布局
+tests/run-pass/repr-c-packing.rl
+tests/run-pass/repr-c-packing-bytes.rl
+tests/run-pass/repr-c-nested.rl
+tests/run-pass/repr-c-struct.rl
+
+# 元组 / 解构
+tests/run-pass/tuple_value.rl
+tests/run-pass/tuple_destructure.rl
+
+# 结构体 / 联合字段
+tests/run-pass/struct_field_union.rl
+tests/run-pass/union_basics.rl
+tests/run-pass/union_field.rl
+
+# 切片 / 数组
+tests/run-pass/slice_basics.rl
+tests/run-pass/slice-len-check.rl
+
+# 变量 / 作用域 / 自返回
+tests/run-pass/shadowing.rl
+tests/run-pass/self_return.rl
+tests/run-pass/self_return_normal.rl
+
+# 函数指针 / 关联类型
+tests/run-pass/fn_ptr.rl
+tests/run-pass/assoc_type.rl
+
+# Into 转换
+tests/run-pass/into_reciprocal.rl
+
+# 指针 / unsafe
+tests/run-pass/addr_of_field_index.rl
+tests/run-pass/addr_of_fold.rl
+tests/run-pass/raw_ptr.rl
+tests/run-pass/unsafe-raw-ptr.rl
+tests/run-pass/unsafe-extern-call.rl
+tests/run-pass/unsafe-bump-allocator.rl
+
+# 字符串 / Vec API
+tests/run-pass/string_api.rl
+tests/run-pass/str_value.rl
+tests/run-pass/str_value_arg.rl
+tests/run-pass/vec_api.rl
+tests/run-pass/vec_iter_ref.rl

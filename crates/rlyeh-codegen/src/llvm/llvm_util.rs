@@ -543,7 +543,7 @@ pub(crate) fn stmt_used_locals(st: &LirStmt) -> Vec<&String> {
     out
 }
 
-pub(crate) fn propagate_by_value_aliases(bvs: &mut HashSet<String>, f: &LirFunction) {
+pub(crate) fn propagate_by_value_aliases(bvs: &mut BTreeSet<String>, f: &LirFunction) {
     loop {
         let mut changed = false;
         for b in &f.blocks {

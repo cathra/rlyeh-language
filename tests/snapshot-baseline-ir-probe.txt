@@ -1,0 +1,34 @@
+# Rlyeh IR 探针基线清单（SH-P2-5 C2 扩充，0.2.0 PoC）
+#
+# 每行一个 .rl 相对路径（相对仓库根）；`#` 开头为注释。
+# 用法（等价两种）:
+#   python3 scripts/diff_harness.py --probe                 # 探针模式（默认 dims=ir）
+#   python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-ir-probe.txt --dims ir
+#   python3 scripts/diff_harness.py update --manifest tests/snapshot-baseline-ir-probe.txt --dims ir
+#
+# 设计动机: 单程序 `--emit ir` 文本被 std 前缀严重主导（~1.8 万行，几乎全是前缀），
+# 全量逐程序存储不现实。故 IR 维度以「小子集探针」形式存在——仅对极少数
+# 代表性程序存 IR 快照，覆盖编译器关键代码路径（基本块 / 算术控制流 / 按值
+# 拷贝与 clone（by_value_locals 修复点）/ 泛型 / 枚举分派 / repr-c 内存布局），
+# 用于捕获 IR 级回归与非确定性（IR 非确定性根因见 sh-p2-5 实现纪要 C1）。
+#
+# 选取原则: 体积小（IR 行数接近下限）、特性代表性强、无并发/无 IO 副作用、
+# 编译/运行确定性高。新增探针用例须重新评估 IR 体积与确定性。
+
+# 基础入口（IR 体积下限，作锚点）
+tests/run-pass/hello.rl
+
+# 算术 / 控制流
+tests/run-pass/arith.rl
+
+# 按值拷贝 / clone（直接覆盖 by_value_locals 修复点）
+tests/run-pass/copy_clone.rl
+
+# 泛型 trait / impl
+tests/run-pass/generic_impl_where_arg.rl
+
+# 枚举判别 / 分派
+tests/run-pass/enum_discriminant.rl
+
+# repr-c 内存布局
+tests/run-pass/repr-c-struct.rl

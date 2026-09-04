@@ -1,0 +1,17 @@
+hello world!
+true
+false
+true
+true
+6
+hello rlyeh!
+3
+ world!
+hello world
+true
+hi!
+fn!
+wrap
+gen!
+2
+1

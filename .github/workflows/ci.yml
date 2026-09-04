@@ -42,6 +42,14 @@ jobs:
         # 耗尽（os error 35，EMFILE/EPROCLIM）导致偶发失败，故限制为 1
         run: cargo test --workspace -- --test-threads=1
 
+      # SH-P2-5 C2：快照回归（差分 harness 比对运行行为基线）
+      - name: Snapshot regression (diff harness)
+        run: python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline.txt --dims run
+
+      # SH-P2-5 C2 扩充：IR 探针回归（小子集 IR 快照，捕获 IR 级回归 / 非确定性）
+      - name: IR probe regression (diff harness)
+        run: python3 scripts/diff_harness.py check --probe
+
       # E1：macOS 双架构交叉编译冒烟（本机 clang 直链 SDK，已在本机验证）
       - name: Cross-compile smoke (macOS dual-arch)
         if: runner.os == 'macOS'

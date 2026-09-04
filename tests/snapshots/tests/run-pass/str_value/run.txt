@@ -1,0 +1,17 @@
+2
+h
+true
+hi!
+3
+abcd
+xyz
+hihi
+true
+false
+true
+false
+true
+true
+true
+2
+hi!

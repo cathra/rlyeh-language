@@ -10,7 +10,7 @@
 //! - **区域标注指令**：MVP 后端直接忽略（分配语义由后续后端 / 运行时提供）；
 //! - **`main` 特化**：Rlyeh 的 `main` 生成 `define i32 @main()`（返回 0）。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use rlyeh_lir::{
     FieldScalar, LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType,
@@ -232,7 +232,7 @@ struct LlvmEmitter {
     body: String,
     /// 标量聚合按值优化：函数名 → 该函数内按值分配的局部变量集合
     /// （Alloc{by_value} 的目标 + 调用按值返回函数的 target）。
-    by_value_locals: HashMap<String, HashSet<String>>,
+    by_value_locals: HashMap<String, BTreeSet<String>>,
     /// 标量聚合按值优化：按值返回（返回 `{i64, i64}`）的函数名集合。
     ret_by_value: HashSet<String>,
     /// 当前函数的循环提升上下文（`find_loop_promo` 结果；None = 不提升）

@@ -96,6 +96,32 @@ pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
     full_pipeline_with_hints(&combined, &Default::default(), prelude_len)
 }
 
+/// 解析入口文件（含外部模块与标准库预置）为 AST 文本（`{:#?}` 格式化）。
+///
+/// 仅执行 lex + parse，不进入类型检查。用于快照测试 / 差分对拍（SH-P2-5 K4/K5）。
+pub fn emit_ast(entry: &Path) -> Result<String, DriverError> {
+    let source = module::load_combined_source(entry)?;
+    let (combined, _) = source_with_std(source, false)?;
+    let ast = rlyeh_parser::parse(&combined).map_err(|e| DriverError::Typecheck(e.to_string()))?;
+    Ok(format!("{:#?}", ast))
+}
+
+/// 类型检查入口文件（含外部模块与标准库预置）为 HIR 文本（`{:#?}` 格式化）。
+///
+/// 仅执行 lex + parse + typecheck，不进入 borrowck / regionck / 代码生成。
+/// 用于快照测试 / 差分对拍（SH-P2-5 K4/K5）。
+pub fn emit_hir(entry: &Path) -> Result<String, DriverError> {
+    let source = module::load_combined_source(entry)?;
+    let (combined, prelude_len) = source_with_std(source, false)?;
+    let hir = rlyeh_typecheck::typecheck_source_with_region_hints(
+        &combined,
+        &std::collections::HashMap::new(),
+        prelude_len,
+    )
+    .map_err(|e| DriverError::Typecheck(e.to_string()))?;
+    Ok(format!("{:#?}", hir))
+}
+
 /// 编译入口文件（含外部模块）为可执行文件，无缓存。
 pub fn build_executable_file(entry: &Path, out_path: &Path) -> Result<(), DriverError> {
     build_executable_file_with_target(entry, out_path, None)
