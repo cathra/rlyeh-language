@@ -281,143 +281,185 @@ impl TypeError {
     }
 }
 
+/// 按给定的位置前缀 `loc`（`line:col`）写出诊断正文。
+///
+/// 抽取为独立函数，使 [`fmt::Display`] 与 [`TypeError::to_string_with_offset`]
+/// 复用同一套正文格式化（仅 `loc` 不同）。
+fn write_message(f: &mut fmt::Formatter<'_>, loc: &str, err: &TypeError) -> fmt::Result {
+    match err {
+        TypeError::UndefinedVariable { name, .. } => {
+            write!(f, "{loc}: error: undefined variable `{name}`")
+        }
+        TypeError::UndefinedType { name, .. } => {
+            write!(f, "{loc}: error: undefined type `{name}`")
+        }
+        TypeError::UndefinedFunction { name, .. } => {
+            write!(f, "{loc}: error: undefined function `{name}`")
+        }
+        TypeError::MissingFunctionBody { name, .. } => {
+            write!(f, "{loc}: error: function `{name}` is missing a body")
+        }
+        TypeError::FunctionBodyOverflow { name, .. } => {
+            write!(f, "{loc}: error: function `{name}` body exceeds recursion limit")
+        }
+        TypeError::WrongType {
+            expected, found, ..
+        } => write!(f, "{loc}: error: expected `{expected}`, found `{found}`"),
+        TypeError::ExpectedInt { found, .. } => {
+            write!(f, "{loc}: error: expected an integer, found `{found}`")
+        }
+        TypeError::ExpectedBool { found, .. } => {
+            write!(f, "{loc}: error: expected `bool`, found `{found}`")
+        }
+        TypeError::ExpectedNumeric { found, .. } => {
+            write!(f, "{loc}: error: expected a numeric type, found `{found}`")
+        }
+        TypeError::ExpectedIterable { found, .. } => {
+            write!(f, "{loc}: error: expected an iterable, found `{found}`")
+        }
+        TypeError::ExpectedStruct { found, .. } => {
+            write!(f, "{loc}: error: expected a struct, found `{found}`")
+        }
+        TypeError::UnknownField {
+            struct_name,
+            field,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: struct `{struct_name}` has no field `{field}`"
+        ),
+        TypeError::MissingField {
+            struct_name,
+            field,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: missing field `{field}` in struct `{struct_name}` construction"
+        ),
+        TypeError::ExpectedMutable { found, .. } => {
+            write!(f, "{loc}: error: expected a mutable binding, found `{found}`")
+        }
+        TypeError::FunctionNotFound { name, .. } => {
+            write!(f, "{loc}: error: function `{name}` not found")
+        }
+        TypeError::UnsafeExternCall { name, .. } => write!(
+            f,
+            "{loc}: error: call to extern function `{name}` must be inside an `unsafe` block"
+        ),
+        TypeError::UnexpectedArgumentCount {
+            name,
+            expected,
+            found,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: function `{name}` expects {expected} arguments, found {found}"
+        ),
+        TypeError::ArgumentTypeMismatch {
+            name,
+            index,
+            expected,
+            found,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: argument {index} of `{name}` expects `{expected}`, found `{found}`"
+        ),
+        TypeError::MissingPartialEq { type_, .. } => {
+            write!(f, "{loc}: error: type `{type_}` does not support `==`")
+        }
+        TypeError::MissingPartialOrd { type_, .. } => {
+            write!(f, "{loc}: error: type `{type_}` does not support ordering")
+        }
+        TypeError::InconsistentComparison { .. } => {
+            write!(f, "{loc}: error: comparison chain has inconsistent direction")
+        }
+        TypeError::ChainTypeMismatch { .. } => {
+            write!(f, "{loc}: error: comparison chain element types are incompatible")
+        }
+        TypeError::InSetTypeMismatch {
+            value_type,
+            element_type,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: in-set value type `{value_type}` is incompatible with element type `{element_type}`"
+        ),
+        TypeError::NonConstantBound { .. } => {
+            write!(f, "{loc}: error: set range bounds must be compile-time integer constants")
+        }
+        TypeError::Unsupported { what, .. } => {
+            write!(f, "{loc}: error: unsupported syntax: {what}")
+        }
+        TypeError::UnionMembersNotDisjoint {
+            first,
+            second,
+            why,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: union members `{first}` and `{second}` are not disjoint ({why})"
+        ),
+        TypeError::GenericBoundMismatch {
+            param,
+            bound,
+            ty,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: type `{ty}` does not implement trait `{bound}` (bound on generic parameter `{param}`)"
+        ),
+        TypeError::GenericArityMismatch {
+            name,
+            expected,
+            found,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: generic type `{name}` expects {expected} type argument(s), but {found} were provided"
+        ),
+    }
+}
+
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (line, col) = (self.line(), self.col());
-        let loc = format!("{line}:{col}");
-        match self {
-            TypeError::UndefinedVariable { name, .. } => {
-                write!(f, "{loc}: error: undefined variable `{name}`")
-            }
-            TypeError::UndefinedType { name, .. } => {
-                write!(f, "{loc}: error: undefined type `{name}`")
-            }
-            TypeError::UndefinedFunction { name, .. } => {
-                write!(f, "{loc}: error: undefined function `{name}`")
-            }
-            TypeError::MissingFunctionBody { name, .. } => {
-                write!(f, "{loc}: error: function `{name}` is missing a body")
-            }
-            TypeError::FunctionBodyOverflow { name, .. } => {
-                write!(f, "{loc}: error: function `{name}` body exceeds recursion limit")
-            }
-            TypeError::WrongType {
-                expected, found, ..
-            } => write!(f, "{loc}: error: expected `{expected}`, found `{found}`"),
-            TypeError::ExpectedInt { found, .. } => {
-                write!(f, "{loc}: error: expected an integer, found `{found}`")
-            }
-            TypeError::ExpectedBool { found, .. } => {
-                write!(f, "{loc}: error: expected `bool`, found `{found}`")
-            }
-            TypeError::ExpectedNumeric { found, .. } => {
-                write!(f, "{loc}: error: expected a numeric type, found `{found}`")
-            }
-            TypeError::ExpectedIterable { found, .. } => {
-                write!(f, "{loc}: error: expected an iterable, found `{found}`")
-            }
-            TypeError::ExpectedStruct { found, .. } => {
-                write!(f, "{loc}: error: expected a struct, found `{found}`")
-            }
-            TypeError::UnknownField {
-                struct_name,
-                field,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: struct `{struct_name}` has no field `{field}`"
-            ),
-            TypeError::MissingField {
-                struct_name,
-                field,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: missing field `{field}` in struct `{struct_name}` construction"
-            ),
-            TypeError::ExpectedMutable { found, .. } => {
-                write!(f, "{loc}: error: expected a mutable binding, found `{found}`")
-            }
-            TypeError::FunctionNotFound { name, .. } => {
-                write!(f, "{loc}: error: function `{name}` not found")
-            }
-            TypeError::UnsafeExternCall { name, .. } => write!(
-                f,
-                "{loc}: error: call to extern function `{name}` must be inside an `unsafe` block"
-            ),
-            TypeError::UnexpectedArgumentCount {
-                name,
-                expected,
-                found,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: function `{name}` expects {expected} arguments, found {found}"
-            ),
-            TypeError::ArgumentTypeMismatch {
-                name,
-                index,
-                expected,
-                found,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: argument {index} of `{name}` expects `{expected}`, found `{found}`"
-            ),
-            TypeError::MissingPartialEq { type_, .. } => {
-                write!(f, "{loc}: error: type `{type_}` does not support `==`")
-            }
-            TypeError::MissingPartialOrd { type_, .. } => {
-                write!(f, "{loc}: error: type `{type_}` does not support ordering")
-            }
-            TypeError::InconsistentComparison { .. } => {
-                write!(f, "{loc}: error: comparison chain has inconsistent direction")
-            }
-            TypeError::ChainTypeMismatch { .. } => {
-                write!(f, "{loc}: error: comparison chain element types are incompatible")
-            }
-            TypeError::InSetTypeMismatch {
-                value_type,
-                element_type,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: in-set value type `{value_type}` is incompatible with element type `{element_type}`"
-            ),
-            TypeError::NonConstantBound { .. } => {
-                write!(f, "{loc}: error: set range bounds must be compile-time integer constants")
-            }
-            TypeError::Unsupported { what, .. } => {
-                write!(f, "{loc}: error: unsupported syntax: {what}")
-            }
-            TypeError::UnionMembersNotDisjoint {
-                first,
-                second,
-                why,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: union members `{first}` and `{second}` are not disjoint ({why})"
-            ),
-            TypeError::GenericBoundMismatch {
-                param,
-                bound,
-                ty,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: type `{ty}` does not implement trait `{bound}` (bound on generic parameter `{param}`)"
-            ),
-            TypeError::GenericArityMismatch {
-                name,
-                expected,
-                found,
-                ..
-            } => write!(
-                f,
-                "{loc}: error: generic type `{name}` expects {expected} type argument(s), but {found} were provided"
-            ),
+        let loc = format!("{}:{}", self.line(), self.col());
+        write_message(f, &loc, self)
+    }
+}
+
+impl TypeError {
+    /// 渲染诊断文本，并把**合并源码坐标（含 std 预置偏移）还原为用户源码坐标**。
+    ///
+    /// `rlyeh run/build` 会把 std 预置（`prelude`）拼接到用户源码之前，
+    /// 因此 `TypeError` 携带的 `Span` 行号是合并源码行号。落在实际用户代码上的
+    /// 错误（`span.start >= prelude_len`）需减去预置行数 `prelude_lines` 才能得到
+    /// 用户文件行号（`prelude` 以换行结尾，用户源码从下一行第 1 列起，列号不变）。
+    /// 落在预置范围内（编译器生成项 / 预置内部位置）的错误不做还原，保持原坐标。
+    ///
+    /// 该方法是 L1（SH-P2-6 诊断对齐）的核心：使诊断行号对应用户 `.rl` 文件，
+    /// 而非合并源码（此前会报出 `~7155` 这类偏移行号）。
+    pub fn to_string_with_offset(&self, prelude_len: usize, prelude_lines: usize) -> String {
+        let span = self.span();
+        if span.start < prelude_len {
+            return self.to_string();
         }
+        let loc = format!("{}:{}", span.line.saturating_sub(prelude_lines), span.col);
+        // 复用同一套正文格式化，仅替换 loc
+        struct Offset<'a> {
+            err: &'a TypeError,
+            loc: String,
+        }
+        impl fmt::Display for Offset<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write_message(f, &self.loc, self.err)
+            }
+        }
+        Offset {
+            err: self,
+            loc: loc.clone(),
+        }
+        .to_string()
     }
 }
 

@@ -1,1 +1,1 @@
-错误: [typecheck] 7156:13: error: unsupported syntax: `?` 运算符仅支持 Option/Result 类型，得到 `i64`
+错误: [typecheck] 5:13: error: unsupported syntax: `?` 运算符仅支持 Option/Result 类型，得到 `i64`

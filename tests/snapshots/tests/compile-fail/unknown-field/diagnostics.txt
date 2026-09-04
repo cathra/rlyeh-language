@@ -1,1 +1,1 @@
-错误: [typecheck] 7158:13: error: struct `Point` has no field `z`
+错误: [typecheck] 7:13: error: struct `Point` has no field `z`

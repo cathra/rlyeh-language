@@ -1,1 +1,1 @@
-错误: [typecheck] 7157:5: error: unsupported syntax: 对兜底模式使用守卫条件
+错误: [typecheck] 6:5: error: unsupported syntax: 对兜底模式使用守卫条件

@@ -1,1 +1,1 @@
-错误: [typecheck] 7165:13: error: type `Rock` does not implement trait `Speak` (bound on generic parameter `T`)
+错误: [typecheck] 14:13: error: type `Rock` does not implement trait `Speak` (bound on generic parameter `T`)

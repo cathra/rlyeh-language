@@ -1,1 +1,1 @@
-错误: [typecheck] 7155:13: error: function `foo` not found
+错误: [typecheck] 4:13: error: function `foo` not found

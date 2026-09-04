@@ -1,1 +1,1 @@
-错误: [typecheck] 7155:18: error: expected `i64`, found `string`
+错误: [typecheck] 4:18: error: expected `i64`, found `string`

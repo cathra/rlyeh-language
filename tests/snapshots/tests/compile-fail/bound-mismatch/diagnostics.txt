@@ -1,1 +1,1 @@
-错误: [typecheck] 7170:13: error: type `i64` does not implement trait `HasArea` (bound on generic parameter `T`)
+错误: [typecheck] 19:13: error: type `i64` does not implement trait `HasArea` (bound on generic parameter `T`)

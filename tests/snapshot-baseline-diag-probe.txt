@@ -5,8 +5,9 @@
 # 即诊断文本，用于捕获诊断级回归 / 非确定性，并为未来「与 Rust 参考实现
 # 诊断文本对拍」建立 harness 侧回归网。
 #
-# 注意：当前诊断 span 坐标为「合并源码（含 std 前缀）」坐标，非用户文件
-# 坐标；L1（用户态 span 对齐）为后续修复项，此处仅作文本回归。
+# 诊断行号已按 L1（用户态 span 对齐，2026-09-04）还原为用户 `.rl` 文件坐标
+# （typecheck 错误减去 std 预置行数；borrowck/regionck 错误当前 line/col 恒为
+# 0、不带坐标前缀，属后续 Span 传播任务，不在本基线坐标对齐范围内）。
 
 # 类型不匹配
 tests/compile-fail/type-mismatch.rl

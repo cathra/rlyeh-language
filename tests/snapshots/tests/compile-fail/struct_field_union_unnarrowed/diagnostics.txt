@@ -1,1 +1,1 @@
-错误: [typecheck] 7160:13: error: expected a numeric type, found `i64 | String`
+错误: [typecheck] 9:13: error: expected a numeric type, found `i64 | String`
