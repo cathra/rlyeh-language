@@ -144,6 +144,7 @@ pub(crate) fn expand_actor(
                 expected: field_tys[idx].1.to_string(),
                 found: v_ty.to_string(),
                 span: f.span,
+                related: vec![],
             });
         }
         stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
@@ -294,6 +295,10 @@ pub(crate) fn check_actor_method_body(
             expected: return_type.to_string(),
             found: body_ty.to_string(),
             span: m.span,
+            related: vec![(
+                m.span,
+                format!("期望返回类型 `{}` 声明于此", return_type),
+            )],
         });
     }
 

@@ -389,6 +389,7 @@ pub(super) fn try_builtin_method_call(
                     expected: pty.to_string(),
                     found: t.to_string(),
                     span: a.span,
+                    related: vec![],
                 });
             }
             hir_args.push(h);

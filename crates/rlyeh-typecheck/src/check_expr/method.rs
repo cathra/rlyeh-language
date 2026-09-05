@@ -112,6 +112,7 @@ pub(super) fn check_static_method_call(
                 expected: pty.to_string(),
                 found: ty.to_string(),
                 span: arg.span,
+                related: vec![],
             });
         }
         hir_args.push(hir);
@@ -240,6 +241,7 @@ pub(super) fn check_method_call(
                 expected: "i64".to_string(),
                 found: start_ty.to_string(),
                 span: args[0].span,
+                related: vec![],
             });
         }
         let data_tmp = ctx.fresh_temp();
@@ -352,6 +354,7 @@ pub(super) fn check_method_call(
                         expected: "i64".to_string(),
                         found: t.to_string(),
                         span: arg.span,
+                        related: vec![],
                     });
                 }
                 call_args.push(h);
@@ -610,6 +613,7 @@ pub(super) fn check_method_call(
                 expected: pty.to_string(),
                 found: ty.to_string(),
                 span: args[i].span,
+                related: vec![],
             });
         }
     }

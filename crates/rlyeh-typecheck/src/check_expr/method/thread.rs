@@ -48,6 +48,7 @@ pub(super) fn check_thread_start_closure(
             expected: params[0].to_string(),
             found: arg_ty.to_string(),
             span: args[1].span,
+            related: vec![],
         });
     }
 

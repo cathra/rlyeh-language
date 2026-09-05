@@ -53,6 +53,8 @@ pub enum TypeError {
         found: String,
         /// 源码位置
         span: Span,
+        /// 相关位置标注（SH-P2-6 L2 多位置）：如期望类型声明处
+        related: Vec<(Span, String)>,
     },
     /// 期望整数类型
     ExpectedInt {
@@ -151,6 +153,8 @@ pub enum TypeError {
         found: String,
         /// 源码位置
         span: Span,
+        /// 相关位置标注（SH-P2-6 L2 多位置）：如期望类型声明处（形参 / 字段）
+        related: Vec<(Span, String)>,
     },
     /// 缺少 `PartialEq` 支持
     MissingPartialEq {
@@ -605,6 +609,22 @@ impl TypeError {
         let mut out = format!("{loc}: error[{}]: {body}", self.code());
         if let Some(h) = self.help() {
             out.push_str(&format!("\n  = help: {h}"));
+        }
+        // 多位置标注（SH-P2-6 L2）：相关位置（期望类型声明处等）渲染为次级
+        // `= note: <标签> (行:列)` 行；坐标还原逻辑与上文一致（落在预置范围内
+        // 的错误保持原坐标，用户代码减去预置行数）。
+        let related: &[(Span, String)] = match self {
+            TypeError::WrongType { related, .. } => related,
+            TypeError::ArgumentTypeMismatch { related, .. } => related,
+            _ => &[],
+        };
+        for (sp, label) in related {
+            let rl = if sp.start < prelude_len {
+                sp.line
+            } else {
+                sp.line.saturating_sub(prelude_lines)
+            };
+            out.push_str(&format!("\n  = note: {label} ({rl}:{})", sp.col));
         }
         out
     }

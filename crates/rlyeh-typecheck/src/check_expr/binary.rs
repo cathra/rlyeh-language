@@ -70,6 +70,7 @@ pub(super) fn check_binary(
             expected: left.to_string(),
             found: right.to_string(),
             span,
+            related: vec![],
         });
     }
     Ok((hir_op, merge_numeric(left.clone(), right.clone())))

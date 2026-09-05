@@ -8,6 +8,7 @@ pub(crate) fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &
         full_name(prefix, &s.name),
         StructDef {
             fields: Vec::new(),
+            field_spans: Vec::new(),
             type_params: s.generics.iter().map(|p| p.name.clone()).collect(),
             repr_c: s.repr_c,
         },
@@ -49,6 +50,7 @@ pub(crate) fn resolve_struct_fields(
     ctx.type_params = s.generics.iter().map(|p| p.name.clone()).collect();
 
     let mut fields = Vec::with_capacity(s.fields.len());
+    let mut field_spans = Vec::with_capacity(s.fields.len());
     for field in &s.fields {
         let ty = resolve_ast_type(ctx, &field.type_, field.span)?;
         // H4 MVP 限制：`dyn Trait` 暂不支持作为 struct 字段（2 槽胖指针字段布局规划中）
@@ -65,12 +67,14 @@ pub(crate) fn resolve_struct_fields(
             repr_c_field_ok(&ty, ctx, field.span)?;
         }
         fields.push((field.name.clone(), ty));
+        field_spans.push(field.span);
     }
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
     let full = full_name(prefix, &s.name);
     if let Some(def) = ctx.structs.get_mut(&full) {
         def.fields = fields;
+        def.field_spans = field_spans;
     }
     Ok(())
 }

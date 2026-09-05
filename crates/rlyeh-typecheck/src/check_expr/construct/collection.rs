@@ -225,6 +225,7 @@ pub(crate) fn check_iter_construct(
             expected: "裸指针（*const T / *mut T）".to_string(),
             found: data_ty.to_string(),
             span: args[0].span,
+            related: vec![],
         });
     };
     // cur（仅 IterMut）：裸指针
@@ -235,6 +236,7 @@ pub(crate) fn check_iter_construct(
                 expected: "裸指针（*mut T）".to_string(),
                 found: cur_ty.to_string(),
                 span: args[1].span,
+                related: vec![],
             });
         }
         cur_hir

@@ -226,6 +226,10 @@ pub(crate) fn check_fn_body_with_self(
                 expected: return_type.to_string(),
                 found: body_ty.to_string(),
                 span: f.span,
+                related: vec![(
+                    f.span,
+                    format!("期望返回类型 `{}` 声明于此", return_type),
+                )],
             });
         }
     }

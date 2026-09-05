@@ -85,6 +85,7 @@ pub(super) fn check_generic_call(
                 expected: pty.to_string(),
                 found: ty.to_string(),
                 span: arg.span,
+                related: vec![],
             });
         }
     }

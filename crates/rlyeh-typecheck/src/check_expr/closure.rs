@@ -225,6 +225,7 @@ pub(crate) fn check_closure_value_call(
                 expected: expected.to_string(),
                 found: t.to_string(),
                 span,
+                related: vec![],
             });
         }
         arg_hirs.push(h);
@@ -313,6 +314,7 @@ pub(crate) fn check_deferred_closure_call(
                     expected: at.to_string(),
                     found: t.to_string(),
                     span: a.span,
+                    related: vec![],
                 });
             }
             arg_tys.push(at);
@@ -604,6 +606,7 @@ pub(crate) fn fix_deferred_closure_with_sig(
                     expected: s.to_string(),
                     found: at.to_string(),
                     span,
+                    related: vec![],
                 });
             }
             param_tys.push(at);
@@ -730,6 +733,7 @@ pub(crate) fn check_closure_expected(
             expected: return_type.to_string(),
             found: body_ty.to_string(),
             span: body.span,
+            related: vec![],
         });
     }
 

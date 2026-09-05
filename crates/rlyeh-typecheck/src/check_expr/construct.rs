@@ -152,6 +152,10 @@ pub(super) fn check_struct_construct(
                 expected: field_fty.to_string(),
                 found: arg_ty.to_string(),
                 span: init.span,
+                related: vec![(
+                    def.field_spans[i],
+                    format!("字段 `{fname}` 类型 `{}` 声明于此", field_fty),
+                )],
             });
         }
         // SH-P0-1 E2（repr(C) 嵌套聚合内联）：repr(C) 结构体字面量构造时，字段须按

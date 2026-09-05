@@ -371,6 +371,8 @@ pub struct FnSignature {
 pub struct StructDef {
     /// 字段名与类型
     pub fields: Vec<(String, Type)>,
+    /// 字段声明位置（SH-P2-6 L2 多位置）：与 `fields` 同序，用于类型不匹配回指
+    pub field_spans: Vec<Span>,
     /// 泛型参数名（如 `Vec` 的 `["T"]`；V1 2026-08：字段访问时按接收者
     /// 实例类型参数替换，用户代码 `Vec<Infer>.data` 等场景）
     pub type_params: Vec<String>,

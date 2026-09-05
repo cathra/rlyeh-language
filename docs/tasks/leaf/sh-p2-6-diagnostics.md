@@ -60,10 +60,20 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 - **相关 span 标注**：`BorrowError` / `RegionError` 变体新增 `related: Vec<(Span, String)>` 字段；borrowck 检查器在 `Borrow` 记录上登记创建处 `span`，冲突（`register_borrow` / 赋值冲突）时回指先前借用位置，渲染为次级 `= note: <标签> (行:列)` 行。
 - **向后兼容**：旧 `Display` / `render` / `to_string_with_offset` 输出格式**保持不变**（regionck 单测依赖其精确字符串）；driver 改用新增 `render_structured` / `to_string_structured`，`join_errors` 以换行分隔多错误块。
 - 验证：重新生成 `tests/snapshots/.../diagnostics.txt` 基线（12 例，均新增 `[CODE]` / `= help:` 行；`borrow-conflict-mutmut` 新增 `= note: 先前借用创建于此 (6:13)`），`check` 验证 12/0/0/0；`rlyeh test tests/` 全量 264/264 通过（`// expect:` 子串断言不受影响）。
-- 已知缺口（2026-09-05 补齐 regionck 部分）：regionck 现已填充相关 span——`DoubleTransfer` 回指首次 transfer 处、`InvalidTransfer`/`OuterRegionTransfer` 回指目标区域声明处（`with_related` 已实际使用，移除 `#[allow(dead_code)]`）；`TypeError` 仍仅单位置（类型错误多位置标注需跟踪期望类型来源 span，留待后续）；`RegionNotFound`/`PartialTransfer`/`RegionEscape` 无自然第二位置，保持单位置。
+- 已知缺口（2026-09-05 补齐 regionck 部分）：regionck 现已填充相关 span——`DoubleTransfer` 回指首次 transfer 处、`InvalidTransfer`/`OuterRegionTransfer` 回指目标区域声明处（`with_related` 已实际使用，移除 `#[allow(dead_code)]`）；`TypeError` 多位置标注已部分落地（见下「L2 续：TypeError 多位置标注」）：`WrongType`/`ArgumentTypeMismatch` 新增 `related` 并渲染偏移感知 `= note:`，结构体字段不匹配回指字段声明、返回类型不匹配回指函数/方法声明；`let` 注解 / 函数实参 / 元组解构 / 枚举命名字段因 `AstType`/`AstStmt::Let`/`FnSignature`/`ResolvedVariant` 未携带注解 span，精确回指需 AST 注解 span 贯穿（后续项）；`RegionNotFound`/`PartialTransfer`/`RegionEscape` 无自然第二位置，保持单位置。
+
+## 实现纪要（L2 续：TypeError 多位置标注，2026-09-05）
+- **`TypeError` 多位置标注落地（SH-P2-6 文档记录的下一步「跟踪期望类型来源 span」）**：沿用 L2 既有 `= note:` 相关位置范式。
+  - `rlyeh-typecheck/src/error.rs`：`WrongType` / `ArgumentTypeMismatch` 变体新增 `related: Vec<(Span, String)>` 字段；`to_string_structured` 在稳定错误码 + `= help:` 之后，对 `related` 逐条渲染偏移感知的 `= note: <标签> (行:列)`（坐标还原逻辑与 `loc` 一致：落在预置范围内保持原坐标，用户代码减预置行数）。
+  - 全部 21+ 处 `WrongType` / `ArgumentTypeMismatch` 构造点补 `related`（填充或 `vec![]`）。
+  - **已填充回指（可零改造获取声明 span 的位置）**：
+    - 结构体字段类型不匹配（`construct.rs`）：回指字段声明处，span 取自新增的 `StructDef.field_spans`（`collect.rs` 由 `AstStructField.span` 收集，与 `fields` 同序）。
+    - 返回类型不匹配（`fn_sig.rs` 函数 / `actor.rs` 方法）：回指函数/方法声明 span（`f.span`/`m.span`）。
+  - **暂未填充（后续项，需 AST 注解 span 贯穿）**：`let x: T = expr` 注解处、`f(arg)` 实参↔形参处、`let (a,b) = tuple` 元组解构处、枚举命名字段处——因 `AstType` 枚举与 `AstStmt::Let` 不携带类型注解 span、`FnSignature` 未携带形参声明 span、`ResolvedVariant` 未携带字段 span，精确回指需先为这些节点补充 span（改动面较大，单独增量）。
+- 验证：新增回归用例 `tests/compile-fail/struct-field-type-mismatch.rl`（`// expect:` 同时断言 `= note: 字段 \`x\` 类型 \`i64\` 声明于此`）；`rlyeh test tests/` 全量 265/265 通过；diagnostics 探针基线 12/0/0/0（12 例均不含结构体字段/返回类型不匹配，无漂移）。
 
 ## 状态
-✅ 完成（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断（稳定错误码 + 修复建议 + 相关 span 标注）已于 2026-09-05 落地）。
+✅ 完成（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断（稳定错误码 + 修复建议 + 相关 span 标注）已于 2026-09-05 落地；L2 续 TypeError 多位置标注已部分落地——结构体字段/返回类型回指声明处，let/实参/元组/枚举命名字段因 AST 注解 span 缺失留作后续）。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -75,3 +85,4 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 | 2026-09-05 | 语句级精确坐标落地：HIR Span 全量传播（`HirExpr`/`HirStmt`/`HirBlock` 携带 `span` + typecheck 填充 + borrowck/regionck 节点级 `cur_span`）；`borrow-conflict-mutmut` 基线由 `4:1` 修正为 `7:14`；diagnostics `check` 12/0/0/0 |
 | 2026-09-05 | L2 结构化诊断落地：稳定错误码（`TC/BC/RC0xx`）+ 修复建议（`= help:`）+ 相关 span 标注（`= note:`，borrow 冲突回指先前借用位置）；driver 改用 `render_structured`/`to_string_structured`，`join_errors` 换行分隔；diagnostics 基线重生成（12 例），`check` 12/0/0/0，`rlyeh test tests/` 264/264 |
 | 2026-09-05 | L2 遗留补齐：regionck 填充相关 span（`DoubleTransfer` 回指首次 transfer 处、`InvalidTransfer`/`OuterRegionTransfer` 回指目标区域声明处），`with_related` 实际使用、移除 `#[allow(dead_code)]`；新增 regionck 单测断言 `= note:` 相关位置标注 |
+| 2026-09-05 | L2 续：TypeError 多位置标注部分落地——`WrongType`/`ArgumentTypeMismatch` 加 `related` + 偏移感知 `= note:`，结构体字段/返回类型回指声明处；`StructDef.field_spans` 贯穿字段 span；let/实参/元组/枚举命名字段因 `AstType`/`AstStmt::Let`/`FnSignature`/`ResolvedVariant` 缺失注解 span 留作后续；新增回归用例，全量 265/265、诊断基线 12/0/0/0 |

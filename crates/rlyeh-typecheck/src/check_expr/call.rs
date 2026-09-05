@@ -263,6 +263,7 @@ pub(super) fn check_trait_static_call(
                 expected: expected[i].to_string(),
                 found: ty.to_string(),
                 span,
+                related: vec![],
             });
         }
         hir_args.push(hir);
@@ -455,6 +456,7 @@ pub(super) fn check_call(
                     expected: pty.to_string(),
                     found: ty.to_string(),
                     span: a.span,
+                    related: vec![],
                 });
             }
             hir_args.push(hir);
@@ -684,6 +686,7 @@ pub(super) fn check_call(
                         expected: "Weak<T>".to_string(),
                         found: found.to_string(),
                         span,
+                        related: vec![],
                     });
                 }
             }
@@ -813,6 +816,7 @@ pub(super) fn check_call(
                 expected: param_ty.to_string(),
                 found: ty.to_string(),
                 span: arg.span,
+                related: vec![],
             });
         }
         // S2 unsize coercion：`&[T; N]` 实参传给 `&[T]` / `&mut [T]` 形参时构造
@@ -876,6 +880,7 @@ pub(super) fn check_indirect_call(
                 expected: param_ty.to_string(),
                 found: ty.to_string(),
                 span: arg.span,
+                related: vec![],
             });
         }
         hir_args.push(hir);

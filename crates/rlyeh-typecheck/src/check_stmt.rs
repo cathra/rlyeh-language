@@ -97,6 +97,7 @@ pub(crate) fn check_stmt_inner(
                             expected: at.to_string(),
                             found: "闭包".to_string(),
                             span,
+                            related: vec![],
                         });
                     }
                     check_closure_expected(ctx, init, &at, span)?
@@ -170,6 +171,7 @@ pub(crate) fn check_stmt_inner(
                             expected: at.to_string(),
                             found: ty.to_string(),
                             span,
+                            related: vec![],
                         });
                     }
                     Some(at)
@@ -270,6 +272,7 @@ pub(crate) fn check_stmt_inner(
                             expected: format!("元组（{} 元）", pats.len()),
                             found: ty.to_string(),
                             span,
+                            related: vec![],
                         });
                     };
                     if ts.len() != pats.len() {
@@ -277,6 +280,7 @@ pub(crate) fn check_stmt_inner(
                             expected: format!("{} 元元组", ts.len()),
                             found: format!("{} 元解构模式", pats.len()),
                             span,
+                            related: vec![],
                         });
                     }
                     let tmp = ctx.fresh_temp();

@@ -197,6 +197,7 @@ pub(super) fn check_index_inner(
                     expected: "array or string".to_string(),
                     found: b_ty.to_string(),
                     span,
+                    related: vec![],
                 })
             }
         }
@@ -204,6 +205,7 @@ pub(super) fn check_index_inner(
             expected: "array or string".to_string(),
             found: other.to_string(),
             span,
+            related: vec![],
         }),
     }
 }
@@ -229,6 +231,7 @@ pub(super) fn check_array_lit(
                     expected: prev.to_string(),
                     found: ty.to_string(),
                     span: e.span,
+                    related: vec![],
                 });
             }
         } else {
@@ -369,6 +372,7 @@ pub(super) fn check_variant_construct(
                 expected: fty.to_string(),
                 found: arg_ty.to_string(),
                 span: arg.span,
+                related: vec![],
             });
         }
         stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
@@ -592,6 +596,7 @@ pub(super) fn check_match_with_scrutinee(
                 expected: result_ty.to_string(),
                 found: body_ty.to_string(),
                 span,
+                related: vec![],
             });
         }
         result_ty = body_ty;

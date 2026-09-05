@@ -78,6 +78,7 @@ pub(crate) fn infer_expr_tail(
                                 expected: inner.to_string(),
                                 found: v_ty.to_string(),
                                 span,
+                                related: vec![],
                             });
                         }
                         let ty = field_scalar_of(&inner);
@@ -120,6 +121,7 @@ pub(crate) fn infer_expr_tail(
                     expected: t_ty.to_string(),
                     found: v_ty.to_string(),
                     span,
+                    related: vec![],
                 });
             }
             let target_name = match t_hir.kind {
@@ -286,6 +288,7 @@ pub(crate) fn infer_expr_tail(
                             expected: t_ty.to_string(),
                             found: et.to_string(),
                             span,
+                            related: vec![],
                         });
                     }
                 }
@@ -485,6 +488,7 @@ pub(crate) fn infer_expr_tail(
                                 expected: "i64".to_string(),
                                 found: t.to_string(),
                                 span: arg.span,
+                                related: vec![],
                             });
                         }
                         call_args.push(h);
