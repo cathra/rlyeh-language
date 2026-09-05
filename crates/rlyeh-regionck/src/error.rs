@@ -163,8 +163,8 @@ impl RegionError {
 
     /// 追加相关位置标注（SH-P2-6 L2）：`(位置, 标签)` 列表，渲染为次级 `= note:` 行。
     ///
-    /// 当前 regionck 各错误尚未填充第二位置（能力已就绪，待检查器补充来源 span）。
-    #[allow(dead_code)]
+    /// 检查器在重复 transfer / 嵌套方向错误 / 对象归属其它区域错误中回指
+    /// 首次 transfer 处或区域声明处。
     pub(crate) fn with_related(mut self, spans: Vec<(Span, String)>) -> Self {
         match &mut self {
             RegionError::RegionEscape { related, .. }

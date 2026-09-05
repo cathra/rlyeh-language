@@ -17,6 +17,10 @@ struct CheckState {
     allocated: HashMap<String, String>,
     /// 已 transfer 的变量集合（防重复转移）。
     transferred: HashSet<String>,
+    /// 变量 → 首次 transfer 处 span（用于重复 transfer 的相关位置标注，SH-P2-6 L2）。
+    transfer_spans: HashMap<String, Span>,
+    /// 区域名 → 声明处 span（用于相关位置标注，SH-P2-6 L2）。
+    region_spans: HashMap<String, Span>,
     /// 收集到的错误。
     errors: Vec<RegionError>,
     /// 当前查错节点的坐标（表达式 / 语句 / 块 / 函数级回退）：由 `check_expr` /
@@ -31,6 +35,8 @@ impl CheckState {
             active_regions: Vec::new(),
             allocated: HashMap::new(),
             transferred: HashSet::new(),
+            transfer_spans: HashMap::new(),
+            region_spans: HashMap::new(),
             errors: Vec::new(),
             cur_span: Span {
                 start: 0,
@@ -134,6 +140,8 @@ impl RegionChecker {
                         key
                     }
                 };
+                // 记录区域声明处 span，供相关位置标注（SH-P2-6 L2）回指。
+                self.state.region_spans.insert(key.clone(), expr.span);
                 self.state.active_regions.push(key.clone());
                 self.check_block(body);
                 self.state.active_regions.pop();
@@ -280,7 +288,16 @@ impl RegionChecker {
             return;
         }
         if self.state.transferred.contains(v) {
-            self.state.errors.push(RegionError::double_transfer(v, self.state.cur_span));
+            // 相关位置标注：回指首次 transfer 处（SH-P2-6 L2）。
+            let related = self
+                .state
+                .transfer_spans
+                .get(v)
+                .map(|sp| vec![(sp.clone(), "首次 transfer 位于此".to_string())])
+                .unwrap_or_default();
+            self.state
+                .errors
+                .push(RegionError::double_transfer(v, self.state.cur_span).with_related(related));
             return;
         }
         match self.state.allocated.get(v) {
@@ -288,23 +305,49 @@ impl RegionChecker {
                 // 嵌套方向检查：transfer 必须写在源区域的直接作用域内，
                 // 栈顶不是源区域说明从更内层区域转移外层区域对象。
                 if self.state.active_regions.last().map(String::as_str) != Some(region) {
-                    self.state
-                        .errors
-                        .push(RegionError::outer_region_transfer(format!(
+                    // 相关位置标注：回指目标区域声明处（SH-P2-6 L2）。
+                    let related = self
+                        .state
+                        .region_spans
+                        .get(region)
+                        .map(|sp| vec![(sp.clone(), format!("区域 `'{region}` 声明于此"))])
+                        .unwrap_or_default();
+                    self.state.errors.push(
+                        RegionError::outer_region_transfer(format!(
                             "object `{v}` belongs to region `'{region}`, \
                              but the transfer occurs inside a nested region; \
                              move the transfer into `'{region}` directly"
-                        ), self.state.cur_span));
+                        ), self.state.cur_span)
+                        .with_related(related),
+                    );
                     return;
                 }
                 self.state.transferred.insert(v.to_string());
+                // 记录首次 transfer 处，供重复 transfer 标注（SH-P2-6 L2）。
+                self.state
+                    .transfer_spans
+                    .entry(v.to_string())
+                    .or_insert(self.state.cur_span);
             }
             Some(other) => {
-                self.state
-                    .errors
-                    .push(RegionError::invalid_transfer(format!(
+                // 相关位置标注：回指对象实际所在区域的声明处（SH-P2-6 L2）。
+                let related = self
+                    .state
+                    .region_spans
+                    .get(other)
+                    .map(|sp| {
+                        vec![(
+                            sp.clone(),
+                            format!("`{v}` 分配于区域 `'{other}`（声明于此）"),
+                        )]
+                    })
+                    .unwrap_or_default();
+                self.state.errors.push(
+                    RegionError::invalid_transfer(format!(
                         "object `{v}` is allocated in region `'{other}`, not `'{region}`"
-                    ), self.state.cur_span));
+                    ), self.state.cur_span)
+                    .with_related(related),
+                );
             }
             None => {
                 self.state

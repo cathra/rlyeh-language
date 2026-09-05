@@ -136,3 +136,85 @@ fn main() -> u32 {
         "expected RegionNotFound, got {errs:?}"
     );
 }
+
+/// 重复 transfer：structured 输出应含错误码 `[RC005]` 与相关位置标注
+/// `= note: 首次 transfer 位于此`（SH-P2-6 L2 遗留缺口补齐）。
+#[test]
+fn test_double_transfer_related_span() {
+    let src = r#"
+fn main() -> u32 {
+    region 'a {
+        let x = 1 in 'a;
+        transfer x out of 'a;
+        transfer x out of 'a;
+        x
+    }
+}
+"#;
+    let errs = check(src).unwrap_err();
+    let e = errs
+        .iter()
+        .find(|e| matches!(e, RegionError::DoubleTransfer { .. }))
+        .expect("expected DoubleTransfer");
+    let out = e.render_structured(0);
+    assert!(out.contains("[RC005]"), "code missing: {out}");
+    assert!(
+        out.contains("= note: 首次 transfer 位于此"),
+        "related note missing: {out}"
+    );
+}
+
+/// 对象归属其它区域：structured 输出应回指该区域声明处（`= note: ... 分配于区域`）。
+#[test]
+fn test_invalid_transfer_related_span() {
+    let src = r#"
+fn main() -> u32 {
+    region 'a {
+        region 'b {
+            let x = 1 in 'b;
+            transfer x out of 'a;
+            x
+        }
+    }
+}
+"#;
+    let errs = check(src).unwrap_err();
+    let e = errs
+        .iter()
+        .find(|e| matches!(e, RegionError::InvalidTransfer { .. }))
+        .expect("expected InvalidTransfer");
+    let out = e.render_structured(0);
+    assert!(out.contains("[RC002]"), "code missing: {out}");
+    assert!(
+        out.contains("= note:") && out.contains("分配于区域"),
+        "related note missing: {out}"
+    );
+}
+
+/// 从内层区域 transfer 外层区域对象：structured 输出应回指外层区域声明处
+/// （`= note: ... 声明于此`）。
+#[test]
+fn test_outer_region_transfer_related_span() {
+    let src = r#"
+fn main() -> u32 {
+    region 'outer {
+        let x = 1 in 'outer;
+        region 'inner {
+            transfer x out of 'outer;
+            x
+        }
+    }
+}
+"#;
+    let errs = check(src).unwrap_err();
+    let e = errs
+        .iter()
+        .find(|e| matches!(e, RegionError::OuterRegionTransfer { .. }))
+        .expect("expected OuterRegionTransfer");
+    let out = e.render_structured(0);
+    assert!(out.contains("[RC007]"), "code missing: {out}");
+    assert!(
+        out.contains("= note:") && out.contains("声明于此"),
+        "related note missing: {out}"
+    );
+}
