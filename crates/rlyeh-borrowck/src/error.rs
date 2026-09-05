@@ -2,10 +2,14 @@
 
 use std::fmt;
 
+use rlyeh_lexer::Span;
+
 /// 借用检查错误。
 ///
-/// 注意：HIR 节点不携带源码位置（见 rlyeh-hir 设计约定），
-/// `line` / `col` 当前恒为 0，位置信息留待引入 Span 传播后填充。
+/// 注意：HIR 子节点（表达式 / 语句）不携带源码位置，borrowck 错误坐标
+/// 取自查错所在函数的 `HirItem.span`（函数级粒度，合并源码坐标）。
+/// `line` / `col` 经 `render(prelude_lines)` 减预置行数还原为用户文件坐标
+/// （SH-P2-6 L1 余量）；精确的语句级坐标需 HIR 子节点 Span 传播，属后续重构。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BorrowError {
     /// use-after-move：变量被 `transfer` 转移后再次使用（Rust E0382 对应）。
@@ -68,82 +72,115 @@ pub enum BorrowError {
 
 impl BorrowError {
     /// use-after-move 错误构造辅助。
-    pub(crate) fn use_after_transfer(name: impl Into<String>) -> Self {
+    ///
+    /// `span` 取自查错所在函数的 `HirItem.span`（合并源码坐标，L1 余量：
+    /// 函数级粒度；精确的语句级坐标需 HIR 子节点 Span 传播，属后续重构）。
+    pub(crate) fn use_after_transfer(name: impl Into<String>, span: Span) -> Self {
         BorrowError::UseAfterTransfer {
             name: name.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 不可变赋值错误构造辅助。
-    pub(crate) fn assign_to_immutable(name: impl Into<String>) -> Self {
+    pub(crate) fn assign_to_immutable(name: impl Into<String>, span: Span) -> Self {
         BorrowError::AssignToImmutable {
             name: name.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 借用冲突错误构造辅助。
-    pub(crate) fn borrow_conflict(detail: impl Into<String>) -> Self {
+    pub(crate) fn borrow_conflict(detail: impl Into<String>, span: Span) -> Self {
         BorrowError::BorrowConflict {
             detail: detail.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 对不可变绑定取可变引用错误构造辅助。
-    pub(crate) fn borrow_mut_immutable(name: impl Into<String>) -> Self {
+    pub(crate) fn borrow_mut_immutable(name: impl Into<String>, span: Span) -> Self {
         BorrowError::BorrowMutImmutable {
             name: name.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 悬垂引用错误构造辅助。
-    pub(crate) fn dangling_reference(name: impl Into<String>) -> Self {
+    pub(crate) fn dangling_reference(name: impl Into<String>, span: Span) -> Self {
         BorrowError::DanglingReference {
             name: name.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
+    }
+
+    /// 错误正文（不含 `line:col:` 前缀）。
+    fn message(&self) -> String {
+        match self {
+            BorrowError::UseAfterTransfer { name, .. } => {
+                format!("use of moved value: `{name}` was transferred out of its region")
+            }
+            BorrowError::AssignToImmutable { name, .. } => {
+                format!("cannot assign to immutable variable `{name}`")
+            }
+            BorrowError::BorrowConflict { detail, .. } => {
+                format!("borrow conflict: {detail}")
+            }
+            BorrowError::BorrowMutImmutable { name, .. } => format!(
+                "cannot borrow `{name}` as mutable, as it is not declared as mutable"
+            ),
+            BorrowError::DanglingReference { name, .. } => format!(
+                "`{name}` does not live long enough: borrowed reference escapes its scope"
+            ),
+            BorrowError::MoveWhileBorrowed { detail, .. } => {
+                format!("cannot move out of a borrowed value: {detail}")
+            }
+        }
+    }
+
+    /// 渲染诊断文本，并把合并源码坐标（含 std 预置偏移）还原为用户文件坐标。
+    ///
+    /// `prelude_lines` 为预置行数；用户行号 = 合并行号 - `prelude_lines`
+    /// （SH-P2-6 L1 余量：与 typecheck 诊断对齐到同一坐标系）。
+    pub fn render(&self, prelude_lines: usize) -> String {
+        let line = match self {
+            BorrowError::UseAfterTransfer { line, .. }
+            | BorrowError::AssignToImmutable { line, .. }
+            | BorrowError::BorrowConflict { line, .. }
+            | BorrowError::BorrowMutImmutable { line, .. }
+            | BorrowError::DanglingReference { line, .. }
+            | BorrowError::MoveWhileBorrowed { line, .. } => *line,
+        };
+        let col = match self {
+            BorrowError::UseAfterTransfer { col, .. }
+            | BorrowError::AssignToImmutable { col, .. }
+            | BorrowError::BorrowConflict { col, .. }
+            | BorrowError::BorrowMutImmutable { col, .. }
+            | BorrowError::DanglingReference { col, .. }
+            | BorrowError::MoveWhileBorrowed { col, .. } => *col,
+        };
+        // 无真实位置（line == 0，仅测试/调试占位；生产路径恒 >= 1）：
+        // 退化为纯消息，不输出误导性的 `0:0:` 前缀。
+        if line == 0 {
+            return self.message();
+        }
+        format!(
+            "{}:{}: {}",
+            line.saturating_sub(prelude_lines),
+            col,
+            self.message()
+        )
     }
 }
 
 impl fmt::Display for BorrowError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BorrowError::UseAfterTransfer { name, .. } => {
-                write!(
-                    f,
-                    "use of moved value: `{name}` was transferred out of its region"
-                )
-            }
-            BorrowError::AssignToImmutable { name, .. } => {
-                write!(f, "cannot assign to immutable variable `{name}`")
-            }
-            BorrowError::BorrowConflict { detail, .. } => {
-                write!(f, "borrow conflict: {detail}")
-            }
-            BorrowError::BorrowMutImmutable { name, .. } => {
-                write!(
-                    f,
-                    "cannot borrow `{name}` as mutable, as it is not declared as mutable"
-                )
-            }
-            BorrowError::DanglingReference { name, .. } => {
-                write!(
-                    f,
-                    "`{name}` does not live long enough: borrowed reference escapes its scope"
-                )
-            }
-            BorrowError::MoveWhileBorrowed { detail, .. } => {
-                write!(f, "cannot move out of a borrowed value: {detail}")
-            }
-        }
+        write!(f, "{}", self.render(0))
     }
 }
 

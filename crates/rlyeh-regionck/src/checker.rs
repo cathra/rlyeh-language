@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use rlyeh_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+use rlyeh_lexer::Span;
 
 use crate::error::RegionError;
 
@@ -16,6 +17,9 @@ struct CheckState {
     transferred: HashSet<String>,
     /// 收集到的错误。
     errors: Vec<RegionError>,
+    /// 当前函数（查错所在项）的 `HirItem.span`：错误坐标取函数级粒度
+    ///（合并源码坐标，L1 余量；经 `render` 减预置行数还原为用户坐标）。
+    cur_span: Span,
 }
 
 impl CheckState {
@@ -25,6 +29,12 @@ impl CheckState {
             allocated: HashMap::new(),
             transferred: HashSet::new(),
             errors: Vec::new(),
+            cur_span: Span {
+                start: 0,
+                end: 0,
+                line: 0,
+                col: 0,
+            },
         }
     }
 
@@ -75,6 +85,7 @@ impl RegionChecker {
     fn check_item(&mut self, item: &rlyeh_hir::HirItem) {
         if let HirItemKind::Fn(f) = &item.kind {
             if let Some(body) = &f.body {
+                self.state.cur_span = item.span;
                 self.check_block(body);
             }
         }
@@ -126,7 +137,7 @@ impl RegionChecker {
             HirExpr::InRegion { expr, region, .. } => {
                 self.check_expr(expr);
                 if !self.state.region_in_scope(region) {
-                    self.state.errors.push(RegionError::not_found(region));
+                    self.state.errors.push(RegionError::not_found(region, self.state.cur_span));
                     return;
                 }
                 if let HirExpr::Variable(v) = expr.as_ref() {
@@ -143,6 +154,7 @@ impl RegionChecker {
                         let _ = other;
                         self.state.errors.push(RegionError::partial_transfer(
                             "cannot statically determine the owning region of the transferred value",
+                            self.state.cur_span,
                         ));
                     }
                 }
@@ -258,11 +270,11 @@ impl RegionChecker {
     /// 4. `'r` 必须是当前最内层活跃区域（不能从内层转移外层区域对象，P005）。
     fn check_transfer(&mut self, v: &str, region: &str) {
         if !self.state.region_in_scope(region) {
-            self.state.errors.push(RegionError::not_found(region));
+            self.state.errors.push(RegionError::not_found(region, self.state.cur_span));
             return;
         }
         if self.state.transferred.contains(v) {
-            self.state.errors.push(RegionError::double_transfer(v));
+            self.state.errors.push(RegionError::double_transfer(v, self.state.cur_span));
             return;
         }
         match self.state.allocated.get(v) {
@@ -276,7 +288,7 @@ impl RegionChecker {
                             "object `{v}` belongs to region `'{region}`, \
                              but the transfer occurs inside a nested region; \
                              move the transfer into `'{region}` directly"
-                        )));
+                        ), self.state.cur_span));
                     return;
                 }
                 self.state.transferred.insert(v.to_string());
@@ -286,14 +298,14 @@ impl RegionChecker {
                     .errors
                     .push(RegionError::invalid_transfer(format!(
                         "object `{v}` is allocated in region `'{other}`, not `'{region}`"
-                    )));
+                    ), self.state.cur_span));
             }
             None => {
                 self.state
                     .errors
                     .push(RegionError::invalid_transfer(format!(
                         "object `{v}` is not allocated in any visible region"
-                    )));
+                    ), self.state.cur_span));
             }
         }
     }

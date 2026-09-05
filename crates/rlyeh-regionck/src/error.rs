@@ -2,10 +2,14 @@
 
 use std::fmt;
 
+use rlyeh_lexer::Span;
+
 /// 区域检查错误。
 ///
-/// 注意：HIR 节点不携带源码位置（见 rlyeh-hir 设计约定），
-/// `line` / `col` 当前恒为 0，位置信息留待引入 Span 传播后填充。
+/// 注意：HIR 子节点（表达式 / 语句）不携带源码位置，regionck 错误坐标
+/// 取自查错所在函数的 `HirItem.span`（函数级粒度，合并源码坐标）。
+/// `line` / `col` 经 `render(prelude_lines)` 减预置行数还原为用户文件坐标
+/// （SH-P2-6 L1 余量）；精确的语句级坐标需 HIR 子节点 Span 传播，属后续重构。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegionError {
     /// 区域逃逸：区域内对象在未 `transfer` 的情况下离开区域。
@@ -92,79 +96,120 @@ pub enum RegionError {
 
 impl RegionError {
     /// 非法 transfer 错误构造辅助。
-    pub(crate) fn invalid_transfer(detail: impl Into<String>) -> Self {
+    pub(crate) fn invalid_transfer(detail: impl Into<String>, span: Span) -> Self {
         RegionError::InvalidTransfer {
             detail: detail.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 区域不存在错误构造辅助。
-    pub(crate) fn not_found(name: impl Into<String>) -> Self {
+    pub(crate) fn not_found(name: impl Into<String>, span: Span) -> Self {
         RegionError::RegionNotFound {
             name: name.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 重复 transfer 错误构造辅助。
-    pub(crate) fn double_transfer(name: impl Into<String>) -> Self {
+    pub(crate) fn double_transfer(name: impl Into<String>, span: Span) -> Self {
         RegionError::DoubleTransfer {
             name: name.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 无法静态判定归属的 transfer 错误构造辅助（P005）。
-    pub(crate) fn partial_transfer(detail: impl Into<String>) -> Self {
+    pub(crate) fn partial_transfer(detail: impl Into<String>, span: Span) -> Self {
         RegionError::PartialTransfer {
             detail: detail.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
     }
 
     /// 嵌套方向错误构造辅助（P005）。
-    pub(crate) fn outer_region_transfer(detail: impl Into<String>) -> Self {
+    pub(crate) fn outer_region_transfer(detail: impl Into<String>, span: Span) -> Self {
         RegionError::OuterRegionTransfer {
             detail: detail.into(),
-            line: 0,
-            col: 0,
+            line: span.line,
+            col: span.col,
         }
+    }
+
+    /// 错误正文（不含 `line:col:` 前缀）。
+    fn message(&self) -> String {
+        match self {
+            RegionError::RegionEscape { detail, .. } => format!("region escape: {detail}"),
+            RegionError::InvalidTransfer { detail, .. } => {
+                format!("invalid transfer: {detail}")
+            }
+            RegionError::RegionNotFound { name, .. } => {
+                format!("region `'{name}` not found in current scope")
+            }
+            RegionError::PartialTransfer { detail, .. } => {
+                format!("partial transfer: {detail}")
+            }
+            RegionError::DoubleTransfer { name, .. } => {
+                format!("object `{name}` is transferred more than once")
+            }
+            RegionError::CannotTransferReference { detail, .. } => {
+                format!("cannot transfer a reference: {detail}")
+            }
+            RegionError::OuterRegionTransfer { detail, .. } => {
+                format!("cannot transfer from an inner region: {detail}")
+            }
+            RegionError::UnsizedTransfer { detail, .. } => {
+                format!("cannot transfer an unsized value: {detail}")
+            }
+        }
+    }
+
+    /// 渲染诊断文本，并把合并源码坐标（含 std 预置偏移）还原为用户文件坐标。
+    ///
+    /// `prelude_lines` 为预置行数；用户行号 = 合并行号 - `prelude_lines`
+    /// （SH-P2-6 L1 余量：与 typecheck 诊断对齐到同一坐标系）。
+    pub fn render(&self, prelude_lines: usize) -> String {
+        let line = match self {
+            RegionError::RegionEscape { line, .. }
+            | RegionError::InvalidTransfer { line, .. }
+            | RegionError::RegionNotFound { line, .. }
+            | RegionError::PartialTransfer { line, .. }
+            | RegionError::DoubleTransfer { line, .. }
+            | RegionError::CannotTransferReference { line, .. }
+            | RegionError::OuterRegionTransfer { line, .. }
+            | RegionError::UnsizedTransfer { line, .. } => *line,
+        };
+        let col = match self {
+            RegionError::RegionEscape { col, .. }
+            | RegionError::InvalidTransfer { col, .. }
+            | RegionError::RegionNotFound { col, .. }
+            | RegionError::PartialTransfer { col, .. }
+            | RegionError::DoubleTransfer { col, .. }
+            | RegionError::CannotTransferReference { col, .. }
+            | RegionError::OuterRegionTransfer { col, .. }
+            | RegionError::UnsizedTransfer { col, .. } => *col,
+        };
+        // 无真实位置（line == 0，仅测试/调试占位；生产路径恒 >= 1）：
+        // 退化为纯消息，不输出误导性的 `0:0:` 前缀。
+        if line == 0 {
+            return self.message();
+        }
+        format!(
+            "{}:{}: {}",
+            line.saturating_sub(prelude_lines),
+            col,
+            self.message()
+        )
     }
 }
 
 impl fmt::Display for RegionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RegionError::RegionEscape { detail, .. } => {
-                write!(f, "region escape: {detail}")
-            }
-            RegionError::InvalidTransfer { detail, .. } => {
-                write!(f, "invalid transfer: {detail}")
-            }
-            RegionError::RegionNotFound { name, .. } => {
-                write!(f, "region `'{name}` not found in current scope")
-            }
-            RegionError::PartialTransfer { detail, .. } => {
-                write!(f, "partial transfer: {detail}")
-            }
-            RegionError::DoubleTransfer { name, .. } => {
-                write!(f, "object `{name}` is transferred more than once")
-            }
-            RegionError::CannotTransferReference { detail, .. } => {
-                write!(f, "cannot transfer a reference: {detail}")
-            }
-            RegionError::OuterRegionTransfer { detail, .. } => {
-                write!(f, "cannot transfer from an inner region: {detail}")
-            }
-            RegionError::UnsizedTransfer { detail, .. } => {
-                write!(f, "cannot transfer an unsized value: {detail}")
-            }
-        }
+        write!(f, "{}", self.render(0))
     }
 }
 

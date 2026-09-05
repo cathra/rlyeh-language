@@ -796,6 +796,7 @@ name = "rlyeh-borrowck"
 version = "0.1.0"
 dependencies = [
  "rlyeh-hir",
+ "rlyeh-lexer",
  "rlyeh-typecheck",
 ]
 
@@ -950,6 +951,7 @@ name = "rlyeh-regionck"
 version = "0.1.0"
 dependencies = [
  "rlyeh-hir",
+ "rlyeh-lexer",
  "rlyeh-typecheck",
 ]
 

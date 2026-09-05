@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use rlyeh_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+use rlyeh_lexer::Span;
 
 use crate::error::BorrowError;
 
@@ -73,7 +74,8 @@ struct Borrow {
 ///   （`String::as_str()`）无法在 HIR 上追踪（HIR 无类型标注），暂不检查
 ///   字段内引用悬垂；MVP 悬垂检查覆盖 `return` 与函数体块尾值两个出口。
 ///
-/// HIR 节点不携带源码位置，`line` / `col` 恒为 0。
+/// HIR 子节点不携带源码位置；错误坐标取自查错所在函数的 `HirItem.span`
+/// （函数级粒度，合并源码坐标），经 `render(prelude_lines)` 还原为用户坐标。
 pub struct BorrowChecker {
     scopes: Vec<Scope>,
     errors: Vec<BorrowError>,
@@ -85,6 +87,9 @@ pub struct BorrowChecker {
     pos: usize,
     /// 当前函数参数名（悬垂判定：借参数不悬垂）。
     param_names: Vec<String>,
+    /// 当前函数（查错所在项）的 `HirItem.span`：错误坐标取函数级粒度
+    ///（合并源码坐标，L1 余量；经 `render` 减预置行数还原为用户坐标）。
+    cur_span: Span,
 }
 
 impl BorrowChecker {
@@ -97,6 +102,12 @@ impl BorrowChecker {
             uses: HashMap::new(),
             pos: 0,
             param_names: Vec::new(),
+            cur_span: Span {
+                start: 0,
+                end: 0,
+                line: 0,
+                col: 0,
+            },
         }
     }
 
@@ -108,6 +119,7 @@ impl BorrowChecker {
             if let HirItemKind::Fn(f) = &item.kind {
                 if let Some(body) = &f.body {
                     // 函数级状态复位
+                    self.cur_span = item.span;
                     self.param_names = f.params.iter().map(|p| p.name.clone()).collect();
                     self.borrows.clear();
                     self.uses.clear();
@@ -191,19 +203,19 @@ impl BorrowChecker {
                 (BorrowKind::Mut, true) => {
                     self.errors.push(BorrowError::borrow_conflict(format!(
                         "cannot mutably borrow `{source}` because it is already borrowed as mutable"
-                    )));
+                    ), self.cur_span));
                     return;
                 }
                 (BorrowKind::Mut, false) => {
                     self.errors.push(BorrowError::borrow_conflict(format!(
                         "cannot borrow `{source}` as shared because it is already borrowed as mutable"
-                    )));
+                    ), self.cur_span));
                     return;
                 }
                 (BorrowKind::Shared, true) => {
                     self.errors.push(BorrowError::borrow_conflict(format!(
                         "cannot mutably borrow `{source}` because it is already borrowed as shared"
-                    )));
+                    ), self.cur_span));
                     return;
                 }
                 (BorrowKind::Shared, false) => {}
@@ -213,7 +225,7 @@ impl BorrowChecker {
         if is_mut {
             if let Some(b) = self.lookup(source) {
                 if !b.mutable {
-                    self.errors.push(BorrowError::borrow_mut_immutable(source));
+                    self.errors.push(BorrowError::borrow_mut_immutable(source, self.cur_span));
                     return;
                 }
             }
@@ -241,7 +253,7 @@ impl BorrowChecker {
             HirExpr::Variable(v) => {
                 for b in &self.borrows {
                     if b.var.as_deref() == Some(v) && !self.param_names.contains(&b.source) {
-                        self.errors.push(BorrowError::dangling_reference(v));
+                        self.errors.push(BorrowError::dangling_reference(v, self.cur_span));
                         return;
                     }
                 }
@@ -249,7 +261,7 @@ impl BorrowChecker {
             HirExpr::Ref { expr: inner, .. } => {
                 if let HirExpr::Variable(src) = inner.as_ref() {
                     if !self.param_names.contains(src) {
-                        self.errors.push(BorrowError::dangling_reference(src));
+                        self.errors.push(BorrowError::dangling_reference(src, self.cur_span));
                     }
                 }
             }
@@ -333,7 +345,7 @@ impl BorrowChecker {
         if let Some(src) = base_src {
             if !self.param_names.contains(&src) {
                 self.errors
-                    .push(BorrowError::dangling_reference(&sf_name));
+                    .push(BorrowError::dangling_reference(&sf_name, self.cur_span));
             }
         }
     }
@@ -403,7 +415,7 @@ impl BorrowChecker {
         match expr {
             HirExpr::Variable(name) => {
                 if self.is_transferred(name) {
-                    self.errors.push(BorrowError::use_after_transfer(name));
+                    self.errors.push(BorrowError::use_after_transfer(name, self.cur_span));
                 }
             }
             HirExpr::PtrAdd { base, offset, .. } => {
@@ -418,14 +430,14 @@ impl BorrowChecker {
                 if !self.active_borrows(target).is_empty() {
                     self.errors.push(BorrowError::borrow_conflict(format!(
                         "cannot assign to `{target}` because it is borrowed"
-                    )));
+                    ), self.cur_span));
                 }
                 if let Some(b) = self.lookup(target).cloned() {
                     if b.transferred {
                         // 对已转移值的赋值也是使用（Rust：assignment to moved value）
-                        self.errors.push(BorrowError::use_after_transfer(target));
+                        self.errors.push(BorrowError::use_after_transfer(target, self.cur_span));
                     } else if !b.mutable {
-                        self.errors.push(BorrowError::assign_to_immutable(target));
+                        self.errors.push(BorrowError::assign_to_immutable(target, self.cur_span));
                     }
                 }
                 self.check_expr(value);
@@ -522,7 +534,7 @@ impl BorrowChecker {
                 // 变量被转移后标记，后续使用报 use-after-move。
                 if let HirExpr::Variable(name) = expr.as_ref() {
                     if self.is_transferred(name) {
-                        self.errors.push(BorrowError::use_after_transfer(name));
+                        self.errors.push(BorrowError::use_after_transfer(name, self.cur_span));
                     } else {
                         self.mark_transferred(name);
                     }

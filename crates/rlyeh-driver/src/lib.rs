@@ -488,12 +488,12 @@ fn full_pipeline_with_hints(
     // 2. 借用检查（L0 所有权）
     BorrowChecker::new()
         .check_program(&hir)
-        .map_err(|errs| DriverError::Borrow(join_errors(errs)))?;
+        .map_err(|errs| DriverError::Borrow(join_errors(errs, prelude_lines)))?;
 
     // 3. 区域检查（L1 区域系统）
     RegionChecker::new()
         .check_program(&hir)
-        .map_err(|errs| DriverError::Region(join_errors(errs)))?;
+        .map_err(|errs| DriverError::Region(join_errors(errs, prelude_lines)))?;
 
     // 4. MIR lowering + 优化
     let mut mir = rlyeh_mir::lower::lower_program(&hir);

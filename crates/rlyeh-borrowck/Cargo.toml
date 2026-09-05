@@ -8,6 +8,7 @@ path = "src/lib.rs"
 
 [dependencies]
 rlyeh-hir = { path = "../rlyeh-hir" }
+rlyeh-lexer = { path = "../rlyeh-lexer" }
 
 [dev-dependencies]
 rlyeh-typecheck = { path = "../rlyeh-typecheck" }

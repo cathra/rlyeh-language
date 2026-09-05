@@ -6,8 +6,9 @@
 # 诊断文本对拍」建立 harness 侧回归网。
 #
 # 诊断行号已按 L1（用户态 span 对齐，2026-09-04）还原为用户 `.rl` 文件坐标
-# （typecheck 错误减去 std 预置行数；borrowck/regionck 错误当前 line/col 恒为
-# 0、不带坐标前缀，属后续 Span 传播任务，不在本基线坐标对齐范围内）。
+# （typecheck 错误减去 std 预置行数；borrowck/regionck 错误为函数级坐标——
+# 取函数定义 `HirItem.span` 经 `render(prelude_lines)` 减预置行数加 `line:col:` 前缀，
+# 与 typecheck 同坐标系；语句级精确坐标属后续 HIR Span 传播任务）。
 
 # 类型不匹配
 tests/compile-fail/type-mismatch.rl

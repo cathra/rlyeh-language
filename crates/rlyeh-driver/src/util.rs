@@ -4,6 +4,9 @@
 
 use super::*;
 
+use rlyeh_borrowck::BorrowError;
+use rlyeh_regionck::RegionError;
+
 /// 执行可执行文件并捕获标准输出。
 pub(crate) fn run_exe(exe: &Path) -> Result<String, DriverError> {
     let out = Command::new(exe)
@@ -36,10 +39,30 @@ pub(crate) fn temp_dir() -> PathBuf {
     ))
 }
 
-/// 拼接错误列表为单行文本。
-pub(crate) fn join_errors<T: std::fmt::Display>(errs: Vec<T>) -> String {
-    errs.iter()
-        .map(|e| e.to_string())
+/// 诊断文本渲染：把合并源码坐标（含 std 预置偏移）还原为用户文件坐标。
+///
+/// `prelude_lines` 为预置行数；用户行号 = 合并行号 - `prelude_lines`
+/// （SH-P2-6 L1 余量：与 typecheck 诊断对齐到同一坐标系）。
+pub(crate) trait DiagnosticsText {
+    fn to_user_text(&self, prelude_lines: usize) -> String;
+}
+
+impl DiagnosticsText for BorrowError {
+    fn to_user_text(&self, prelude_lines: usize) -> String {
+        self.render(prelude_lines)
+    }
+}
+
+impl DiagnosticsText for RegionError {
+    fn to_user_text(&self, prelude_lines: usize) -> String {
+        self.render(prelude_lines)
+    }
+}
+
+/// 拼接错误列表为单行文本（坐标已还原为用户文件坐标）。
+pub(crate) fn join_errors<T: DiagnosticsText>(errs: Vec<T>, prelude_lines: usize) -> String {
+    errs.into_iter()
+        .map(|e| e.to_user_text(prelude_lines))
         .collect::<Vec<_>>()
         .join("; ")
 }
