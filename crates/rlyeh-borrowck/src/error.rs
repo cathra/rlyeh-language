@@ -6,10 +6,10 @@ use rlyeh_lexer::Span;
 
 /// 借用检查错误。
 ///
-/// 注意：HIR 子节点（表达式 / 语句）不携带源码位置，borrowck 错误坐标
-/// 取自查错所在函数的 `HirItem.span`（函数级粒度，合并源码坐标）。
-/// `line` / `col` 经 `render(prelude_lines)` 减预置行数还原为用户文件坐标
-/// （SH-P2-6 L1 余量）；精确的语句级坐标需 HIR 子节点 Span 传播，属后续重构。
+/// HIR 子节点（表达式 / 语句 / 块）现已携带源 `Span`（由 typecheck 在生成 HIR
+/// 时从 `AstExpr` / `AstStmt` 全量传播），borrowck 错误坐标取自查错节点自身的
+/// `span`（表达式 / 语句 / 块级粒度，合并源码坐标），经 `render(prelude_lines)`
+/// 减预置行数还原为用户坐标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BorrowError {
     /// use-after-move：变量被 `transfer` 转移后再次使用（Rust E0382 对应）。
@@ -73,8 +73,8 @@ pub enum BorrowError {
 impl BorrowError {
     /// use-after-move 错误构造辅助。
     ///
-    /// `span` 取自查错所在函数的 `HirItem.span`（合并源码坐标，L1 余量：
-    /// 函数级粒度；精确的语句级坐标需 HIR 子节点 Span 传播，属后续重构）。
+    /// `span` 取自查错节点自身的 `span`（表达式 / 语句 / 块级，合并源码坐标），
+    /// 由 `check_expr` / `check_stmt` / `check_block` 在入口处写入 `cur_span`。
     pub(crate) fn use_after_transfer(name: impl Into<String>, span: Span) -> Self {
         BorrowError::UseAfterTransfer {
             name: name.into(),

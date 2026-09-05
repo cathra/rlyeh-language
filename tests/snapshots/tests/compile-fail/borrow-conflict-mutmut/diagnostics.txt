@@ -1,1 +1,1 @@
-错误: [borrowck] 4:1: borrow conflict: cannot mutably borrow `x` because it is already borrowed as mutable
+错误: [borrowck] 7:14: borrow conflict: cannot mutably borrow `x` because it is already borrowed as mutable

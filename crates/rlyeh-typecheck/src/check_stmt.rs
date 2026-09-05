@@ -1,7 +1,8 @@
 //! 语句类型检查。
 
+use rlyeh_lexer::Span;
 use rlyeh_ast::{AstPattern, AstStmt, ExprKind};
-use rlyeh_hir::{FieldScalar, HirBlock, HirExpr, HirStmt};
+use rlyeh_hir::{FieldScalar, HirBlock, HirExpr, HirStmt, HirExprKind, HirStmtKind};
 
 use crate::check_expr::{
     check_closure_expected, check_closure_value_binding, check_deferred_closure_binding, coerce_to_dyn,
@@ -30,39 +31,39 @@ pub(crate) fn make_union_ctor(
 ) -> HirExpr {
     let base = ctx.fresh_temp();
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: base.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
                 slots: 2,
                 by_value: false,
                 is_strfat: false,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(base.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::IntLiteral(tag as i128)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(tag as i128), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(base.clone())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
             index: 1,
             value: Box::new(value),
             ty: field_scalar_of(member_ty),
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
-    HirExpr::Block(Box::new(HirBlock {
+    HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts,
-        final_expr: Some(HirExpr::Variable(base)),
-    }))
+        final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
+    })), Span::dummy())
 }
 
 /// 检查语句并生成 HIR 语句。
 ///
 /// 返回**语句序列**而非单条：M2（SH-P0-5）元组解构 `let (a, b) = e;` 需展开为
 /// 多条 `Let`（临时变量承载元组值 + 各元素按位置绑定），其余语句恒为单条。
-pub(crate) fn check_stmt(
+pub(crate) fn check_stmt_inner(
     ctx: &mut TypeContext,
     stmt: &AstStmt,
 ) -> Result<(Vec<HirStmt>, Type), TypeError> {
@@ -196,11 +197,11 @@ pub(crate) fn check_stmt(
                     // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
                     ctx.insert_local_init(stored.clone(), h_init.clone());
                     Ok((
-                        vec![HirStmt::Let {
+                        vec![HirStmt::new(HirStmtKind::Let{
                             name: stored.clone(),
                             init: h_init,
                             mutable: *mutable,
-                        }],
+                        }, Span::dummy())],
                         ty,
                     ))
                 }
@@ -208,11 +209,11 @@ pub(crate) fn check_stmt(
                     // `let _ = expr;`：丢弃绑定
                     let _ = &h_init;
                     Ok((
-                        vec![HirStmt::Let {
+                        vec![HirStmt::new(HirStmtKind::Let{
                             name: "_".to_string(),
                             init: h_init,
                             mutable: *mutable,
-                        }],
+                        }, Span::dummy())],
                         ty,
                     ))
                 }
@@ -230,15 +231,15 @@ pub(crate) fn check_stmt(
                         // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
                         ctx.insert_local_init(stored.clone(), h_init.clone());
                         Ok((
-                            vec![HirStmt::Let {
+                            vec![HirStmt::new(HirStmtKind::Let{
                                 name: stored.clone(),
-                                init: HirExpr::Ref {
+                                init: HirExpr::new(HirExprKind::Ref{
                                     expr: Box::new(h_init),
                                     is_mut: *is_mut,
                                     pointee: field_scalar_of(&ty),
-                                },
+                                }, Span::dummy()),
                                 mutable: *is_mut,
-                            }],
+                            }, Span::dummy())],
                             ty,
                         ))
                     } else {
@@ -279,28 +280,28 @@ pub(crate) fn check_stmt(
                         });
                     }
                     let tmp = ctx.fresh_temp();
-                    let mut out = vec![HirStmt::Let {
+                    let mut out = vec![HirStmt::new(HirStmtKind::Let{
                         name: tmp.clone(),
                         init: h_init,
                         mutable: false,
-                    }];
+                    }, Span::dummy())];
                     for (i, p) in pats.iter().enumerate() {
                         match p {
                             // `_`：跳过（不绑定，仍占用对应位置）
                             AstPattern::Wildcard => {}
                             AstPattern::Ident(name) => {
                                 let fty = ts[i].clone();
-                                let val = HirExpr::FieldGet {
-                                    base: Box::new(HirExpr::Variable(tmp.clone())),
+                                let val = HirExpr::new(HirExprKind::FieldGet{
+                                    base: Box::new(HirExpr::new(HirExprKind::Variable(tmp.clone()), Span::dummy())),
                                     index: i,
                                     ty: field_scalar_of(&fty),
-                                };
+                                }, Span::dummy());
                                 let stored = ctx.insert_variable(name.clone(), fty);
-                                out.push(HirStmt::Let {
+                                out.push(HirStmt::new(HirStmtKind::Let{
                                     name: stored,
                                     init: val,
                                     mutable: *mutable,
-                                });
+                                }, Span::dummy()));
                             }
                             _ => {
                                 return Err(TypeError::Unsupported {
@@ -320,17 +321,44 @@ pub(crate) fn check_stmt(
         }
         AstStmt::Expr(e) => {
             let (hir, ty) = infer_expr(ctx, e)?;
-            Ok((vec![HirStmt::Expr(hir)], ty))
+            Ok((vec![HirStmt::new(HirStmtKind::Expr(hir), Span::dummy())], ty))
         }
         AstStmt::Semi(e) => {
             let (hir, _) = infer_expr(ctx, e)?;
-            Ok((vec![HirStmt::Semi(hir)], Type::Unit))
+            Ok((vec![HirStmt::new(HirStmtKind::Semi(hir), Span::dummy())], Type::Unit))
         }
         AstStmt::Item(item) => {
             // 语句级嵌套项（如函数体内的局部 fn）：检查但不在顶层生成 HIR
             let mut scratch = Vec::new();
             crate::check_item::check_item(ctx, item, "", &mut scratch)?;
-            Ok((vec![HirStmt::Semi(HirExpr::Unit)], Type::Unit))
+            Ok((vec![HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Unit, Span::dummy())), Span::dummy())], Type::Unit))
         }
     }
+}
+
+/// 取语句的源坐标：`AstStmt` 本身不携带 `span`，由其内含的 `AstExpr` 推断。
+fn ast_stmt_span(stmt: &AstStmt) -> Span {
+    match stmt {
+        AstStmt::Let { init, .. } => init.span,
+        AstStmt::Expr(e) => e.span,
+        AstStmt::Semi(e) => e.span,
+        AstStmt::Item(_) => Span::dummy(),
+    }
+}
+
+/// 检查语句（对外入口）。
+///
+/// 在 [`check_stmt_inner`] 基础上，将生成的全部 `HirStmt` 的 `span` 设为源语句
+/// 坐标（由内含 `AstExpr` 推断），实现 Span 全量传播，供下游 borrowck /
+/// regionck 给出语句级精确错误坐标。
+pub(crate) fn check_stmt(
+    ctx: &mut TypeContext,
+    stmt: &AstStmt,
+) -> Result<(Vec<HirStmt>, Type), TypeError> {
+    let s = ast_stmt_span(stmt);
+    let (mut hirs, ty) = check_stmt_inner(ctx, stmt)?;
+    for h in &mut hirs {
+        h.span = s;
+    }
+    Ok((hirs, ty))
 }

@@ -6,10 +6,10 @@ use rlyeh_lexer::Span;
 
 /// 区域检查错误。
 ///
-/// 注意：HIR 子节点（表达式 / 语句）不携带源码位置，regionck 错误坐标
-/// 取自查错所在函数的 `HirItem.span`（函数级粒度，合并源码坐标）。
-/// `line` / `col` 经 `render(prelude_lines)` 减预置行数还原为用户文件坐标
-/// （SH-P2-6 L1 余量）；精确的语句级坐标需 HIR 子节点 Span 传播，属后续重构。
+/// HIR 子节点（表达式 / 语句 / 块）现已携带源 `Span`（由 typecheck 在生成 HIR
+/// 时从 `AstExpr` / `AstStmt` 全量传播），regionck 错误坐标取自查错节点自身的
+/// `span`（表达式 / 语句 / 块级粒度，合并源码坐标），经 `render(prelude_lines)`
+/// 减预置行数还原为用户文件坐标。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegionError {
     /// 区域逃逸：区域内对象在未 `transfer` 的情况下离开区域。

@@ -13,7 +13,9 @@
 //!   - 集合成员判断 `x in (0..<10)` → 离散成员 `==`/`!=` 链，
 //!     大集合保留为 [`HirExpr::SetLookup`]
 //!   - 裸范围区间判断 `x in 0..<10` → [`HirExpr::RangeCheck`]
-//! - 节点不携带源码位置与类型标注（类型由 typecheck 侧返回）。
+//! - 节点携带源码位置（`HirExpr` / `HirStmt` / `HirBlock` 均含 `span` 字段，
+//!   由 typecheck 在生成 HIR 时从 `AstExpr` / `AstStmt` 全量传播）；类型标注
+//!   不在此层，由 typecheck 侧随表达式返回。
 
 #![warn(missing_docs)]
 
@@ -66,6 +68,8 @@ pub struct HirFnDecl {
 pub struct HirParam {
     /// 参数名
     pub name: String,
+    /// 源码位置
+    pub span: Span,
 }
 
 /// const 声明。
@@ -82,11 +86,15 @@ pub struct HirBlock {
     pub stmts: Vec<HirStmt>,
     /// 末尾表达式（块的值）
     pub final_expr: Option<HirExpr>,
+    /// 源码位置
+    pub span: Span,
 }
 
-/// 语句。
+/// 语句种类。
+///
+/// 注意：带源码位置的语句见 [`HirStmt`]（本枚举为其 `kind` 字段）。
 #[derive(Debug, Clone, PartialEq)]
-pub enum HirStmt {
+pub enum HirStmtKind {
     /// `let [mut] name = expr;`
     Let {
         /// 绑定名
@@ -102,9 +110,27 @@ pub enum HirStmt {
     Semi(HirExpr),
 }
 
-/// 表达式（展开后的低层形式）。
+/// 语句（携带源码位置）。
 #[derive(Debug, Clone, PartialEq)]
-pub enum HirExpr {
+pub struct HirStmt {
+    /// 语句种类
+    pub kind: HirStmtKind,
+    /// 源码位置
+    pub span: Span,
+}
+
+impl HirStmt {
+    /// 构造带源码位置的语句节点。
+    pub fn new(kind: HirStmtKind, span: Span) -> Self {
+        HirStmt { kind, span }
+    }
+}
+
+/// 表达式种类（展开后的低层形式）。
+///
+/// 注意：带源码位置的表达式见 [`HirExpr`]（本枚举为其 `kind` 字段）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum HirExprKind {
     /// 整数字面量
     IntLiteral(i128),
     /// 浮点字面量
@@ -345,6 +371,26 @@ pub enum HirExpr {
         /// `true` 表示字符串索引（字符步长 1 字节）；数组元素步长 8 字节
         is_str: bool,
     },
+}
+
+/// 表达式（展开后的低层形式，携带源码位置）。
+///
+/// 由 rlyeh-typecheck 在类型检查阶段构造；`kind` 为展开后的低层运算，
+/// `span` 为对应源 `AstExpr` 的源码位置（合成节点取最近源位置兜底）。
+/// borrowck / regionck 据此给出精确到表达式的诊断坐标。
+#[derive(Debug, Clone, PartialEq)]
+pub struct HirExpr {
+    /// 表达式种类
+    pub kind: HirExprKind,
+    /// 源码位置
+    pub span: Span,
+}
+
+impl HirExpr {
+    /// 构造带源码位置的表达式节点。
+    pub fn new(kind: HirExprKind, span: Span) -> Self {
+        HirExpr { kind, span }
+    }
 }
 
 /// 聚合对象字段的标量存储种类（typecheck 展开时确定）。

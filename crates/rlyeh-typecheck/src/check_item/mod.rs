@@ -339,7 +339,7 @@ pub(crate) fn check_item(
             let params = f
                 .params
                 .iter()
-                .map(|p| HirParam {
+                .map(|p| HirParam { span: Span::dummy(),
                     name: p.name.clone(),
                 })
                 .collect();

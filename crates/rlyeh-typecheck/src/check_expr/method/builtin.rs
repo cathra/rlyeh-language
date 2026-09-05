@@ -6,6 +6,8 @@
 //! 这些分支必须早于常规 impl 分派——切片在 core.rl 无对应 impl（无法为 `[T]`
 //! 写 impl），引用计数需要原始对象，虚调用走 vtable 而非静态分派。
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 /// 内建分派结果。
@@ -47,11 +49,11 @@ pub(super) fn try_builtin_method_call(
         match method {
             "len" => {
                 return Ok(BuiltinOutcome::Handled(
-                    HirExpr::FieldGet {
+                    HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(recv_hir),
                         index: 1,
                         ty: FieldScalar::Int,
-                    },
+                    }, Span::dummy()),
                     Type::I64,
                 ));
             }
@@ -59,30 +61,30 @@ pub(super) fn try_builtin_method_call(
             // 步长；空切片取元素属越界读，MVP 不额外检查，与数组索引行为一致）
             "first" | "last" => {
                 let idx: HirExpr = if method == "first" {
-                    HirExpr::IntLiteral(0)
+                    HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())
                 } else {
-                    HirExpr::Binary(
+                    HirExpr::new(HirExprKind::Binary(
                         HirBinaryOp::Sub,
-                        Box::new(HirExpr::FieldGet {
+                        Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(recv_hir.clone()),
                             index: 1,
                             ty: FieldScalar::Int,
-                        }),
-                        Box::new(HirExpr::IntLiteral(1)),
-                    )
+                        }, Span::dummy())),
+                        Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+                    ), Span::dummy())
                 };
                 let is_byte = matches!(elem_ty, Type::U8);
                 return Ok(BuiltinOutcome::Handled(
-                    HirExpr::Index {
-                        base: Box::new(HirExpr::FieldGet {
+                    HirExpr::new(HirExprKind::Index{
+                        base: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(recv_hir),
                             index: 0,
                             ty: FieldScalar::Ptr,
-                        }),
+                        }, Span::dummy())),
                         index: Box::new(idx),
                         elem: field_scalar_of(&elem_ty),
                         is_str: is_byte,
-                    },
+                    }, Span::dummy()),
                     elem_ty,
                 ));
             }
@@ -93,41 +95,41 @@ pub(super) fn try_builtin_method_call(
             "iter" => {
                 let base = ctx.fresh_temp();
                 let stmts = vec![
-                    HirStmt::Let {
+                    HirStmt::new(HirStmtKind::Let{
                         name: base.clone(),
-                        init: HirExpr::Alloc {
+                        init: HirExpr::new(HirExprKind::Alloc{
                             slots: 2,
                             by_value: false,
                             is_strfat: false,
-                        },
+                        }, Span::dummy()),
                         mutable: false,
-                    },
-                    HirStmt::Semi(HirExpr::FieldSet {
-                        base: Box::new(HirExpr::Variable(base.clone())),
+                    }, Span::dummy()),
+                    HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                        base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
                         index: 0,
-                        value: Box::new(HirExpr::FieldGet {
+                        value: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(recv_hir.clone()),
                             index: 0,
                             ty: FieldScalar::Ptr,
-                        }),
+                        }, Span::dummy())),
                         ty: FieldScalar::Ptr,
-                    }),
-                    HirStmt::Semi(HirExpr::FieldSet {
-                        base: Box::new(HirExpr::Variable(base.clone())),
+                    }, Span::dummy())), Span::dummy()),
+                    HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                        base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
                         index: 1,
-                        value: Box::new(HirExpr::FieldGet {
+                        value: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(recv_hir),
                             index: 1,
                             ty: FieldScalar::Int,
-                        }),
+                        }, Span::dummy())),
                         ty: FieldScalar::Int,
-                    }),
+                    }, Span::dummy())), Span::dummy()),
                 ];
                 return Ok(BuiltinOutcome::Handled(
-                    HirExpr::Block(Box::new(HirBlock {
+                    HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                         stmts,
-                        final_expr: Some(HirExpr::Variable(base)),
-                    })),
+                        final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
+                    })), Span::dummy()),
                     Type::Named("IterRef".to_string(), vec![elem_ty]),
                 ));
             }
@@ -135,11 +137,11 @@ pub(super) fn try_builtin_method_call(
             // data 指针（供 extern / FFI 场景传递缓冲区首地址）
             "as_ptr" | "as_mut_ptr" => {
                 return Ok(BuiltinOutcome::Handled(
-                    HirExpr::FieldGet {
+                    HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(recv_hir),
                         index: 0,
                         ty: FieldScalar::Ptr,
-                    },
+                    }, Span::dummy()),
                     Type::RawPtr(Box::new(elem_ty), method == "as_mut_ptr"),
                 ));
             }
@@ -160,35 +162,35 @@ pub(super) fn try_builtin_method_call(
                 let elem_sub = substitute(&targs[0], &ctx.generic_subst);
                 let base = ctx.fresh_temp();
                 let stmts = vec![
-                    HirStmt::Let {
+                    HirStmt::new(HirStmtKind::Let{
                         name: base.clone(),
-                        init: HirExpr::Alloc {
+                        init: HirExpr::new(HirExprKind::Alloc{
                             slots: 2,
                             by_value: true,
                             is_strfat: true,
-                        },
+                        }, Span::dummy()),
                         mutable: false,
-                    },
-                    HirStmt::Semi(HirExpr::FieldSet {
-                        base: Box::new(HirExpr::Variable(base.clone())),
+                    }, Span::dummy()),
+                    HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                        base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
                         index: 0,
-                        value: Box::new(HirExpr::FieldGet {
+                        value: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(recv_hir.clone()),
                             index: 0,
                             ty: FieldScalar::Ptr,
-                        }),
+                        }, Span::dummy())),
                         ty: FieldScalar::Ptr,
-                    }),
-                    HirStmt::Semi(HirExpr::FieldSet {
-                        base: Box::new(HirExpr::Variable(base.clone())),
+                    }, Span::dummy())), Span::dummy()),
+                    HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                        base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
                         index: 1,
-                        value: Box::new(HirExpr::FieldGet {
+                        value: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(recv_hir),
                             index: 1,
                             ty: FieldScalar::Int,
-                        }),
+                        }, Span::dummy())),
                         ty: FieldScalar::Int,
-                    }),
+                    }, Span::dummy())), Span::dummy()),
                 ];
                 let m = if method == "as_mut_slice" {
                     Mutability::Mutable
@@ -196,10 +198,10 @@ pub(super) fn try_builtin_method_call(
                     Mutability::Immutable
                 };
                 return Ok(BuiltinOutcome::Handled(
-                    HirExpr::Block(Box::new(HirBlock {
+                    HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                         stmts,
-                        final_expr: Some(HirExpr::Variable(base)),
-                    })),
+                        final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
+                    })), Span::dummy()),
                     Type::Ref(Box::new(Type::Slice(Box::new(elem_sub))), m),
                 ));
             }
@@ -212,25 +214,25 @@ pub(super) fn try_builtin_method_call(
     // （V2-B 链式 `x.trim().trim()` / `s.trim().to_upper()`）
     if comparison::is_str_view(&recv_ty) {
         let tmp = ctx.fresh_temp();
-        let data_h = HirExpr::FieldGet {
+        let data_h = HirExpr::new(HirExprKind::FieldGet{
             base: Box::new(recv_hir.clone()),
             index: 0,
             ty: FieldScalar::Ptr,
-        };
-        let len_h = HirExpr::FieldGet {
+        }, Span::dummy());
+        let len_h = HirExpr::new(HirExprKind::FieldGet{
             base: Box::new(recv_hir),
             index: 1,
             ty: FieldScalar::Int,
-        };
+        }, Span::dummy());
         let conv = make_strfat_to_string(ctx, data_h, len_h);
-        recv_hir = HirExpr::Block(Box::new(HirBlock {
-            stmts: vec![HirStmt::Let {
+        recv_hir = HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
+            stmts: vec![HirStmt::new(HirStmtKind::Let{
                 name: tmp.clone(),
                 init: conv,
                 mutable: false,
-            }],
-            final_expr: Some(HirExpr::Variable(tmp)),
-        }));
+            }, Span::dummy())],
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(tmp), Span::dummy())),
+        })), Span::dummy());
         recv_ty = Type::Named("String".to_string(), vec![]);
     }
     // `push_str(字面量实参)` 整体特判：改调 `String::push_bytes(src, n)` 快速路径，
@@ -271,25 +273,25 @@ pub(super) fn try_builtin_method_call(
             })?;
         let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &HashMap::new(), span)?;
         return Ok(BuiltinOutcome::Handled(
-            HirExpr::Block(Box::new(HirBlock {
-                stmts: vec![HirStmt::Let {
+            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
+                stmts: vec![HirStmt::new(HirStmtKind::Let{
                     name: lit_tmp.clone(),
-                    init: HirExpr::StringLiteral(s),
+                    init: HirExpr::new(HirExprKind::StringLiteral(s), Span::dummy()),
                     mutable: false,
-                }],
-                final_expr: Some(HirExpr::Call {
+                }, Span::dummy())],
+                final_expr: Some(HirExpr::new(HirExprKind::Call{
                     callee: fn_name,
                     args: vec![
                         recv_hir,
-                        HirExpr::Ref {
-                            expr: Box::new(HirExpr::Variable(lit_tmp)),
+                        HirExpr::new(HirExprKind::Ref{
+                            expr: Box::new(HirExpr::new(HirExprKind::Variable(lit_tmp), Span::dummy())),
                             is_mut: false,
                             pointee: FieldScalar::Str,
-                        },
-                        HirExpr::IntLiteral(n),
+                        }, Span::dummy()),
+                        HirExpr::new(HirExprKind::IntLiteral(n), Span::dummy()),
                     ],
-                }),
-            })),
+                }, Span::dummy())),
+            })), Span::dummy()),
             Type::Unit,
         ));
     }
@@ -323,7 +325,7 @@ pub(super) fn try_builtin_method_call(
         // H4 去虚拟化：接收者为 dyn 局部变量且绑定源具体类型已知时，静态分派到
         // 具体类型方法（vtable 调用在循环中受间接调用屏障阻止优化，静态调用
         // 可被 LLVM 内联 / 常量折叠；dyn 变量被重新赋值时映射已失效回退 vtable）
-        if let HirExpr::Variable(var) = &recv_hir {
+        if let HirExprKind::Variable(var) = &recv_hir.kind {
             if let Some(devirt) = devirtualize_dyn_call(
                 ctx,
                 var,
@@ -398,54 +400,54 @@ pub(super) fn try_builtin_method_call(
         let vtp = ctx.fresh_temp();
         let m = ctx.fresh_temp();
         let stmts = vec![
-            HirStmt::Let {
+            HirStmt::new(HirStmtKind::Let{
                 name: obj.clone(),
                 init: recv_hir,
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: data.clone(),
-                init: HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(obj.clone())),
+                init: HirExpr::new(HirExprKind::FieldGet{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(obj.clone()), Span::dummy())),
                     index: 0,
                     ty: FieldScalar::Ptr,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: vtp.clone(),
-                init: HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(obj)),
+                init: HirExpr::new(HirExprKind::FieldGet{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(obj), Span::dummy())),
                     index: 1,
                     ty: FieldScalar::Ptr,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: m.clone(),
-                init: HirExpr::Index {
-                    base: Box::new(HirExpr::Variable(vtp)),
-                    index: Box::new(HirExpr::IntLiteral((3 + idx) as i128)),
+                init: HirExpr::new(HirExprKind::Index{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(vtp), Span::dummy())),
+                    index: Box::new(HirExpr::new(HirExprKind::IntLiteral((3 + idx) as i128), Span::dummy())),
                     elem: FieldScalar::Ptr,
                     is_str: false,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
+            }, Span::dummy()),
         ];
-        let mut call_args = vec![HirExpr::Variable(data)];
+        let mut call_args = vec![HirExpr::new(HirExprKind::Variable(data), Span::dummy())];
         call_args.extend(hir_args);
         let ret_ty = sig.return_type.clone();
-        let call = HirExpr::CallIndirect {
-            callee: Box::new(HirExpr::Variable(m)),
+        let call = HirExpr::new(HirExprKind::CallIndirect{
+            callee: Box::new(HirExpr::new(HirExprKind::Variable(m), Span::dummy())),
             args: call_args,
             param_names,
             ret_name: type_to_extern_name(&ret_ty),
-        };
+        }, Span::dummy());
         return Ok(BuiltinOutcome::Handled(
-            HirExpr::Block(Box::new(HirBlock {
+            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                 stmts,
                 final_expr: Some(call),
-            })),
+            })), Span::dummy()),
             ret_ty,
         ));
     }

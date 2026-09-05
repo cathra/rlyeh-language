@@ -1,6 +1,8 @@
 //! 表达式检查子模块：closure。
 //! （由 call.rs 二次拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(crate) fn check_closure_body_with_captures(
@@ -93,9 +95,9 @@ pub(crate) fn emit_closure_fn(
         kind: HirItemKind::Fn(HirFnDecl {
             params: fn_names
                 .iter()
-                .map(|n| HirParam { name: n.clone() })
+                .map(|n| HirParam { span: Span::dummy(), name: n.clone() })
                 .collect(),
-            body: Some(HirBlock {
+            body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],
                 final_expr: Some(body_hir),
             }),
@@ -170,14 +172,14 @@ pub(crate) fn check_capture_closure_iife(
     // 调用：捕获变量（闭包定义处外层槽名，按名引用）+ 实参
     let mut call_args: Vec<HirExpr> = outer_capture_slots
         .iter()
-        .map(|c| HirExpr::Variable(c.clone()))
+        .map(|c| HirExpr::new(HirExprKind::Variable(c.clone()), Span::dummy()))
         .collect();
     call_args.extend(arg_hirs);
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: name,
             args: call_args,
-        },
+        }, Span::dummy()),
         body_ty,
     ))
 }
@@ -231,18 +233,18 @@ pub(crate) fn check_closure_value_call(
     let mut call_args: Vec<HirExpr> = captures
         .iter()
         .enumerate()
-        .map(|(i, cap_ty)| HirExpr::FieldGet {
-            base: Box::new(HirExpr::Variable(name.to_string())),
+        .map(|(i, cap_ty)| HirExpr::new(HirExprKind::FieldGet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(name.to_string()), Span::dummy())),
             index: i,
             ty: field_scalar_of(cap_ty),
-        })
+        }, Span::dummy()))
         .collect();
     call_args.extend(arg_hirs);
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: fn_name.to_string(),
             args: call_args,
-        },
+        }, Span::dummy()),
         (**ret).clone(),
     ))
 }
@@ -335,22 +337,22 @@ pub(crate) fn check_deferred_closure_call(
     );
     // 捕获聚合对象构造（内联到调用点块）+ 真实对象重新绑定到变量名
     let cv = format!("__cv_{}", ctx.closure_seq - 1);
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: cv.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: captures.len(),
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     for (i, c) in captures.iter().enumerate() {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(cv.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(cv.clone()), Span::dummy())),
             index: i,
-            value: Box::new(HirExpr::Variable(c.clone())),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(c.clone()), Span::dummy())),
             ty: field_scalar_of(&capture_tys[i]),
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     // 覆盖绑定处占位（`Alloc{slots:0}`）：后续 `f(args)` 常规路径读 f 捕获槽。
     // U1：Let 绑定名用绑定处 insert 的存储槽名（遮蔽时 mangle），与引用一致。
@@ -358,26 +360,26 @@ pub(crate) fn check_deferred_closure_call(
         .resolve_variable(&name)
         .map(|(s, _)| s.to_string())
         .unwrap_or_else(|| name.to_string());
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: slot_name.clone(),
-        init: HirExpr::Variable(cv),
+        init: HirExpr::new(HirExprKind::Variable(cv), Span::dummy()),
         mutable: false,
-    });
+    }, Span::dummy()));
     // 调用：捕获字段读取（base 为槽名 f）+ 实参
     let mut call_args: Vec<HirExpr> = captures
         .iter()
         .enumerate()
-        .map(|(i, _)| HirExpr::FieldGet {
-            base: Box::new(HirExpr::Variable(slot_name.clone())),
+        .map(|(i, _)| HirExpr::new(HirExprKind::FieldGet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(slot_name.clone()), Span::dummy())),
             index: i,
             ty: field_scalar_of(&capture_tys[i]),
-        })
+        }, Span::dummy()))
         .collect();
     call_args.extend(arg_hirs);
-    let call = HirExpr::Call {
+    let call = HirExpr::new(HirExprKind::Call{
         callee: fn_name.clone(),
         args: call_args,
-    };
+    }, Span::dummy());
     // 固化变量类型（后续调用按常规闭包值调用路径检查）
     ctx.insert_variable(
         name.to_string(),
@@ -393,10 +395,10 @@ pub(crate) fn check_deferred_closure_call(
         },
     );
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: Some(call),
-        })),
+        })), Span::dummy()),
         body_ty,
     ))
 }
@@ -438,11 +440,11 @@ pub(crate) fn check_deferred_closure_binding(
         fn_name: String::new(),
         is_move: false,
     };
-    Ok((HirExpr::Alloc {
+    Ok((HirExpr::new(HirExprKind::Alloc{
         slots: 0,
         by_value: false,
         is_strfat: false,
-    }, ty))
+    }, Span::dummy()), ty))
 }
 
 pub(crate) fn check_closure_value_binding(
@@ -499,27 +501,27 @@ pub(crate) fn check_closure_value_binding(
     );
     // 闭包值构造：聚合对象（每捕获一槽）+ 逐槽写入捕获变量（按值拷贝）
     let cv = format!("__cv_{}", ctx.closure_seq - 1);
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: cv.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: captures.len(),
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     for (i, c) in captures.iter().enumerate() {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(cv.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(cv.clone()), Span::dummy())),
             index: i,
-            value: Box::new(HirExpr::Variable(c.clone())),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(c.clone()), Span::dummy())),
             ty: field_scalar_of(&capture_tys[i]),
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
-    let init = HirExpr::Block(Box::new(HirBlock {
+    let init = HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts,
-        final_expr: Some(HirExpr::Variable(cv)),
-    }));
+        final_expr: Some(HirExpr::new(HirExprKind::Variable(cv), Span::dummy())),
+    })), Span::dummy());
     Ok((
         init,
         Type::Closure {
@@ -544,7 +546,7 @@ pub(crate) fn try_closure_value_as_fn(ty: &Type) -> Option<(HirExpr, Type)> {
         return_type: (**ret).clone(),
     };
     Some((
-        HirExpr::FnPtr(fn_name.clone()),
+        HirExpr::new(HirExprKind::FnPtr(fn_name.clone()), Span::dummy()),
         Type::Fn(Box::new(sig)),
     ))
 }
@@ -647,7 +649,7 @@ pub(crate) fn fix_deferred_closure_with_sig(
         },
     );
     Ok((
-        HirExpr::FnPtr(fn_name),
+        HirExpr::new(HirExprKind::FnPtr(fn_name), Span::dummy()),
         Type::Fn(Box::new(sig.clone())),
     ))
 }
@@ -745,9 +747,9 @@ pub(crate) fn check_closure_expected(
         kind: HirItemKind::Fn(HirFnDecl {
             params: names
                 .iter()
-                .map(|n| HirParam { name: n.clone() })
+                .map(|n| HirParam { span: Span::dummy(), name: n.clone() })
                 .collect(),
-            body: Some(HirBlock {
+            body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],
                 final_expr: Some(body_hir),
             }),
@@ -756,7 +758,7 @@ pub(crate) fn check_closure_expected(
         }),
     });
     Ok((
-        HirExpr::FnPtr(name),
+        HirExpr::new(HirExprKind::FnPtr(name), Span::dummy()),
         Type::Fn(Box::new(FnSignature {
             params: sig_params,
             return_type,

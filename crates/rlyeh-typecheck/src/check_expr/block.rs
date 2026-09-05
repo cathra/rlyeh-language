@@ -1,6 +1,8 @@
 //! 表达式检查子模块：block。
 //! （由 mod.rs 二次拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(crate) fn check_block(
@@ -60,21 +62,21 @@ pub(crate) fn check_block_inner(
             if let Some(fe) = final_expr.take() {
                 if final_ty == Type::Unit {
                     // 无值可保存：直接作为尾语句求值，再析构
-                    stmts.push(HirStmt::Expr(fe));
+                    stmts.push(HirStmt::new(HirStmtKind::Expr(fe), Span::dummy()));
                 } else {
                     // 有值：先求块值存入临时，再析构，最后以该临时作为块结果
                     // （保证析构发生在块值计算**之后**，与 Rust 作用域语义一致）
                     let tmp = ctx.fresh_temp();
-                    stmts.push(HirStmt::Let {
+                    stmts.push(HirStmt::new(HirStmtKind::Let{
                         name: tmp.clone(),
                         init: fe,
                         mutable: false,
-                    });
-                    final_expr = Some(HirExpr::Variable(tmp));
+                    }, Span::dummy()));
+                    final_expr = Some(HirExpr::new(HirExprKind::Variable(tmp), Span::dummy()));
                 }
             }
             stmts.extend(drop_stmts);
         }
     }
-    Ok((HirBlock { stmts, final_expr }, final_ty))
+    Ok((HirBlock { span: block.span, stmts, final_expr }, final_ty))
 }

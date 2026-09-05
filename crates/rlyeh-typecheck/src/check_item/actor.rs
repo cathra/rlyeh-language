@@ -1,6 +1,8 @@
 //! 表达式检查子模块：actor。
 //! （由 mod.rs 二次拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(crate) fn collect_actor(ctx: &mut TypeContext, a: &AstActorDecl, prefix: &str) -> Result<(), TypeError> {
@@ -126,15 +128,15 @@ pub(crate) fn expand_actor(
     //    `let __s = alloc(N); set(__s, 0, v0); ...; __s`
     //    U1：函数边界作用域（隔离，与调用方变量环境互不可见）。
     ctx.push_scope(true);
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: "__s".to_string(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: slots.len(),
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: true,
-    }];
+    }, Span::dummy())];
     for (idx, f) in a.fields.iter().enumerate() {
         let (v_hir, v_ty) = infer_expr(ctx, f.default.as_ref().unwrap())?;
         if !v_ty.compatible_with(&field_tys[idx].1) {
@@ -144,21 +146,21 @@ pub(crate) fn expand_actor(
                 span: f.span,
             });
         }
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable("__s".to_string())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable("__s".to_string()), Span::dummy())),
             index: idx,
             value: Box::new(v_hir),
             ty: slots[idx].1,
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     ctx.pop_scope();
     out.push(HirItem {
         name: state_new.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params: vec![],
-            body: Some(HirBlock {
+            body: Some(HirBlock { span: Span::dummy(),
                 stmts,
-                final_expr: Some(HirExpr::Variable("__s".to_string())),
+                final_expr: Some(HirExpr::new(HirExprKind::Variable("__s".to_string()), Span::dummy())),
             }),
             is_extern: false,
             extern_sig: None,
@@ -171,16 +173,16 @@ pub(crate) fn expand_actor(
     //    handle 按位置传参；body 内 `self` 绑定状态指针、字段访问走 actor 分支。
     for (i, m) in a.methods.iter().enumerate() {
         let m_name = format!("{actor_full}::__m{i}");
-        let mut params = vec![HirParam {
+        let mut params = vec![HirParam { span: Span::dummy(),
             name: "self".to_string(),
         }];
         for p in &m.params {
-            params.push(HirParam {
+            params.push(HirParam { span: Span::dummy(),
                 name: p.name.clone(),
             });
         }
         for j in params.len()..4 {
-            params.push(HirParam {
+            params.push(HirParam { span: Span::dummy(),
                 name: format!("__p{j}"),
             });
         }
@@ -203,11 +205,11 @@ pub(crate) fn expand_actor(
         name: handle.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
             params: (0..5)
-                .map(|j| HirParam {
+                .map(|j| HirParam { span: Span::dummy(),
                     name: ["self", "kind", "a", "b", "c"][j].to_string(),
                 })
                 .collect(),
-            body: Some(HirBlock {
+            body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],
                 final_expr: Some(build_actor_dispatch(ctx, a, &actor_full, 0)),
             }),
@@ -228,37 +230,37 @@ pub(crate) fn build_actor_dispatch(
     idx: usize,
 ) -> HirExpr {
     if idx >= a.methods.len() {
-        return HirExpr::IntLiteral(-1);
+        return HirExpr::new(HirExprKind::IntLiteral(-1), Span::dummy());
     }
     let m_name = format!("{actor_full}::__m{idx}");
-    let call = HirExpr::Call {
+    let call = HirExpr::new(HirExprKind::Call{
         callee: m_name,
         args: vec![
-            HirExpr::Variable("self".to_string()),
-            HirExpr::Variable("a".to_string()),
-            HirExpr::Variable("b".to_string()),
-            HirExpr::Variable("c".to_string()),
+            HirExpr::new(HirExprKind::Variable("self".to_string()), Span::dummy()),
+            HirExpr::new(HirExprKind::Variable("a".to_string()), Span::dummy()),
+            HirExpr::new(HirExprKind::Variable("b".to_string()), Span::dummy()),
+            HirExpr::new(HirExprKind::Variable("c".to_string()), Span::dummy()),
         ],
-    };
-    let then_block = HirBlock {
-        stmts: vec![HirStmt::Semi(HirExpr::Return(Some(Box::new(call))))],
+    }, Span::dummy());
+    let then_block = HirBlock { span: Span::dummy(),
+        stmts: vec![HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Return(Some(Box::new(call))), Span::dummy())), Span::dummy())],
         final_expr: None,
     };
     // else 分支以递归 if 为块尾表达式（值传递），
     // 底层 `IntLiteral(-1)` 必须经 final_expr 产出，否则该路径无值 → MIR 生成 `ret void`。
-    let else_block = HirBlock {
+    let else_block = HirBlock { span: Span::dummy(),
         stmts: vec![],
         final_expr: Some(build_actor_dispatch(_ctx, a, actor_full, idx + 1)),
     };
-    HirExpr::If {
-        cond: Box::new(HirExpr::Binary(
+    HirExpr::new(HirExprKind::If{
+        cond: Box::new(HirExpr::new(HirExprKind::Binary(
             HirBinaryOp::Eq,
-            Box::new(HirExpr::Variable("kind".to_string())),
-            Box::new(HirExpr::IntLiteral(idx as i128)),
-        )),
+            Box::new(HirExpr::new(HirExprKind::Variable("kind".to_string()), Span::dummy())),
+            Box::new(HirExpr::new(HirExprKind::IntLiteral(idx as i128), Span::dummy())),
+        ), Span::dummy())),
         then_block: Box::new(then_block),
         else_block: Some(Box::new(else_block)),
-    }
+    }, Span::dummy())
 }
 
 pub(crate) fn check_actor_method_body(
@@ -325,7 +327,7 @@ pub(crate) fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<Hi
                 params: args
                     .iter()
                     .enumerate()
-                    .map(|(i, _)| HirParam {
+                    .map(|(i, _)| HirParam { span: Span::dummy(),
                         name: format!("__a{i}"),
                     })
                     .collect(),
@@ -362,7 +364,7 @@ pub(crate) fn emit_gc_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirIt
                 params: args
                     .iter()
                     .enumerate()
-                    .map(|(i, _)| HirParam { name: format!("__a{i}") })
+                    .map(|(i, _)| HirParam { span: Span::dummy(), name: format!("__a{i}") })
                     .collect(),
                 body: None,
                 is_extern: true,

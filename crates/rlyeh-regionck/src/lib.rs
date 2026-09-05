@@ -10,8 +10,9 @@
 //!
 //! ## 设计约定
 //!
-//! - HIR 节点不携带源码位置，错误中的 `line`/`col` 当前为占位 0，
-//!   待 Span 传播后填充（见 P004 文档偏差说明）。
+//! - HIR 节点携带源码位置（`HirExpr` / `HirStmt` / `HirBlock` 均含 `span` 字段，
+//!   由 typecheck 在生成 HIR 时从 `AstExpr` / `AstStmt` 全量传播），regionck
+//!   据此给出表达式 / 语句 / 块级精确错误坐标。
 //! - 引用逃逸（RegionEscape）的完整分析需要类型信息，MVP 阶段仅保留错误
 //!   类型与构造入口，供后续阶段启用。
 

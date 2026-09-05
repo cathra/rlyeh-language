@@ -9,7 +9,8 @@
 
 use crate::{BasicBlock, Local, MirFunction, MirProgram, MirStmt, MirTerminator, MirValue};
 use rlyeh_hir::{
-    FieldScalar, HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt, HirUnaryOp,
+    FieldScalar, HirBinaryOp, HirBlock, HirExpr, HirExprKind, HirItemKind, HirProgram, HirStmt,
+    HirStmtKind, HirUnaryOp,
 };
 
 /// 循环上下文：`break` / `continue` 的跳转目标。
@@ -122,8 +123,8 @@ impl MirLowerer {
 
     /// 降低一条语句。
     fn lower_stmt(&mut self, stmt: &HirStmt) {
-        match stmt {
-            HirStmt::Let { name, init, .. } => {
+        match &stmt.kind {
+            HirStmtKind::Let { name, init, .. } => {
                 if let Some(v) = self.lower_value(init) {
                     self.emit(MirStmt::Assign {
                         target: name.clone(),
@@ -131,7 +132,7 @@ impl MirLowerer {
                     });
                 }
             }
-            HirStmt::Expr(e) | HirStmt::Semi(e) => {
+            HirStmtKind::Expr(e) | HirStmtKind::Semi(e) => {
                 // 副作用执行，结果丢弃
                 let _ = self.lower_value(e);
             }
@@ -157,16 +158,16 @@ impl MirLowerer {
     /// 将表达式降低为右值（可内联的运算树 / 常量 / 已求值的 place）。
     /// 可能发射副作用指令（调用、控制流）；终止控制流时返回 `None`。
     fn lower_value(&mut self, expr: &HirExpr) -> Option<MirValue> {
-        match expr {
-            HirExpr::IntLiteral(v) => Some(MirValue::Int(*v)),
-            HirExpr::FloatLiteral(v) => Some(MirValue::Float(*v)),
-            HirExpr::StringLiteral(s) => Some(MirValue::String(s.clone())),
-            HirExpr::CharLiteral(c) => Some(MirValue::Char(*c)),
-            HirExpr::BoolLiteral(b) => Some(MirValue::Bool(*b)),
-            HirExpr::Unit => Some(MirValue::Unit),
-            HirExpr::FnPtr(name) => Some(MirValue::FnRef(name.clone())),
-            HirExpr::Variable(v) => Some(MirValue::Place(v.clone())),
-            HirExpr::Assign { target, op, value } => {
+        match &expr.kind {
+            HirExprKind::IntLiteral(v) => Some(MirValue::Int(*v)),
+            HirExprKind::FloatLiteral(v) => Some(MirValue::Float(*v)),
+            HirExprKind::StringLiteral(s) => Some(MirValue::String(s.clone())),
+            HirExprKind::CharLiteral(c) => Some(MirValue::Char(*c)),
+            HirExprKind::BoolLiteral(b) => Some(MirValue::Bool(*b)),
+            HirExprKind::Unit => Some(MirValue::Unit),
+            HirExprKind::FnPtr(name) => Some(MirValue::FnRef(name.clone())),
+            HirExprKind::Variable(v) => Some(MirValue::Place(v.clone())),
+            HirExprKind::Assign { target, op, value } => {
                 // 先求值右侧（副作用顺序），再读 target 构造复合赋值
                 let v = self.lower_expr(value)?;
                 let value = match op {
@@ -198,7 +199,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Unit)
             }
-            HirExpr::Binary(op, l, r) => {
+            HirExprKind::Binary(op, l, r) => {
                 let lv = self.lower_value(l)?;
                 let rv = self.lower_value(r)?;
                 Some(MirValue::Binary {
@@ -207,14 +208,14 @@ impl MirLowerer {
                     rhs: Box::new(rv),
                 })
             }
-            HirExpr::Unary(op, e) => {
+            HirExprKind::Unary(op, e) => {
                 let v = self.lower_value(e)?;
                 Some(MirValue::Unary {
                     op: *op,
                     operand: Box::new(v),
                 })
             }
-            HirExpr::Call { callee, args } => {
+            HirExprKind::Call { callee, args } => {
                 let mut arg_places = Vec::with_capacity(args.len());
                 for a in args {
                     arg_places.push(self.lower_expr(a)?);
@@ -227,7 +228,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::CallIndirect {
+            HirExprKind::CallIndirect {
                 callee,
                 args,
                 param_names,
@@ -248,14 +249,14 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::If {
+            HirExprKind::If {
                 cond,
                 then_block,
                 else_block,
             } => self.lower_if(cond, then_block, else_block.as_deref()),
-            HirExpr::While { cond, body } => self.lower_while(cond, body),
-            HirExpr::Loop { body } => self.lower_loop(body),
-            HirExpr::Return(e) => {
+            HirExprKind::While { cond, body } => self.lower_while(cond, body),
+            HirExprKind::Loop { body } => self.lower_loop(body),
+            HirExprKind::Return(e) => {
                 let val = match e {
                     Some(inner) => self.lower_expr(inner),
                     None => None,
@@ -263,7 +264,7 @@ impl MirLowerer {
                 self.terminate(MirTerminator::Return(val));
                 None
             }
-            HirExpr::Break(e) => {
+            HirExprKind::Break(e) => {
                 if let Some(inner) = e {
                     let _ = self.lower_expr(inner); // break 携带的值 MVP 阶段丢弃
                 }
@@ -278,7 +279,7 @@ impl MirLowerer {
                 self.terminate(MirTerminator::Jump(break_target));
                 None
             }
-            HirExpr::Continue => {
+            HirExprKind::Continue => {
                 let ctx = self
                     .loop_stack
                     .last()
@@ -286,11 +287,11 @@ impl MirLowerer {
                 self.terminate(MirTerminator::Jump(ctx.continue_target));
                 None
             }
-            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => {
+            HirExprKind::Block(b) | HirExprKind::UnsafeBlock(b) => {
                 let val = self.lower_block(b)?;
                 Some(MirValue::Place(val))
             }
-            HirExpr::Region {
+            HirExprKind::Region {
                 name,
                 options,
                 body,
@@ -312,7 +313,7 @@ impl MirLowerer {
                 self.emit(MirStmt::RegionExit { name: Some(key) });
                 Some(MirValue::Place(val))
             }
-            HirExpr::InRegion { expr, region, size } => {
+            HirExprKind::InRegion { expr, region, size } => {
                 let val = self.lower_expr(expr)?;
                 self.emit(MirStmt::AllocInRegion {
                     target: val.clone(),
@@ -321,7 +322,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(val))
             }
-            HirExpr::Transfer { expr, region } => {
+            HirExprKind::Transfer { expr, region } => {
                 let val = self.lower_expr(expr)?;
                 self.emit(MirStmt::Transfer {
                     place: val.clone(),
@@ -329,7 +330,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(val))
             }
-            HirExpr::SetLookup {
+            HirExprKind::SetLookup {
                 value,
                 members,
                 negated,
@@ -362,7 +363,7 @@ impl MirLowerer {
                 }
                 Some(r)
             }
-            HirExpr::RangeCheck {
+            HirExprKind::RangeCheck {
                 value,
                 lower,
                 upper,
@@ -416,7 +417,7 @@ impl MirLowerer {
                 }
                 Some(r)
             }
-            HirExpr::Alloc {
+            HirExprKind::Alloc {
                 slots,
                 by_value,
                 is_strfat,
@@ -430,7 +431,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::FieldGet { base, index, ty } => {
+            HirExprKind::FieldGet { base, index, ty } => {
                 let b = self.lower_expr(base)?;
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::FieldGet {
@@ -441,7 +442,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::FieldSet { base, index, value, ty } => {
+            HirExprKind::FieldSet { base, index, value, ty } => {
                 let b = self.lower_expr(base)?;
                 let v = self.lower_expr(value)?;
                 self.emit(MirStmt::FieldSet {
@@ -452,7 +453,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Unit)
             }
-            HirExpr::Index { base, index, elem, is_str } => {
+            HirExprKind::Index { base, index, elem, is_str } => {
                 let b = self.lower_expr(base)?;
                 let i = self.lower_expr(index)?;
                 let tmp = self.fresh_temp();
@@ -465,7 +466,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::IndexSet { base, index, value, elem, is_str } => {
+            HirExprKind::IndexSet { base, index, value, elem, is_str } => {
                 let b = self.lower_expr(base)?;
                 let i = self.lower_expr(index)?;
                 let v = self.lower_expr(value)?;
@@ -478,7 +479,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Unit)
             }
-            HirExpr::Ref {
+            HirExprKind::Ref {
                 expr,
                 is_mut: _,
                 pointee,
@@ -486,12 +487,12 @@ impl MirLowerer {
                 // `&*p`（U5：解引用再取引用）：引用按指针传递，`&*p` 的值即
                 // `p` 的指针值，直接透传内部指针——避免 DerefRead 拷贝临时再
                 // 取址的语义错误（拷贝后地址 ≠ 原地址，`&mut` 写回不生效）。
-                if let HirExpr::Deref { expr: inner, .. } = expr.as_ref() {
+                if let HirExprKind::Deref { expr: inner, .. } = &(expr.as_ref()).kind {
                     return self.lower_expr(inner).map(MirValue::Place);
                 }
                 // `&obj.field`（V1）：取字段槽真实地址（GEP）——写回经
                 // DerefWrite(base=target) 直达原字段，`&mut` 写回生效
-                if let HirExpr::FieldGet { base, index, ty } = expr.as_ref() {
+                if let HirExprKind::FieldGet { base, index, ty } = &(expr.as_ref()).kind {
                     let b = self.lower_expr(base)?;
                     let tmp = self.fresh_temp();
                     self.emit(MirStmt::AddrOfField {
@@ -504,7 +505,7 @@ impl MirLowerer {
                 }
                 // `&arr[i]` / `&s[i]`（V1）：base 地址化 + 指针偏移（GEP）——
                 // 真实元素地址（非拷贝临时地址），`&mut` 写回原元素
-                if let HirExpr::Index { base, index, elem, is_str } = expr.as_ref() {
+                if let HirExprKind::Index { base, index, elem, is_str } = &(expr.as_ref()).kind {
                     let b = self.addr_of(base)?;
                     let i = self.lower_expr(index)?;
                     let tmp = self.fresh_temp();
@@ -528,7 +529,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::Deref { expr, ty } => {
+            HirExprKind::Deref { expr, ty } => {
                 // `*p` 读取：解引用（标量 load / 聚合指针拷贝）
                 let b = self.lower_expr(expr)?;
                 let tmp = self.fresh_temp();
@@ -539,7 +540,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::DerefSet { base, value, ty } => {
+            HirExprKind::DerefSet { base, value, ty } => {
                 // `*p = v`：解引用写入
                 let b = self.lower_expr(base)?;
                 let v = self.lower_expr(value)?;
@@ -550,7 +551,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Unit)
             }
-            HirExpr::PtrAdd { base, offset, elem } => {
+            HirExprKind::PtrAdd { base, offset, elem } => {
                 // `ptr + n`（V1）：裸指针算术——指针推进（迭代器瘦指针）。
                 // `elem: Str`（V2 字符串字节偏移）→ 1 字节步长（is_str），
                 // 供 `as_str_range` 子区间视图做 data 指针字节偏移。
@@ -566,7 +567,7 @@ impl MirLowerer {
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExpr::Cast { expr, to } => {
+            HirExprKind::Cast { expr, to } => {
                 // `expr as target`（U6 Cast IR）：数值→数值类型转换
                 let v = self.lower_expr(expr)?;
                 let tmp = self.fresh_temp();
@@ -587,11 +588,11 @@ impl MirLowerer {
     /// - 字段链 `obj.field` → 对象求值 + `AddrOfField`（GEP 到字段槽）
     /// - 其他表达式 → 求值到临时再取址（拷贝语义，读可用）
     fn addr_of(&mut self, expr: &HirExpr) -> Option<Local> {
-        match expr {
+        match &expr.kind {
             // `&*p`：解引用再取址 → 透传指针值
-            HirExpr::Deref { expr: inner, .. } => self.lower_expr(inner),
+            HirExprKind::Deref { expr: inner, .. } => self.lower_expr(inner),
             // `&x`：变量槽地址（数组/聚合为 8 字节槽区，Ptr 标量）
-            HirExpr::Variable(v) => {
+            HirExprKind::Variable(v) => {
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::AddrOf {
                     target: tmp.clone(),
@@ -601,7 +602,7 @@ impl MirLowerer {
                 Some(tmp)
             }
             // `&obj.field`：base 求值为对象值（字段链剥层）
-            HirExpr::FieldGet { base, index, ty } => {
+            HirExprKind::FieldGet { base, index, ty } => {
                 if *ty == FieldScalar::Ptr {
                     // 聚合字段（数组/对象）：字段槽存对象指针（聚合拷贝指针
                     // 语义）——「地址」即字段值本身（FieldGet 拷贝指针），
@@ -621,8 +622,8 @@ impl MirLowerer {
                 }
             }
             // 其他：求值到临时再取址（拷贝语义）
-            other => {
-                let o = self.lower_expr(other)?;
+            _ => {
+                let o = self.lower_expr(expr)?;
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::AddrOf {
                     target: tmp.clone(),

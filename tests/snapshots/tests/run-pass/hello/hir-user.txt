@@ -8,18 +8,48 @@ HirProgram {
                     body: Some(
                         HirBlock {
                             stmts: [
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            StringLiteral(
-                                                "Hello, Rlyeh!",
-                                            ),
-                                        ],
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: StringLiteral(
+                                                            "Hello, Rlyeh!",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271107,
+                                                            end: 271122,
+                                                            line: 7154,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271099,
+                                                end: 271123,
+                                                line: 7154,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271099,
+                                        end: 271123,
+                                        line: 7154,
+                                        col: 5,
                                     },
-                                ),
+                                },
                             ],
                             final_expr: None,
+                            span: Span {
+                                start: 271093,
+                                end: 271126,
+                                line: 7153,
+                                col: 11,
+                            },
                         },
                     ),
                     is_extern: false,

@@ -8,172 +8,542 @@ HirProgram {
                     body: Some(
                         HirBlock {
                             stmts: [
-                                Let {
-                                    name: "p",
-                                    init: Block(
-                                        HirBlock {
-                                            stmts: [
-                                                Let {
-                                                    name: "__tmp501",
-                                                    init: Alloc {
-                                                        slots: 2,
-                                                        by_value: true,
-                                                        is_strfat: false,
+                                HirStmt {
+                                    kind: Let {
+                                        name: "p",
+                                        init: HirExpr {
+                                            kind: Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        HirStmt {
+                                                            kind: Let {
+                                                                name: "__tmp501",
+                                                                init: HirExpr {
+                                                                    kind: Alloc {
+                                                                        slots: 2,
+                                                                        by_value: true,
+                                                                        is_strfat: false,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                                mutable: false,
+                                                            },
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                        HirStmt {
+                                                            kind: Semi(
+                                                                HirExpr {
+                                                                    kind: FieldSet {
+                                                                        base: HirExpr {
+                                                                            kind: Variable(
+                                                                                "__tmp501",
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 0,
+                                                                                end: 0,
+                                                                                line: 0,
+                                                                                col: 0,
+                                                                            },
+                                                                        },
+                                                                        index: 0,
+                                                                        value: HirExpr {
+                                                                            kind: IntLiteral(
+                                                                                3,
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 271698,
+                                                                                end: 271699,
+                                                                                line: 7176,
+                                                                                col: 24,
+                                                                            },
+                                                                        },
+                                                                        ty: Int,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                        HirStmt {
+                                                            kind: Semi(
+                                                                HirExpr {
+                                                                    kind: FieldSet {
+                                                                        base: HirExpr {
+                                                                            kind: Variable(
+                                                                                "__tmp501",
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 0,
+                                                                                end: 0,
+                                                                                line: 0,
+                                                                                col: 0,
+                                                                            },
+                                                                        },
+                                                                        index: 1,
+                                                                        value: HirExpr {
+                                                                            kind: IntLiteral(
+                                                                                4,
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 271704,
+                                                                                end: 271706,
+                                                                                line: 7176,
+                                                                                col: 30,
+                                                                            },
+                                                                        },
+                                                                        ty: Int,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ],
+                                                    final_expr: Some(
+                                                        HirExpr {
+                                                            kind: Variable(
+                                                                "__tmp501",
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ),
+                                                    span: Span {
+                                                        start: 0,
+                                                        end: 0,
+                                                        line: 0,
+                                                        col: 0,
                                                     },
-                                                    mutable: false,
                                                 },
-                                                Semi(
-                                                    FieldSet {
-                                                        base: Variable(
-                                                            "__tmp501",
-                                                        ),
-                                                        index: 0,
-                                                        value: IntLiteral(
-                                                            3,
-                                                        ),
-                                                        ty: Int,
-                                                    },
-                                                ),
-                                                Semi(
-                                                    FieldSet {
-                                                        base: Variable(
-                                                            "__tmp501",
-                                                        ),
-                                                        index: 1,
-                                                        value: IntLiteral(
-                                                            4,
-                                                        ),
-                                                        ty: Int,
-                                                    },
-                                                ),
-                                            ],
-                                            final_expr: Some(
-                                                Variable(
-                                                    "__tmp501",
-                                                ),
                                             ),
+                                            span: Span {
+                                                start: 271687,
+                                                end: 271707,
+                                                line: 7176,
+                                                col: 13,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271687,
+                                        end: 271707,
+                                        line: 7176,
+                                        col: 13,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "q",
+                                        init: HirExpr {
+                                            kind: Call {
+                                                callee: "identity__Point",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "p",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271730,
+                                                            end: 271731,
+                                                            line: 7177,
+                                                            col: 22,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271721,
+                                                end: 271732,
+                                                line: 7177,
+                                                col: 13,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271721,
+                                        end: 271732,
+                                        line: 7177,
+                                        col: 13,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: FieldGet {
+                                                            base: HirExpr {
+                                                                kind: Variable(
+                                                                    "q",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271770,
+                                                                    end: 271771,
+                                                                    line: 7178,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            index: 0,
+                                                            ty: Int,
+                                                        },
+                                                        span: Span {
+                                                            start: 271770,
+                                                            end: 271773,
+                                                            line: 7178,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271762,
+                                                end: 271774,
+                                                line: 7178,
+                                                col: 5,
+                                            },
                                         },
                                     ),
-                                    mutable: false,
+                                    span: Span {
+                                        start: 271762,
+                                        end: 271774,
+                                        line: 7178,
+                                        col: 5,
+                                    },
                                 },
-                                Let {
-                                    name: "q",
-                                    init: Call {
-                                        callee: "identity__Point",
-                                        args: [
-                                            Variable(
-                                                "p",
-                                            ),
-                                        ],
-                                    },
-                                    mutable: false,
-                                },
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            FieldGet {
-                                                base: Variable(
-                                                    "q",
-                                                ),
-                                                index: 0,
-                                                ty: Int,
-                                            },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            FieldGet {
-                                                base: Variable(
-                                                    "q",
-                                                ),
-                                                index: 1,
-                                                ty: Int,
-                                            },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            FieldGet {
-                                                base: Variable(
-                                                    "p",
-                                                ),
-                                                index: 0,
-                                                ty: Int,
-                                            },
-                                        ],
-                                    },
-                                ),
-                                Let {
-                                    name: "l",
-                                    init: Block(
-                                        HirBlock {
-                                            stmts: [
-                                                Let {
-                                                    name: "__tmp502",
-                                                    init: Alloc {
-                                                        slots: 1,
-                                                        by_value: true,
-                                                        is_strfat: false,
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: FieldGet {
+                                                            base: HirExpr {
+                                                                kind: Variable(
+                                                                    "q",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271804,
+                                                                    end: 271805,
+                                                                    line: 7179,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            index: 1,
+                                                            ty: Int,
+                                                        },
+                                                        span: Span {
+                                                            start: 271804,
+                                                            end: 271807,
+                                                            line: 7179,
+                                                            col: 13,
+                                                        },
                                                     },
-                                                    mutable: false,
-                                                },
-                                                Semi(
-                                                    FieldSet {
-                                                        base: Variable(
-                                                            "__tmp502",
-                                                        ),
-                                                        index: 0,
-                                                        value: IntLiteral(
-                                                            7,
-                                                        ),
-                                                        ty: Int,
-                                                    },
-                                                ),
-                                            ],
-                                            final_expr: Some(
-                                                Variable(
-                                                    "__tmp502",
-                                                ),
-                                            ),
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271796,
+                                                end: 271808,
+                                                line: 7179,
+                                                col: 5,
+                                            },
                                         },
                                     ),
-                                    mutable: false,
-                                },
-                                Let {
-                                    name: "l2",
-                                    init: Call {
-                                        callee: "identity__Label",
-                                        args: [
-                                            Variable(
-                                                "l",
-                                            ),
-                                        ],
+                                    span: Span {
+                                        start: 271796,
+                                        end: 271808,
+                                        line: 7179,
+                                        col: 5,
                                     },
-                                    mutable: false,
                                 },
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            FieldGet {
-                                                base: Variable(
-                                                    "l2",
-                                                ),
-                                                index: 0,
-                                                ty: Int,
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: FieldGet {
+                                                            base: HirExpr {
+                                                                kind: Variable(
+                                                                    "p",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271838,
+                                                                    end: 271839,
+                                                                    line: 7180,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            index: 0,
+                                                            ty: Int,
+                                                        },
+                                                        span: Span {
+                                                            start: 271838,
+                                                            end: 271841,
+                                                            line: 7180,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
                                             },
-                                        ],
+                                            span: Span {
+                                                start: 271830,
+                                                end: 271842,
+                                                line: 7180,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271830,
+                                        end: 271842,
+                                        line: 7180,
+                                        col: 5,
                                     },
-                                ),
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "l",
+                                        init: HirExpr {
+                                            kind: Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        HirStmt {
+                                                            kind: Let {
+                                                                name: "__tmp502",
+                                                                init: HirExpr {
+                                                                    kind: Alloc {
+                                                                        slots: 1,
+                                                                        by_value: true,
+                                                                        is_strfat: false,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                                mutable: false,
+                                                            },
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                        HirStmt {
+                                                            kind: Semi(
+                                                                HirExpr {
+                                                                    kind: FieldSet {
+                                                                        base: HirExpr {
+                                                                            kind: Variable(
+                                                                                "__tmp502",
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 0,
+                                                                                end: 0,
+                                                                                line: 0,
+                                                                                col: 0,
+                                                                            },
+                                                                        },
+                                                                        index: 0,
+                                                                        value: HirExpr {
+                                                                            kind: IntLiteral(
+                                                                                7,
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 271919,
+                                                                                end: 271921,
+                                                                                line: 7182,
+                                                                                col: 25,
+                                                                            },
+                                                                        },
+                                                                        ty: Int,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ],
+                                                    final_expr: Some(
+                                                        HirExpr {
+                                                            kind: Variable(
+                                                                "__tmp502",
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ),
+                                                    span: Span {
+                                                        start: 0,
+                                                        end: 0,
+                                                        line: 0,
+                                                        col: 0,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                start: 271907,
+                                                end: 271922,
+                                                line: 7182,
+                                                col: 13,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271907,
+                                        end: 271922,
+                                        line: 7182,
+                                        col: 13,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "l2",
+                                        init: HirExpr {
+                                            kind: Call {
+                                                callee: "identity__Label",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "l",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271946,
+                                                            end: 271947,
+                                                            line: 7183,
+                                                            col: 23,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271937,
+                                                end: 271948,
+                                                line: 7183,
+                                                col: 14,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271937,
+                                        end: 271948,
+                                        line: 7183,
+                                        col: 14,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: FieldGet {
+                                                            base: HirExpr {
+                                                                kind: Variable(
+                                                                    "l2",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271962,
+                                                                    end: 271964,
+                                                                    line: 7184,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            index: 0,
+                                                            ty: Int,
+                                                        },
+                                                        span: Span {
+                                                            start: 271962,
+                                                            end: 271967,
+                                                            line: 7184,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271954,
+                                                end: 271968,
+                                                line: 7184,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271954,
+                                        end: 271968,
+                                        line: 7184,
+                                        col: 5,
+                                    },
+                                },
                             ],
                             final_expr: None,
+                            span: Span {
+                                start: 271673,
+                                end: 271985,
+                                line: 7175,
+                                col: 11,
+                            },
                         },
                     ),
                     is_extern: false,

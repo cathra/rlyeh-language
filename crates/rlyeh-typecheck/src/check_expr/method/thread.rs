@@ -1,6 +1,8 @@
 //! method/thread：`Thread::start` 闭包跨线程检查与线程入口 thunk 发射。
 //! （由 method.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(super) fn check_thread_start_closure(
@@ -52,44 +54,44 @@ pub(super) fn check_thread_start_closure(
     // 1. 线程输入对象 __t_in：槽 = [捕获槽值..., arg]
     let n = captures.len();
     let t_in = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: t_in.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: n + 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     for (i, cap_ty) in captures.iter().enumerate() {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(t_in.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(t_in.clone()), Span::dummy())),
             index: i,
-            value: Box::new(HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(f_name.clone())),
+            value: Box::new(HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(f_name.clone()), Span::dummy())),
                 index: i,
                 ty: field_scalar_of(cap_ty),
-            }),
+            }, Span::dummy())),
             ty: field_scalar_of(cap_ty),
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(t_in.clone())),
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(t_in.clone()), Span::dummy())),
         index: n,
         value: Box::new(arg_hir),
         ty: field_scalar_of(&params[0]),
-    }));
+    }, Span::dummy())), Span::dummy()));
 
     // 2. 生成线程入口 thunk `__thread_entry_N(input: i64)`：读输入对象槽调 __closure_N
     let thunk = emit_thread_entry(ctx, captures, Some(&params[0]), ret, fn_name);
 
     // 3. thunk 函数指针绑定到局部变量（`let __entry = thunk`），经 fn 形参传 std
     let entry_var = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: entry_var.clone(),
-        init: HirExpr::FnPtr(thunk),
+        init: HirExpr::new(HirExprKind::FnPtr(thunk), Span::dummy()),
         mutable: false,
-    });
+    }, Span::dummy()));
 
     // 4. 调用 `thread::__start_with_input(__entry, __t_in)`，返回类型取自 std 签名
     let helper = "thread::__start_with_input".to_string();
@@ -98,18 +100,18 @@ pub(super) fn check_thread_start_closure(
         .get(&helper)
         .map(|s| s.return_type.clone())
         .unwrap_or(Type::I64);
-    let call = HirExpr::Call {
+    let call = HirExpr::new(HirExprKind::Call{
         callee: helper,
         args: vec![
-            HirExpr::Variable(entry_var),
-            HirExpr::Variable(t_in),
+            HirExpr::new(HirExprKind::Variable(entry_var), Span::dummy()),
+            HirExpr::new(HirExprKind::Variable(t_in), Span::dummy()),
         ],
-    };
+    }, Span::dummy());
     Ok(Some((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: Some(call),
-        })),
+        })), Span::dummy()),
         ret_ty,
     )))
 }
@@ -154,7 +156,7 @@ pub(crate) fn check_move_closure_spawn(
                 });
             }
             (
-                HirExpr::Variable(f_name.clone()),
+                HirExpr::new(HirExprKind::Variable(f_name.clone()), Span::dummy()),
                 ty,
             )
         }
@@ -192,35 +194,35 @@ pub(crate) fn check_move_closure_spawn(
 
     // 3. 闭包值对象绑定到临时变量（内联情形），供读取捕获槽。
     let f_var = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: f_var.clone(),
         init: closure_val_hir,
         mutable: false,
-    }];
+    }, Span::dummy())];
 
     // 4. 线程输入对象 __t_in：仅捕获槽（无额外参数）。
     let n = captures.len();
     let t_in = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: t_in.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: n,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
+    }, Span::dummy()));
     for (i, cap_ty) in captures.iter().enumerate() {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(t_in.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(t_in.clone()), Span::dummy())),
             index: i,
-            value: Box::new(HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(f_var.clone())),
+            value: Box::new(HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(f_var.clone()), Span::dummy())),
                 index: i,
                 ty: field_scalar_of(cap_ty),
-            }),
+            }, Span::dummy())),
             ty: field_scalar_of(cap_ty),
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
 
     // 5. 生成零参数线程入口 thunk `__thread_entry_N(input: i64)`。
@@ -228,29 +230,29 @@ pub(crate) fn check_move_closure_spawn(
 
     // 6. thunk 函数指针绑定到局部变量，调用 `thread::__start_with_input`。
     let entry_var = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: entry_var.clone(),
-        init: HirExpr::FnPtr(thunk),
+        init: HirExpr::new(HirExprKind::FnPtr(thunk), Span::dummy()),
         mutable: false,
-    });
+    }, Span::dummy()));
     let helper = "thread::__start_with_input".to_string();
     let ret_ty = ctx
         .fn_signatures
         .get(&helper)
         .map(|s| s.return_type.clone())
         .unwrap_or(Type::I64);
-    let call = HirExpr::Call {
+    let call = HirExpr::new(HirExprKind::Call{
         callee: helper,
         args: vec![
-            HirExpr::Variable(entry_var),
-            HirExpr::Variable(t_in),
+            HirExpr::new(HirExprKind::Variable(entry_var), Span::dummy()),
+            HirExpr::new(HirExprKind::Variable(t_in), Span::dummy()),
         ],
-    };
+    }, Span::dummy());
     Ok(Some((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: Some(call),
-        })),
+        })), Span::dummy()),
         ret_ty,
     )))
 }
@@ -288,23 +290,23 @@ pub(super) fn emit_thread_entry(
     let mut call_args: Vec<HirExpr> = capture_tys
         .iter()
         .enumerate()
-        .map(|(i, cap_ty)| HirExpr::FieldGet {
-            base: Box::new(HirExpr::Variable("__input".to_string())),
+        .map(|(i, cap_ty)| HirExpr::new(HirExprKind::FieldGet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable("__input".to_string()), Span::dummy())),
             index: i,
             ty: field_scalar_of(cap_ty),
-        })
+        }, Span::dummy()))
         .collect();
     if let Some(arg_ty) = extra_arg {
-        call_args.push(HirExpr::FieldGet {
-            base: Box::new(HirExpr::Variable("__input".to_string())),
+        call_args.push(HirExpr::new(HirExprKind::FieldGet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable("__input".to_string()), Span::dummy())),
             index: capture_tys.len(),
             ty: field_scalar_of(arg_ty),
-        });
+        }, Span::dummy()));
     }
-    let body = HirExpr::Call {
+    let body = HirExpr::new(HirExprKind::Call{
         callee: closure_fn.to_string(),
         args: call_args,
-    };
+    }, Span::dummy());
     ctx.insert_fn_signature(
         name.clone(),
         FnSignature {
@@ -316,10 +318,10 @@ pub(super) fn emit_thread_entry(
         span: crate::DUMMY_SPAN,
         name: name.clone(),
         kind: HirItemKind::Fn(HirFnDecl {
-            params: vec![HirParam {
+            params: vec![HirParam { span: Span::dummy(),
                 name: "__input".to_string(),
             }],
-            body: Some(HirBlock {
+            body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],
                 final_expr: Some(body),
             }),

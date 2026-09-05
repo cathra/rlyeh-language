@@ -1,6 +1,8 @@
 //! 表达式检查子模块：函数调用与闭包。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 use std::collections::HashMap;
 use crate::context::type_matches;
@@ -13,32 +15,32 @@ use crate::context::type_matches;
 pub(crate) fn make_slice_fat(ctx: &mut TypeContext, data: HirExpr, len: i128) -> HirExpr {
     let sf = ctx.fresh_temp();
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: sf.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
                 slots: 2,
                 by_value: true,
                 is_strfat: true,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(sf.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(sf.clone()), Span::dummy())),
             index: 0,
             value: Box::new(data),
             ty: FieldScalar::Ptr,
-        }),
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(sf.clone())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(sf.clone()), Span::dummy())),
             index: 1,
-            value: Box::new(HirExpr::IntLiteral(len)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(len), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
-    HirExpr::Block(Box::new(HirBlock {
+    HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts,
-        final_expr: Some(HirExpr::Variable(sf)),
-    }))
+        final_expr: Some(HirExpr::new(HirExprKind::Variable(sf), Span::dummy())),
+    })), Span::dummy())
 }
 
 /// P6c（2026-08-29）：trait 关联函数调用（`From::from` / `Into::into` 等）。
@@ -266,10 +268,10 @@ pub(super) fn check_trait_static_call(
         hir_args.push(hir);
     }
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: fn_name,
             args: hir_args,
-        },
+        }, Span::dummy()),
         ret_ty,
     ))
 }
@@ -391,10 +393,10 @@ pub(super) fn check_call(
             // （`%.*s` 长度限定，仅打印子区间）。`&str` 本就是 by-value 双槽值。
             if let Type::Ref(inner, _) = &ty {
                 if !matches!(&**inner, Type::Str) {
-                    hir = HirExpr::Deref {
+                    hir = HirExpr::new(HirExprKind::Deref{
                         expr: Box::new(hir),
                         ty: field_scalar_of(inner),
-                    };
+                    }, Span::dummy());
                     ty = (**inner).clone();
                 }
             }
@@ -410,10 +412,10 @@ pub(super) fn check_call(
                         _ => "eprint_string",
                     };
                     return Ok((
-                        HirExpr::Call {
+                        HirExpr::new(HirExprKind::Call{
                             callee: callee.to_string(),
                             args: vec![hir],
-                        },
+                        }, Span::dummy()),
                         Type::Unit,
                     ));
                 }
@@ -421,10 +423,10 @@ pub(super) fn check_call(
             // 非 String 参数：直接生成 print / println / eprint / eprintln 调用
             // （引用已剥层，避免落入下方通用路径时对原始实参重新 infer 而丢失剥层结果）
             return Ok((
-                HirExpr::Call {
+                HirExpr::new(HirExprKind::Call{
                     callee: name.clone(),
                     args: vec![hir],
-                },
+                }, Span::dummy()),
                 Type::Unit,
             ));
         }
@@ -458,10 +460,10 @@ pub(super) fn check_call(
             hir_args.push(hir);
         }
         return Ok((
-            HirExpr::Call {
+            HirExpr::new(HirExprKind::Call{
                 callee: name,
                 args: hir_args,
-            },
+            }, Span::dummy()),
             ret,
         ));
     }
@@ -472,10 +474,10 @@ pub(super) fn check_call(
             let (_, _) = infer_expr(ctx, a)?;
         }
         return Ok((
-            HirExpr::Call {
+            HirExpr::new(HirExprKind::Call{
                 callee: name,
                 args: Vec::new(),
-            },
+            }, Span::dummy()),
             Type::Unit,
         ));
     }
@@ -512,7 +514,7 @@ pub(super) fn check_call(
                             span,
                         });
                     }
-                    HirExpr::IntLiteral(0)
+                    HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())
                 };
                 // handler / factory 名必须为 3 槽 String 结构体（data/len/cap）——runtime 侧
                 // `cstr()` 按 C 字符串读取。不能传裸字符串字面量（瘦 data 指针，
@@ -527,10 +529,10 @@ pub(super) fn check_call(
                     }],
                     span,
                 )?;
-                let state_new_call = HirExpr::Call {
+                let state_new_call = HirExpr::new(HirExprKind::Call{
                     callee: format!("{actor_full}::__state_new"),
                     args: vec![],
-                };
+                }, Span::dummy());
                 let (callee, args) = if supervised {
                     let factory = format!("{actor_full}::__state_new");
                     let (factory_hir, _) = check_string_from(
@@ -549,7 +551,7 @@ pub(super) fn check_call(
                     ("rlyeh_actor_spawn".to_string(), vec![handle_hir, state_new_call])
                 };
                 return Ok((
-                    HirExpr::Call { callee, args },
+                    HirExpr::new(HirExprKind::Call{ callee, args }, Span::dummy()),
                     Type::Named(actor_full, vec![]),
                 ));
             }
@@ -653,11 +655,11 @@ pub(super) fn check_call(
             }
             let (b_hir, b_ty) = infer_expr(ctx, &args[0])?;
             let inner = peel_refs_and_heap(&b_ty);
-            let ptr = HirExpr::FieldGet {
+            let ptr = HirExpr::new(HirExprKind::FieldGet{
                 base: Box::new(b_hir),
                 index: 0,
                 ty: FieldScalar::Ptr,
-            };
+            }, Span::dummy());
             return Ok((ptr, Type::Ref(Box::new(inner), Mutability::Mutable)));
         }
         // `Weak` 升级特判：`Weak::upgrade(w)`（K3 弱引用升级为强引用）
@@ -824,10 +826,10 @@ pub(super) fn check_call(
         hir_args.push(hir);
     }
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: resolved,
             args: hir_args,
-        },
+        }, Span::dummy()),
         signature.return_type,
     ))
 }
@@ -880,12 +882,12 @@ pub(super) fn check_indirect_call(
     }
     let param_names = signature.params.iter().map(type_to_extern_name).collect();
     Ok((
-        HirExpr::CallIndirect {
+        HirExpr::new(HirExprKind::CallIndirect{
             callee: Box::new(callee_hir),
             args: hir_args,
             param_names,
             ret_name: type_to_extern_name(&signature.return_type),
-        },
+        }, Span::dummy()),
         signature.return_type,
     ))
 }

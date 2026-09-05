@@ -8,96 +8,286 @@ HirProgram {
                     body: Some(
                         HirBlock {
                             stmts: [
-                                Let {
-                                    name: "kind",
-                                    init: IntLiteral(
-                                        5,
+                                HirStmt {
+                                    kind: Let {
+                                        name: "kind",
+                                        init: HirExpr {
+                                            kind: IntLiteral(
+                                                5,
+                                            ),
+                                            span: Span {
+                                                start: 271245,
+                                                end: 271277,
+                                                line: 7156,
+                                                col: 16,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271245,
+                                        end: 271277,
+                                        line: 7156,
+                                        col: 16,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "e1",
+                                        init: HirExpr {
+                                            kind: Call {
+                                                callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "kind",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271388,
+                                                            end: 271392,
+                                                            line: 7159,
+                                                            col: 47,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271355,
+                                                end: 271393,
+                                                line: 7159,
+                                                col: 14,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271355,
+                                        end: 271393,
+                                        line: 7159,
+                                        col: 14,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println_string",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Call {
+                                                            callee: "io::error::IoError::message",
+                                                            args: [
+                                                                HirExpr {
+                                                                    kind: Variable(
+                                                                        "e1",
+                                                                    ),
+                                                                    span: Span {
+                                                                        start: 271407,
+                                                                        end: 271409,
+                                                                        line: 7160,
+                                                                        col: 13,
+                                                                    },
+                                                                },
+                                                            ],
+                                                        },
+                                                        span: Span {
+                                                            start: 271407,
+                                                            end: 271419,
+                                                            line: 7160,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271399,
+                                                end: 271420,
+                                                line: 7160,
+                                                col: 5,
+                                            },
+                                        },
                                     ),
-                                    mutable: false,
-                                },
-                                Let {
-                                    name: "e1",
-                                    init: Call {
-                                        callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
-                                        args: [
-                                            Variable(
-                                                "kind",
-                                            ),
-                                        ],
+                                    span: Span {
+                                        start: 271399,
+                                        end: 271420,
+                                        line: 7160,
+                                        col: 5,
                                     },
-                                    mutable: false,
                                 },
-                                Expr(
-                                    Call {
-                                        callee: "println_string",
-                                        args: [
-                                            Call {
-                                                callee: "io::error::IoError::message",
+                                HirStmt {
+                                    kind: Let {
+                                        name: "e2",
+                                        init: HirExpr {
+                                            kind: Call {
+                                                callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
                                                 args: [
-                                                    Variable(
-                                                        "e1",
-                                                    ),
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "kind",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271501,
+                                                            end: 271505,
+                                                            line: 7163,
+                                                            col: 25,
+                                                        },
+                                                    },
                                                 ],
                                             },
-                                        ],
+                                            span: Span {
+                                                start: 271490,
+                                                end: 271506,
+                                                line: 7163,
+                                                col: 14,
+                                            },
+                                        },
+                                        mutable: false,
                                     },
-                                ),
-                                Let {
-                                    name: "e2",
-                                    init: Call {
-                                        callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
-                                        args: [
-                                            Variable(
-                                                "kind",
-                                            ),
-                                        ],
+                                    span: Span {
+                                        start: 271490,
+                                        end: 271506,
+                                        line: 7163,
+                                        col: 14,
                                     },
-                                    mutable: false,
                                 },
-                                Expr(
-                                    Call {
-                                        callee: "println_string",
-                                        args: [
-                                            Call {
-                                                callee: "io::error::IoError::message",
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println_string",
                                                 args: [
-                                                    Variable(
-                                                        "e2",
-                                                    ),
+                                                    HirExpr {
+                                                        kind: Call {
+                                                            callee: "io::error::IoError::message",
+                                                            args: [
+                                                                HirExpr {
+                                                                    kind: Variable(
+                                                                        "e2",
+                                                                    ),
+                                                                    span: Span {
+                                                                        start: 271520,
+                                                                        end: 271522,
+                                                                        line: 7164,
+                                                                        col: 13,
+                                                                    },
+                                                                },
+                                                            ],
+                                                        },
+                                                        span: Span {
+                                                            start: 271520,
+                                                            end: 271532,
+                                                            line: 7164,
+                                                            col: 13,
+                                                        },
+                                                    },
                                                 ],
                                             },
-                                        ],
+                                            span: Span {
+                                                start: 271512,
+                                                end: 271533,
+                                                line: 7164,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271512,
+                                        end: 271533,
+                                        line: 7164,
+                                        col: 5,
                                     },
-                                ),
-                                Let {
-                                    name: "e3",
-                                    init: Call {
-                                        callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
-                                        args: [
-                                            Variable(
-                                                "kind",
-                                            ),
-                                        ],
-                                    },
-                                    mutable: false,
                                 },
-                                Expr(
-                                    Call {
-                                        callee: "println_string",
-                                        args: [
-                                            Call {
-                                                callee: "io::error::IoError::message",
+                                HirStmt {
+                                    kind: Let {
+                                        name: "e3",
+                                        init: HirExpr {
+                                            kind: Call {
+                                                callee: "io::error::IoError::from__io::error::From__io::error::IoErrorKind",
                                                 args: [
-                                                    Variable(
-                                                        "e3",
-                                                    ),
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "kind",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271635,
+                                                            end: 271639,
+                                                            line: 7167,
+                                                            col: 47,
+                                                        },
+                                                    },
                                                 ],
                                             },
-                                        ],
+                                            span: Span {
+                                                start: 271602,
+                                                end: 271640,
+                                                line: 7167,
+                                                col: 14,
+                                            },
+                                        },
+                                        mutable: false,
                                     },
-                                ),
+                                    span: Span {
+                                        start: 271602,
+                                        end: 271640,
+                                        line: 7167,
+                                        col: 14,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println_string",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Call {
+                                                            callee: "io::error::IoError::message",
+                                                            args: [
+                                                                HirExpr {
+                                                                    kind: Variable(
+                                                                        "e3",
+                                                                    ),
+                                                                    span: Span {
+                                                                        start: 271654,
+                                                                        end: 271656,
+                                                                        line: 7168,
+                                                                        col: 13,
+                                                                    },
+                                                                },
+                                                            ],
+                                                        },
+                                                        span: Span {
+                                                            start: 271654,
+                                                            end: 271666,
+                                                            line: 7168,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271646,
+                                                end: 271667,
+                                                line: 7168,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271646,
+                                        end: 271667,
+                                        line: 7168,
+                                        col: 5,
+                                    },
+                                },
                             ],
                             final_expr: None,
+                            span: Span {
+                                start: 271228,
+                                end: 271670,
+                                line: 7155,
+                                col: 11,
+                            },
                         },
                     ),
                     is_extern: false,

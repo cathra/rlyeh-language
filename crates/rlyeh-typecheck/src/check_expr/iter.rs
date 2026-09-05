@@ -1,6 +1,8 @@
 //! 表达式检查子模块：for 循环与迭代器适配器。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(super) fn check_gc_region(
@@ -13,60 +15,60 @@ pub(super) fn check_gc_region(
     // 块入口：快照外层活跃对象
     stmts.insert(
         0,
-        HirStmt::Semi(HirExpr::Call {
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
             callee: "rlyeh_gc_region_begin".to_string(),
             args: vec![],
-        }),
+        }, Span::dummy())), Span::dummy()),
     );
     if let Some(f) = hir.final_expr.take() {
         // 逃逸值保护：仅直接 `Gc<T>` 类型登记（标量 / () / 非 Gc 聚合直接收集）
         if matches!(peel_ref(&ty), Type::Named(n, _) if n == "Gc") {
             let esc = ctx.fresh_temp();
-            stmts.push(HirStmt::Let {
+            stmts.push(HirStmt::new(HirStmtKind::Let{
                 name: esc.clone(),
                 init: f,
                 mutable: false,
-            });
-            stmts.push(HirStmt::Semi(HirExpr::Call {
+            }, Span::dummy()));
+            stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
                 callee: "rlyeh_gc_escape".to_string(),
                 // Gc<T> 变量 = 栈槽 → 堆 1-槽包装（槽 0 存 GcInner base）；
                 // heap_ptr_hir 解包装槽 0 得对象 base（与 rlyeh_gc_alloc 注册一致），
                 // 传包装指针会导致 mark 线性查找失配、对象被误回收（悬垂读取）。
-                args: vec![heap_ptr_hir(HirExpr::Variable(esc.clone()), &ty)],
-            }));
-            stmts.push(HirStmt::Semi(HirExpr::Call {
+                args: vec![heap_ptr_hir(HirExpr::new(HirExprKind::Variable(esc.clone()), Span::dummy()), &ty)],
+            }, Span::dummy())), Span::dummy()));
+            stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
                 callee: "rlyeh_gc_collect".to_string(),
                 args: vec![],
-            }));
+            }, Span::dummy())), Span::dummy()));
             return Ok((
-                HirExpr::Block(Box::new(HirBlock {
+                HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                     stmts,
-                    final_expr: Some(HirExpr::Variable(esc)),
-                })),
+                    final_expr: Some(HirExpr::new(HirExprKind::Variable(esc), Span::dummy())),
+                })), Span::dummy()),
                 ty,
             ));
         }
-        stmts.push(HirStmt::Semi(HirExpr::Call {
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
             callee: "rlyeh_gc_collect".to_string(),
             args: vec![],
-        }));
+        }, Span::dummy())), Span::dummy()));
         Ok((
-            HirExpr::Block(Box::new(HirBlock {
+            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                 stmts,
                 final_expr: Some(f),
-            })),
+            })), Span::dummy()),
             ty,
         ))
     } else {
-        stmts.push(HirStmt::Semi(HirExpr::Call {
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
             callee: "rlyeh_gc_collect".to_string(),
             args: vec![],
-        }));
+        }, Span::dummy())), Span::dummy()));
         Ok((
-            HirExpr::Block(Box::new(HirBlock {
+            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                 stmts,
                 final_expr: None,
-            })),
+            })), Span::dummy()),
             Type::Unit,
         ))
     }
@@ -195,36 +197,36 @@ pub(super) fn check_for_range(
     //    循环变量初始化为 `start - 1`，配合循环体开头的 `pat += 1`，
     //    使第一次迭代 pat == start。
     let start = if lower_inclusive {
-        HirExpr::Variable(stored_lo.clone())
+        HirExpr::new(HirExprKind::Variable(stored_lo.clone()), Span::dummy())
     } else {
-        HirExpr::Binary(
+        HirExpr::new(HirExprKind::Binary(
             HirBinaryOp::Add,
-            Box::new(HirExpr::Variable(stored_lo.clone())),
-            Box::new(HirExpr::IntLiteral(1)),
-        )
+            Box::new(HirExpr::new(HirExprKind::Variable(stored_lo.clone()), Span::dummy())),
+            Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+        ), Span::dummy())
     };
-    let init = HirExpr::Binary(
+    let init = HirExpr::new(HirExprKind::Binary(
         HirBinaryOp::Sub,
         Box::new(start),
-        Box::new(HirExpr::IntLiteral(1)),
-    );
+        Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+    ), Span::dummy());
 
     let mut stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: stored_lo.clone(),
             init: lo_hir,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_hi.clone(),
             init: hi_hir,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_name.clone(),
             init,
             mutable: true,
-        },
+        }, Span::dummy()),
     ];
 
     // 7. 循环体检查
@@ -239,45 +241,45 @@ pub(super) fn check_for_range(
     } else {
         HirBinaryOp::Ge
     };
-    let exit_cond = HirExpr::Binary(
+    let exit_cond = HirExpr::new(HirExprKind::Binary(
         exit_op,
-        Box::new(HirExpr::Variable(stored_name.clone())),
-        Box::new(HirExpr::Variable(stored_hi)),
-    );
+        Box::new(HirExpr::new(HirExprKind::Variable(stored_name.clone()), Span::dummy())),
+        Box::new(HirExpr::new(HirExprKind::Variable(stored_hi), Span::dummy())),
+    ), Span::dummy());
 
     // 9. loop 体：`pat += 1` → 退出判断 → 原 body 语句
     let mut loop_body_stmts = vec![
-        HirStmt::Expr(HirExpr::Assign {
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
             target: stored_name.clone(),
             op: HirAssignOp::AddAssign,
-            value: Box::new(HirExpr::IntLiteral(1)),
-        }),
-        HirStmt::Expr(HirExpr::If {
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
             cond: Box::new(exit_cond),
-            then_block: Box::new(HirBlock {
-                stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+            then_block: Box::new(HirBlock { span: Span::dummy(),
+                stmts: vec![HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Break(None), Span::dummy())), Span::dummy())],
                 final_expr: None,
             }),
             else_block: None,
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     loop_body_stmts.extend(b_hir.stmts);
     if let Some(fe) = b_hir.final_expr {
-        loop_body_stmts.push(HirStmt::Expr(fe));
+        loop_body_stmts.push(HirStmt::new(HirStmtKind::Expr(fe), Span::dummy()));
     }
-    let loop_expr = HirExpr::Loop {
-        body: Box::new(HirBlock {
+    let loop_expr = HirExpr::new(HirExprKind::Loop{
+        body: Box::new(HirBlock { span: Span::dummy(),
             stmts: loop_body_stmts,
             final_expr: None,
         }),
-    };
+    }, Span::dummy());
 
-    stmts.push(HirStmt::Expr(loop_expr));
+    stmts.push(HirStmt::new(HirStmtKind::Expr(loop_expr), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: None,
-        })),
+        })), Span::dummy()),
         Type::Unit,
     ))
 }
@@ -330,25 +332,25 @@ pub(super) fn check_for_vec(
 
     // 5. 前缀语句：绑定容器、缓存长度、初始化计数器
     let mut stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: stored_v.clone(),
             init: iter_hir,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_len.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(stored_v.clone())),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(stored_v.clone()), Span::dummy())),
                 index: 1, // Vec 槽 1 = len
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_i.clone(),
-            init: HirExpr::IntLiteral(0),
+            init: HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()),
             mutable: true,
-        },
+        }, Span::dummy()),
     ];
 
     // 7. 循环体检查
@@ -358,55 +360,55 @@ pub(super) fn check_for_vec(
     // 8. loop 体：边界检查 → 取元素绑定 → 递增 → 原 body 语句
     let elem_scalar = field_scalar_of(&elem_ty);
     let mut loop_body_stmts = vec![
-        HirStmt::Expr(HirExpr::If {
-            cond: Box::new(HirExpr::Binary(
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+            cond: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Ge,
-                Box::new(HirExpr::Variable(stored_i.clone())),
-                Box::new(HirExpr::Variable(stored_len.clone())),
-            )),
-            then_block: Box::new(HirBlock {
-                stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::Variable(stored_len.clone()), Span::dummy())),
+            ), Span::dummy())),
+            then_block: Box::new(HirBlock { span: Span::dummy(),
+                stmts: vec![HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Break(None), Span::dummy())), Span::dummy())],
                 final_expr: None,
             }),
             else_block: None,
-        }),
-        HirStmt::Let {
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_name.clone(),
-            init: HirExpr::Index {
-                base: Box::new(HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(stored_v.clone())),
+            init: HirExpr::new(HirExprKind::Index{
+                base: Box::new(HirExpr::new(HirExprKind::FieldGet{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(stored_v.clone()), Span::dummy())),
                     index: 0, // Vec 槽 0 = data 指针
                     ty: FieldScalar::Ptr,
-                }),
-                index: Box::new(HirExpr::Variable(stored_i.clone())),
+                }, Span::dummy())),
+                index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: elem_scalar,
                 is_str: false,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Expr(HirExpr::Assign {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
             target: stored_i.clone(),
             op: HirAssignOp::AddAssign,
-            value: Box::new(HirExpr::IntLiteral(1)),
-        }),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+        }, Span::dummy())), Span::dummy()),
     ];
     loop_body_stmts.extend(b_hir.stmts);
     if let Some(fe) = b_hir.final_expr {
-        loop_body_stmts.push(HirStmt::Expr(fe));
+        loop_body_stmts.push(HirStmt::new(HirStmtKind::Expr(fe), Span::dummy()));
     }
-    let loop_expr = HirExpr::Loop {
-        body: Box::new(HirBlock {
+    let loop_expr = HirExpr::new(HirExprKind::Loop{
+        body: Box::new(HirBlock { span: Span::dummy(),
             stmts: loop_body_stmts,
             final_expr: None,
         }),
-    };
+    }, Span::dummy());
 
-    stmts.push(HirStmt::Expr(loop_expr));
+    stmts.push(HirStmt::new(HirStmtKind::Expr(loop_expr), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: None,
-        })),
+        })), Span::dummy()),
         Type::Unit,
     ))
 }
@@ -457,16 +459,16 @@ pub(super) fn check_for_array(
 
     // 5. 前缀语句：绑定数组、初始化计数器
     let mut stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: stored_arr.clone(),
             init: iter_hir,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_i.clone(),
-            init: HirExpr::IntLiteral(0),
+            init: HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()),
             mutable: true,
-        },
+        }, Span::dummy()),
     ];
 
     // 6. 循环体检查
@@ -477,51 +479,51 @@ pub(super) fn check_for_array(
     let elem_scalar = field_scalar_of(&elem_ty);
     let is_byte = matches!(elem_ty, Type::U8);
     let mut loop_body_stmts = vec![
-        HirStmt::Expr(HirExpr::If {
-            cond: Box::new(HirExpr::Binary(
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+            cond: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Ge,
-                Box::new(HirExpr::Variable(stored_i.clone())),
-                Box::new(HirExpr::IntLiteral(n as i128)),
-            )),
-            then_block: Box::new(HirBlock {
-                stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(n as i128), Span::dummy())),
+            ), Span::dummy())),
+            then_block: Box::new(HirBlock { span: Span::dummy(),
+                stmts: vec![HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Break(None), Span::dummy())), Span::dummy())],
                 final_expr: None,
             }),
             else_block: None,
-        }),
-        HirStmt::Let {
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_name.clone(),
-            init: HirExpr::Index {
-                base: Box::new(HirExpr::Variable(stored_arr.clone())),
-                index: Box::new(HirExpr::Variable(stored_i.clone())),
+            init: HirExpr::new(HirExprKind::Index{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(stored_arr.clone()), Span::dummy())),
+                index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: elem_scalar,
                 is_str: is_byte,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Expr(HirExpr::Assign {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
             target: stored_i.clone(),
             op: HirAssignOp::AddAssign,
-            value: Box::new(HirExpr::IntLiteral(1)),
-        }),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+        }, Span::dummy())), Span::dummy()),
     ];
     loop_body_stmts.extend(b_hir.stmts);
     if let Some(fe) = b_hir.final_expr {
-        loop_body_stmts.push(HirStmt::Expr(fe));
+        loop_body_stmts.push(HirStmt::new(HirStmtKind::Expr(fe), Span::dummy()));
     }
-    let loop_expr = HirExpr::Loop {
-        body: Box::new(HirBlock {
+    let loop_expr = HirExpr::new(HirExprKind::Loop{
+        body: Box::new(HirBlock { span: Span::dummy(),
             stmts: loop_body_stmts,
             final_expr: None,
         }),
-    };
+    }, Span::dummy());
 
-    stmts.push(HirStmt::Expr(loop_expr));
+    stmts.push(HirStmt::new(HirStmtKind::Expr(loop_expr), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: None,
-        })),
+        })), Span::dummy()),
         Type::Unit,
     ))
 }
@@ -587,25 +589,25 @@ pub(super) fn check_for_hashmap(
 
     // 5. 前缀语句：绑定容器、缓存容量、初始化计数器
     let mut stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: stored_m.clone(),
             init: iter_hir,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_cap.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(stored_m.clone())),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(stored_m.clone()), Span::dummy())),
                 index: 5, // HashMap 槽 5 = cap
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: stored_i.clone(),
-            init: HirExpr::IntLiteral(0),
+            init: HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()),
             mutable: true,
-        },
+        }, Span::dummy()),
     ];
 
     // 6. 循环体检查
@@ -617,101 +619,101 @@ pub(super) fn check_for_hashmap(
     let v_scalar = field_scalar_of(&v_ty);
     let mut loop_body_stmts = vec![
         // if __for_i >= __for_cap { break }
-        HirStmt::Expr(HirExpr::If {
-            cond: Box::new(HirExpr::Binary(
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+            cond: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Ge,
-                Box::new(HirExpr::Variable(stored_i.clone())),
-                Box::new(HirExpr::Variable(stored_cap.clone())),
-            )),
-            then_block: Box::new(HirBlock {
-                stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::Variable(stored_cap.clone()), Span::dummy())),
+            ), Span::dummy())),
+            then_block: Box::new(HirBlock { span: Span::dummy(),
+                stmts: vec![HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Break(None), Span::dummy())), Span::dummy())],
                 final_expr: None,
             }),
             else_block: None,
-        }),
+        }, Span::dummy())), Span::dummy()),
         // if __for_m.states[__for_i] != 1 { __for_i += 1; continue; }
-        HirStmt::Expr(HirExpr::If {
-            cond: Box::new(HirExpr::Binary(
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+            cond: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Ne,
-                Box::new(HirExpr::Index {
-                    base: Box::new(HirExpr::FieldGet {
-                        base: Box::new(HirExpr::Variable(stored_m.clone())),
+                Box::new(HirExpr::new(HirExprKind::Index{
+                    base: Box::new(HirExpr::new(HirExprKind::FieldGet{
+                        base: Box::new(HirExpr::new(HirExprKind::Variable(stored_m.clone()), Span::dummy())),
                         index: 2, // HashMap 槽 2 = states 指针
                         ty: FieldScalar::Ptr,
-                    }),
-                    index: Box::new(HirExpr::Variable(stored_i.clone())),
+                    }, Span::dummy())),
+                    index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                     elem: FieldScalar::Int,
                     is_str: false,
-                }),
-                Box::new(HirExpr::IntLiteral(1)),
-            )),
-            then_block: Box::new(HirBlock {
+                }, Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+            ), Span::dummy())),
+            then_block: Box::new(HirBlock { span: Span::dummy(),
                 stmts: vec![
-                    HirStmt::Expr(HirExpr::Assign {
+                    HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
                         target: stored_i.clone(),
                         op: HirAssignOp::AddAssign,
-                        value: Box::new(HirExpr::IntLiteral(1)),
-                    }),
-                    HirStmt::Expr(HirExpr::Continue),
+                        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+                    }, Span::dummy())), Span::dummy()),
+                    HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Continue, Span::dummy())), Span::dummy()),
                 ],
                 final_expr: None,
             }),
             else_block: None,
-        }),
+        }, Span::dummy())), Span::dummy()),
         // let k = __for_m.keys[__for_i]
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: stored_k.clone(),
-            init: HirExpr::Index {
-                base: Box::new(HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(stored_m.clone())),
+            init: HirExpr::new(HirExprKind::Index{
+                base: Box::new(HirExpr::new(HirExprKind::FieldGet{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(stored_m.clone()), Span::dummy())),
                     index: 0, // HashMap 槽 0 = keys 指针
                     ty: FieldScalar::Ptr,
-                }),
-                index: Box::new(HirExpr::Variable(stored_i.clone())),
+                }, Span::dummy())),
+                index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: k_scalar,
                 is_str: false,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
+        }, Span::dummy()),
         // let v = __for_m.vals[__for_i]
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: stored_v.clone(),
-            init: HirExpr::Index {
-                base: Box::new(HirExpr::FieldGet {
-                    base: Box::new(HirExpr::Variable(stored_m.clone())),
+            init: HirExpr::new(HirExprKind::Index{
+                base: Box::new(HirExpr::new(HirExprKind::FieldGet{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(stored_m.clone()), Span::dummy())),
                     index: 1, // HashMap 槽 1 = vals 指针
                     ty: FieldScalar::Ptr,
-                }),
-                index: Box::new(HirExpr::Variable(stored_i.clone())),
+                }, Span::dummy())),
+                index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: v_scalar,
                 is_str: false,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
+        }, Span::dummy()),
         // __for_i += 1
-        HirStmt::Expr(HirExpr::Assign {
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
             target: stored_i.clone(),
             op: HirAssignOp::AddAssign,
-            value: Box::new(HirExpr::IntLiteral(1)),
-        }),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+        }, Span::dummy())), Span::dummy()),
     ];
     loop_body_stmts.extend(b_hir.stmts);
     if let Some(fe) = b_hir.final_expr {
-        loop_body_stmts.push(HirStmt::Expr(fe));
+        loop_body_stmts.push(HirStmt::new(HirStmtKind::Expr(fe), Span::dummy()));
     }
-    let loop_expr = HirExpr::Loop {
-        body: Box::new(HirBlock {
+    let loop_expr = HirExpr::new(HirExprKind::Loop{
+        body: Box::new(HirBlock { span: Span::dummy(),
             stmts: loop_body_stmts,
             final_expr: None,
         }),
-    };
+    }, Span::dummy());
 
-    stmts.push(HirStmt::Expr(loop_expr));
+    stmts.push(HirStmt::new(HirStmtKind::Expr(loop_expr), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: None,
-        })),
+        })), Span::dummy()),
         Type::Unit,
     ))
 }

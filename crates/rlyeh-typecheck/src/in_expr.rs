@@ -10,8 +10,7 @@
 
 use rlyeh_ast::{AstExpr, ExprKind};
 use rlyeh_hir::{
-    FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirStmt, HirUnaryOp,
-};
+    FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirStmt, HirUnaryOp, HirExprKind, HirStmtKind};
 use rlyeh_lexer::Span;
 
 use crate::check_expr;
@@ -32,7 +31,7 @@ const OR_CHAIN_THRESHOLD: usize = 5;
 ///
 /// 集合内范围元素要求上下界为编译期整数常量（时间字面量归一化为分钟值），
 /// 展开为离散成员；成员数较少时生成 `==`（或 `!=`）链，较多时生成
-/// [`HirExpr::SetLookup`]。
+/// [`HirExpr::new(HirExprKind::SetLookup, Span::dummy())`]。
 pub(crate) fn check_in_expression(
     ctx: &mut TypeContext,
     value: AstExpr,
@@ -66,7 +65,7 @@ pub(crate) fn check_in_expression(
                 let vals = expand_range(lo, hi, *lower_inclusive, *upper_inclusive, span)?;
                 for v in vals {
                     check_member_type(&v_ty, &Type::I64, span)?;
-                    members.push(HirExpr::IntLiteral(v));
+                    members.push(HirExpr::new(HirExprKind::IntLiteral(v), Span::dummy()));
                 }
             }
             _ => {
@@ -85,7 +84,7 @@ pub(crate) fn check_in_expression(
 /// 检查并展开裸范围区间判断（`x in 0..<10` / `x not in 0...10`）。
 ///
 /// 端点不要求为常量（运行时求值），按开闭标志生成
-/// [`HirExpr::RangeCheck`]。
+/// [`HirExpr::new(HirExprKind::RangeCheck, Span::dummy())`]。
 pub(crate) fn check_in_range_expression(
     ctx: &mut TypeContext,
     value: AstExpr,
@@ -134,14 +133,14 @@ pub(crate) fn check_in_range_expression(
         });
     }
 
-    let hir = HirExpr::RangeCheck {
+    let hir = HirExpr::new(HirExprKind::RangeCheck{
         value: Box::new(v_hir),
         lower: Some(Box::new(lo_hir)),
         upper: Some(Box::new(hi_hir)),
         lower_inclusive: *lower_inclusive,
         upper_inclusive: *upper_inclusive,
         negated,
-    };
+    }, Span::dummy());
     Ok((hir, Type::Bool))
 }
 
@@ -206,11 +205,11 @@ fn expand_range(
 /// 集合成员判断优化：
 ///
 /// - 成员数 ≤ 5：展开为 `==`（`not in` 为 `!=`）链；
-/// - 成员数 > 5：保留为 [`HirExpr::SetLookup`]（编译器生成查找结构）；
+/// - 成员数 > 5：保留为 [`HirExpr::new(HirExprKind::SetLookup, Span::dummy())`]（编译器生成查找结构）；
 /// - 空集合：`in` 恒 `false`，`not in` 恒 `true`。
 fn optimize_in_set(value: HirExpr, members: Vec<HirExpr>, negated: bool) -> HirExpr {
     if members.is_empty() {
-        return HirExpr::BoolLiteral(negated);
+        return HirExpr::new(HirExprKind::BoolLiteral(negated), Span::dummy());
     }
     if members.len() <= OR_CHAIN_THRESHOLD {
         let op = if negated {
@@ -223,25 +222,25 @@ fn optimize_in_set(value: HirExpr, members: Vec<HirExpr>, negated: bool) -> HirE
         } else {
             HirBinaryOp::Or
         };
-        let mut acc = HirExpr::Binary(op, Box::new(value.clone()), Box::new(members[0].clone()));
+        let mut acc = HirExpr::new(HirExprKind::Binary(op, Box::new(value.clone()), Box::new(members[0].clone())), Span::dummy());
         for m in &members[1..] {
-            acc = HirExpr::Binary(
+            acc = HirExpr::new(HirExprKind::Binary(
                 join,
                 Box::new(acc),
-                Box::new(HirExpr::Binary(
+                Box::new(HirExpr::new(HirExprKind::Binary(
                     op,
                     Box::new(value.clone()),
                     Box::new(m.clone()),
-                )),
-            );
+                ), Span::dummy())),
+            ), Span::dummy());
         }
         acc
     } else {
-        HirExpr::SetLookup {
+        HirExpr::new(HirExprKind::SetLookup{
             value: Box::new(value),
             members,
             negated,
-        }
+        }, Span::dummy())
     }
 }
 
@@ -370,125 +369,125 @@ pub(crate) fn check_in_container_expression(
         // Vec / 切片：槽 0 = data 指针。注意：直接复用容器表达式 `c_hir`，
         // 不要绑定到新的临时变量——切片为胖指针（2 槽 {data, len}），若经
         // `let __c = <容器>` 复制到单槽临时变量会截断长度信息，导致遍历越界崩溃。
-        HirExpr::FieldGet {
+        HirExpr::new(HirExprKind::FieldGet{
             base: Box::new(c_hir.clone()),
             index: 0,
             ty: FieldScalar::Ptr,
-        }
+        }, Span::dummy())
     };
     let len_hir = if is_array {
-        HirExpr::IntLiteral(array_len as i128)
+        HirExpr::new(HirExprKind::IntLiteral(array_len as i128), Span::dummy())
     } else {
         // Vec / 切片：槽 1 = 长度
-        HirExpr::FieldGet {
+        HirExpr::new(HirExprKind::FieldGet{
             base: Box::new(c_hir.clone()),
             index: 1,
             ty: FieldScalar::Int,
-        }
+        }, Span::dummy())
     };
 
     // 元素相等条件：`==` 对字符串走 `string_eq_hir`（内容比较），其余标量直接 `==`
     let cmp_cond = if elem_str {
         comparison::string_eq_hir(
             ctx,
-            &HirExpr::Variable(e_var.clone()),
-            &HirExpr::Variable(v_var.clone()),
+            &HirExpr::new(HirExprKind::Variable(e_var.clone()), Span::dummy()),
+            &HirExpr::new(HirExprKind::Variable(v_var.clone()), Span::dummy()),
         )
     } else {
-        HirExpr::Binary(
+        HirExpr::new(HirExprKind::Binary(
             HirBinaryOp::Eq,
-            Box::new(HirExpr::Variable(e_var.clone())),
-            Box::new(HirExpr::Variable(v_var.clone())),
-        )
+            Box::new(HirExpr::new(HirExprKind::Variable(e_var.clone()), Span::dummy())),
+            Box::new(HirExpr::new(HirExprKind::Variable(v_var.clone()), Span::dummy())),
+        ), Span::dummy())
     };
 
-    let loop_body = HirBlock {
+    let loop_body = HirBlock { span: Span::dummy(),
         stmts: vec![
             // if __i >= __len { break; }
-            HirStmt::Expr(HirExpr::If {
-                cond: Box::new(HirExpr::Binary(
+            HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+                cond: Box::new(HirExpr::new(HirExprKind::Binary(
                     HirBinaryOp::Ge,
-                    Box::new(HirExpr::Variable(i_var.clone())),
-                    Box::new(HirExpr::Variable(len_var.clone())),
-                )),
-                then_block: Box::new(HirBlock {
-                    stmts: vec![HirStmt::Expr(HirExpr::Break(None))],
+                    Box::new(HirExpr::new(HirExprKind::Variable(i_var.clone()), Span::dummy())),
+                    Box::new(HirExpr::new(HirExprKind::Variable(len_var.clone()), Span::dummy())),
+                ), Span::dummy())),
+                then_block: Box::new(HirBlock { span: Span::dummy(),
+                    stmts: vec![HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Break(None), Span::dummy())), Span::dummy())],
                     final_expr: None,
                 }),
                 else_block: None,
-            }),
+            }, Span::dummy())), Span::dummy()),
             // let __e = <容器>[__i];
-            HirStmt::Let {
+            HirStmt::new(HirStmtKind::Let{
                 name: e_var.clone(),
-                init: HirExpr::Index {
+                init: HirExpr::new(HirExprKind::Index{
                     base: Box::new(index_base),
-                    index: Box::new(HirExpr::Variable(i_var.clone())),
+                    index: Box::new(HirExpr::new(HirExprKind::Variable(i_var.clone()), Span::dummy())),
                     elem: elem_scalar,
                     is_str,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
+            }, Span::dummy()),
             // if __e == __v { __found = true; break; }
-            HirStmt::Expr(HirExpr::If {
+            HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
                 cond: Box::new(cmp_cond),
-                then_block: Box::new(HirBlock {
+                then_block: Box::new(HirBlock { span: Span::dummy(),
                     stmts: vec![
-                        HirStmt::Expr(HirExpr::Assign {
+                        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
                             target: found.clone(),
                             op: HirAssignOp::Assign,
-                            value: Box::new(HirExpr::BoolLiteral(true)),
-                        }),
-                        HirStmt::Expr(HirExpr::Break(None)),
+                            value: Box::new(HirExpr::new(HirExprKind::BoolLiteral(true), Span::dummy())),
+                        }, Span::dummy())), Span::dummy()),
+                        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Break(None), Span::dummy())), Span::dummy()),
                     ],
                     final_expr: None,
                 }),
                 else_block: None,
-            }),
+            }, Span::dummy())), Span::dummy()),
             // __i += 1;
-            HirStmt::Expr(HirExpr::Assign {
+            HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Assign{
                 target: i_var.clone(),
                 op: HirAssignOp::AddAssign,
-                value: Box::new(HirExpr::IntLiteral(1)),
-            }),
+                value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+            }, Span::dummy())), Span::dummy()),
         ],
         final_expr: None,
     };
 
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: v_var.clone(),
             init: v_init,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: len_var.clone(),
             init: len_hir,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: found.clone(),
-            init: HirExpr::BoolLiteral(false),
+            init: HirExpr::new(HirExprKind::BoolLiteral(false), Span::dummy()),
             mutable: true,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: i_var.clone(),
-            init: HirExpr::IntLiteral(0),
+            init: HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()),
             mutable: true,
-        },
-        HirStmt::Expr(HirExpr::Loop {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Loop{
             body: Box::new(loop_body),
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
 
     let result = if negated {
-        HirExpr::Unary(HirUnaryOp::Not, Box::new(HirExpr::Variable(found)))
+        HirExpr::new(HirExprKind::Unary(HirUnaryOp::Not, Box::new(HirExpr::new(HirExprKind::Variable(found), Span::dummy()))), Span::dummy())
     } else {
-        HirExpr::Variable(found)
+        HirExpr::new(HirExprKind::Variable(found), Span::dummy())
     };
 
-    let hir = HirExpr::Block(Box::new(HirBlock {
+    let hir = HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts,
         final_expr: Some(result),
-    }));
+    })), Span::dummy());
     Ok((hir, Type::Bool))
 }

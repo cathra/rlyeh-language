@@ -1,6 +1,8 @@
 //! 表达式检查子模块：方法调用与动态分派。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 // 跨线程闭包检查、`dyn Trait` 去虚拟化、接收者内建方法特判已按簇下沉到子模块
@@ -115,10 +117,10 @@ pub(super) fn check_static_method_call(
         hir_args.push(hir);
     }
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: fn_name,
             args: hir_args,
-        },
+        }, Span::dummy()),
         ret_ty,
     ))
 }
@@ -169,51 +171,51 @@ pub(super) fn check_method_call(
         let len_tmp = ctx.fresh_temp();
         let sf = ctx.fresh_temp();
         let stmts = vec![
-            HirStmt::Let {
+            HirStmt::new(HirStmtKind::Let{
                 name: data_tmp.clone(),
-                init: HirExpr::FieldGet {
+                init: HirExpr::new(HirExprKind::FieldGet{
                     base: Box::new(recv_hir.clone()),
                     index: 0,
                     ty: FieldScalar::Ptr,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: len_tmp.clone(),
-                init: HirExpr::FieldGet {
+                init: HirExpr::new(HirExprKind::FieldGet{
                     base: Box::new(recv_hir),
                     index: 1,
                     ty: FieldScalar::Int,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: sf.clone(),
-                init: HirExpr::Alloc {
+                init: HirExpr::new(HirExprKind::Alloc{
                     slots: 2,
                     by_value: true,
                     is_strfat: true,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(sf.clone())),
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(sf.clone()), Span::dummy())),
                 index: 0,
-                value: Box::new(HirExpr::Variable(data_tmp)),
+                value: Box::new(HirExpr::new(HirExprKind::Variable(data_tmp), Span::dummy())),
                 ty: FieldScalar::Ptr,
-            }),
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(sf.clone())),
+            }, Span::dummy())), Span::dummy()),
+            HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(sf.clone()), Span::dummy())),
                 index: 1,
-                value: Box::new(HirExpr::Variable(len_tmp)),
+                value: Box::new(HirExpr::new(HirExprKind::Variable(len_tmp), Span::dummy())),
                 ty: FieldScalar::Int,
-            }),
+            }, Span::dummy())), Span::dummy()),
         ];
         return Ok((
-            HirExpr::Block(Box::new(HirBlock {
+            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                 stmts,
-                final_expr: Some(HirExpr::Variable(sf)),
-            })),
+                final_expr: Some(HirExpr::new(HirExprKind::Variable(sf), Span::dummy())),
+            })), Span::dummy()),
             Type::Ref(Box::new(Type::Str), Mutability::Immutable),
         ));
     }
@@ -245,60 +247,60 @@ pub(super) fn check_method_call(
         let len_tmp = ctx.fresh_temp();
         let sf = ctx.fresh_temp();
         let stmts = vec![
-            HirStmt::Let {
+            HirStmt::new(HirStmtKind::Let{
                 name: data_tmp.clone(),
-                init: HirExpr::FieldGet {
+                init: HirExpr::new(HirExprKind::FieldGet{
                     base: Box::new(recv_hir),
                     index: 0,
                     ty: FieldScalar::Ptr,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: start_ptr.clone(),
-                init: HirExpr::PtrAdd {
-                    base: Box::new(HirExpr::Variable(data_tmp)),
+                init: HirExpr::new(HirExprKind::PtrAdd{
+                    base: Box::new(HirExpr::new(HirExprKind::Variable(data_tmp), Span::dummy())),
                     offset: Box::new(start_hir.clone()),
                     elem: FieldScalar::Str,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: len_tmp.clone(),
-                init: HirExpr::Binary(
+                init: HirExpr::new(HirExprKind::Binary(
                     HirBinaryOp::Sub,
                     Box::new(end_hir),
                     Box::new(start_hir),
-                ),
+                ), Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Let {
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Let{
                 name: sf.clone(),
-                init: HirExpr::Alloc {
+                init: HirExpr::new(HirExprKind::Alloc{
                     slots: 2,
                     by_value: true,
                     is_strfat: true,
-                },
+                }, Span::dummy()),
                 mutable: false,
-            },
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(sf.clone())),
+            }, Span::dummy()),
+            HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(sf.clone()), Span::dummy())),
                 index: 0,
-                value: Box::new(HirExpr::Variable(start_ptr)),
+                value: Box::new(HirExpr::new(HirExprKind::Variable(start_ptr), Span::dummy())),
                 ty: FieldScalar::Ptr,
-            }),
-            HirStmt::Semi(HirExpr::FieldSet {
-                base: Box::new(HirExpr::Variable(sf.clone())),
+            }, Span::dummy())), Span::dummy()),
+            HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(sf.clone()), Span::dummy())),
                 index: 1,
-                value: Box::new(HirExpr::Variable(len_tmp)),
+                value: Box::new(HirExpr::new(HirExprKind::Variable(len_tmp), Span::dummy())),
                 ty: FieldScalar::Int,
-            }),
+            }, Span::dummy())), Span::dummy()),
         ];
         return Ok((
-            HirExpr::Block(Box::new(HirBlock {
+            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                 stmts,
-                final_expr: Some(HirExpr::Variable(sf)),
-            })),
+                final_expr: Some(HirExpr::new(HirExprKind::Variable(sf), Span::dummy())),
+            })), Span::dummy()),
             Type::Ref(Box::new(Type::Str), Mutability::Immutable),
         ));
     }
@@ -340,7 +342,7 @@ pub(super) fn check_method_call(
                     span,
                 });
             }
-            let mut call_args = vec![recv_hir, HirExpr::IntLiteral(kind as i128)];
+            let mut call_args = vec![recv_hir, HirExpr::new(HirExprKind::IntLiteral(kind as i128), Span::dummy())];
             for arg in args {
                 let (h, t) = infer_expr(ctx, arg)?;
                 if !t.compatible_with(&Type::I64) {
@@ -355,13 +357,13 @@ pub(super) fn check_method_call(
                 call_args.push(h);
             }
             while call_args.len() < 5 {
-                call_args.push(HirExpr::IntLiteral(0));
+                call_args.push(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()));
             }
             return Ok((
-                HirExpr::Call {
+                HirExpr::new(HirExprKind::Call{
                     callee: "rlyeh_actor_ask".to_string(),
                     args: call_args,
-                },
+                }, Span::dummy()),
                 Type::I64,
             ));
         }
@@ -612,10 +614,10 @@ pub(super) fn check_method_call(
         }
     }
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: fn_name,
             args: hir_args,
-        },
+        }, Span::dummy()),
         ret_ty,
     ))
 }

@@ -1,6 +1,8 @@
 //! 表达式检查子模块：索引/数组/枚举变体/匹配。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 use crate::check_expr::util::{pattern_bind_names, type_to_ast};
 use crate::comparison::{check_comparison, compare_hir};
@@ -75,16 +77,16 @@ pub(super) fn check_index_inner(
     if let Type::Ref(inner, _) = &b_ty {
         if matches!(**inner, Type::Str) {
             return Ok((
-                HirExpr::Index {
-                    base: Box::new(HirExpr::FieldGet {
+                HirExpr::new(HirExprKind::Index{
+                    base: Box::new(HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(b_hir),
                         index: 0,
                         ty: FieldScalar::Ptr,
-                    }),
+                    }, Span::dummy())),
                     index: Box::new(i_hir),
                     elem: FieldScalar::Int,
                     is_str: true,
-                },
+                }, Span::dummy()),
                 Type::U8,
             ));
         }
@@ -96,22 +98,22 @@ pub(super) fn check_index_inner(
             // `u8` 字节数组按字节存储（步长 1，is_str=true）；其余元素步长 8
             let is_byte = matches!(elem_sub, Type::U8);
             Ok((
-                HirExpr::Index {
+                HirExpr::new(HirExprKind::Index{
                     base: Box::new(b_hir),
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
                     is_str: is_byte,
-                },
+                }, Span::dummy()),
                 elem_sub,
             ))
         }
         Type::Str => Ok((
-            HirExpr::Index {
+            HirExpr::new(HirExprKind::Index{
                 base: Box::new(b_hir),
                 index: Box::new(i_hir),
                 elem: FieldScalar::Char,
                 is_str: true,
-            },
+            }, Span::dummy()),
             Type::Char,
         )),
         // S2 切片索引 `s[i]`：切片胖指针 `{data, len}` 的槽 0 即 data 指针，
@@ -120,16 +122,16 @@ pub(super) fn check_index_inner(
             let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
             let is_byte = matches!(elem_sub, Type::U8);
             Ok((
-                HirExpr::Index {
-                    base: Box::new(HirExpr::FieldGet {
+                HirExpr::new(HirExprKind::Index{
+                    base: Box::new(HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(b_hir),
                         index: 0,
                         ty: FieldScalar::Ptr,
-                    }),
+                    }, Span::dummy())),
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
                     is_str: is_byte,
-                },
+                }, Span::dummy()),
                 elem_sub,
             ))
         }
@@ -143,12 +145,12 @@ pub(super) fn check_index_inner(
             let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
             let is_byte = matches!(elem_sub, Type::U8);
             Ok((
-                HirExpr::Index {
+                HirExpr::new(HirExprKind::Index{
                     base: Box::new(b_hir),
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
                     is_str: is_byte,
-                },
+                }, Span::dummy()),
                 elem_sub,
             ))
         }
@@ -157,16 +159,16 @@ pub(super) fn check_index_inner(
             // `s[i]`：String 对象按字节索引（步长 1），base 取槽 0 的 data 指针
             if full == "String" && ctx.lookup_struct(&full).is_some() {
                 Ok((
-                    HirExpr::Index {
-                        base: Box::new(HirExpr::FieldGet {
+                    HirExpr::new(HirExprKind::Index{
+                        base: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(b_hir),
                             index: 0,
                             ty: FieldScalar::Ptr,
-                        }),
+                        }, Span::dummy())),
                         index: Box::new(i_hir),
                         elem: FieldScalar::Int,
                         is_str: true,
-                    },
+                    }, Span::dummy()),
                     Type::U8,
                 ))
             } else if full == "Vec" && ctx.lookup_struct(&full).is_some() {
@@ -178,16 +180,16 @@ pub(super) fn check_index_inner(
                 let elem_sub = substitute(&elem_ty, &ctx.generic_subst);
                 let is_byte = matches!(elem_sub, Type::U8);
                 Ok((
-                    HirExpr::Index {
-                        base: Box::new(HirExpr::FieldGet {
+                    HirExpr::new(HirExprKind::Index{
+                        base: Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(b_hir),
                             index: 0,
                             ty: FieldScalar::Ptr,
-                        }),
+                        }, Span::dummy())),
                         index: Box::new(i_hir),
                         elem: field_scalar_of(&elem_sub),
                         is_str: is_byte,
-                    },
+                    }, Span::dummy()),
                     elem_sub,
                 ))
             } else {
@@ -238,28 +240,28 @@ pub(super) fn check_array_lit(
     let elem_scalar = field_scalar_of(&elem_ty);
     // 展开为 Alloc + 逐元素 FieldSet（数组值为槽区指针）
     let base = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: base.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: elems.len(),
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     for (i, h) in hir_elems.into_iter().enumerate() {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(base.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
             index: i,
             value: Box::new(h),
             ty: elem_scalar,
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(base)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
+        })), Span::dummy()),
         Type::Array(Box::new(elem_ty), elems.len()),
     ))
 }
@@ -323,7 +325,7 @@ pub(super) fn check_variant_construct(
     // `ScalarEnum` 以便 `field_scalar_of` 等按 Int 布局处理。
     if ctx.is_scalar_enum(&enum_name) {
         return Ok((
-            HirExpr::IntLiteral(variant.tag as i128),
+            HirExpr::new(HirExprKind::IntLiteral(variant.tag as i128), Span::dummy()),
             Type::ScalarEnum(enum_name.to_string()),
         ));
     }
@@ -342,21 +344,21 @@ pub(super) fn check_variant_construct(
     // 同一 enum 的 None/Some 等各变体构造路径判定一致。
     let enum_by_value = enum_instance_by_value(ctx, &enum_name, enum_def.slot_count);
     let base = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: base.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: enum_def.slot_count,
             by_value: enum_by_value,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    }];
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(base.clone())),
+    }, Span::dummy())];
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::IntLiteral(variant.tag as i128)),
+        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(variant.tag as i128), Span::dummy())),
         ty: FieldScalar::Int,
-    }));
+    }, Span::dummy())), Span::dummy()));
     for (i, (arg, (_, fty))) in args.iter().zip(&variant.fields).enumerate() {
         let (hir, arg_ty) = infer_expr(ctx, arg)?;
         let fty = substitute(fty, &subst);
@@ -369,12 +371,12 @@ pub(super) fn check_variant_construct(
                 span: arg.span,
             });
         }
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(base.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
             index: 1 + i,
             value: Box::new(hir),
             ty: field_scalar_of(&fty),
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
 
     let ty = Type::Named(
@@ -395,10 +397,10 @@ pub(super) fn check_variant_construct(
             .collect(),
     );
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(base)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
+        })), Span::dummy()),
         ty,
     ))
 }
@@ -520,12 +522,12 @@ pub(super) fn check_match_with_scrutinee(
     // 的聚合类型；MIR 层 `&T` 与 `T` 均为对象指针，无需显式解引用。
     let pat_ty = peel_ref(&s_ty);
     let tmp = ctx.fresh_temp();
-    let tmp_var = HirExpr::Variable(tmp.clone());
-    let stmts = vec![HirStmt::Let {
+    let tmp_var = HirExpr::new(HirExprKind::Variable(tmp.clone()), Span::dummy());
+    let stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: tmp.clone(),
         init: s_hir,
         mutable: true,
-    }];
+    }, Span::dummy())];
 
     // 从最后一个 arm 开始反向构建 if-else 链
     let mut else_hir: Option<HirExpr> = None;
@@ -553,19 +555,19 @@ pub(super) fn check_match_with_scrutinee(
             let cond = match (&arm.guard, cond) {
                 (Some(guard), Some(c)) => {
                     let (g_hir, _) = infer_expr(ctx, guard)?;
-                    Some(HirExpr::If {
+                    Some(HirExpr::new(HirExprKind::If{
                         cond: Box::new(c),
-                        then_block: Box::new(HirBlock {
+                        then_block: Box::new(HirBlock { span: Span::dummy(),
                             stmts: binds.clone(),
                             final_expr: Some(g_hir),
                         }),
                         // 兜底分支用 `BoolLiteral(false)`：bool 的 LLVM 表示为
                         // i1（`llvm_type(LirType::Bool) == "i1"`），与守卫值同源。
-                        else_block: Some(Box::new(HirBlock {
+                        else_block: Some(Box::new(HirBlock { span: Span::dummy(),
                             stmts: Vec::new(),
-                            final_expr: Some(HirExpr::BoolLiteral(false)),
+                            final_expr: Some(HirExpr::new(HirExprKind::BoolLiteral(false), Span::dummy())),
                         })),
-                    })
+                    }, Span::dummy()))
                 }
                 (None, c) => c,
                 (Some(_), None) => {
@@ -593,36 +595,36 @@ pub(super) fn check_match_with_scrutinee(
             });
         }
         result_ty = body_ty;
-        let then_block = HirBlock {
+        let then_block = HirBlock { span: Span::dummy(),
             stmts: binds,
             final_expr: Some(body_hir),
         };
         else_hir = Some(if is_binding {
             // 兜底模式（标识符 / 通配符）：直接作为 else 分支
-            HirExpr::Block(Box::new(then_block))
+            HirExpr::new(HirExprKind::Block(Box::new(then_block)), Span::dummy())
         } else {
-            HirExpr::If {
+            HirExpr::new(HirExprKind::If{
                 cond: Box::new(cond.ok_or_else(|| TypeError::Unsupported {
                     what: "无条件的非兜底 match 模式".to_string(),
                     span,
                 })?),
                 then_block: Box::new(then_block),
                 else_block: else_hir.map(|e| {
-                    Box::new(HirBlock {
+                    Box::new(HirBlock { span: Span::dummy(),
                         stmts: Vec::new(),
                         final_expr: Some(e),
                     })
                 }),
-            }
+            }, Span::dummy())
         });
     }
 
-    let final_expr = else_hir.unwrap_or(HirExpr::Unit);
+    let final_expr = else_hir.unwrap_or(HirExpr::new(HirExprKind::Unit, Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
             final_expr: Some(final_expr),
-        })),
+        })), Span::dummy()),
         result_ty,
     ))
 }
@@ -647,27 +649,27 @@ pub(super) fn check_pattern(
                 if let Some(idx) = us.iter().position(|u| u.to_string() == *name) {
                     let member_ty = us[idx].clone();
                     let slot = ctx.insert_variable(name.clone(), member_ty.clone());
-                    let tag_cond = HirExpr::Binary(
+                    let tag_cond = HirExpr::new(HirExprKind::Binary(
                         HirBinaryOp::Eq,
-                        Box::new(HirExpr::FieldGet {
+                        Box::new(HirExpr::new(HirExprKind::FieldGet{
                             base: Box::new(scrutinee.clone()),
                             index: 0,
                             ty: FieldScalar::Int,
-                        }),
-                        Box::new(HirExpr::IntLiteral(idx as i128)),
-                    );
-                    let payload = HirExpr::FieldGet {
+                        }, Span::dummy())),
+                        Box::new(HirExpr::new(HirExprKind::IntLiteral(idx as i128), Span::dummy())),
+                    ), Span::dummy());
+                    let payload = HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(scrutinee),
                         index: 1,
                         ty: field_scalar_of(&member_ty),
-                    };
+                    }, Span::dummy());
                     return Ok((
                         Some(tag_cond),
-                        vec![HirStmt::Let {
+                        vec![HirStmt::new(HirStmtKind::Let{
                             name: slot,
                             init: payload,
                             mutable: false,
-                        }],
+                        }, Span::dummy())],
                         false,
                         vec![(name.clone(), member_ty)],
                     ));
@@ -678,11 +680,11 @@ pub(super) fn check_pattern(
             let slot = ctx.insert_variable(name.clone(), pat_ty.clone());
             Ok((
                 None,
-                vec![HirStmt::Let {
+                vec![HirStmt::new(HirStmtKind::Let{
                     name: slot.clone(),
                     init: scrutinee,
                     mutable: false,
-                }],
+                }, Span::dummy())],
                 true,
                 vec![(slot, pat_ty.clone())],
             ))
@@ -690,11 +692,11 @@ pub(super) fn check_pattern(
         AstPattern::Wildcard => Ok((None, Vec::new(), true, Vec::new())),
         AstPattern::Literal(lit) => {
             let lit_hir = literal_to_hir(lit, span)?;
-            let cond = HirExpr::Binary(
+            let cond = HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Eq,
                 Box::new(scrutinee),
                 Box::new(lit_hir),
-            );
+            ), Span::dummy());
             Ok((Some(cond), Vec::new(), false, Vec::new()))
         }
         AstPattern::Enum(variant, sub_pats) => {
@@ -743,21 +745,21 @@ pub(super) fn check_pattern(
             // 主条件：标量枚举直接整数比较（`scrutinee == tag`，值即 tag 本身），
             // 非标量枚举取对象槽 0 的 tag 比较。
             let tag_cond = if matches!(pat_ty, Type::ScalarEnum(_)) {
-                HirExpr::Binary(
+                HirExpr::new(HirExprKind::Binary(
                     HirBinaryOp::Eq,
                     Box::new(scrutinee.clone()),
-                    Box::new(HirExpr::IntLiteral(variant_def.tag as i128)),
-                )
+                    Box::new(HirExpr::new(HirExprKind::IntLiteral(variant_def.tag as i128), Span::dummy())),
+                ), Span::dummy())
             } else {
-                HirExpr::Binary(
+                HirExpr::new(HirExprKind::Binary(
                     HirBinaryOp::Eq,
-                    Box::new(HirExpr::FieldGet {
+                    Box::new(HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(scrutinee.clone()),
                         index: 0,
                         ty: FieldScalar::Int,
-                    }),
-                    Box::new(HirExpr::IntLiteral(variant_def.tag as i128)),
-                )
+                    }, Span::dummy())),
+                    Box::new(HirExpr::new(HirExprKind::IntLiteral(variant_def.tag as i128), Span::dummy())),
+                ), Span::dummy())
             };
             // 子模式：字段槽 1+i，条件用 And 合并。
             // 字段类型经泛型替换：优先合并当前 generic_subst（泛型方法体内
@@ -781,21 +783,21 @@ pub(super) fn check_pattern(
                     ctx,
                     sub,
                     &fty_sub,
-                    HirExpr::FieldGet {
+                    HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(scrutinee.clone()),
                         index: 1 + i,
                         ty: field_scalar_of(&fty_sub),
-                    },
+                    }, Span::dummy()),
                     span,
                 )?;
                 binds.extend(sub_binds);
                 bound_tys.extend(sub_tys);
                 if let Some(sc) = sub_cond {
-                    cond = HirExpr::Binary(
+                    cond = HirExpr::new(HirExprKind::Binary(
                         HirBinaryOp::And,
                         Box::new(cond),
                         Box::new(sc),
-                    );
+                    ), Span::dummy());
                 }
             }
             Ok((Some(cond), binds, false, bound_tys))
@@ -844,11 +846,11 @@ pub(super) fn check_pattern(
             let lo = compare_hir(&scrutinee, lo_op, &lower_hir);
             let hi = compare_hir(&scrutinee, hi_op, &upper_hir);
             Ok((
-                Some(HirExpr::Binary(
+                Some(HirExpr::new(HirExprKind::Binary(
                     HirBinaryOp::And,
                     Box::new(lo),
                     Box::new(hi),
-                )),
+                ), Span::dummy())),
                 Vec::new(),
                 false,
                 Vec::new(),
@@ -904,7 +906,7 @@ pub(super) fn check_pattern(
                     what: "或模式备选缺少匹配条件".to_string(),
                     span,
                 })?;
-                cond = HirExpr::Binary(HirBinaryOp::Or, Box::new(cond), Box::new(alt_cond));
+                cond = HirExpr::new(HirExprKind::Binary(HirBinaryOp::Or, Box::new(cond), Box::new(alt_cond)), Span::dummy());
             }
             Ok((Some(cond), binds, false, bound_tys))
         }
@@ -926,15 +928,15 @@ pub(super) fn check_pattern(
                 let slot = ctx.insert_variable(name.clone(), bind_ty.clone());
                 return Ok((
                     None,
-                    vec![HirStmt::Let {
+                    vec![HirStmt::new(HirStmtKind::Let{
                         name: slot.clone(),
-                        init: HirExpr::Ref {
+                        init: HirExpr::new(HirExprKind::Ref{
                             expr: Box::new(scrutinee),
                             is_mut: *is_mut,
                             pointee: field_scalar_of(pat_ty),
-                        },
+                        }, Span::dummy()),
                         mutable: *is_mut,
-                    }],
+                    }, Span::dummy())],
                     true,
                     vec![(slot, bind_ty)],
                 ));
@@ -947,17 +949,17 @@ pub(super) fn check_pattern(
                 .collect();
             let binds = binds
                 .into_iter()
-                .map(|b| match b {
-                    HirStmt::Let { name, init, mutable: _ } => HirStmt::Let {
+                .map(|b| match b.kind {
+                    HirStmtKind::Let{ name, init, mutable: _ } => HirStmt::new(HirStmtKind::Let{
                         name,
-                        init: HirExpr::Ref {
+                        init: HirExpr::new(HirExprKind::Ref{
                             expr: Box::new(init),
                             is_mut: *is_mut,
                             pointee: field_scalar_of(pat_ty),
-                        },
+                        }, Span::dummy()),
                         mutable: *is_mut,
-                    },
-                    other => other,
+                    }, Span::dummy()),
+                    other => HirStmt::new(other, Span::dummy()),
                 })
                 .collect();
             Ok((cond, binds, is_binding, bound_tys))
@@ -968,11 +970,11 @@ pub(super) fn check_pattern(
 pub(super) fn literal_to_hir(lit: &rlyeh_ast::LiteralValue, span: Span) -> Result<HirExpr, TypeError> {
     use rlyeh_ast::LiteralValue;
     Ok(match lit {
-        LiteralValue::Int(v) => HirExpr::IntLiteral(*v),
-        LiteralValue::Float(v) => HirExpr::FloatLiteral(*v),
-        LiteralValue::Str(s) => HirExpr::StringLiteral(s.clone()),
-        LiteralValue::Char(c) => HirExpr::CharLiteral(*c),
-        LiteralValue::Bool(b) => HirExpr::BoolLiteral(*b),
+        LiteralValue::Int(v) => HirExpr::new(HirExprKind::IntLiteral(*v), Span::dummy()),
+        LiteralValue::Float(v) => HirExpr::new(HirExprKind::FloatLiteral(*v), Span::dummy()),
+        LiteralValue::Str(s) => HirExpr::new(HirExprKind::StringLiteral(s.clone()), Span::dummy()),
+        LiteralValue::Char(c) => HirExpr::new(HirExprKind::CharLiteral(*c), Span::dummy()),
+        LiteralValue::Bool(b) => HirExpr::new(HirExprKind::BoolLiteral(*b), Span::dummy()),
         LiteralValue::Time { .. } => {
             return Err(TypeError::Unsupported {
                 what: "时间字面量模式".to_string(),

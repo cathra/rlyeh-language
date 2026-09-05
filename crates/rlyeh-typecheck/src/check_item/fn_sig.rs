@@ -4,6 +4,7 @@
 use super::*;
 // P4c：`&T → &dyn Trait` 返回上转型（coerce_to_dyn 在 check_expr）
 use crate::check_expr::coerce_to_dyn;
+use rlyeh_hir::HirExprKind;
 
 /// 收集全部顶层函数签名（用于跨模块解析与检查前声明）。
 pub fn collect_fn_signatures(
@@ -205,8 +206,8 @@ pub(crate) fn check_fn_body_with_self(
             if !downgraded
                 && matches!(&body_ty, Type::Closure { fn_name, .. } if fn_name.is_empty())
             {
-                let var_name = hir_body.final_expr.as_ref().and_then(|fe| match fe {
-                    HirExpr::Variable(n) => Some(n.to_string()),
+                let var_name = hir_body.final_expr.as_ref().and_then(|fe| match &fe.kind {
+                    HirExprKind::Variable(n) => Some(n.to_string()),
                     _ => None,
                 });
                 if let Some(n) = var_name {

@@ -1,6 +1,8 @@
 //! 表达式检查子模块：iterator。
 //! （由 iter.rs 二次拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(crate) fn check_for_iterator(
@@ -630,20 +632,20 @@ pub(super) fn check_iterator_adapter(
     // —— 前缀 HIR：闭包函数指针绑定（map/filter/fold）——
     let mut hir_stmts = vec![];
     if let Some((fnptr_hir, _)) = &closure_binding {
-        hir_stmts.push(HirStmt::Let {
+        hir_stmts.push(HirStmt::new(HirStmtKind::Let{
             name: f_name.clone(),
             init: fnptr_hir.clone(),
             mutable: false,
-        });
+        }, Span::dummy()));
     }
-    hir_stmts.push(HirStmt::Expr(loop_hir));
-    let hir = HirExpr::Block(Box::new(HirBlock {
+    hir_stmts.push(HirStmt::new(HirStmtKind::Expr(loop_hir), Span::dummy()));
+    let hir = HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts: hir_stmts,
         final_expr: Some(if method == "fold" {
-            HirExpr::Variable(acc_name)
+            HirExpr::new(HirExprKind::Variable(acc_name), Span::dummy())
         } else {
-            HirExpr::Variable(out_name)
+            HirExpr::new(HirExprKind::Variable(out_name), Span::dummy())
         }),
-    }));
+    })), Span::dummy());
     Ok((hir, block_ty))
 }

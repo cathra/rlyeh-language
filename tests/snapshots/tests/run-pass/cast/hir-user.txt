@@ -8,213 +8,723 @@ HirProgram {
                     body: Some(
                         HirBlock {
                             stmts: [
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: FloatLiteral(
-                                                    3.7,
-                                                ),
-                                                to: "i64",
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: FloatLiteral(
+                                                                    3.7,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271266,
+                                                                    end: 271270,
+                                                                    line: 7156,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i64",
+                                                        },
+                                                        span: Span {
+                                                            start: 271266,
+                                                            end: 271276,
+                                                            line: 7156,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
                                             },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: Unary(
-                                                    Neg,
-                                                    FloatLiteral(
-                                                        3.7,
-                                                    ),
-                                                ),
-                                                to: "i64",
+                                            span: Span {
+                                                start: 271258,
+                                                end: 271277,
+                                                line: 7156,
+                                                col: 5,
                                             },
-                                        ],
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271258,
+                                        end: 271277,
+                                        line: 7156,
+                                        col: 5,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: IntLiteral(
-                                                    5,
-                                                ),
-                                                to: "f64",
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: Unary(
+                                                                    Neg,
+                                                                    HirExpr {
+                                                                        kind: FloatLiteral(
+                                                                            3.7,
+                                                                        ),
+                                                                        span: Span {
+                                                                            start: 271305,
+                                                                            end: 271308,
+                                                                            line: 7157,
+                                                                            col: 15,
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271303,
+                                                                    end: 271309,
+                                                                    line: 7157,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i64",
+                                                        },
+                                                        span: Span {
+                                                            start: 271303,
+                                                            end: 271316,
+                                                            line: 7157,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
                                             },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: IntLiteral(
-                                                    300,
-                                                ),
-                                                to: "i8",
+                                            span: Span {
+                                                start: 271295,
+                                                end: 271317,
+                                                line: 7157,
+                                                col: 5,
                                             },
-                                        ],
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271295,
+                                        end: 271317,
+                                        line: 7157,
+                                        col: 5,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: Unary(
-                                                    Neg,
-                                                    IntLiteral(
-                                                        300,
-                                                    ),
-                                                ),
-                                                to: "i8",
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: IntLiteral(
+                                                                    5,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271396,
+                                                                    end: 271398,
+                                                                    line: 7159,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "f64",
+                                                        },
+                                                        span: Span {
+                                                            start: 271396,
+                                                            end: 271404,
+                                                            line: 7159,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
                                             },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: IntLiteral(
-                                                    300,
-                                                ),
-                                                to: "u8",
+                                            span: Span {
+                                                start: 271388,
+                                                end: 271405,
+                                                line: 7159,
+                                                col: 5,
                                             },
-                                        ],
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271388,
+                                        end: 271405,
+                                        line: 7159,
+                                        col: 5,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: Unary(
-                                                    Neg,
-                                                    IntLiteral(
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: IntLiteral(
+                                                                    300,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271504,
+                                                                    end: 271508,
+                                                                    line: 7161,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i8",
+                                                        },
+                                                        span: Span {
+                                                            start: 271504,
+                                                            end: 271513,
+                                                            line: 7161,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271496,
+                                                end: 271514,
+                                                line: 7161,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271496,
+                                        end: 271514,
+                                        line: 7161,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: Unary(
+                                                                    Neg,
+                                                                    HirExpr {
+                                                                        kind: IntLiteral(
+                                                                            300,
+                                                                        ),
+                                                                        span: Span {
+                                                                            start: 271544,
+                                                                            end: 271547,
+                                                                            line: 7162,
+                                                                            col: 15,
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271542,
+                                                                    end: 271548,
+                                                                    line: 7162,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i8",
+                                                        },
+                                                        span: Span {
+                                                            start: 271542,
+                                                            end: 271554,
+                                                            line: 7162,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271534,
+                                                end: 271555,
+                                                line: 7162,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271534,
+                                        end: 271555,
+                                        line: 7162,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: IntLiteral(
+                                                                    300,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271629,
+                                                                    end: 271633,
+                                                                    line: 7164,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "u8",
+                                                        },
+                                                        span: Span {
+                                                            start: 271629,
+                                                            end: 271638,
+                                                            line: 7164,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271621,
+                                                end: 271639,
+                                                line: 7164,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271621,
+                                        end: 271639,
+                                        line: 7164,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: Unary(
+                                                                    Neg,
+                                                                    HirExpr {
+                                                                        kind: IntLiteral(
+                                                                            1,
+                                                                        ),
+                                                                        span: Span {
+                                                                            start: 271669,
+                                                                            end: 271670,
+                                                                            line: 7165,
+                                                                            col: 15,
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271667,
+                                                                    end: 271671,
+                                                                    line: 7165,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "u8",
+                                                        },
+                                                        span: Span {
+                                                            start: 271667,
+                                                            end: 271677,
+                                                            line: 7165,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271659,
+                                                end: 271678,
+                                                line: 7165,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271659,
+                                        end: 271678,
+                                        line: 7165,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "a",
+                                        init: HirExpr {
+                                            kind: Unary(
+                                                Neg,
+                                                HirExpr {
+                                                    kind: IntLiteral(
                                                         1,
                                                     ),
-                                                ),
-                                                to: "u8",
+                                                    span: Span {
+                                                        start: 271774,
+                                                        end: 271775,
+                                                        line: 7167,
+                                                        col: 18,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                start: 271773,
+                                                end: 271775,
+                                                line: 7167,
+                                                col: 17,
                                             },
-                                        ],
+                                        },
+                                        mutable: false,
                                     },
-                                ),
-                                Let {
-                                    name: "a",
-                                    init: Unary(
-                                        Neg,
-                                        IntLiteral(
-                                            1,
-                                        ),
+                                    span: Span {
+                                        start: 271773,
+                                        end: 271775,
+                                        line: 7167,
+                                        col: 17,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: Variable(
+                                                                    "a",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271789,
+                                                                    end: 271791,
+                                                                    line: 7168,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i64",
+                                                        },
+                                                        span: Span {
+                                                            start: 271789,
+                                                            end: 271797,
+                                                            line: 7168,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271781,
+                                                end: 271798,
+                                                line: 7168,
+                                                col: 5,
+                                            },
+                                        },
                                     ),
-                                    mutable: false,
+                                    span: Span {
+                                        start: 271781,
+                                        end: 271798,
+                                        line: 7168,
+                                        col: 5,
+                                    },
                                 },
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: Variable(
-                                                    "a",
-                                                ),
-                                                to: "i64",
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: IntLiteral(
+                                                                    5,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271847,
+                                                                    end: 271849,
+                                                                    line: 7170,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "bool",
+                                                        },
+                                                        span: Span {
+                                                            start: 271847,
+                                                            end: 271856,
+                                                            line: 7170,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
                                             },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: IntLiteral(
-                                                    5,
-                                                ),
-                                                to: "bool",
+                                            span: Span {
+                                                start: 271839,
+                                                end: 271857,
+                                                line: 7170,
+                                                col: 5,
                                             },
-                                        ],
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271839,
+                                        end: 271857,
+                                        line: 7170,
+                                        col: 5,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: IntLiteral(
-                                                    0,
-                                                ),
-                                                to: "bool",
-                                            },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: BoolLiteral(
-                                                    true,
-                                                ),
-                                                to: "i64",
-                                            },
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Cast {
-                                                expr: CharLiteral(
-                                                    'a',
-                                                ),
-                                                to: "i64",
-                                            },
-                                        ],
-                                    },
-                                ),
-                                Let {
-                                    name: "c",
-                                    init: Cast {
-                                        expr: IntLiteral(
-                                            66,
-                                        ),
-                                        to: "char",
-                                    },
-                                    mutable: false,
                                 },
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Variable(
-                                                "c",
-                                            ),
-                                        ],
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: IntLiteral(
+                                                                    0,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271887,
+                                                                    end: 271889,
+                                                                    line: 7171,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "bool",
+                                                        },
+                                                        span: Span {
+                                                            start: 271887,
+                                                            end: 271896,
+                                                            line: 7171,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271879,
+                                                end: 271897,
+                                                line: 7171,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271879,
+                                        end: 271897,
+                                        line: 7171,
+                                        col: 5,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            IntLiteral(
-                                                42,
-                                            ),
-                                        ],
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: BoolLiteral(
+                                                                    true,
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271928,
+                                                                    end: 271933,
+                                                                    line: 7172,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i64",
+                                                        },
+                                                        span: Span {
+                                                            start: 271928,
+                                                            end: 271939,
+                                                            line: 7172,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271920,
+                                                end: 271940,
+                                                line: 7172,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271920,
+                                        end: 271940,
+                                        line: 7172,
+                                        col: 5,
                                     },
-                                ),
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Cast {
+                                                            expr: HirExpr {
+                                                                kind: CharLiteral(
+                                                                    'a',
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271985,
+                                                                    end: 271989,
+                                                                    line: 7174,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            to: "i64",
+                                                        },
+                                                        span: Span {
+                                                            start: 271985,
+                                                            end: 271995,
+                                                            line: 7174,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271977,
+                                                end: 271996,
+                                                line: 7174,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271977,
+                                        end: 271996,
+                                        line: 7174,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "c",
+                                        init: HirExpr {
+                                            kind: Cast {
+                                                expr: HirExpr {
+                                                    kind: IntLiteral(
+                                                        66,
+                                                    ),
+                                                    span: Span {
+                                                        start: 272023,
+                                                        end: 272026,
+                                                        line: 7175,
+                                                        col: 13,
+                                                    },
+                                                },
+                                                to: "char",
+                                            },
+                                            span: Span {
+                                                start: 272023,
+                                                end: 272033,
+                                                line: 7175,
+                                                col: 13,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 272023,
+                                        end: 272033,
+                                        line: 7175,
+                                        col: 13,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "c",
+                                                        ),
+                                                        span: Span {
+                                                            start: 272062,
+                                                            end: 272063,
+                                                            line: 7176,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 272054,
+                                                end: 272064,
+                                                line: 7176,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 272054,
+                                        end: 272064,
+                                        line: 7176,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: IntLiteral(
+                                                            42,
+                                                        ),
+                                                        span: Span {
+                                                            start: 272156,
+                                                            end: 272165,
+                                                            line: 7178,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 272148,
+                                                end: 272166,
+                                                line: 7178,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 272148,
+                                        end: 272166,
+                                        line: 7178,
+                                        col: 5,
+                                    },
+                                },
                             ],
                             final_expr: None,
+                            span: Span {
+                                start: 271206,
+                                end: 272183,
+                                line: 7154,
+                                col: 11,
+                            },
                         },
                     ),
                     is_extern: false,

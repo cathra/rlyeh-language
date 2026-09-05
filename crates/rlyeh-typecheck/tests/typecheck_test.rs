@@ -1,6 +1,7 @@
 //! rlyeh-typecheck 集成测试：比较链与 `in` 表达式语义。
 
-use rlyeh_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind};
+use rlyeh_lexer::Span;
+use rlyeh_hir::{HirBinaryOp, HirBlock, HirExpr, HirItemKind, HirExprKind, HirStmtKind};
 use rlyeh_parser::parse;
 use rlyeh_typecheck::{typecheck, TypeError};
 
@@ -11,7 +12,7 @@ fn check(source: &str) -> Result<rlyeh_hir::HirProgram, TypeError> {
 }
 
 /// 提取第一个含函数体的函数体（跳过注入的 extern 内建声明）。
-fn first_fn_body(program: &rlyeh_hir::HirProgram) -> &HirBlock {
+fn first_fn_body(program: &rlyeh_hir::HirProgram) -> &HirBlock { span: Span::dummy(),
     program
         .items
         .iter()
@@ -32,7 +33,7 @@ fn first_if_cond(program: &rlyeh_hir::HirProgram) -> &HirExpr {
     }
     for stmt in block.stmts.iter().rev() {
         match stmt {
-            rlyeh_hir::HirStmt::Expr(e) | rlyeh_hir::HirStmt::Semi(e) => return if_cond(e),
+            rlyeh_hir::HirStmtKind::Expr(e) | rlyeh_hir::HirStmtKind::Semi(e) => return if_cond(e),
             _ => {}
         }
     }
@@ -42,7 +43,7 @@ fn first_if_cond(program: &rlyeh_hir::HirProgram) -> &HirExpr {
 /// 提取 if 表达式条件。
 fn if_cond(expr: &HirExpr) -> &HirExpr {
     match expr {
-        HirExpr::If { cond, .. } => cond,
+        HirExprKind::If{ cond, .. } => cond,
         _ => panic!("expected an if expression, got {expr:?}"),
     }
 }
@@ -93,7 +94,7 @@ fn test_chain_forward_expands_to_and() {
     let program = check("fn main() { let x = 5; if 0 < x < 10 {} }").unwrap();
     let cond = first_if_cond(&program);
     assert!(
-        matches!(cond, HirExpr::Binary(HirBinaryOp::And, _, _)),
+        matches!(cond, HirExpr::new(HirExprKind::Binary(HirBinaryOp::And, _, _), Span::dummy())),
         "正向链应展开为 && 链，got {cond:?}"
     );
 }
@@ -104,7 +105,7 @@ fn test_chain_backward_expands_to_or() {
     let program = check("fn main() { let x = 5; if 0 > x > 10 {} }").unwrap();
     let cond = first_if_cond(&program);
     assert!(
-        matches!(cond, HirExpr::Binary(HirBinaryOp::Or, _, _)),
+        matches!(cond, HirExpr::new(HirExprKind::Binary(HirBinaryOp::Or, _, _), Span::dummy())),
         "反向链应展开为 || 链，got {cond:?}"
     );
 }
@@ -154,7 +155,7 @@ fn test_in_set_small_expands_to_or_chain() {
     let program = check("fn main() { let x = 5; if x in {1, 3, 5} {} }").unwrap();
     let cond = first_if_cond(&program);
     assert!(
-        matches!(cond, HirExpr::Binary(HirBinaryOp::Or, _, _)),
+        matches!(cond, HirExpr::new(HirExprKind::Binary(HirBinaryOp::Or, _, _), Span::dummy())),
         "小集合应展开为 || 链，got {cond:?}"
     );
 }
@@ -164,7 +165,7 @@ fn test_in_set_large_uses_set_lookup() {
     // 大集合（>5 成员）保留为 SetLookup
     let program = check("fn main() { let x = 5; if x in {0..<10} {} }").unwrap();
     let cond = first_if_cond(&program);
-    let HirExpr::SetLookup {
+    let HirExprKind::SetLookup{
         members, negated, ..
     } = cond
     else {
@@ -179,7 +180,7 @@ fn test_not_in_set_large_uses_set_lookup_negated() {
     // not in 大集合：SetLookup + negated
     let program = check("fn main() { let x = 5; if x not in {0..<10} {} }").unwrap();
     let cond = first_if_cond(&program);
-    let HirExpr::SetLookup { negated, .. } = cond else {
+    let HirExprKind::SetLookup{ negated, .. } = cond else {
         panic!("大集合应为 SetLookup，got {cond:?}");
     };
     assert!(negated);
@@ -190,7 +191,7 @@ fn test_in_set_open_bound_discrete() {
     // 左开右闭集合展开：x in (0<..9) → {1..=9}（9 个成员）
     let program = check("fn main() { let x = 5; if x in {0<..9} {} }").unwrap();
     let cond = first_if_cond(&program);
-    let HirExpr::SetLookup { members, .. } = cond else {
+    let HirExprKind::SetLookup{ members, .. } = cond else {
         panic!("应为 SetLookup，got {cond:?}");
     };
     assert_eq!(members.len(), 9);
@@ -230,7 +231,7 @@ fn test_in_range_structural() {
     // RangeCheck 结构：0..<10 → lower=0(含), upper=10(不含), 非取反
     let program = check("fn main() { let x = 5; if x in 0..<10 {} }").unwrap();
     let cond = first_if_cond(&program);
-    let HirExpr::RangeCheck {
+    let HirExprKind::RangeCheck{
         value,
         lower,
         upper,
@@ -241,9 +242,9 @@ fn test_in_range_structural() {
     else {
         panic!("裸范围应为 RangeCheck，got {cond:?}");
     };
-    assert!(matches!(&**value, HirExpr::Variable(n) if n == "x"));
-    assert!(matches!(lower.as_deref(), Some(HirExpr::IntLiteral(0))));
-    assert!(matches!(upper.as_deref(), Some(HirExpr::IntLiteral(10))));
+    assert!(matches!(&**value, HirExprKind::Variable(n) if n == "x"));
+    assert!(matches!(lower.as_deref(), Some(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()))));
+    assert!(matches!(upper.as_deref(), Some(HirExpr::new(HirExprKind::IntLiteral(10), Span::dummy()))));
     assert!(*lower_inclusive);
     assert!(!*upper_inclusive);
     assert!(!*negated);
@@ -254,7 +255,7 @@ fn test_in_range_not_in_structural() {
     // 区间补取反：x not in 0...10
     let program = check("fn main() { let x = 5; if x not in 0...10 {} }").unwrap();
     let cond = first_if_cond(&program);
-    let HirExpr::RangeCheck {
+    let HirExprKind::RangeCheck{
         lower_inclusive,
         upper_inclusive,
         negated,
@@ -371,5 +372,5 @@ fn test_empty_set_constant() {
     // 空集合：x in () 恒 false / x not in () 恒 true
     let program = check("fn main() { let x = 5; if x in {4..<4} {} }").unwrap();
     let cond = first_if_cond(&program);
-    assert!(matches!(cond, HirExpr::BoolLiteral(false)));
+    assert!(matches!(cond, HirExpr::new(HirExprKind::BoolLiteral(false), Span::dummy())));
 }

@@ -44,8 +44,18 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 - 验证：`borrow-conflict-mutmut.rl` → `4:1: borrow conflict: cannot mutably borrow ...`（main 第 4 行，函数级坐标）；region 未定义 → `1:1: region 'r` not found in current scope`；compile-fail 12 例 `// expect:` 片段校验无回归（仅增 `line:col:` 前缀，消息正文不变）。
 - 已知缺口（后续项）：**语句级精确坐标**需 HIR 子节点 Span 传播（重构项）；**L2 结构化诊断**（稳定错误码 + 修复建议 + 相关 span 标注）仍待办。
 
+## 实现纪要（L1 余量 + 语句级精确坐标：HIR Span 全量传播，2026-09-05）
+- **语句级精确坐标落地（HIR Span 传播重构）**：彻底移除"函数级坐标"取舍，borrowck/regionck 错误现定位到具体表达式 / 语句 / 块。
+  - `rlyeh-hir`：`HirExpr`/`HirStmt` 重构为结构体包装 `HirExprKind`/`HirStmtKind` 并携带 `span`；`HirBlock`/`HirParam` 增加 `span` 字段；`rlyeh-lexer` 新增 `Span::dummy()`。
+  - `rlyeh-typecheck`：在 `infer_expr`（包装层，根 `HirExpr.span` 取自 `AstExpr.span`）、`check_stmt`（包装层，每个 `HirStmt.span` 取自语句内含 `AstExpr`）、`check_block_inner`（`HirBlock.span` 取自 `AstBlock.span`）全量填充真实 span；所有下游消费方（borrowck/regionck/mir）切换为 `.kind` scrutinee + `::new(..)` 构造。
+  - `rlyeh-borrowck`/`rlyeh-regionck`：`check_expr`/`check_stmt`/`check_block` 入口将 `cur_span` 设为被查节点自身 `span`（取代原 `HirItem.span` 函数级回退）。
+  - 坐标体系一致：源码以 `{prelude}\n{source}` 合并后词法分析，节点 span 与函数 span 同为合并坐标，`render(prelude_lines)` 减偏移仍有效；用户态坐标正确。
+  - 实测 `borrow-conflict-mutmut.rl` 由 `4:1`（main 函数级）修正为 `7:14`（`let r2 = &mut x;` 冲突行）；其余 11 例 typecheck 诊断坐标不变。
+- 重新生成 `tests/snapshots/.../diagnostics.txt` 基线（仅 `borrow-conflict-mutmut` 一例坐标变化），`check` 验证 12/0/0/0。
+- 遗留：**L2 结构化诊断**（稳定错误码 + 修复建议 + 相关 span 标注）仍待办。
+
 ## 状态
-🟢 进行中（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 函数级坐标已对齐；语句级精确坐标（HIR Span 传播）与 L2 结构化诊断待办）。
+🟢 进行中（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断待办）。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -54,3 +64,4 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 | 2026-09-04 | L0 落地：harness `diagnostics` 维度 + 诊断探针基线（12 例）+ CI 步骤；记录 L1 用户态 span / L2 结构化诊断为后续项 |
 | 2026-09-04 | L1 落地：typecheck 诊断行号对齐用户坐标（`to_string_with_offset` + `prelude_lines` 透传）；重新生成诊断基线（12 例，check 12/0/0/0）；borrowck/regionck Span 传播与 L2 待办 |
 | 2026-09-04 | L1 余量落地：borrowck/regionck 函数级坐标对齐（`Span` 透传 + `render(prelude_lines)` 前缀；`DiagnosticsText` trait + `join_errors` 透传 `prelude_lines`）；compile-fail 12 例片段校验无回归 |
+| 2026-09-05 | 语句级精确坐标落地：HIR Span 全量传播（`HirExpr`/`HirStmt`/`HirBlock` 携带 `span` + typecheck 填充 + borrowck/regionck 节点级 `cur_span`）；`borrow-conflict-mutmut` 基线由 `4:1` 修正为 `7:14`；diagnostics `check` 12/0/0/0 |

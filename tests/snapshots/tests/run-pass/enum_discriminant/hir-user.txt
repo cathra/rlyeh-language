@@ -8,229 +8,683 @@ HirProgram {
                     body: Some(
                         HirBlock {
                             stmts: [
-                                Let {
-                                    name: "c",
-                                    init: IntLiteral(
-                                        404,
-                                    ),
-                                    mutable: false,
+                                HirStmt {
+                                    kind: Let {
+                                        name: "c",
+                                        init: HirExpr {
+                                            kind: IntLiteral(
+                                                404,
+                                            ),
+                                            span: Span {
+                                                start: 271379,
+                                                end: 271393,
+                                                line: 7158,
+                                                col: 11,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271379,
+                                        end: 271393,
+                                        line: 7158,
+                                        col: 11,
+                                    },
                                 },
-                                Semi(
-                                    Block(
-                                        HirBlock {
-                                            stmts: [
-                                                Let {
-                                                    name: "__tmp501",
-                                                    init: Variable(
-                                                        "c",
-                                                    ),
-                                                    mutable: true,
-                                                },
-                                            ],
-                                            final_expr: Some(
-                                                If {
-                                                    cond: Binary(
-                                                        Eq,
-                                                        Variable(
-                                                            "__tmp501",
-                                                        ),
-                                                        IntLiteral(
-                                                            200,
-                                                        ),
-                                                    ),
-                                                    then_block: HirBlock {
-                                                        stmts: [],
-                                                        final_expr: Some(
-                                                            Call {
-                                                                callee: "println",
-                                                                args: [
-                                                                    IntLiteral(
-                                                                        1,
+                                HirStmt {
+                                    kind: Semi(
+                                        HirExpr {
+                                            kind: Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        HirStmt {
+                                                            kind: Let {
+                                                                name: "__tmp501",
+                                                                init: HirExpr {
+                                                                    kind: Variable(
+                                                                        "c",
                                                                     ),
-                                                                ],
-                                                            },
-                                                        ),
-                                                    },
-                                                    else_block: Some(
-                                                        HirBlock {
-                                                            stmts: [],
-                                                            final_expr: Some(
-                                                                If {
-                                                                    cond: Binary(
-                                                                        Eq,
-                                                                        Variable(
-                                                                            "__tmp501",
-                                                                        ),
-                                                                        IntLiteral(
-                                                                            404,
-                                                                        ),
-                                                                    ),
-                                                                    then_block: HirBlock {
-                                                                        stmts: [],
-                                                                        final_expr: Some(
-                                                                            Call {
-                                                                                callee: "println",
-                                                                                args: [
-                                                                                    IntLiteral(
-                                                                                        2,
-                                                                                    ),
-                                                                                ],
-                                                                            },
-                                                                        ),
+                                                                    span: Span {
+                                                                        start: 271403,
+                                                                        end: 271405,
+                                                                        line: 7159,
+                                                                        col: 9,
                                                                     },
-                                                                    else_block: Some(
-                                                                        HirBlock {
-                                                                            stmts: [],
-                                                                            final_expr: Some(
-                                                                                If {
-                                                                                    cond: Binary(
-                                                                                        Eq,
-                                                                                        Variable(
-                                                                                            "__tmp501",
-                                                                                        ),
-                                                                                        IntLiteral(
-                                                                                            500,
-                                                                                        ),
-                                                                                    ),
-                                                                                    then_block: HirBlock {
-                                                                                        stmts: [],
-                                                                                        final_expr: Some(
-                                                                                            Call {
-                                                                                                callee: "println",
-                                                                                                args: [
-                                                                                                    IntLiteral(
-                                                                                                        3,
-                                                                                                    ),
-                                                                                                ],
-                                                                                            },
-                                                                                        ),
-                                                                                    },
-                                                                                    else_block: None,
-                                                                                },
+                                                                },
+                                                                mutable: true,
+                                                            },
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ],
+                                                    final_expr: Some(
+                                                        HirExpr {
+                                                            kind: If {
+                                                                cond: HirExpr {
+                                                                    kind: Binary(
+                                                                        Eq,
+                                                                        HirExpr {
+                                                                            kind: Variable(
+                                                                                "__tmp501",
                                                                             ),
+                                                                            span: Span {
+                                                                                start: 0,
+                                                                                end: 0,
+                                                                                line: 0,
+                                                                                col: 0,
+                                                                            },
+                                                                        },
+                                                                        HirExpr {
+                                                                            kind: IntLiteral(
+                                                                                200,
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 0,
+                                                                                end: 0,
+                                                                                line: 0,
+                                                                                col: 0,
+                                                                            },
                                                                         },
                                                                     ),
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
                                                                 },
-                                                            ),
-                                                        },
-                                                    ),
-                                                },
-                                            ),
-                                        },
-                                    ),
-                                ),
-                                Let {
-                                    name: "e",
-                                    init: IntLiteral(
-                                        500,
-                                    ),
-                                    mutable: false,
-                                },
-                            ],
-                            final_expr: Some(
-                                Block(
-                                    HirBlock {
-                                        stmts: [
-                                            Let {
-                                                name: "__tmp502",
-                                                init: Variable(
-                                                    "e",
-                                                ),
-                                                mutable: true,
-                                            },
-                                        ],
-                                        final_expr: Some(
-                                            If {
-                                                cond: Binary(
-                                                    Eq,
-                                                    Variable(
-                                                        "__tmp502",
-                                                    ),
-                                                    IntLiteral(
-                                                        200,
-                                                    ),
-                                                ),
-                                                then_block: HirBlock {
-                                                    stmts: [],
-                                                    final_expr: Some(
-                                                        Call {
-                                                            callee: "println",
-                                                            args: [
-                                                                IntLiteral(
-                                                                    1,
-                                                                ),
-                                                            ],
-                                                        },
-                                                    ),
-                                                },
-                                                else_block: Some(
-                                                    HirBlock {
-                                                        stmts: [],
-                                                        final_expr: Some(
-                                                            If {
-                                                                cond: Binary(
-                                                                    Eq,
-                                                                    Variable(
-                                                                        "__tmp502",
-                                                                    ),
-                                                                    IntLiteral(
-                                                                        404,
-                                                                    ),
-                                                                ),
                                                                 then_block: HirBlock {
                                                                     stmts: [],
                                                                     final_expr: Some(
-                                                                        Call {
-                                                                            callee: "println",
-                                                                            args: [
-                                                                                IntLiteral(
-                                                                                    2,
-                                                                                ),
-                                                                            ],
+                                                                        HirExpr {
+                                                                            kind: Call {
+                                                                                callee: "println",
+                                                                                args: [
+                                                                                    HirExpr {
+                                                                                        kind: IntLiteral(
+                                                                                            1,
+                                                                                        ),
+                                                                                        span: Span {
+                                                                                            start: 271431,
+                                                                                            end: 271432,
+                                                                                            line: 7160,
+                                                                                            col: 25,
+                                                                                        },
+                                                                                    },
+                                                                                ],
+                                                                            },
+                                                                            span: Span {
+                                                                                start: 271423,
+                                                                                end: 271433,
+                                                                                line: 7160,
+                                                                                col: 17,
+                                                                            },
                                                                         },
                                                                     ),
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
                                                                 },
                                                                 else_block: Some(
                                                                     HirBlock {
                                                                         stmts: [],
                                                                         final_expr: Some(
-                                                                            If {
-                                                                                cond: Binary(
-                                                                                    Eq,
-                                                                                    Variable(
-                                                                                        "__tmp502",
-                                                                                    ),
-                                                                                    IntLiteral(
-                                                                                        500,
-                                                                                    ),
-                                                                                ),
-                                                                                then_block: HirBlock {
-                                                                                    stmts: [],
-                                                                                    final_expr: Some(
-                                                                                        Call {
-                                                                                            callee: "println",
-                                                                                            args: [
-                                                                                                IntLiteral(
-                                                                                                    3,
+                                                                            HirExpr {
+                                                                                kind: If {
+                                                                                    cond: HirExpr {
+                                                                                        kind: Binary(
+                                                                                            Eq,
+                                                                                            HirExpr {
+                                                                                                kind: Variable(
+                                                                                                    "__tmp501",
                                                                                                 ),
-                                                                                            ],
+                                                                                                span: Span {
+                                                                                                    start: 0,
+                                                                                                    end: 0,
+                                                                                                    line: 0,
+                                                                                                    col: 0,
+                                                                                                },
+                                                                                            },
+                                                                                            HirExpr {
+                                                                                                kind: IntLiteral(
+                                                                                                    404,
+                                                                                                ),
+                                                                                                span: Span {
+                                                                                                    start: 0,
+                                                                                                    end: 0,
+                                                                                                    line: 0,
+                                                                                                    col: 0,
+                                                                                                },
+                                                                                            },
+                                                                                        ),
+                                                                                        span: Span {
+                                                                                            start: 0,
+                                                                                            end: 0,
+                                                                                            line: 0,
+                                                                                            col: 0,
+                                                                                        },
+                                                                                    },
+                                                                                    then_block: HirBlock {
+                                                                                        stmts: [],
+                                                                                        final_expr: Some(
+                                                                                            HirExpr {
+                                                                                                kind: Call {
+                                                                                                    callee: "println",
+                                                                                                    args: [
+                                                                                                        HirExpr {
+                                                                                                            kind: IntLiteral(
+                                                                                                                2,
+                                                                                                            ),
+                                                                                                            span: Span {
+                                                                                                                start: 271465,
+                                                                                                                end: 271466,
+                                                                                                                line: 7161,
+                                                                                                                col: 31,
+                                                                                                            },
+                                                                                                        },
+                                                                                                    ],
+                                                                                                },
+                                                                                                span: Span {
+                                                                                                    start: 271457,
+                                                                                                    end: 271467,
+                                                                                                    line: 7161,
+                                                                                                    col: 23,
+                                                                                                },
+                                                                                            },
+                                                                                        ),
+                                                                                        span: Span {
+                                                                                            start: 0,
+                                                                                            end: 0,
+                                                                                            line: 0,
+                                                                                            col: 0,
+                                                                                        },
+                                                                                    },
+                                                                                    else_block: Some(
+                                                                                        HirBlock {
+                                                                                            stmts: [],
+                                                                                            final_expr: Some(
+                                                                                                HirExpr {
+                                                                                                    kind: If {
+                                                                                                        cond: HirExpr {
+                                                                                                            kind: Binary(
+                                                                                                                Eq,
+                                                                                                                HirExpr {
+                                                                                                                    kind: Variable(
+                                                                                                                        "__tmp501",
+                                                                                                                    ),
+                                                                                                                    span: Span {
+                                                                                                                        start: 0,
+                                                                                                                        end: 0,
+                                                                                                                        line: 0,
+                                                                                                                        col: 0,
+                                                                                                                    },
+                                                                                                                },
+                                                                                                                HirExpr {
+                                                                                                                    kind: IntLiteral(
+                                                                                                                        500,
+                                                                                                                    ),
+                                                                                                                    span: Span {
+                                                                                                                        start: 0,
+                                                                                                                        end: 0,
+                                                                                                                        line: 0,
+                                                                                                                        col: 0,
+                                                                                                                    },
+                                                                                                                },
+                                                                                                            ),
+                                                                                                            span: Span {
+                                                                                                                start: 0,
+                                                                                                                end: 0,
+                                                                                                                line: 0,
+                                                                                                                col: 0,
+                                                                                                            },
+                                                                                                        },
+                                                                                                        then_block: HirBlock {
+                                                                                                            stmts: [],
+                                                                                                            final_expr: Some(
+                                                                                                                HirExpr {
+                                                                                                                    kind: Call {
+                                                                                                                        callee: "println",
+                                                                                                                        args: [
+                                                                                                                            HirExpr {
+                                                                                                                                kind: IntLiteral(
+                                                                                                                                    3,
+                                                                                                                                ),
+                                                                                                                                span: Span {
+                                                                                                                                    start: 271496,
+                                                                                                                                    end: 271497,
+                                                                                                                                    line: 7162,
+                                                                                                                                    col: 28,
+                                                                                                                                },
+                                                                                                                            },
+                                                                                                                        ],
+                                                                                                                    },
+                                                                                                                    span: Span {
+                                                                                                                        start: 271488,
+                                                                                                                        end: 271498,
+                                                                                                                        line: 7162,
+                                                                                                                        col: 20,
+                                                                                                                    },
+                                                                                                                },
+                                                                                                            ),
+                                                                                                            span: Span {
+                                                                                                                start: 0,
+                                                                                                                end: 0,
+                                                                                                                line: 0,
+                                                                                                                col: 0,
+                                                                                                            },
+                                                                                                        },
+                                                                                                        else_block: None,
+                                                                                                    },
+                                                                                                    span: Span {
+                                                                                                        start: 0,
+                                                                                                        end: 0,
+                                                                                                        line: 0,
+                                                                                                        col: 0,
+                                                                                                    },
+                                                                                                },
+                                                                                            ),
+                                                                                            span: Span {
+                                                                                                start: 0,
+                                                                                                end: 0,
+                                                                                                line: 0,
+                                                                                                col: 0,
+                                                                                            },
                                                                                         },
                                                                                     ),
                                                                                 },
-                                                                                else_block: None,
+                                                                                span: Span {
+                                                                                    start: 0,
+                                                                                    end: 0,
+                                                                                    line: 0,
+                                                                                    col: 0,
+                                                                                },
                                                                             },
                                                                         ),
+                                                                        span: Span {
+                                                                            start: 0,
+                                                                            end: 0,
+                                                                            line: 0,
+                                                                            col: 0,
+                                                                        },
                                                                     },
                                                                 ),
                                                             },
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ),
+                                                    span: Span {
+                                                        start: 0,
+                                                        end: 0,
+                                                        line: 0,
+                                                        col: 0,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                start: 271397,
+                                                end: 271503,
+                                                line: 7159,
+                                                col: 3,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271397,
+                                        end: 271503,
+                                        line: 7159,
+                                        col: 3,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "e",
+                                        init: HirExpr {
+                                            kind: IntLiteral(
+                                                500,
+                                            ),
+                                            span: Span {
+                                                start: 271514,
+                                                end: 271525,
+                                                line: 7164,
+                                                col: 11,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271514,
+                                        end: 271525,
+                                        line: 7164,
+                                        col: 11,
+                                    },
+                                },
+                            ],
+                            final_expr: Some(
+                                HirExpr {
+                                    kind: Block(
+                                        HirBlock {
+                                            stmts: [
+                                                HirStmt {
+                                                    kind: Let {
+                                                        name: "__tmp502",
+                                                        init: HirExpr {
+                                                            kind: Variable(
+                                                                "e",
+                                                            ),
+                                                            span: Span {
+                                                                start: 271535,
+                                                                end: 271537,
+                                                                line: 7165,
+                                                                col: 9,
+                                                            },
+                                                        },
+                                                        mutable: true,
+                                                    },
+                                                    span: Span {
+                                                        start: 0,
+                                                        end: 0,
+                                                        line: 0,
+                                                        col: 0,
+                                                    },
+                                                },
+                                            ],
+                                            final_expr: Some(
+                                                HirExpr {
+                                                    kind: If {
+                                                        cond: HirExpr {
+                                                            kind: Binary(
+                                                                Eq,
+                                                                HirExpr {
+                                                                    kind: Variable(
+                                                                        "__tmp502",
+                                                                    ),
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                                HirExpr {
+                                                                    kind: IntLiteral(
+                                                                        200,
+                                                                    ),
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                        then_block: HirBlock {
+                                                            stmts: [],
+                                                            final_expr: Some(
+                                                                HirExpr {
+                                                                    kind: Call {
+                                                                        callee: "println",
+                                                                        args: [
+                                                                            HirExpr {
+                                                                                kind: IntLiteral(
+                                                                                    1,
+                                                                                ),
+                                                                                span: Span {
+                                                                                    start: 271563,
+                                                                                    end: 271564,
+                                                                                    line: 7166,
+                                                                                    col: 25,
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 271555,
+                                                                        end: 271565,
+                                                                        line: 7166,
+                                                                        col: 17,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                        else_block: Some(
+                                                            HirBlock {
+                                                                stmts: [],
+                                                                final_expr: Some(
+                                                                    HirExpr {
+                                                                        kind: If {
+                                                                            cond: HirExpr {
+                                                                                kind: Binary(
+                                                                                    Eq,
+                                                                                    HirExpr {
+                                                                                        kind: Variable(
+                                                                                            "__tmp502",
+                                                                                        ),
+                                                                                        span: Span {
+                                                                                            start: 0,
+                                                                                            end: 0,
+                                                                                            line: 0,
+                                                                                            col: 0,
+                                                                                        },
+                                                                                    },
+                                                                                    HirExpr {
+                                                                                        kind: IntLiteral(
+                                                                                            404,
+                                                                                        ),
+                                                                                        span: Span {
+                                                                                            start: 0,
+                                                                                            end: 0,
+                                                                                            line: 0,
+                                                                                            col: 0,
+                                                                                        },
+                                                                                    },
+                                                                                ),
+                                                                                span: Span {
+                                                                                    start: 0,
+                                                                                    end: 0,
+                                                                                    line: 0,
+                                                                                    col: 0,
+                                                                                },
+                                                                            },
+                                                                            then_block: HirBlock {
+                                                                                stmts: [],
+                                                                                final_expr: Some(
+                                                                                    HirExpr {
+                                                                                        kind: Call {
+                                                                                            callee: "println",
+                                                                                            args: [
+                                                                                                HirExpr {
+                                                                                                    kind: IntLiteral(
+                                                                                                        2,
+                                                                                                    ),
+                                                                                                    span: Span {
+                                                                                                        start: 271597,
+                                                                                                        end: 271598,
+                                                                                                        line: 7167,
+                                                                                                        col: 31,
+                                                                                                    },
+                                                                                                },
+                                                                                            ],
+                                                                                        },
+                                                                                        span: Span {
+                                                                                            start: 271589,
+                                                                                            end: 271599,
+                                                                                            line: 7167,
+                                                                                            col: 23,
+                                                                                        },
+                                                                                    },
+                                                                                ),
+                                                                                span: Span {
+                                                                                    start: 0,
+                                                                                    end: 0,
+                                                                                    line: 0,
+                                                                                    col: 0,
+                                                                                },
+                                                                            },
+                                                                            else_block: Some(
+                                                                                HirBlock {
+                                                                                    stmts: [],
+                                                                                    final_expr: Some(
+                                                                                        HirExpr {
+                                                                                            kind: If {
+                                                                                                cond: HirExpr {
+                                                                                                    kind: Binary(
+                                                                                                        Eq,
+                                                                                                        HirExpr {
+                                                                                                            kind: Variable(
+                                                                                                                "__tmp502",
+                                                                                                            ),
+                                                                                                            span: Span {
+                                                                                                                start: 0,
+                                                                                                                end: 0,
+                                                                                                                line: 0,
+                                                                                                                col: 0,
+                                                                                                            },
+                                                                                                        },
+                                                                                                        HirExpr {
+                                                                                                            kind: IntLiteral(
+                                                                                                                500,
+                                                                                                            ),
+                                                                                                            span: Span {
+                                                                                                                start: 0,
+                                                                                                                end: 0,
+                                                                                                                line: 0,
+                                                                                                                col: 0,
+                                                                                                            },
+                                                                                                        },
+                                                                                                    ),
+                                                                                                    span: Span {
+                                                                                                        start: 0,
+                                                                                                        end: 0,
+                                                                                                        line: 0,
+                                                                                                        col: 0,
+                                                                                                    },
+                                                                                                },
+                                                                                                then_block: HirBlock {
+                                                                                                    stmts: [],
+                                                                                                    final_expr: Some(
+                                                                                                        HirExpr {
+                                                                                                            kind: Call {
+                                                                                                                callee: "println",
+                                                                                                                args: [
+                                                                                                                    HirExpr {
+                                                                                                                        kind: IntLiteral(
+                                                                                                                            3,
+                                                                                                                        ),
+                                                                                                                        span: Span {
+                                                                                                                            start: 271628,
+                                                                                                                            end: 271629,
+                                                                                                                            line: 7168,
+                                                                                                                            col: 28,
+                                                                                                                        },
+                                                                                                                    },
+                                                                                                                ],
+                                                                                                            },
+                                                                                                            span: Span {
+                                                                                                                start: 271620,
+                                                                                                                end: 271630,
+                                                                                                                line: 7168,
+                                                                                                                col: 20,
+                                                                                                            },
+                                                                                                        },
+                                                                                                    ),
+                                                                                                    span: Span {
+                                                                                                        start: 0,
+                                                                                                        end: 0,
+                                                                                                        line: 0,
+                                                                                                        col: 0,
+                                                                                                    },
+                                                                                                },
+                                                                                                else_block: None,
+                                                                                            },
+                                                                                            span: Span {
+                                                                                                start: 0,
+                                                                                                end: 0,
+                                                                                                line: 0,
+                                                                                                col: 0,
+                                                                                            },
+                                                                                        },
+                                                                                    ),
+                                                                                    span: Span {
+                                                                                        start: 0,
+                                                                                        end: 0,
+                                                                                        line: 0,
+                                                                                        col: 0,
+                                                                                    },
+                                                                                },
+                                                                            ),
+                                                                        },
+                                                                        span: Span {
+                                                                            start: 0,
+                                                                            end: 0,
+                                                                            line: 0,
+                                                                            col: 0,
+                                                                        },
+                                                                    },
+                                                                ),
+                                                                span: Span {
+                                                                    start: 0,
+                                                                    end: 0,
+                                                                    line: 0,
+                                                                    col: 0,
+                                                                },
+                                                            },
                                                         ),
                                                     },
-                                                ),
+                                                    span: Span {
+                                                        start: 0,
+                                                        end: 0,
+                                                        line: 0,
+                                                        col: 0,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                start: 0,
+                                                end: 0,
+                                                line: 0,
+                                                col: 0,
                                             },
-                                        ),
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271529,
+                                        end: 271635,
+                                        line: 7165,
+                                        col: 3,
                                     },
-                                ),
+                                },
                             ),
+                            span: Span {
+                                start: 271367,
+                                end: 271637,
+                                line: 7157,
+                                col: 11,
+                            },
                         },
                     ),
                     is_extern: false,

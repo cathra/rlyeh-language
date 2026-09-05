@@ -1,6 +1,8 @@
 //! 表达式检查子模块：Box/RC/GC/Weak 智能指针。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(super) fn check_box_new(
@@ -25,53 +27,53 @@ pub(super) fn check_box_new(
         });
     }
     let data = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: data.clone(),
-        init: HirExpr::Call {
+        init: HirExpr::new(HirExprKind::Call{
             callee: "alloc_bytes".to_string(),
-            args: vec![HirExpr::IntLiteral(n_slots as i128 * 8)],
-        },
+            args: vec![HirExpr::new(HirExprKind::IntLiteral(n_slots as i128 * 8), Span::dummy())],
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     if v_ty.is_numeric() || matches!(v_ty, Type::Bool | Type::Char) {
         // 标量 T：直接写入堆首槽
-        stmts.push(HirStmt::Semi(HirExpr::DerefSet {
-            base: Box::new(HirExpr::Variable(data.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::DerefSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(data.clone()), Span::dummy())),
             value: Box::new(v_hir),
             ty: field_scalar_of(&v_ty),
-        }));
+        }, Span::dummy())), Span::dummy()));
     } else {
         // 聚合 T：整槽区 memcpy（浅拷贝）
-        stmts.push(HirStmt::Semi(HirExpr::Call {
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
             callee: "array_copy".to_string(),
             args: vec![
-                HirExpr::Variable(data.clone()),
+                HirExpr::new(HirExprKind::Variable(data.clone()), Span::dummy()),
                 v_hir,
-                HirExpr::IntLiteral(n_slots as i128),
+                HirExpr::new(HirExprKind::IntLiteral(n_slots as i128), Span::dummy()),
             ],
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     let box_base = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: box_base.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(box_base.clone())),
+    }, Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(box_base.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::Variable(data)),
+        value: Box::new(HirExpr::new(HirExprKind::Variable(data), Span::dummy())),
         ty: FieldScalar::Ptr,
-    }));
+    }, Span::dummy())), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(box_base)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(box_base), Span::dummy())),
+        })), Span::dummy()),
         Type::Named("Box".to_string(), vec![v_ty]),
     ))
 }
@@ -99,65 +101,65 @@ pub(super) fn check_rc_new(
         });
     }
     let inner = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: inner.clone(),
-        init: HirExpr::Call {
+        init: HirExpr::new(HirExprKind::Call{
             callee: "alloc_bytes".to_string(),
-            args: vec![HirExpr::IntLiteral((n_slots + 2) as i128 * 8)],
-        },
+            args: vec![HirExpr::new(HirExprKind::IntLiteral((n_slots + 2) as i128 * 8), Span::dummy())],
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     // `T` 值区自堆首槽起（与 `Box<T>` 同构）
     if v_ty.is_numeric() || matches!(v_ty, Type::Bool | Type::Char) {
-        stmts.push(HirStmt::Semi(HirExpr::DerefSet {
-            base: Box::new(HirExpr::Variable(inner.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::DerefSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(inner.clone()), Span::dummy())),
             value: Box::new(v_hir),
             ty: field_scalar_of(&v_ty),
-        }));
+        }, Span::dummy())), Span::dummy()));
     } else {
-        stmts.push(HirStmt::Semi(HirExpr::Call {
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
             callee: "array_copy".to_string(),
             args: vec![
-                HirExpr::Variable(inner.clone()),
+                HirExpr::new(HirExprKind::Variable(inner.clone()), Span::dummy()),
                 v_hir,
-                HirExpr::IntLiteral(n_slots as i128),
+                HirExpr::new(HirExprKind::IntLiteral(n_slots as i128), Span::dummy()),
             ],
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     // 计数槽（FieldSet base 即堆地址，GEP + store）：strong = n、weak = n + 1
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(inner.clone())),
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(inner.clone()), Span::dummy())),
         index: n_slots,
-        value: Box::new(HirExpr::IntLiteral(1)),
+        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
         ty: FieldScalar::Int,
-    }));
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(inner.clone())),
+    }, Span::dummy())), Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(inner.clone()), Span::dummy())),
         index: n_slots + 1,
-        value: Box::new(HirExpr::IntLiteral(0)),
+        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())),
         ty: FieldScalar::Int,
-    }));
+    }, Span::dummy())), Span::dummy()));
     let rc_base = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: rc_base.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(rc_base.clone())),
+    }, Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(rc_base.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::Variable(inner)),
+        value: Box::new(HirExpr::new(HirExprKind::Variable(inner), Span::dummy())),
         ty: FieldScalar::Ptr,
-    }));
+    }, Span::dummy())), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(rc_base)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(rc_base), Span::dummy())),
+        })), Span::dummy()),
         Type::Named(ty_name.to_string(), vec![v_ty]),
     ))
 }
@@ -184,52 +186,52 @@ pub(super) fn check_gc_new(
         });
     }
     let inner = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: inner.clone(),
-        init: HirExpr::Call {
+        init: HirExpr::new(HirExprKind::Call{
             callee: "rlyeh_gc_alloc".to_string(),
-            args: vec![HirExpr::IntLiteral(n_slots as i128)],
-        },
+            args: vec![HirExpr::new(HirExprKind::IntLiteral(n_slots as i128), Span::dummy())],
+        }, Span::dummy()),
         mutable: false,
-    }];
+    }, Span::dummy())];
     // `T` 值区自堆首槽起（与 `Box<T>` 同构）
     if v_ty.is_numeric() || matches!(v_ty, Type::Bool | Type::Char) {
-        stmts.push(HirStmt::Semi(HirExpr::DerefSet {
-            base: Box::new(HirExpr::Variable(inner.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::DerefSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(inner.clone()), Span::dummy())),
             value: Box::new(v_hir),
             ty: field_scalar_of(&v_ty),
-        }));
+        }, Span::dummy())), Span::dummy()));
     } else {
-        stmts.push(HirStmt::Semi(HirExpr::Call {
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Call{
             callee: "array_copy".to_string(),
             args: vec![
-                HirExpr::Variable(inner.clone()),
+                HirExpr::new(HirExprKind::Variable(inner.clone()), Span::dummy()),
                 v_hir,
-                HirExpr::IntLiteral(n_slots as i128),
+                HirExpr::new(HirExprKind::IntLiteral(n_slots as i128), Span::dummy()),
             ],
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     let gc_base = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: gc_base.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(gc_base.clone())),
+    }, Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(gc_base.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::Variable(inner)),
+        value: Box::new(HirExpr::new(HirExprKind::Variable(inner), Span::dummy())),
         ty: FieldScalar::Ptr,
-    }));
+    }, Span::dummy())), Span::dummy()));
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(gc_base)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(gc_base), Span::dummy())),
+        })), Span::dummy()),
         Type::Named("Gc".to_string(), vec![v_ty]),
     ))
 }
@@ -287,55 +289,55 @@ pub(super) fn rc_clone(
     let cnt = ctx.fresh_temp();
     let rc_t = ctx.fresh_temp();
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: inner_t.clone(),
-            init: HirExpr::FieldGet {
+            init: HirExpr::new(HirExprKind::FieldGet{
                 base: Box::new(recv_hir),
                 index: 0,
                 ty: FieldScalar::Ptr,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: cnt.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(inner_t.clone())),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
                 index: n,
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(inner_t.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
             index: n,
-            value: Box::new(HirExpr::Binary(
+            value: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Add,
-                Box::new(HirExpr::Variable(cnt)),
-                Box::new(HirExpr::IntLiteral(1)),
-            )),
+                Box::new(HirExpr::new(HirExprKind::Variable(cnt), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+            ), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Let {
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: rc_t.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
             slots: 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(rc_t.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(rc_t.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::Variable(inner_t)),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(inner_t), Span::dummy())),
             ty: FieldScalar::Ptr,
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(rc_t)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(rc_t), Span::dummy())),
+        })), Span::dummy()),
         Type::Named(wrapper.to_string(), vec![inner]),
     ))
 }
@@ -359,15 +361,15 @@ pub(super) fn rc_count(
         });
     }
     let n = type_slot_count(ctx, inner, span)?;
-    let v = HirExpr::FieldGet {
-        base: Box::new(HirExpr::FieldGet {
+    let v = HirExpr::new(HirExprKind::FieldGet{
+        base: Box::new(HirExpr::new(HirExprKind::FieldGet{
             base: Box::new(recv_hir),
             index: 0,
             ty: FieldScalar::Ptr,
-        }),
+        }, Span::dummy())),
         index: n + off,
         ty: FieldScalar::Int,
-    };
+    }, Span::dummy());
     Ok((v, Type::USize))
 }
 
@@ -392,55 +394,55 @@ pub(super) fn rc_downgrade(
     let cnt = ctx.fresh_temp();
     let w_t = ctx.fresh_temp();
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: inner_t.clone(),
-            init: HirExpr::FieldGet {
+            init: HirExpr::new(HirExprKind::FieldGet{
                 base: Box::new(recv_hir),
                 index: 0,
                 ty: FieldScalar::Ptr,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: cnt.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(inner_t.clone())),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
                 index: n + 1,
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(inner_t.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
             index: n + 1,
-            value: Box::new(HirExpr::Binary(
+            value: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Add,
-                Box::new(HirExpr::Variable(cnt)),
-                Box::new(HirExpr::IntLiteral(1)),
-            )),
+                Box::new(HirExpr::new(HirExprKind::Variable(cnt), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+            ), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Let {
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: w_t.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
             slots: 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(w_t.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(w_t.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::Variable(inner_t)),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(inner_t), Span::dummy())),
             ty: FieldScalar::Ptr,
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(w_t)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(w_t), Span::dummy())),
+        })), Span::dummy()),
         Type::Named("Weak".to_string(), vec![inner]),
     ))
 }
@@ -462,22 +464,22 @@ pub(super) fn rc_try_unwrap(
         });
     }
     // 值区首槽 = RcInner 指针（`T` 值区自堆首槽起，与 `*rc` 解引用同构）
-    let value_base = HirExpr::FieldGet {
+    let value_base = HirExpr::new(HirExprKind::FieldGet{
         base: Box::new(recv_hir.clone()),
         index: 0,
         ty: FieldScalar::Ptr,
-    };
-    let inner_init = HirExpr::FieldGet {
+    }, Span::dummy());
+    let inner_init = HirExpr::new(HirExprKind::FieldGet{
         base: Box::new(recv_hir.clone()),
         index: 0,
         ty: FieldScalar::Ptr,
-    };
+    }, Span::dummy());
     // `Ok(v)` 负载：标量 load 值区 / 聚合取值区指针（与 `*rc` 解引用一致）
     let ok_val = if inner.is_numeric() || matches!(inner, Type::Bool | Type::Char) {
-        HirExpr::Deref {
+        HirExpr::new(HirExprKind::Deref{
             expr: Box::new(value_base),
             ty: field_scalar_of(&inner),
-        }
+        }, Span::dummy())
     } else {
         value_base
     };
@@ -487,78 +489,78 @@ pub(super) fn rc_try_unwrap(
     let cnt = ctx.fresh_temp();
     let res_t = ctx.fresh_temp();
     let then_stmts = vec![
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(res_t.clone())),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(res_t.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::IntLiteral(ok_tag as i128)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(ok_tag as i128), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(res_t.clone())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(res_t.clone()), Span::dummy())),
             index: 1,
             value: Box::new(ok_val),
             ty: field_scalar_of(&inner),
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     let else_stmts = vec![
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(res_t.clone())),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(res_t.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::IntLiteral(err_tag as i128)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(err_tag as i128), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(res_t.clone())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(res_t.clone()), Span::dummy())),
             index: 1,
             value: Box::new(recv_hir),
             ty: FieldScalar::Ptr,
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: inner_t.clone(),
             init: inner_init,
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: cnt.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(inner_t)),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t), Span::dummy())),
                 index: 0,
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: res_t.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
             slots: res_slots,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Expr(HirExpr::If {
-            cond: Box::new(HirExpr::Binary(
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+            cond: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Eq,
-                Box::new(HirExpr::Variable(cnt)),
-                Box::new(HirExpr::IntLiteral(1)),
-            )),
-            then_block: Box::new(HirBlock {
+                Box::new(HirExpr::new(HirExprKind::Variable(cnt), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+            ), Span::dummy())),
+            then_block: Box::new(HirBlock { span: Span::dummy(),
                 stmts: then_stmts,
                 final_expr: None,
             }),
-            else_block: Some(Box::new(HirBlock {
+            else_block: Some(Box::new(HirBlock { span: Span::dummy(),
                 stmts: else_stmts,
                 final_expr: None,
             })),
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(res_t)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(res_t), Span::dummy())),
+        })), Span::dummy()),
         Type::Named(
             "Result".to_string(),
             vec![inner.clone(), Type::Named(wrapper.to_string(), vec![inner])],
@@ -590,108 +592,108 @@ pub(super) fn weak_upgrade(
     let c2 = ctx.fresh_temp();
     let rc_t = ctx.fresh_temp();
     let then_stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: c2.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(inner_t.clone())),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
                 index: n,
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(inner_t.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
             index: n,
-            value: Box::new(HirExpr::Binary(
+            value: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Add,
-                Box::new(HirExpr::Variable(c2)),
-                Box::new(HirExpr::IntLiteral(1)),
-            )),
+                Box::new(HirExpr::new(HirExprKind::Variable(c2), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+            ), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Let {
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: rc_t.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
             slots: 1,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(rc_t.clone())),
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(rc_t.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::Variable(inner_t.clone())),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(inner_t.clone()), Span::dummy())),
             ty: FieldScalar::Ptr,
-        }),
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(opt_t.clone())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(opt_t.clone()), Span::dummy())),
             index: 0,
-            value: Box::new(HirExpr::IntLiteral(some_tag as i128)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(some_tag as i128), Span::dummy())),
             ty: FieldScalar::Int,
-        }),
-        HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(opt_t.clone())),
+        }, Span::dummy())), Span::dummy()),
+        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(opt_t.clone()), Span::dummy())),
             index: 1,
-            value: Box::new(HirExpr::Variable(rc_t)),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(rc_t), Span::dummy())),
             ty: FieldScalar::Ptr,
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
-    let else_stmts = vec![HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(opt_t.clone())),
+    let else_stmts = vec![HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(opt_t.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::IntLiteral(none_tag as i128)),
+        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(none_tag as i128), Span::dummy())),
         ty: FieldScalar::Int,
-    })];
+    }, Span::dummy())), Span::dummy())];
     let stmts = vec![
-        HirStmt::Let {
+        HirStmt::new(HirStmtKind::Let{
             name: inner_t.clone(),
-            init: HirExpr::FieldGet {
+            init: HirExpr::new(HirExprKind::FieldGet{
                 base: Box::new(w_hir),
                 index: 0,
                 ty: FieldScalar::Ptr,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: cnt.clone(),
-            init: HirExpr::FieldGet {
-                base: Box::new(HirExpr::Variable(inner_t)),
+            init: HirExpr::new(HirExprKind::FieldGet{
+                base: Box::new(HirExpr::new(HirExprKind::Variable(inner_t), Span::dummy())),
                 index: 0,
                 ty: FieldScalar::Int,
-            },
+            }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Let {
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Let{
             name: opt_t.clone(),
-            init: HirExpr::Alloc {
+            init: HirExpr::new(HirExprKind::Alloc{
             slots: opt_slots,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
             mutable: false,
-        },
-        HirStmt::Expr(HirExpr::If {
-            cond: Box::new(HirExpr::Binary(
+        }, Span::dummy()),
+        HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
+            cond: Box::new(HirExpr::new(HirExprKind::Binary(
                 HirBinaryOp::Gt,
-                Box::new(HirExpr::Variable(cnt)),
-                Box::new(HirExpr::IntLiteral(0)),
-            )),
-            then_block: Box::new(HirBlock {
+                Box::new(HirExpr::new(HirExprKind::Variable(cnt), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())),
+            ), Span::dummy())),
+            then_block: Box::new(HirBlock { span: Span::dummy(),
                 stmts: then_stmts,
                 final_expr: None,
             }),
-            else_block: Some(Box::new(HirBlock {
+            else_block: Some(Box::new(HirBlock { span: Span::dummy(),
                 stmts: else_stmts,
                 final_expr: None,
             })),
-        }),
+        }, Span::dummy())), Span::dummy()),
     ];
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
             stmts,
-            final_expr: Some(HirExpr::Variable(opt_t)),
-        })),
+            final_expr: Some(HirExpr::new(HirExprKind::Variable(opt_t), Span::dummy())),
+        })), Span::dummy()),
         Type::Named("Option".to_string(), vec![Type::Named("Rc".to_string(), vec![inner])]),
     ))
 }

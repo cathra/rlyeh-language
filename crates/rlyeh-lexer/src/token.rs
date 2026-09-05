@@ -247,6 +247,18 @@ pub struct Span {
     pub col: usize,
 }
 
+impl Span {
+    /// 零值占位位置（测试 / 合成节点兜底用，不代表任何真实源码坐标）。
+    pub fn dummy() -> Self {
+        Span {
+            start: 0,
+            end: 0,
+            line: 0,
+            col: 0,
+        }
+    }
+}
+
 impl LocatedToken {
     /// 构造带位置的 Token
     pub fn new(token: Token, span: Span) -> Self {

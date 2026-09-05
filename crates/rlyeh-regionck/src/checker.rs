@@ -2,7 +2,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rlyeh_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+use rlyeh_hir::{
+    HirBlock, HirExpr, HirExprKind, HirItemKind, HirProgram, HirStmt, HirStmtKind,
+};
 use rlyeh_lexer::Span;
 
 use crate::error::RegionError;
@@ -17,8 +19,9 @@ struct CheckState {
     transferred: HashSet<String>,
     /// 收集到的错误。
     errors: Vec<RegionError>,
-    /// 当前函数（查错所在项）的 `HirItem.span`：错误坐标取函数级粒度
-    ///（合并源码坐标，L1 余量；经 `render` 减预置行数还原为用户坐标）。
+    /// 当前查错节点的坐标（表达式 / 语句 / 块 / 函数级回退）：由 `check_expr` /
+    /// `check_stmt` / `check_block` 在入口处设为被查节点自身的 `span`，取代此前
+    /// 函数级 `HirItem.span` 的粗粒度坐标，使报错定位到具体节点。
     cur_span: Span,
 }
 
@@ -92,6 +95,7 @@ impl RegionChecker {
     }
 
     fn check_block(&mut self, block: &HirBlock) {
+        self.state.cur_span = block.span;
         for stmt in &block.stmts {
             self.check_stmt(stmt);
         }
@@ -101,25 +105,27 @@ impl RegionChecker {
     }
 
     fn check_stmt(&mut self, stmt: &HirStmt) {
-        match stmt {
-            HirStmt::Let { name, init, .. } => {
+        self.state.cur_span = stmt.span;
+        match &stmt.kind {
+            HirStmtKind::Let { name, init, .. } => {
                 self.check_expr(init);
                 // `let x = expr in 'r`：InRegion 包裹的是初始化表达式本身，
                 // 需要在此记录变量 `x` 的归属区域
-                if let HirExpr::InRegion { region, .. } = init {
+                if let HirExprKind::InRegion { region, .. } = &(init).kind {
                     if self.state.region_in_scope(region) {
                         self.state.allocated.insert(name.clone(), region.clone());
                     }
                 }
             }
-            HirStmt::Expr(e) | HirStmt::Semi(e) => self.check_expr(e),
+            HirStmtKind::Expr(e) | HirStmtKind::Semi(e) => self.check_expr(e),
         }
     }
 
     /// 递归遍历表达式，维护区域栈与变量归属。
     fn check_expr(&mut self, expr: &HirExpr) {
-        match expr {
-            HirExpr::Region { name, body, .. } => {
+        self.state.cur_span = expr.span;
+        match &expr.kind {
+            HirExprKind::Region { name, body, .. } => {
                 let key = match name {
                     Some(n) => n.clone(),
                     None => {
@@ -134,20 +140,20 @@ impl RegionChecker {
                 // 区域结束后，未 transfer 的区域内变量归属一并清除
                 self.state.allocated.retain(|_, r| *r != key);
             }
-            HirExpr::InRegion { expr, region, .. } => {
+            HirExprKind::InRegion { expr, region, .. } => {
                 self.check_expr(expr);
                 if !self.state.region_in_scope(region) {
                     self.state.errors.push(RegionError::not_found(region, self.state.cur_span));
                     return;
                 }
-                if let HirExpr::Variable(v) = expr.as_ref() {
+                if let HirExprKind::Variable(v) = &(expr.as_ref()).kind {
                     self.state.allocated.insert(v.clone(), region.clone());
                 }
             }
-            HirExpr::Transfer { expr, region } => {
+            HirExprKind::Transfer { expr, region } => {
                 self.check_expr(expr);
-                match expr.as_ref() {
-                    HirExpr::Variable(v) => self.check_transfer(v, region),
+                match &expr.as_ref().kind {
+                    HirExprKind::Variable(v) => self.check_transfer(v, region),
                     // 非变量表达式（调用结果、复合表达式等）无法静态判定其归属区域，
                     // 也不存在"已分配于区域"的对象可转移（P005：PartialTransfer）。
                     other => {
@@ -159,14 +165,14 @@ impl RegionChecker {
                     }
                 }
             }
-            HirExpr::Assign { value, .. } => self.check_expr(value),
-            HirExpr::Binary(_, l, r) => {
+            HirExprKind::Assign { value, .. } => self.check_expr(value),
+            HirExprKind::Binary(_, l, r) => {
                 self.check_expr(l);
                 self.check_expr(r);
             }
-            HirExpr::Unary(_, e) => self.check_expr(e),
-            HirExpr::SetLookup { value, .. } => self.check_expr(value),
-            HirExpr::RangeCheck {
+            HirExprKind::Unary(_, e) => self.check_expr(e),
+            HirExprKind::SetLookup { value, .. } => self.check_expr(value),
+            HirExprKind::RangeCheck {
                 value,
                 lower,
                 upper,
@@ -180,7 +186,7 @@ impl RegionChecker {
                     self.check_expr(u);
                 }
             }
-            HirExpr::If {
+            HirExprKind::If {
                 cond,
                 then_block,
                 else_block,
@@ -191,53 +197,53 @@ impl RegionChecker {
                     self.check_block(eb);
                 }
             }
-            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => self.check_block(b),
-            HirExpr::While { cond, body } => {
+            HirExprKind::Block(b) | HirExprKind::UnsafeBlock(b) => self.check_block(b),
+            HirExprKind::While { cond, body } => {
                 self.check_expr(cond);
                 self.check_block(body);
             }
-            HirExpr::Loop { body } => self.check_block(body),
-            HirExpr::Call { args, .. } => {
+            HirExprKind::Loop { body } => self.check_block(body),
+            HirExprKind::Call { args, .. } => {
                 for a in args {
                     self.check_expr(a);
                 }
             }
             // 函数地址值：无区域归属
-            HirExpr::FnPtr(_) => {}
+            HirExprKind::FnPtr(_) => {}
             // 间接调用：callee 与实参递归检查
-            HirExpr::CallIndirect { callee, args, .. } => {
+            HirExprKind::CallIndirect { callee, args, .. } => {
                 self.check_expr(callee);
                 for a in args {
                     self.check_expr(a);
                 }
             }
-            HirExpr::Return(e) | HirExpr::Break(e) => {
+            HirExprKind::Return(e) | HirExprKind::Break(e) => {
                 if let Some(e) = e {
                     self.check_expr(e);
                 }
             }
             // 字面量 / 变量引用 / continue / 单元值：无子表达式
-            HirExpr::IntLiteral(_)
-            | HirExpr::FloatLiteral(_)
-            | HirExpr::StringLiteral(_)
-            | HirExpr::CharLiteral(_)
-            | HirExpr::BoolLiteral(_)
-            | HirExpr::Variable(_)
-            | HirExpr::Continue
-            | HirExpr::Unit => {}
+            HirExprKind::IntLiteral(_)
+            | HirExprKind::FloatLiteral(_)
+            | HirExprKind::StringLiteral(_)
+            | HirExprKind::CharLiteral(_)
+            | HirExprKind::BoolLiteral(_)
+            | HirExprKind::Variable(_)
+            | HirExprKind::Continue
+            | HirExprKind::Unit => {}
             // 聚合对象构造 / 访问：Alloc 无子表达式；FieldGet / FieldSet 递归检查
-            HirExpr::Alloc { .. } => {}
-            HirExpr::FieldGet { base, .. } => self.check_expr(base),
-            HirExpr::FieldSet { base, value, .. } => {
+            HirExprKind::Alloc { .. } => {}
+            HirExprKind::FieldGet { base, .. } => self.check_expr(base),
+            HirExprKind::FieldSet { base, value, .. } => {
                 self.check_expr(base);
                 self.check_expr(value);
             }
             // 索引读取 / 写入：递归检查基址、索引与值表达式
-            HirExpr::Index { base, index, .. } => {
+            HirExprKind::Index { base, index, .. } => {
                 self.check_expr(base);
                 self.check_expr(index);
             }
-            HirExpr::IndexSet {
+            HirExprKind::IndexSet {
                 base,
                 index,
                 value,
@@ -248,15 +254,15 @@ impl RegionChecker {
                 self.check_expr(value);
             }
             // 引用 / 解引用：递归检查被引用 / 被解引用表达式
-            HirExpr::Ref { expr, .. } => self.check_expr(expr),
-            HirExpr::PtrAdd { base, offset, .. } => {
+            HirExprKind::Ref { expr, .. } => self.check_expr(expr),
+            HirExprKind::PtrAdd { base, offset, .. } => {
                 self.check_expr(base);
                 self.check_expr(offset);
             }
             // U6 Cast IR：`expr as T` 仅检查被转换表达式
-            HirExpr::Cast { expr, .. } => self.check_expr(expr),
-            HirExpr::Deref { expr, .. } => self.check_expr(expr),
-            HirExpr::DerefSet { base, value, .. } => {
+            HirExprKind::Cast { expr, .. } => self.check_expr(expr),
+            HirExprKind::Deref { expr, .. } => self.check_expr(expr),
+            HirExprKind::DerefSet { base, value, .. } => {
                 self.check_expr(base);
                 self.check_expr(value);
             }

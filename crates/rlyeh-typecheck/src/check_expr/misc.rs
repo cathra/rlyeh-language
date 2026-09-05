@@ -1,6 +1,8 @@
 //! 表达式检查子模块：misc。
 //! （由 mod.rs 二次拆分而来，保持语义等价）
 
+use rlyeh_hir::{HirExprKind, HirStmtKind};
+use rlyeh_lexer::Span;
 use super::*;
 
 pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
@@ -163,68 +165,68 @@ fn coerce_to_any(
 ) -> Result<HirExpr, TypeError> {
     let mut stmts = Vec::new();
     let vt = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: vt.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 3,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(vt.clone())),
+    }, Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(vt.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::IntLiteral(type_id_of(concrete) as i128)),
+        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(type_id_of(concrete) as i128), Span::dummy())),
         ty: FieldScalar::Int,
-    }));
+    }, Span::dummy())), Span::dummy()));
     for i in 1..3 {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(vt.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(vt.clone()), Span::dummy())),
             index: i,
-            value: Box::new(HirExpr::IntLiteral(0)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())),
             ty: FieldScalar::Int,
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     let dyn_var = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: dyn_var.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 2,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+    }, Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(dyn_var.clone()), Span::dummy())),
         index: 0,
         value: Box::new(data_ptr),
         ty: FieldScalar::Ptr,
-    }));
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+    }, Span::dummy())), Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(dyn_var.clone()), Span::dummy())),
         index: 1,
-        value: Box::new(HirExpr::Variable(vt)),
+        value: Box::new(HirExpr::new(HirExprKind::Variable(vt), Span::dummy())),
         ty: FieldScalar::Ptr,
-    }));
-    Ok(HirExpr::Block(Box::new(HirBlock {
+    }, Span::dummy())), Span::dummy()));
+    Ok(HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts,
-        final_expr: Some(HirExpr::Variable(dyn_var)),
-    })))
+        final_expr: Some(HirExpr::new(HirExprKind::Variable(dyn_var), Span::dummy())),
+    })), Span::dummy()))
 }
 
 /// 读取 `dyn Any` 的运行时类型标识：`FieldGet(FieldGet(x, 1 /*vtable*/), 0)`。
 fn read_any_type_id(any: HirExpr) -> HirExpr {
-    HirExpr::FieldGet {
-        base: Box::new(HirExpr::FieldGet {
+    HirExpr::new(HirExprKind::FieldGet{
+        base: Box::new(HirExpr::new(HirExprKind::FieldGet{
             base: Box::new(any),
             index: 1,
             ty: FieldScalar::Ptr,
-        }),
+        }, Span::dummy())),
         index: 0,
         ty: FieldScalar::Int,
-    }
+    }, Span::dummy())
 }
 
 /// 断言实参为 `dyn Any`（G-M3 安全检查的类型前提）。
@@ -260,32 +262,32 @@ fn make_option_block(
     payload: Option<HirExpr>,
 ) -> HirBlock {
     let base = ctx.fresh_temp();
-    let mut stmts = vec![HirStmt::Let {
+    let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: base.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots,
             by_value,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    }];
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(base.clone())),
+    }, Span::dummy())];
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
         index: 0,
-        value: Box::new(HirExpr::IntLiteral(tag)),
+        value: Box::new(HirExpr::new(HirExprKind::IntLiteral(tag), Span::dummy())),
         ty: FieldScalar::Int,
-    }));
+    }, Span::dummy())), Span::dummy()));
     if let Some(p) = payload {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(base.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
             index: 1,
             value: Box::new(p),
             ty: FieldScalar::Ptr,
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
-    HirBlock {
+    HirBlock { span: Span::dummy(),
         stmts,
-        final_expr: Some(HirExpr::Variable(base)),
+        final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
     }
 }
 
@@ -341,17 +343,17 @@ pub(crate) fn check_any_downcast_ref(
 
     // 绑定到临时变量，避免实参为复杂表达式时重复求值（vtable 读 2 次、数据指针 1 次）。
     let any_var = ctx.fresh_temp();
-    let cond = HirExpr::Binary(
+    let cond = HirExpr::new(HirExprKind::Binary(
         HirBinaryOp::Eq,
-        Box::new(read_any_type_id(HirExpr::Variable(any_var.clone()))),
-        Box::new(HirExpr::IntLiteral(type_id_of(&target) as i128)),
-    );
+        Box::new(read_any_type_id(HirExpr::new(HirExprKind::Variable(any_var.clone()), Span::dummy()))),
+        Box::new(HirExpr::new(HirExprKind::IntLiteral(type_id_of(&target) as i128), Span::dummy())),
+    ), Span::dummy());
     let (slots, by_value) = option_layout(ctx);
-    let data_ptr = HirExpr::FieldGet {
-        base: Box::new(HirExpr::Variable(any_var.clone())),
+    let data_ptr = HirExpr::new(HirExprKind::FieldGet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(any_var.clone()), Span::dummy())),
         index: 0,
         ty: FieldScalar::Ptr,
-    };
+    }, Span::dummy());
     let then_block = make_option_block(ctx, slots, by_value, 1, Some(data_ptr));
     let else_block = make_option_block(ctx, slots, by_value, 0, None);
     let ret_ty = Type::Named(
@@ -359,18 +361,18 @@ pub(crate) fn check_any_downcast_ref(
         vec![Type::Ref(Box::new(target), Mutability::Immutable)],
     );
     Ok((
-        HirExpr::Block(Box::new(HirBlock {
-            stmts: vec![HirStmt::Let {
+        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
+            stmts: vec![HirStmt::new(HirStmtKind::Let{
                 name: any_var,
                 init: hir,
                 mutable: false,
-            }],
-            final_expr: Some(HirExpr::If {
+            }, Span::dummy())],
+            final_expr: Some(HirExpr::new(HirExprKind::If{
                 cond: Box::new(cond),
                 then_block: Box::new(then_block),
                 else_block: Some(Box::new(else_block)),
-            }),
-        })),
+            }, Span::dummy())),
+        })), Span::dummy()),
         ret_ty,
     ))
 }
@@ -421,22 +423,22 @@ pub(crate) fn coerce_to_dyn(
     let mut stmts = Vec::new();
     // 1) vtable 数组：3 元槽（drop/size/align，MVP = 0）+ N 方法槽
     let vt = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: vt.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 3 + n,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
+    }, Span::dummy()));
     for i in 0..3 {
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(vt.clone())),
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(vt.clone()), Span::dummy())),
             index: i,
-            value: Box::new(HirExpr::IntLiteral(0)),
+            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())),
             ty: FieldScalar::Int,
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     // 2) 方法表：按 trait 方法声明顺序填充具体 impl 方法函数指针
     let subst = HashMap::new();
@@ -452,45 +454,45 @@ pub(crate) fn coerce_to_dyn(
         })?;
         let fn_name = instantiate_impl_method(ctx, &impl_def, impl_method, &subst, span)?;
         let m_var = ctx.fresh_temp();
-        stmts.push(HirStmt::Let {
+        stmts.push(HirStmt::new(HirStmtKind::Let{
             name: m_var.clone(),
-            init: HirExpr::FnPtr(fn_name),
+            init: HirExpr::new(HirExprKind::FnPtr(fn_name), Span::dummy()),
             mutable: false,
-        });
-        stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-            base: Box::new(HirExpr::Variable(vt.clone())),
+        }, Span::dummy()));
+        stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+            base: Box::new(HirExpr::new(HirExprKind::Variable(vt.clone()), Span::dummy())),
             index: 3 + i,
-            value: Box::new(HirExpr::Variable(m_var)),
+            value: Box::new(HirExpr::new(HirExprKind::Variable(m_var), Span::dummy())),
             ty: FieldScalar::Ptr,
-        }));
+        }, Span::dummy())), Span::dummy()));
     }
     // 3) 胖指针：槽 0 = 数据指针，槽 1 = vtable 指针
     let dyn_var = ctx.fresh_temp();
-    stmts.push(HirStmt::Let {
+    stmts.push(HirStmt::new(HirStmtKind::Let{
         name: dyn_var.clone(),
-        init: HirExpr::Alloc {
+        init: HirExpr::new(HirExprKind::Alloc{
             slots: 2,
             by_value: false,
             is_strfat: false,
-        },
+        }, Span::dummy()),
         mutable: false,
-    });
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+    }, Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(dyn_var.clone()), Span::dummy())),
         index: 0,
         value: Box::new(data_ptr),
         ty: FieldScalar::Ptr,
-    }));
-    stmts.push(HirStmt::Semi(HirExpr::FieldSet {
-        base: Box::new(HirExpr::Variable(dyn_var.clone())),
+    }, Span::dummy())), Span::dummy()));
+    stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
+        base: Box::new(HirExpr::new(HirExprKind::Variable(dyn_var.clone()), Span::dummy())),
         index: 1,
-        value: Box::new(HirExpr::Variable(vt)),
+        value: Box::new(HirExpr::new(HirExprKind::Variable(vt), Span::dummy())),
         ty: FieldScalar::Ptr,
-    }));
-    Ok(HirExpr::Block(Box::new(HirBlock {
+    }, Span::dummy())), Span::dummy()));
+    Ok(HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
         stmts,
-        final_expr: Some(HirExpr::Variable(dyn_var)),
-    })))
+        final_expr: Some(HirExpr::new(HirExprKind::Variable(dyn_var), Span::dummy())),
+    })), Span::dummy()))
 }
 
 pub(crate) fn type_mentions_self(ty: &Type) -> bool {

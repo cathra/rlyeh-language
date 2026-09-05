@@ -19,8 +19,9 @@
 //!
 //! ## 设计约定
 //!
-//! - HIR 节点不携带源码位置，错误中的 `line`/`col` 当前为占位 0，
-//!   待 Span 传播后填充（与 rlyeh-regionck 一致）。
+//! - HIR 节点携带源码位置（`HirExpr` / `HirStmt` / `HirBlock` 均含 `span` 字段，
+//!   由 typecheck 在生成 HIR 时从 `AstExpr` / `AstStmt` 全量传播），borrowck /
+//!   regionck 据此给出表达式 / 语句 / 块级精确错误坐标。
 //! - 语义有意比 Rust 宽松：读取被借用变量允许（裸指针别名是合法模式），
 //!   经 `*p` 写入视为"借用使用"；仅直接赋值被借用变量触发冲突。
 //!   共享借用（多个 `&`）可共存。

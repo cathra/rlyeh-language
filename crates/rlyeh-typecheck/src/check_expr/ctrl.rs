@@ -5,6 +5,8 @@
 //! `Loop` / `Region` / `Transfer` / `Call` / `MethodCall` / `Send` / `MacroCall` 等；
 //! 字面量与 `Ident` / `Path` / `Binary` / `Unary` 仍留在 `infer_expr`。
 
+use rlyeh_hir::HirExprKind;
+use rlyeh_lexer::Span;
 use super::*;
 
 /// `infer_expr` 尾部分支的下沉入口。
@@ -43,11 +45,11 @@ pub(crate) fn infer_expr_tail(
             // codegen 仅在目标为 Ptr 槽（聚合对象）时接线。
             let size = type_slot_count(ctx, &ty, span)?.saturating_mul(8);
             Ok((
-                HirExpr::InRegion {
+                HirExpr::new(HirExprKind::InRegion{
                     expr: Box::new(hir),
                     region: region.clone(),
                     size,
-                },
+                }, Span::dummy()),
                 ty,
             ))
         }
@@ -80,11 +82,11 @@ pub(crate) fn infer_expr_tail(
                         }
                         let ty = field_scalar_of(&inner);
                         return Ok((
-                            HirExpr::DerefSet {
+                            HirExpr::new(HirExprKind::DerefSet{
                                 base: Box::new(dm_hir),
                                 value: Box::new(v_hir),
                                 ty,
-                            },
+                            }, Span::dummy()),
                             Type::Unit,
                         ));
                     }
@@ -120,11 +122,11 @@ pub(crate) fn infer_expr_tail(
                     span,
                 });
             }
-            let target_name = match t_hir {
-                HirExpr::Variable(v) => v,
+            let target_name = match t_hir.kind {
+                HirExprKind::Variable(v) => v,
                 // 结构体 / actor 状态字段赋值：`obj.field = value` → FieldSet；
                 // 复合赋值 `obj.field += v` → FieldSet(base, idx, Binary(op, FieldGet, v))
-                HirExpr::FieldGet { base, index, ty } => {
+                HirExprKind::FieldGet{ base, index, ty } => {
                     if !matches!(op, AssignOp::Assign) {
                         let hir_op = match op {
                             AssignOp::AddAssign => HirBinaryOp::Add,
@@ -134,35 +136,35 @@ pub(crate) fn infer_expr_tail(
                             AssignOp::Assign => unreachable!(),
                         };
                         return Ok((
-                            HirExpr::FieldSet {
+                            HirExpr::new(HirExprKind::FieldSet{
                                 base: base.clone(),
                                 index,
-                                value: Box::new(HirExpr::Binary(
+                                value: Box::new(HirExpr::new(HirExprKind::Binary(
                                     hir_op,
-                                    Box::new(HirExpr::FieldGet {
+                                    Box::new(HirExpr::new(HirExprKind::FieldGet{
                                         base,
                                         index,
                                         ty,
-                                    }),
+                                    }, Span::dummy())),
                                     Box::new(v_hir),
-                                )),
+                                ), Span::dummy())),
                                 ty,
-                            },
+                            }, Span::dummy()),
                             Type::Unit,
                         ));
                     }
                     return Ok((
-                        HirExpr::FieldSet {
+                        HirExpr::new(HirExprKind::FieldSet{
                             base,
                             index,
                             value: Box::new(v_hir),
                             ty,
-                        },
+                        }, Span::dummy()),
                         Type::Unit,
                     ));
                 }
                 // 索引元素赋值：`arr[i] = value` / `s[i] = ch`（仅纯赋值）
-                HirExpr::Index {
+                HirExprKind::Index{
                     base,
                     index,
                     elem,
@@ -176,18 +178,18 @@ pub(crate) fn infer_expr_tail(
                         });
                     }
                     return Ok((
-                        HirExpr::IndexSet {
+                        HirExpr::new(HirExprKind::IndexSet{
                             base,
                             index,
                             value: Box::new(v_hir),
                             elem,
                             is_str,
-                        },
+                        }, Span::dummy()),
                         Type::Unit,
                     ));
                 }
                 // 解引用赋值：`*p = v` / `*p += v`
-                HirExpr::Deref { expr: base, ty } => {
+                HirExprKind::Deref{ expr: base, ty } => {
                     if !matches!(op, AssignOp::Assign) {
                         let hir_op = match op {
                             AssignOp::AddAssign => HirBinaryOp::Add,
@@ -197,27 +199,27 @@ pub(crate) fn infer_expr_tail(
                             AssignOp::Assign => unreachable!(),
                         };
                         return Ok((
-                            HirExpr::DerefSet {
+                            HirExpr::new(HirExprKind::DerefSet{
                                 base: base.clone(),
-                                value: Box::new(HirExpr::Binary(
+                                value: Box::new(HirExpr::new(HirExprKind::Binary(
                                     hir_op,
-                                    Box::new(HirExpr::Deref {
+                                    Box::new(HirExpr::new(HirExprKind::Deref{
                                         expr: base,
                                         ty,
-                                    }),
+                                    }, Span::dummy())),
                                     Box::new(v_hir),
-                                )),
+                                ), Span::dummy())),
                                 ty,
-                            },
+                            }, Span::dummy()),
                             Type::Unit,
                         ));
                     }
                     return Ok((
-                        HirExpr::DerefSet {
+                        HirExpr::new(HirExprKind::DerefSet{
                             base,
                             value: Box::new(v_hir),
                             ty,
-                        },
+                        }, Span::dummy()),
                         Type::Unit,
                     ));
                 }
@@ -236,11 +238,11 @@ pub(crate) fn infer_expr_tail(
                 AssignOp::DivAssign => HirAssignOp::DivAssign,
             };
             Ok((
-                HirExpr::Assign {
+                HirExpr::new(HirExprKind::Assign{
                     target: target_name,
                     op: hir_op,
                     value: Box::new(v_hir),
-                },
+                }, Span::dummy()),
                 Type::Unit,
             ))
         }
@@ -289,11 +291,11 @@ pub(crate) fn infer_expr_tail(
                 }
                 _ => t_ty,
             };
-            let hir = HirExpr::If {
+            let hir = HirExpr::new(HirExprKind::If{
                 cond: Box::new(c_hir),
                 then_block: Box::new(t_hir),
                 else_block: e_hir.map(Box::new),
-            };
+            }, Span::dummy());
             Ok((hir, result_ty))
         }
 
@@ -314,19 +316,19 @@ pub(crate) fn infer_expr_tail(
             }
             let (b_hir, _) = check_block(ctx, body)?;
             Ok((
-                HirExpr::While {
+                HirExpr::new(HirExprKind::While{
                     cond: Box::new(c_hir),
                     body: Box::new(b_hir),
-                },
+                }, Span::dummy()),
                 Type::Unit,
             ))
         }
         ExprKind::Loop { body, .. } => {
             let (b_hir, _) = check_block(ctx, body)?;
             Ok((
-                HirExpr::Loop {
+                HirExpr::new(HirExprKind::Loop{
                     body: Box::new(b_hir),
-                },
+                }, Span::dummy()),
                 Type::Never,
             ))
         }
@@ -347,7 +349,7 @@ pub(crate) fn infer_expr_tail(
                 None
             };
             Ok((
-                HirExpr::Region {
+                HirExpr::new(HirExprKind::Region{
                     name: name.clone(),
                     options: HirRegionOptions {
                         size: pgo_size.or(options.size),
@@ -360,17 +362,17 @@ pub(crate) fn infer_expr_tail(
                         }),
                     },
                     body: Box::new(hir_block),
-                },
+                }, Span::dummy()),
                 ty,
             ))
         }
         ExprKind::Transfer { expr, region } => {
             let (hir, ty) = infer_expr(ctx, expr)?;
             Ok((
-                HirExpr::Transfer {
+                HirExpr::new(HirExprKind::Transfer{
                     expr: Box::new(hir),
                     region: region.clone(),
-                },
+                }, Span::dummy()),
                 ty,
             ))
         }
@@ -410,10 +412,10 @@ pub(crate) fn infer_expr_tail(
             //（i128/u128 存储非 64 位槽，与指针/引用/聚合转换一并保持擦除）。
             if is_castable_scalar(&src_ty) && is_castable_scalar(&dst_ty) && src_ty != dst_ty {
                 Ok((
-                    HirExpr::Cast {
+                    HirExpr::new(HirExprKind::Cast{
                         expr: Box::new(hir),
                         to: dst_ty.to_string(),
-                    },
+                    }, Span::dummy()),
                     dst_ty,
                 ))
             } else {
@@ -425,7 +427,7 @@ pub(crate) fn infer_expr_tail(
 
         ExprKind::Block(block) => {
             let (hir, ty) = check_block(ctx, block)?;
-            Ok((HirExpr::Block(Box::new(hir)), ty))
+            Ok((HirExpr::new(HirExprKind::Block(Box::new(hir)), Span::dummy()), ty))
         }
         ExprKind::UnsafeBlock(block) => {
             // SH-P0-1：`unsafe { ... }` 块表达式。块内进入受控上下文，
@@ -434,21 +436,21 @@ pub(crate) fn infer_expr_tail(
             ctx.in_unsafe = true;
             let (hir, ty) = check_block(ctx, block)?;
             ctx.in_unsafe = prev;
-            Ok((HirExpr::UnsafeBlock(Box::new(hir)), ty))
+            Ok((HirExpr::new(HirExprKind::UnsafeBlock(Box::new(hir)), Span::dummy()), ty))
         }
         ExprKind::GcRegion { body } => check_gc_region(ctx, body, span),
         ExprKind::Return(Some(e)) => {
             let (hir, _) = infer_expr(ctx, e)?;
-            Ok((HirExpr::Return(Some(Box::new(hir))), Type::Never))
+            Ok((HirExpr::new(HirExprKind::Return(Some(Box::new(hir))), Span::dummy()), Type::Never))
         }
-        ExprKind::Return(None) => Ok((HirExpr::Return(None), Type::Never)),
+        ExprKind::Return(None) => Ok((HirExpr::new(HirExprKind::Return(None), Span::dummy()), Type::Never)),
         ExprKind::Question(inner) => check_question(ctx, inner, span),
         ExprKind::Break(Some(e)) => {
             let (hir, _) = infer_expr(ctx, e)?;
-            Ok((HirExpr::Break(Some(Box::new(hir))), Type::Never))
+            Ok((HirExpr::new(HirExprKind::Break(Some(Box::new(hir))), Span::dummy()), Type::Never))
         }
-        ExprKind::Break(None) => Ok((HirExpr::Break(None), Type::Never)),
-        ExprKind::Continue => Ok((HirExpr::Continue, Type::Never)),
+        ExprKind::Break(None) => Ok((HirExpr::new(HirExprKind::Break(None), Span::dummy()), Type::Never)),
+        ExprKind::Continue => Ok((HirExpr::new(HirExprKind::Continue, Span::dummy()), Type::Never)),
 
         ExprKind::Send { actor, method, args } => {
             // `send actor.method(a, b)` → `rlyeh_actor_send(recv, kind, a, b, 0)`
@@ -473,7 +475,7 @@ pub(crate) fn infer_expr_tail(
                             span,
                         });
                     }
-                    let mut call_args = vec![recv_hir, HirExpr::IntLiteral(kind as i128)];
+                    let mut call_args = vec![recv_hir, HirExpr::new(HirExprKind::IntLiteral(kind as i128), Span::dummy())];
                     for arg in args {
                         let (h, t) = infer_expr(ctx, arg)?;
                         if !t.compatible_with(&Type::I64) {
@@ -488,13 +490,13 @@ pub(crate) fn infer_expr_tail(
                         call_args.push(h);
                     }
                     while call_args.len() < 5 {
-                        call_args.push(HirExpr::IntLiteral(0));
+                        call_args.push(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy()));
                     }
                     return Ok((
-                        HirExpr::Call {
+                        HirExpr::new(HirExprKind::Call{
                             callee: "rlyeh_actor_send".to_string(),
                             args: call_args,
-                        },
+                        }, Span::dummy()),
                         Type::I64,
                     ));
                 }

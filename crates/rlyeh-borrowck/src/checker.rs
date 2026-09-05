@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use rlyeh_hir::{HirBlock, HirExpr, HirItemKind, HirProgram, HirStmt};
+use rlyeh_hir::{
+    HirBlock, HirExpr, HirExprKind, HirItemKind, HirProgram, HirStmt, HirStmtKind,
+};
 use rlyeh_lexer::Span;
 
 use crate::error::BorrowError;
@@ -74,8 +76,9 @@ struct Borrow {
 ///   （`String::as_str()`）无法在 HIR 上追踪（HIR 无类型标注），暂不检查
 ///   字段内引用悬垂；MVP 悬垂检查覆盖 `return` 与函数体块尾值两个出口。
 ///
-/// HIR 子节点不携带源码位置；错误坐标取自查错所在函数的 `HirItem.span`
-/// （函数级粒度，合并源码坐标），经 `render(prelude_lines)` 还原为用户坐标。
+/// HIR 子节点（表达式 / 语句 / 块）现已携带源 `Span`；错误坐标取自查错节点
+/// 自身的 `span`（表达式 / 语句 / 块级粒度，合并源码坐标），经 `render`
+/// 还原为用户坐标（取代此前函数级 `HirItem.span` 的粗粒度坐标）。
 pub struct BorrowChecker {
     scopes: Vec<Scope>,
     errors: Vec<BorrowError>,
@@ -87,8 +90,9 @@ pub struct BorrowChecker {
     pos: usize,
     /// 当前函数参数名（悬垂判定：借参数不悬垂）。
     param_names: Vec<String>,
-    /// 当前函数（查错所在项）的 `HirItem.span`：错误坐标取函数级粒度
-    ///（合并源码坐标，L1 余量；经 `render` 减预置行数还原为用户坐标）。
+    /// 当前查错节点的坐标（表达式 / 语句 / 块 / 函数级回退）：由 `check_expr` /
+    /// `check_stmt` / `check_block` 在入口处设为被查节点自身的 `span`，取代此前
+    /// 函数级 `HirItem.span` 的粗粒度坐标，使报错定位到具体节点。
     cur_span: Span,
 }
 
@@ -249,8 +253,8 @@ impl BorrowChecker {
 
     /// 悬垂检查：返回的引用必须指向参数（或全局），不能是局部变量的引用。
     fn check_dangling_return(&mut self, expr: &HirExpr) {
-        match expr {
-            HirExpr::Variable(v) => {
+        match &expr.kind {
+            HirExprKind::Variable(v) => {
                 for b in &self.borrows {
                     if b.var.as_deref() == Some(v) && !self.param_names.contains(&b.source) {
                         self.errors.push(BorrowError::dangling_reference(v, self.cur_span));
@@ -258,8 +262,8 @@ impl BorrowChecker {
                     }
                 }
             }
-            HirExpr::Ref { expr: inner, .. } => {
-                if let HirExpr::Variable(src) = inner.as_ref() {
+            HirExprKind::Ref { expr: inner, .. } => {
+                if let HirExprKind::Variable(src) = &(inner.as_ref()).kind {
                     if !self.param_names.contains(src) {
                         self.errors.push(BorrowError::dangling_reference(src, self.cur_span));
                     }
@@ -268,7 +272,7 @@ impl BorrowChecker {
             // V2-D（2026-08-26）：`s.as_str()` / `s.as_str_range(..)` 的返回是
             // StrFat 构造块（`Alloc{is_strfat}` + FieldSet data/len），悬垂检查需
             // 识别其 data 槽来源：若指向局部 String（非参数），返回 `&str` 悬垂。
-            HirExpr::Block(block) | HirExpr::UnsafeBlock(block) => self.check_dangling_strfat_block(block),
+            HirExprKind::Block(block) | HirExprKind::UnsafeBlock(block) => self.check_dangling_strfat_block(block),
             _ => {}
         }
     }
@@ -284,20 +288,21 @@ impl BorrowChecker {
         let mut field_sets: Vec<&HirStmt> = Vec::new();
         let mut lets: Vec<&HirStmt> = Vec::new();
         for stmt in &block.stmts {
-            match stmt {
-                HirStmt::Let { init, name, .. } => {
-                    if let HirExpr::Alloc {
+            match &stmt.kind {
+                HirStmtKind::Let { init, name, .. } => {
+                    if let HirExprKind::Alloc {
                         is_strfat: true, ..
-                    } = init
-                    {
+                    } = &(init).kind {
                         sf = Some(name.clone());
                     }
                     lets.push(stmt);
                 }
-                HirStmt::Semi(HirExpr::FieldSet { base, .. }) => {
-                    if let HirExpr::Variable(b) = base.as_ref() {
-                        if sf.as_deref() == Some(b) {
-                            field_sets.push(stmt);
+                HirStmtKind::Semi(e) => {
+                    if let HirExprKind::FieldSet { base, .. } = &e.kind {
+                        if let HirExprKind::Variable(b) = &(base.as_ref()).kind {
+                            if sf.as_deref() == Some(b) {
+                                field_sets.push(stmt);
+                            }
                         }
                     }
                 }
@@ -310,17 +315,18 @@ impl BorrowChecker {
         // 找 FieldSet(sf, 0, data_tmp)：data 槽来源
         let mut data_src: Option<String> = None;
         for stmt in &field_sets {
-            if let HirStmt::Semi(HirExpr::FieldSet {
-                base,
-                index: 0,
-                value,
-                ..
-            }) = stmt
-            {
-                if let HirExpr::Variable(b) = base.as_ref() {
-                    if *b == sf_name {
-                        if let HirExpr::Variable(v) = value.as_ref() {
-                            data_src = Some(v.clone());
+            if let HirStmtKind::Semi(e) = &(stmt).kind {
+                if let HirExprKind::FieldSet {
+                    base,
+                    index: 0,
+                    value,
+                    ..
+                } = &e.kind {
+                    if let HirExprKind::Variable(b) = &(base.as_ref()).kind {
+                        if *b == sf_name {
+                            if let HirExprKind::Variable(v) = &(value.as_ref()).kind {
+                                data_src = Some(v.clone());
+                            }
                         }
                     }
                 }
@@ -332,10 +338,10 @@ impl BorrowChecker {
         // 找 Let{name: data_tmp, init: FieldGet{base, 0}}：取 String 来源
         let mut base_src: Option<String> = None;
         for stmt in &lets {
-            if let HirStmt::Let { name, init, .. } = stmt {
+            if let HirStmtKind::Let { name, init, .. } = &(stmt).kind {
                 if *name == data_tmp {
-                    if let HirExpr::FieldGet { base, index: 0, .. } = init {
-                        if let HirExpr::Variable(b) = base.as_ref() {
+                    if let HirExprKind::FieldGet { base, index: 0, .. } = &(init).kind {
+                        if let HirExprKind::Variable(b) = &(base.as_ref()).kind {
                             base_src = Some(b.clone());
                         }
                     }
@@ -357,6 +363,7 @@ impl BorrowChecker {
     /// 注意：transfer 例外早退使检查阶段语句序比预扫描少 1，为保守方向
     /// （借用活跃期在边界处略延后），不造成漏报。
     fn check_block(&mut self, block: &HirBlock, allow_transfer_pass: bool) {
+        self.cur_span = block.span;
         for stmt in &block.stmts {
             self.pos += 1;
             self.check_stmt(stmt);
@@ -366,7 +373,7 @@ impl BorrowChecker {
             // transfer 例外：`transfer x out of 'r; x` 中 x 作为块值 =
             // 所有权转出给区域表达式的求值结果，不视为"使用"。
             if allow_transfer_pass {
-                if let HirExpr::Variable(name) = expr {
+                if let HirExprKind::Variable(name) = &(expr).kind {
                     if self.is_transferred(name) {
                         return;
                     }
@@ -377,8 +384,9 @@ impl BorrowChecker {
     }
 
     fn check_stmt(&mut self, stmt: &HirStmt) {
-        match stmt {
-            HirStmt::Let {
+        self.cur_span = stmt.span;
+        match &stmt.kind {
+            HirStmtKind::Let {
                 name,
                 init,
                 mutable,
@@ -386,8 +394,8 @@ impl BorrowChecker {
                 // 借用创建特判：`let r = &x;` / `let r = &mut x;` ——
                 // 具名借用（引用变量 = r），借用活跃到 r 最后一次使用。
                 // 先检查借用（shadowing 时 init 引用的是旧绑定），再注册绑定。
-                if let HirExpr::Ref { expr, is_mut, .. } = init {
-                    if let HirExpr::Variable(src) = expr.as_ref() {
+                if let HirExprKind::Ref { expr, is_mut, .. } = &(init).kind {
+                    if let HirExprKind::Variable(src) = &(expr.as_ref()).kind {
                         self.register_borrow(Some(name), src, *is_mut);
                     } else {
                         // 非变量源（防御：typecheck 已限制 `&` 目标为变量）
@@ -406,26 +414,27 @@ impl BorrowChecker {
                     );
                 }
             }
-            HirStmt::Expr(e) | HirStmt::Semi(e) => self.check_expr(e),
+            HirStmtKind::Expr(e) | HirStmtKind::Semi(e) => self.check_expr(e),
         }
     }
 
     /// 递归检查表达式，维护作用域栈与所有权状态。
     fn check_expr(&mut self, expr: &HirExpr) {
-        match expr {
-            HirExpr::Variable(name) => {
+        self.cur_span = expr.span;
+        match &expr.kind {
+            HirExprKind::Variable(name) => {
                 if self.is_transferred(name) {
                     self.errors.push(BorrowError::use_after_transfer(name, self.cur_span));
                 }
             }
-            HirExpr::PtrAdd { base, offset, .. } => {
+            HirExprKind::PtrAdd { base, offset, .. } => {
                 // 裸指针算术：仅读取 base/offset 指针与偏移值，不产生借用
                 self.check_expr(base);
                 self.check_expr(offset);
             }
             // U6 Cast IR：`expr as T` 仅读取被转换表达式
-            HirExpr::Cast { expr, .. } => self.check_expr(expr),
-            HirExpr::Assign { target, value, .. } => {
+            HirExprKind::Cast { expr, .. } => self.check_expr(expr),
+            HirExprKind::Assign { target, value, .. } => {
                 // 借用互斥：不能赋值（写）被借用中的变量
                 if !self.active_borrows(target).is_empty() {
                     self.errors.push(BorrowError::borrow_conflict(format!(
@@ -442,18 +451,18 @@ impl BorrowChecker {
                 }
                 self.check_expr(value);
             }
-            HirExpr::Binary(_, l, r) => {
+            HirExprKind::Binary(_, l, r) => {
                 self.check_expr(l);
                 self.check_expr(r);
             }
-            HirExpr::Unary(_, e) => self.check_expr(e),
-            HirExpr::SetLookup { value, members, .. } => {
+            HirExprKind::Unary(_, e) => self.check_expr(e),
+            HirExprKind::SetLookup { value, members, .. } => {
                 self.check_expr(value);
                 for m in members {
                     self.check_expr(m);
                 }
             }
-            HirExpr::RangeCheck {
+            HirExprKind::RangeCheck {
                 value,
                 lower,
                 upper,
@@ -467,7 +476,7 @@ impl BorrowChecker {
                     self.check_expr(u);
                 }
             }
-            HirExpr::If {
+            HirExprKind::If {
                 cond,
                 then_block,
                 else_block,
@@ -482,57 +491,57 @@ impl BorrowChecker {
                     self.scopes.pop();
                 }
             }
-            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => {
+            HirExprKind::Block(b) | HirExprKind::UnsafeBlock(b) => {
                 self.scopes.push(Scope::default());
                 self.check_block(b, false);
                 self.scopes.pop();
             }
-            HirExpr::Call { args, .. } => {
+            HirExprKind::Call { args, .. } => {
                 for a in args {
                     self.check_expr(a);
                 }
             }
             // 函数地址值：无所有权转移
-            HirExpr::FnPtr(_) => {}
+            HirExprKind::FnPtr(_) => {}
             // 间接调用：callee 与实参均视为使用
-            HirExpr::CallIndirect { callee, args, .. } => {
+            HirExprKind::CallIndirect { callee, args, .. } => {
                 self.check_expr(callee);
                 for a in args {
                     self.check_expr(a);
                 }
             }
-            HirExpr::While { cond, body } => {
+            HirExprKind::While { cond, body } => {
                 self.check_expr(cond);
                 self.scopes.push(Scope::default());
                 self.check_block(body, false);
                 self.scopes.pop();
             }
-            HirExpr::Loop { body } => {
+            HirExprKind::Loop { body } => {
                 self.scopes.push(Scope::default());
                 self.check_block(body, false);
                 self.scopes.pop();
             }
-            HirExpr::Return(e) => {
+            HirExprKind::Return(e) => {
                 if let Some(e) = e {
                     self.check_expr(e);
                     self.check_dangling_return(e);
                 }
             }
-            HirExpr::Break(e) => {
+            HirExprKind::Break(e) => {
                 if let Some(e) = e {
                     self.check_expr(e);
                 }
             }
-            HirExpr::Region { body, .. } => {
+            HirExprKind::Region { body, .. } => {
                 self.scopes.push(Scope::default());
                 self.check_block(body, true);
                 self.scopes.pop();
             }
-            HirExpr::InRegion { expr, .. } => self.check_expr(expr),
-            HirExpr::Transfer { expr, .. } => {
+            HirExprKind::InRegion { expr, .. } => self.check_expr(expr),
+            HirExprKind::Transfer { expr, .. } => {
                 // transfer 是所有权簿记（ADR-003：零拷贝、不读取值本身）；
                 // 变量被转移后标记，后续使用报 use-after-move。
-                if let HirExpr::Variable(name) = expr.as_ref() {
+                if let HirExprKind::Variable(name) = &(expr.as_ref()).kind {
                     if self.is_transferred(name) {
                         self.errors.push(BorrowError::use_after_transfer(name, self.cur_span));
                     } else {
@@ -545,26 +554,26 @@ impl BorrowChecker {
                 }
             }
             // 字面量 / continue / 单元值：无子表达式
-            HirExpr::IntLiteral(_)
-            | HirExpr::FloatLiteral(_)
-            | HirExpr::StringLiteral(_)
-            | HirExpr::CharLiteral(_)
-            | HirExpr::BoolLiteral(_)
-            | HirExpr::Continue
-            | HirExpr::Unit => {}
+            HirExprKind::IntLiteral(_)
+            | HirExprKind::FloatLiteral(_)
+            | HirExprKind::StringLiteral(_)
+            | HirExprKind::CharLiteral(_)
+            | HirExprKind::BoolLiteral(_)
+            | HirExprKind::Continue
+            | HirExprKind::Unit => {}
             // 聚合对象构造 / 访问：Alloc 无子表达式；FieldGet / FieldSet 递归检查
-            HirExpr::Alloc { .. } => {}
-            HirExpr::FieldGet { base, .. } => self.check_expr(base),
-            HirExpr::FieldSet { base, value, .. } => {
+            HirExprKind::Alloc { .. } => {}
+            HirExprKind::FieldGet { base, .. } => self.check_expr(base),
+            HirExprKind::FieldSet { base, value, .. } => {
                 self.check_expr(base);
                 self.check_expr(value);
             }
             // 索引读取 / 写入：递归检查基址、索引与值表达式
-            HirExpr::Index { base, index, .. } => {
+            HirExprKind::Index { base, index, .. } => {
                 self.check_expr(base);
                 self.check_expr(index);
             }
-            HirExpr::IndexSet {
+            HirExprKind::IndexSet {
                 base,
                 index,
                 value,
@@ -579,15 +588,15 @@ impl BorrowChecker {
             //   为临时借用：冲突检查 + 登记（仅当前语句活跃）。
             // - `*p` 读 / `*p = v` 写经引用进行：读原变量不受限（宽松），
             //   写是借用用途（`&mut` 借出即为此），均不额外检查。
-            HirExpr::Ref { expr, is_mut, .. } => {
-                if let HirExpr::Variable(src) = expr.as_ref() {
+            HirExprKind::Ref { expr, is_mut, .. } => {
+                if let HirExprKind::Variable(src) = &(expr.as_ref()).kind {
                     self.register_borrow(None, src, *is_mut);
                 } else {
                     self.check_expr(expr);
                 }
             }
-            HirExpr::Deref { expr, .. } => self.check_expr(expr),
-            HirExpr::DerefSet { base, value, .. } => {
+            HirExprKind::Deref { expr, .. } => self.check_expr(expr),
+            HirExprKind::DerefSet { base, value, .. } => {
                 self.check_expr(base);
                 self.check_expr(value);
             }
@@ -610,34 +619,34 @@ impl BorrowChecker {
     }
 
     fn collect_stmt_uses(&mut self, stmt: &HirStmt) {
-        match stmt {
-            HirStmt::Let { init, .. } => self.collect_expr_uses(init),
-            HirStmt::Expr(e) | HirStmt::Semi(e) => self.collect_expr_uses(e),
+        match &stmt.kind {
+            HirStmtKind::Let { init, .. } => self.collect_expr_uses(init),
+            HirStmtKind::Expr(e) | HirStmtKind::Semi(e) => self.collect_expr_uses(e),
         }
     }
 
     fn collect_expr_uses(&mut self, expr: &HirExpr) {
-        match expr {
-            HirExpr::Variable(name) => {
+        match &expr.kind {
+            HirExprKind::Variable(name) => {
                 self.uses.entry(name.clone()).or_default().push(self.pos);
             }
-            HirExpr::Assign { value, .. } => self.collect_expr_uses(value),
-            HirExpr::Binary(_, l, r) => {
+            HirExprKind::Assign { value, .. } => self.collect_expr_uses(value),
+            HirExprKind::Binary(_, l, r) => {
                 self.collect_expr_uses(l);
                 self.collect_expr_uses(r);
             }
-            HirExpr::PtrAdd { base, offset, .. } => {
+            HirExprKind::PtrAdd { base, offset, .. } => {
                 self.collect_expr_uses(base);
                 self.collect_expr_uses(offset);
             }
-            HirExpr::Unary(_, e) => self.collect_expr_uses(e),
-            HirExpr::SetLookup { value, members, .. } => {
+            HirExprKind::Unary(_, e) => self.collect_expr_uses(e),
+            HirExprKind::SetLookup { value, members, .. } => {
                 self.collect_expr_uses(value);
                 for m in members {
                     self.collect_expr_uses(m);
                 }
             }
-            HirExpr::RangeCheck {
+            HirExprKind::RangeCheck {
                 value,
                 lower,
                 upper,
@@ -651,7 +660,7 @@ impl BorrowChecker {
                     self.collect_expr_uses(u);
                 }
             }
-            HirExpr::If {
+            HirExprKind::If {
                 cond,
                 then_block,
                 else_block,
@@ -662,50 +671,50 @@ impl BorrowChecker {
                     self.collect_block_uses(eb, false);
                 }
             }
-            HirExpr::Block(b) | HirExpr::UnsafeBlock(b) => self.collect_block_uses(b, false),
-            HirExpr::Call { args, .. } => {
+            HirExprKind::Block(b) | HirExprKind::UnsafeBlock(b) => self.collect_block_uses(b, false),
+            HirExprKind::Call { args, .. } => {
                 for a in args {
                     self.collect_expr_uses(a);
                 }
             }
-            HirExpr::FnPtr(_) => {}
-            HirExpr::CallIndirect { callee, args, .. } => {
+            HirExprKind::FnPtr(_) => {}
+            HirExprKind::CallIndirect { callee, args, .. } => {
                 self.collect_expr_uses(callee);
                 for a in args {
                     self.collect_expr_uses(a);
                 }
             }
-            HirExpr::While { cond, body } => {
+            HirExprKind::While { cond, body } => {
                 self.collect_expr_uses(cond);
                 self.collect_block_uses(body, false);
             }
-            HirExpr::Loop { body } => self.collect_block_uses(body, false),
-            HirExpr::Return(e) | HirExpr::Break(e) => {
+            HirExprKind::Loop { body } => self.collect_block_uses(body, false),
+            HirExprKind::Return(e) | HirExprKind::Break(e) => {
                 if let Some(e) = e {
                     self.collect_expr_uses(e);
                 }
             }
-            HirExpr::Region { body, .. } => self.collect_block_uses(body, true),
-            HirExpr::InRegion { expr, .. } => self.collect_expr_uses(expr),
-            HirExpr::Transfer { expr, .. } => self.collect_expr_uses(expr),
-            HirExpr::IntLiteral(_)
-            | HirExpr::FloatLiteral(_)
-            | HirExpr::StringLiteral(_)
-            | HirExpr::CharLiteral(_)
-            | HirExpr::BoolLiteral(_)
-            | HirExpr::Continue
-            | HirExpr::Unit
-            | HirExpr::Alloc { .. } => {}
-            HirExpr::FieldGet { base, .. } => self.collect_expr_uses(base),
-            HirExpr::FieldSet { base, value, .. } => {
+            HirExprKind::Region { body, .. } => self.collect_block_uses(body, true),
+            HirExprKind::InRegion { expr, .. } => self.collect_expr_uses(expr),
+            HirExprKind::Transfer { expr, .. } => self.collect_expr_uses(expr),
+            HirExprKind::IntLiteral(_)
+            | HirExprKind::FloatLiteral(_)
+            | HirExprKind::StringLiteral(_)
+            | HirExprKind::CharLiteral(_)
+            | HirExprKind::BoolLiteral(_)
+            | HirExprKind::Continue
+            | HirExprKind::Unit
+            | HirExprKind::Alloc { .. } => {}
+            HirExprKind::FieldGet { base, .. } => self.collect_expr_uses(base),
+            HirExprKind::FieldSet { base, value, .. } => {
                 self.collect_expr_uses(base);
                 self.collect_expr_uses(value);
             }
-            HirExpr::Index { base, index, .. } => {
+            HirExprKind::Index { base, index, .. } => {
                 self.collect_expr_uses(base);
                 self.collect_expr_uses(index);
             }
-            HirExpr::IndexSet {
+            HirExprKind::IndexSet {
                 base,
                 index,
                 value,
@@ -715,14 +724,14 @@ impl BorrowChecker {
                 self.collect_expr_uses(index);
                 self.collect_expr_uses(value);
             }
-            HirExpr::Ref { expr, .. } => self.collect_expr_uses(expr),
-            HirExpr::Deref { expr, .. } => self.collect_expr_uses(expr),
-            HirExpr::DerefSet { base, value, .. } => {
+            HirExprKind::Ref { expr, .. } => self.collect_expr_uses(expr),
+            HirExprKind::Deref { expr, .. } => self.collect_expr_uses(expr),
+            HirExprKind::DerefSet { base, value, .. } => {
                 self.collect_expr_uses(base);
                 self.collect_expr_uses(value);
             }
             // U6 Cast IR：`expr as T` 读取被转换表达式
-            HirExpr::Cast { expr, .. } => self.collect_expr_uses(expr),
+            HirExprKind::Cast { expr, .. } => self.collect_expr_uses(expr),
         }
     }
 }

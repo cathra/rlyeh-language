@@ -5,8 +5,7 @@ use std::collections::HashMap;
 use rlyeh_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, CompareOp, ExprKind, RegionStrategy, UnaryOp};
 use rlyeh_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirFnDecl, HirItem, HirItemKind,
-    HirParam, HirRegionOptions, HirRegionStrategy, HirStmt, HirUnaryOp, ReprConv,
-};
+    HirParam, HirRegionOptions, HirRegionStrategy, HirStmt, HirUnaryOp, ReprConv, HirExprKind, HirStmtKind};
 use rlyeh_lexer::Span;
 
 use crate::check_item::type_to_extern_name;
@@ -69,31 +68,34 @@ pub(super) fn make_deref_receiver(receiver: &AstExpr, span: Span) -> AstExpr {
     )
 }
 
-/// 推断表达式的类型并生成对应 HIR。
-pub(crate) fn infer_expr(
+/// 推断表达式的类型并生成对应 HIR（内部实现）。
+///
+/// 对外入口见 [`infer_expr`]：本函数在返回前由包装层将根 `HirExpr` 的 `span`
+/// 设为源 `AstExpr.span`，实现 Span 全量传播（表达式级精确错误坐标）。
+pub(crate) fn infer_expr_inner(
     ctx: &mut TypeContext,
     expr: &AstExpr,
 ) -> Result<(HirExpr, Type), TypeError> {
     let span = expr.span;
     match &*expr.kind {
-        ExprKind::IntLiteral(n) => Ok((HirExpr::IntLiteral(*n), Type::I64)),
-        ExprKind::FloatLiteral(f) => Ok((HirExpr::FloatLiteral(*f), Type::F64)),
-        ExprKind::StringLiteral(s) => Ok((HirExpr::StringLiteral(s.clone()), Type::Str)),
-        ExprKind::CharLiteral(c) => Ok((HirExpr::CharLiteral(*c), Type::Char)),
-        ExprKind::BoolLiteral(b) => Ok((HirExpr::BoolLiteral(*b), Type::Bool)),
+        ExprKind::IntLiteral(n) => Ok((HirExpr::new(HirExprKind::IntLiteral(*n), Span::dummy()), Type::I64)),
+        ExprKind::FloatLiteral(f) => Ok((HirExpr::new(HirExprKind::FloatLiteral(*f), Span::dummy()), Type::F64)),
+        ExprKind::StringLiteral(s) => Ok((HirExpr::new(HirExprKind::StringLiteral(s.clone()), Span::dummy()), Type::Str)),
+        ExprKind::CharLiteral(c) => Ok((HirExpr::new(HirExprKind::CharLiteral(*c), Span::dummy()), Type::Char)),
+        ExprKind::BoolLiteral(b) => Ok((HirExpr::new(HirExprKind::BoolLiteral(*b), Span::dummy()), Type::Bool)),
         // X4：单元类型字面量 `()`（`Result::Ok(())` 的值；空 tuple）
-        ExprKind::Unit => Ok((HirExpr::Unit, Type::Unit)),
+        ExprKind::Unit => Ok((HirExpr::new(HirExprKind::Unit, Span::dummy()), Type::Unit)),
         ExprKind::TimeLiteral { hour, minute, .. } => {
             // 时间字面量归一化为分钟值，按整数处理（可与整数集合/范围统一比较）
             let minutes = i128::from(*hour) * 60 + i128::from(*minute);
-            Ok((HirExpr::IntLiteral(minutes), Type::I64))
+            Ok((HirExpr::new(HirExprKind::IntLiteral(minutes), Span::dummy()), Type::I64))
         }
 
         ExprKind::Ident(name) => {
             // 1. 局部变量（U1：HIR 引用用存储槽名——遮蔽变量经 resolve 返回
             //    mangle 槽名，下游按槽名区分变量存储）
             if let Some((slot, ty)) = ctx.resolve_variable(name) {
-                return Ok((HirExpr::Variable(slot.to_string()), ty.clone()));
+                return Ok((HirExpr::new(HirExprKind::Variable(slot.to_string()), Span::dummy()), ty.clone()));
             }
             // 2. 常量引用：顶层常量名 → 当前模块内常量（`prefix::name`）
             if let Some((value, ty)) = ctx.lookup_constant(name) {
@@ -111,7 +113,7 @@ pub(crate) fn infer_expr(
             if !ctx.fn_templates.contains_key(&resolved) {
                 if let Some(sig) = ctx.fn_signatures.get(&resolved).cloned() {
                     return Ok((
-                        HirExpr::FnPtr(resolved),
+                        HirExpr::new(HirExprKind::FnPtr(resolved), Span::dummy()),
                         Type::Fn(Box::new(sig)),
                     ));
                 }
@@ -143,7 +145,7 @@ pub(crate) fn infer_expr(
             if !ctx.fn_templates.contains_key(&resolved) {
                 if let Some(sig) = ctx.fn_signatures.get(&resolved).cloned() {
                     return Ok((
-                        HirExpr::FnPtr(resolved),
+                        HirExpr::new(HirExprKind::FnPtr(resolved), Span::dummy()),
                         Type::Fn(Box::new(sig)),
                     ));
                 }
@@ -178,7 +180,7 @@ pub(crate) fn infer_expr(
                 return Err(TypeError::ChainTypeMismatch { span });
             }
             let _ = hi_hir;
-            Ok((HirExpr::Unit, lo_ty))
+            Ok((HirExpr::new(HirExprKind::Unit, Span::dummy()), lo_ty))
         }
 
         ExprKind::Binary { op, left, right } => {
@@ -203,11 +205,11 @@ pub(crate) fn infer_expr(
                 } else {
                     field_scalar_of(&inner)
                 };
-                let ptr_hir = HirExpr::PtrAdd {
+                let ptr_hir = HirExpr::new(HirExprKind::PtrAdd{
                     base: Box::new(l_hir),
                     offset: Box::new(r_hir),
                     elem,
-                };
+                }, Span::dummy());
                 return Ok((ptr_hir, Type::RawPtr(inner, is_mut)));
             }
             // `a + b`（String + String）→ 拼接（拷贝语义，A3）：
@@ -271,28 +273,28 @@ pub(crate) fn infer_expr(
                     })?;
                 let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &HashMap::new(), span)?;
                 let stmts = vec![
-                    HirStmt::Let {
+                    HirStmt::new(HirStmtKind::Let{
                         name: s_name.clone(),
-                        init: HirExpr::Call {
+                        init: HirExpr::new(HirExprKind::Call{
                             callee: clone_fn,
                             args: vec![l_hir],
-                        },
+                        }, Span::dummy()),
                         mutable: true,
-                    },
-                    HirStmt::Expr(HirExpr::Call {
+                    }, Span::dummy()),
+                    HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::Call{
                         callee: fn_name,
-                        args: vec![HirExpr::Variable(s_name.clone()), r_hir],
-                    }),
+                        args: vec![HirExpr::new(HirExprKind::Variable(s_name.clone()), Span::dummy()), r_hir],
+                    }, Span::dummy())), Span::dummy()),
                 ];
-                let hir = HirExpr::Block(Box::new(HirBlock {
+                let hir = HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                     stmts,
-                    final_expr: Some(HirExpr::Variable(s_name)),
-                }));
+                    final_expr: Some(HirExpr::new(HirExprKind::Variable(s_name), Span::dummy())),
+                })), Span::dummy());
                 return Ok((hir, l_ty));
             }
             match check_binary(*op, &l_ty, &r_ty, span) {
                 Ok((hir_op, result_ty)) => Ok((
-                    HirExpr::Binary(hir_op, Box::new(l_hir), Box::new(r_hir)),
+                    HirExpr::new(HirExprKind::Binary(hir_op, Box::new(l_hir), Box::new(r_hir)), Span::dummy()),
                     result_ty,
                 )),
                 Err(builtin_err) => {
@@ -321,7 +323,7 @@ pub(crate) fn infer_expr(
                             span,
                         });
                     }
-                    Ok((HirExpr::Unary(HirUnaryOp::Neg, Box::new(o_hir)), o_ty))
+                    Ok((HirExpr::new(HirExprKind::Unary(HirUnaryOp::Neg, Box::new(o_hir)), Span::dummy()), o_ty))
                 }
                 UnaryOp::Not => {
                     if !o_ty.is_bool() {
@@ -330,7 +332,7 @@ pub(crate) fn infer_expr(
                             span,
                         });
                     }
-                    Ok((HirExpr::Unary(HirUnaryOp::Not, Box::new(o_hir)), Type::Bool))
+                    Ok((HirExpr::new(HirExprKind::Unary(HirUnaryOp::Not, Box::new(o_hir)), Span::dummy()), Type::Bool))
                 }
                 UnaryOp::Deref => {
                     let inner = match &o_ty {
@@ -370,10 +372,10 @@ pub(crate) fn infer_expr(
                         field_scalar_of(&inner)
                     };
                     Ok((
-                        HirExpr::Deref {
+                        HirExpr::new(HirExprKind::Deref{
                             expr: Box::new(heap_ptr_hir(o_hir, &o_ty)),
                             ty,
-                        },
+                        }, Span::dummy()),
                         inner,
                     ))
                 }
@@ -419,11 +421,11 @@ pub(crate) fn infer_expr(
                     };
                     let pointee = field_scalar_of(&o_ty);
                     Ok((
-                        HirExpr::Ref {
+                        HirExpr::new(HirExprKind::Ref{
                             expr: Box::new(o_hir),
                             is_mut,
                             pointee,
-                        },
+                        }, Span::dummy()),
                         Type::Ref(Box::new(o_ty), m),
                     ))
                 }
@@ -631,3 +633,17 @@ pub(crate) use iterator::{check_for_iterator, try_check_adapter, ty_to_ast};
 
 mod misc;
 mod block;
+
+/// 推断表达式类型并生成 HIR（对外入口）。
+///
+/// 在 [`infer_expr_inner`] 基础上，将生成的根 `HirExpr` 的 `span` 设为源
+/// `AstExpr.span`，实现 Span 全量传播——下游 borrowck / regionck 可据此给出
+/// 表达式级精确错误坐标（取代此前函数级 `item.span` 的粗粒度坐标）。
+pub(crate) fn infer_expr(
+    ctx: &mut TypeContext,
+    expr: &AstExpr,
+) -> Result<(HirExpr, Type), TypeError> {
+    let mut hir = infer_expr_inner(ctx, expr)?;
+    hir.0.span = expr.span;
+    Ok(hir)
+}

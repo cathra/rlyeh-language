@@ -7,25 +7,67 @@ HirProgram {
                     params: [
                         HirParam {
                             name: "a",
+                            span: Span {
+                                start: 0,
+                                end: 0,
+                                line: 0,
+                                col: 0,
+                            },
                         },
                         HirParam {
                             name: "b",
+                            span: Span {
+                                start: 0,
+                                end: 0,
+                                line: 0,
+                                col: 0,
+                            },
                         },
                     ],
                     body: Some(
                         HirBlock {
                             stmts: [],
                             final_expr: Some(
-                                Binary(
-                                    Add,
-                                    Variable(
-                                        "a",
+                                HirExpr {
+                                    kind: Binary(
+                                        Add,
+                                        HirExpr {
+                                            kind: Variable(
+                                                "a",
+                                            ),
+                                            span: Span {
+                                                start: 271124,
+                                                end: 271126,
+                                                line: 7154,
+                                                col: 5,
+                                            },
+                                        },
+                                        HirExpr {
+                                            kind: Variable(
+                                                "b",
+                                            ),
+                                            span: Span {
+                                                start: 271128,
+                                                end: 271130,
+                                                line: 7154,
+                                                col: 9,
+                                            },
+                                        },
                                     ),
-                                    Variable(
-                                        "b",
-                                    ),
-                                ),
+                                    span: Span {
+                                        start: 271124,
+                                        end: 271130,
+                                        line: 7154,
+                                        col: 5,
+                                    },
+                                },
                             ),
+                            span: Span {
+                                start: 271118,
+                                end: 271131,
+                                line: 7153,
+                                col: 31,
+                            },
                         },
                     ),
                     is_extern: false,
@@ -47,128 +89,420 @@ HirProgram {
                     body: Some(
                         HirBlock {
                             stmts: [
-                                Let {
-                                    name: "x",
-                                    init: IntLiteral(
-                                        6,
-                                    ),
-                                    mutable: false,
-                                },
-                                Let {
-                                    name: "y",
-                                    init: IntLiteral(
-                                        7,
-                                    ),
-                                    mutable: false,
-                                },
-                                Let {
-                                    name: "sum",
-                                    init: Call {
-                                        callee: "add",
-                                        args: [
-                                            Variable(
-                                                "x",
+                                HirStmt {
+                                    kind: Let {
+                                        name: "x",
+                                        init: HirExpr {
+                                            kind: IntLiteral(
+                                                6,
                                             ),
-                                            Variable(
-                                                "y",
-                                            ),
-                                        ],
-                                    },
-                                    mutable: false,
-                                },
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Variable(
-                                                "sum",
-                                            ),
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            StringLiteral(
-                                                "6 * 7 = ",
-                                            ),
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            Binary(
-                                                Mul,
-                                                Variable(
-                                                    "x",
-                                                ),
-                                                Variable(
-                                                    "y",
-                                                ),
-                                            ),
-                                        ],
-                                    },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [],
-                                    },
-                                ),
-                                Expr(
-                                    If {
-                                        cond: Binary(
-                                            Gt,
-                                            Variable(
-                                                "sum",
-                                            ),
-                                            IntLiteral(
-                                                10,
-                                            ),
-                                        ),
-                                        then_block: HirBlock {
-                                            stmts: [
-                                                Expr(
-                                                    Call {
-                                                        callee: "println",
-                                                        args: [
-                                                            StringLiteral(
-                                                                "sum is big",
-                                                            ),
-                                                        ],
-                                                    },
-                                                ),
-                                            ],
-                                            final_expr: None,
+                                            span: Span {
+                                                start: 271157,
+                                                end: 271158,
+                                                line: 7158,
+                                                col: 13,
+                                            },
                                         },
-                                        else_block: None,
+                                        mutable: false,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            BoolLiteral(
-                                                true,
+                                    span: Span {
+                                        start: 271157,
+                                        end: 271158,
+                                        line: 7158,
+                                        col: 13,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "y",
+                                        init: HirExpr {
+                                            kind: IntLiteral(
+                                                7,
                                             ),
-                                        ],
+                                            span: Span {
+                                                start: 271172,
+                                                end: 271173,
+                                                line: 7159,
+                                                col: 13,
+                                            },
+                                        },
+                                        mutable: false,
                                     },
-                                ),
-                                Expr(
-                                    Call {
-                                        callee: "println",
-                                        args: [
-                                            BoolLiteral(
-                                                false,
-                                            ),
-                                        ],
+                                    span: Span {
+                                        start: 271172,
+                                        end: 271173,
+                                        line: 7159,
+                                        col: 13,
                                     },
-                                ),
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "sum",
+                                        init: HirExpr {
+                                            kind: Call {
+                                                callee: "add",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "x",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271193,
+                                                            end: 271194,
+                                                            line: 7160,
+                                                            col: 19,
+                                                        },
+                                                    },
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "y",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271196,
+                                                            end: 271197,
+                                                            line: 7160,
+                                                            col: 22,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271189,
+                                                end: 271198,
+                                                line: 7160,
+                                                col: 15,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 271189,
+                                        end: 271198,
+                                        line: 7160,
+                                        col: 15,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Variable(
+                                                            "sum",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271212,
+                                                            end: 271215,
+                                                            line: 7161,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271204,
+                                                end: 271216,
+                                                line: 7161,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271204,
+                                        end: 271216,
+                                        line: 7161,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: StringLiteral(
+                                                            "6 * 7 = ",
+                                                        ),
+                                                        span: Span {
+                                                            start: 271230,
+                                                            end: 271240,
+                                                            line: 7162,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271222,
+                                                end: 271241,
+                                                line: 7162,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271222,
+                                        end: 271241,
+                                        line: 7162,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: Binary(
+                                                            Mul,
+                                                            HirExpr {
+                                                                kind: Variable(
+                                                                    "x",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271255,
+                                                                    end: 271257,
+                                                                    line: 7163,
+                                                                    col: 13,
+                                                                },
+                                                            },
+                                                            HirExpr {
+                                                                kind: Variable(
+                                                                    "y",
+                                                                ),
+                                                                span: Span {
+                                                                    start: 271259,
+                                                                    end: 271260,
+                                                                    line: 7163,
+                                                                    col: 17,
+                                                                },
+                                                            },
+                                                        ),
+                                                        span: Span {
+                                                            start: 271255,
+                                                            end: 271260,
+                                                            line: 7163,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271247,
+                                                end: 271261,
+                                                line: 7163,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271247,
+                                        end: 271261,
+                                        line: 7163,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [],
+                                            },
+                                            span: Span {
+                                                start: 271267,
+                                                end: 271276,
+                                                line: 7164,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271267,
+                                        end: 271276,
+                                        line: 7164,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: If {
+                                                cond: HirExpr {
+                                                    kind: Binary(
+                                                        Gt,
+                                                        HirExpr {
+                                                            kind: Variable(
+                                                                "sum",
+                                                            ),
+                                                            span: Span {
+                                                                start: 271285,
+                                                                end: 271289,
+                                                                line: 7165,
+                                                                col: 8,
+                                                            },
+                                                        },
+                                                        HirExpr {
+                                                            kind: IntLiteral(
+                                                                10,
+                                                            ),
+                                                            span: Span {
+                                                                start: 271291,
+                                                                end: 271294,
+                                                                line: 7165,
+                                                                col: 14,
+                                                            },
+                                                        },
+                                                    ),
+                                                    span: Span {
+                                                        start: 271285,
+                                                        end: 271294,
+                                                        line: 7165,
+                                                        col: 8,
+                                                    },
+                                                },
+                                                then_block: HirBlock {
+                                                    stmts: [
+                                                        HirStmt {
+                                                            kind: Expr(
+                                                                HirExpr {
+                                                                    kind: Call {
+                                                                        callee: "println",
+                                                                        args: [
+                                                                            HirExpr {
+                                                                                kind: StringLiteral(
+                                                                                    "sum is big",
+                                                                                ),
+                                                                                span: Span {
+                                                                                    start: 271312,
+                                                                                    end: 271324,
+                                                                                    line: 7166,
+                                                                                    col: 17,
+                                                                                },
+                                                                            },
+                                                                        ],
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 271304,
+                                                                        end: 271325,
+                                                                        line: 7166,
+                                                                        col: 9,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 271304,
+                                                                end: 271325,
+                                                                line: 7166,
+                                                                col: 9,
+                                                            },
+                                                        },
+                                                    ],
+                                                    final_expr: None,
+                                                    span: Span {
+                                                        start: 271294,
+                                                        end: 271332,
+                                                        line: 7165,
+                                                        col: 17,
+                                                    },
+                                                },
+                                                else_block: None,
+                                            },
+                                            span: Span {
+                                                start: 271282,
+                                                end: 271332,
+                                                line: 7165,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271282,
+                                        end: 271332,
+                                        line: 7165,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: BoolLiteral(
+                                                            true,
+                                                        ),
+                                                        span: Span {
+                                                            start: 271346,
+                                                            end: 271350,
+                                                            line: 7168,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271338,
+                                                end: 271351,
+                                                line: 7168,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271338,
+                                        end: 271351,
+                                        line: 7168,
+                                        col: 5,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Expr(
+                                        HirExpr {
+                                            kind: Call {
+                                                callee: "println",
+                                                args: [
+                                                    HirExpr {
+                                                        kind: BoolLiteral(
+                                                            false,
+                                                        ),
+                                                        span: Span {
+                                                            start: 271365,
+                                                            end: 271370,
+                                                            line: 7169,
+                                                            col: 13,
+                                                        },
+                                                    },
+                                                ],
+                                            },
+                                            span: Span {
+                                                start: 271357,
+                                                end: 271371,
+                                                line: 7169,
+                                                col: 5,
+                                            },
+                                        },
+                                    ),
+                                    span: Span {
+                                        start: 271357,
+                                        end: 271371,
+                                        line: 7169,
+                                        col: 5,
+                                    },
+                                },
                             ],
                             final_expr: None,
+                            span: Span {
+                                start: 271143,
+                                end: 271374,
+                                line: 7157,
+                                col: 11,
+                            },
                         },
                     ),
                     is_extern: false,

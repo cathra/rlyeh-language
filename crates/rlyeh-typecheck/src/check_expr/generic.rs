@@ -1,6 +1,8 @@
 //! 表达式检查子模块：泛型实例化与类型统一。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_hir::HirExprKind;
+use rlyeh_lexer::Span;
 use super::*;
 
 pub(super) fn check_generic_call(
@@ -87,10 +89,10 @@ pub(super) fn check_generic_call(
         }
     }
     Ok((
-        HirExpr::Call {
+        HirExpr::new(HirExprKind::Call{
             callee: fn_name,
             args: hir_args,
-        },
+        }, Span::dummy()),
         signature.return_type,
     ))
 }
@@ -218,7 +220,7 @@ pub(super) fn instantiate_generic_fn(
     let params = cloned
         .params
         .iter()
-        .map(|p| HirParam {
+        .map(|p| HirParam { span: Span::dummy(),
             name: p.name.clone(),
         })
         .collect();
@@ -375,7 +377,7 @@ pub(super) fn instantiate_impl_method(
     let params = cloned
         .params
         .iter()
-        .map(|p| HirParam {
+        .map(|p| HirParam { span: Span::dummy(),
             name: p.name.clone(),
         })
         .collect();
