@@ -1,1 +1,2 @@
-错误: [typecheck] 7:13: error: struct `Point` has no field `z`
+错误: [typecheck] 7:13: error[TC012]: struct `Point` has no field `z`
+  = help: 检查字段名拼写；可用 `{struct}.` 查看可用字段

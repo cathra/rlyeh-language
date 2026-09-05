@@ -1,1 +1,2 @@
-错误: [typecheck] 19:13: error: type `i64` does not implement trait `HasArea` (bound on generic parameter `T`)
+错误: [typecheck] 19:13: error[TC027]: type `i64` does not implement trait `HasArea` (bound on generic parameter `T`)
+  = help: 为类型实现所需 trait，或放宽 `where` 约束

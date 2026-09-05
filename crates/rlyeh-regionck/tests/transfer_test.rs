@@ -121,11 +121,13 @@ fn test_defensive_error_variants_display() {
             detail: "transferring `&x` is forbidden".into(),
             line: 0,
             col: 0,
+            related: vec![],
         },
         RegionError::UnsizedTransfer {
             detail: "dyn Trait has no statically known size".into(),
             line: 0,
             col: 0,
+            related: vec![],
         },
     ];
     for e in &errs {

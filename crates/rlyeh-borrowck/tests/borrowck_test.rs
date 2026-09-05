@@ -292,11 +292,13 @@ fn test_defensive_error_variants_display() {
             detail: "cannot borrow `data` as mutable more than once at a time".into(),
             line: 0,
             col: 0,
+            related: vec![],
         },
         BorrowError::MoveWhileBorrowed {
             detail: "cannot transfer `x` while borrowed".into(),
             line: 0,
             col: 0,
+            related: vec![],
         },
     ];
     for e in &errs {

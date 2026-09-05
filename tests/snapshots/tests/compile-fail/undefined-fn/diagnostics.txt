@@ -1,1 +1,2 @@
-错误: [typecheck] 4:13: error: function `foo` not found
+错误: [typecheck] 4:13: error[TC015]: function `foo` not found
+  = help: 确认函数名拼写，或先定义该函数

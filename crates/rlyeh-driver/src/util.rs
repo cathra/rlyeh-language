@@ -49,22 +49,25 @@ pub(crate) trait DiagnosticsText {
 
 impl DiagnosticsText for BorrowError {
     fn to_user_text(&self, prelude_lines: usize) -> String {
-        self.render(prelude_lines)
+        self.render_structured(prelude_lines)
     }
 }
 
 impl DiagnosticsText for RegionError {
     fn to_user_text(&self, prelude_lines: usize) -> String {
-        self.render(prelude_lines)
+        self.render_structured(prelude_lines)
     }
 }
 
-/// 拼接错误列表为单行文本（坐标已还原为用户文件坐标）。
+/// 拼接错误列表（坐标已还原为用户文件坐标）。
+///
+/// 每个错误经 [`DiagnosticsText::to_user_text`] 渲染为可能包含 `= help:` /
+/// `= note:` 次级行的多行块；错误间以换行分隔（单行 `; ` 拼接会破坏多行结构）。
 pub(crate) fn join_errors<T: DiagnosticsText>(errs: Vec<T>, prelude_lines: usize) -> String {
     errs.into_iter()
         .map(|e| e.to_user_text(prelude_lines))
         .collect::<Vec<_>>()
-        .join("; ")
+        .join("\n")
 }
 
 /// 查找可用的 C 编译器（优先 clang，回退 cc）。

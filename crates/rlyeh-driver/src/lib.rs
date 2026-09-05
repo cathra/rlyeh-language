@@ -119,7 +119,7 @@ pub fn emit_hir(entry: &Path) -> Result<String, DriverError> {
         &std::collections::HashMap::new(),
         prelude_len,
     )
-    .map_err(|e| DriverError::Typecheck(e.to_string_with_offset(prelude_len, prelude_lines)))?;
+    .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
     Ok(format!("{:#?}", hir))
 }
 
@@ -146,7 +146,7 @@ pub fn emit_hir_user(entry: &Path) -> Result<String, DriverError> {
         &std::collections::HashMap::new(),
         prelude_len,
     )
-    .map_err(|e| DriverError::Typecheck(e.to_string_with_offset(prelude_len, prelude_lines)))?;
+    .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
     let items: Vec<HirItem> = hir
         .items
         .into_iter()
@@ -483,7 +483,7 @@ fn full_pipeline_with_hints(
 ) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR）
     let hir = rlyeh_typecheck::typecheck_source_with_region_hints(source, region_hints, prelude_len)
-        .map_err(|e| DriverError::Typecheck(e.to_string_with_offset(prelude_len, prelude_lines)))?;
+        .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
 
     // 2. 借用检查（L0 所有权）
     BorrowChecker::new()

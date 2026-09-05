@@ -10,6 +10,9 @@
 # 取被查 HIR 节点自身 `span`（表达式 / 语句 / 块）经 `render(prelude_lines)`
 # 减预置行数加 `line:col:` 前缀，与 typecheck 同坐标系；2026-09-05 起由
 # HIR Span 全量传播落地，取代原 `HirItem.span` 函数级坐标）。
+# L2 结构化诊断（2026-09-05）：错误文本额外含稳定错误码（typecheck `error[TC0xx]`、
+# borrow/region ` [BC0xx]`/`[RC0xx]`）、`= help:` 修复建议与 `= note:` 相关位置标注
+# （borrow 冲突回指先前借用位置）；旧 `Display`/`render` 格式不变。
 
 # 类型不匹配
 tests/compile-fail/type-mismatch.rl

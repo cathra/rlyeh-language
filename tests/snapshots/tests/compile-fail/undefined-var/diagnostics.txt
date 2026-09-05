@@ -1,1 +1,2 @@
-错误: [typecheck] 4:13: error: undefined variable `undefined_var`
+错误: [typecheck] 4:13: error[TC001]: undefined variable `undefined_var`
+  = help: 检查变量名拼写，或先 `let` 声明后再使用

@@ -1,1 +1,2 @@
-错误: [typecheck] 9:13: error: expected a numeric type, found `i64 | String`
+错误: [typecheck] 9:13: error[TC009]: expected a numeric type, found `i64 | String`
+  = help: 传入数值类型（如 `i64` / `f64`）

@@ -463,4 +463,151 @@ impl TypeError {
     }
 }
 
+impl TypeError {
+    /// 稳定错误码（SH-P2-6 L2 结构化诊断）。
+    ///
+    /// 形如 `TC0xx`，跨编译器版本稳定，可作为工具 / CI 的机器可读锚点。
+    pub fn code(&self) -> &'static str {
+        match self {
+            TypeError::UndefinedVariable { .. } => "TC001",
+            TypeError::UndefinedType { .. } => "TC002",
+            TypeError::UndefinedFunction { .. } => "TC003",
+            TypeError::MissingFunctionBody { .. } => "TC004",
+            TypeError::FunctionBodyOverflow { .. } => "TC005",
+            TypeError::WrongType { .. } => "TC006",
+            TypeError::ExpectedInt { .. } => "TC007",
+            TypeError::ExpectedBool { .. } => "TC008",
+            TypeError::ExpectedNumeric { .. } => "TC009",
+            TypeError::ExpectedIterable { .. } => "TC010",
+            TypeError::ExpectedStruct { .. } => "TC011",
+            TypeError::UnknownField { .. } => "TC012",
+            TypeError::MissingField { .. } => "TC013",
+            TypeError::ExpectedMutable { .. } => "TC014",
+            TypeError::FunctionNotFound { .. } => "TC015",
+            TypeError::UnsafeExternCall { .. } => "TC016",
+            TypeError::UnexpectedArgumentCount { .. } => "TC017",
+            TypeError::ArgumentTypeMismatch { .. } => "TC018",
+            TypeError::MissingPartialEq { .. } => "TC019",
+            TypeError::MissingPartialOrd { .. } => "TC020",
+            TypeError::InconsistentComparison { .. } => "TC021",
+            TypeError::ChainTypeMismatch { .. } => "TC022",
+            TypeError::InSetTypeMismatch { .. } => "TC023",
+            TypeError::NonConstantBound { .. } => "TC024",
+            TypeError::Unsupported { .. } => "TC025",
+            TypeError::UnionMembersNotDisjoint { .. } => "TC026",
+            TypeError::GenericBoundMismatch { .. } => "TC027",
+            TypeError::GenericArityMismatch { .. } => "TC028",
+        }
+    }
+
+    /// 修复建议（SH-P2-6 L2 结构化诊断）；无可行建议时返回 `None`。
+    pub fn help(&self) -> Option<&'static str> {
+        match self {
+            TypeError::UndefinedVariable { .. } => {
+                Some("检查变量名拼写，或先 `let` 声明后再使用")
+            }
+            TypeError::UndefinedType { .. } => {
+                Some("确认类型已定义或已 `import`；基础类型首字母大写（如 `i64`）")
+            }
+            TypeError::UndefinedFunction { .. } => {
+                Some("确认函数名拼写，或先定义 / `import` 该函数")
+            }
+            TypeError::MissingFunctionBody { .. } => Some("为函数补充 `{ ... }` 函数体"),
+            TypeError::FunctionBodyOverflow { .. } => {
+                Some("函数体嵌套过深，建议拆分为更小的函数")
+            }
+            TypeError::WrongType { .. } => {
+                Some("调整表达式类型以匹配期望，或显式转换（`as`）")
+            }
+            TypeError::ExpectedInt { .. } => Some("传入整数类型（如 `i64`）"),
+            TypeError::ExpectedBool { .. } => Some("条件表达式需为 `bool`"),
+            TypeError::ExpectedNumeric { .. } => Some("传入数值类型（如 `i64` / `f64`）"),
+            TypeError::ExpectedIterable { .. } => {
+                Some("`for` / `in` 右侧需为可迭代对象（数组 / `Vec` / `Range`）")
+            }
+            TypeError::ExpectedStruct { .. } => Some("传入结构体类型"),
+            TypeError::UnknownField { .. } => {
+                Some("检查字段名拼写；可用 `{struct}.` 查看可用字段")
+            }
+            TypeError::MissingField { .. } => Some("补全结构体构造中的缺失字段"),
+            TypeError::ExpectedMutable { .. } => {
+                Some("将绑定声明为 `let mut` 以支持可变借用 / 赋值")
+            }
+            TypeError::FunctionNotFound { .. } => Some("确认函数名拼写，或先定义该函数"),
+            TypeError::UnsafeExternCall { .. } => Some("将调用包裹在 `unsafe { }` 块内"),
+            TypeError::UnexpectedArgumentCount { .. } => Some("按函数签名调整实参数量"),
+            TypeError::ArgumentTypeMismatch { .. } => Some("调整该实参类型以匹配形参"),
+            TypeError::MissingPartialEq { .. } => {
+                Some("为类型实现 `PartialEq` 以支持 `==` / 比较链")
+            }
+            TypeError::MissingPartialOrd { .. } => {
+                Some("为类型实现 `PartialOrd` 以支持大小比较")
+            }
+            TypeError::InconsistentComparison { .. } => {
+                Some("比较链方向需一致（全部 `<` 或全部 `>`）")
+            }
+            TypeError::ChainTypeMismatch { .. } => Some("比较链各元素类型需一致"),
+            TypeError::InSetTypeMismatch { .. } => {
+                Some("`in` 集合元素类型需与值类型一致")
+            }
+            TypeError::NonConstantBound { .. } => {
+                Some("集合范围端点需为编译期整数常量（如 `0..<10`）")
+            }
+            TypeError::Unsupported { .. } => {
+                Some("该语法在当前版本尚未支持，详见文档规划章节")
+            }
+            TypeError::UnionMembersNotDisjoint { .. } => {
+                Some("调整联合成员，使其两两互不相交（如避免 `&T | &mut T`）")
+            }
+            TypeError::GenericBoundMismatch { .. } => {
+                Some("为类型实现所需 trait，或放宽 `where` 约束")
+            }
+            TypeError::GenericArityMismatch { .. } => {
+                Some("调整类型实参数量以匹配泛型参数")
+            }
+        }
+    }
+
+    /// 结构化诊断文本（SH-P2-6 L2）：在用户文件坐标下渲染
+    /// `行:列: error[CODE]: 消息`，并附 `= help:` 修复建议。
+    ///
+    /// 复用既有 [`write_message`] 的正文格式化，仅把 `loc: error:` 前缀替换为
+    /// `loc: error[CODE]:`；坐标还原逻辑与 [`TypeError::to_string_with_offset`] 一致。
+    pub fn to_string_structured(&self, prelude_len: usize, prelude_lines: usize) -> String {
+        let span = self.span();
+        let loc = if span.start < prelude_len {
+            format!("{}:{}", span.line, span.col)
+        } else {
+            format!(
+                "{}:{}",
+                span.line.saturating_sub(prelude_lines),
+                span.col
+            )
+        };
+        let full = {
+            struct W<'a> {
+                e: &'a TypeError,
+                loc: String,
+            }
+            impl fmt::Display for W<'_> {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write_message(f, &self.loc, self.e)
+                }
+            }
+            W {
+                e: self,
+                loc: loc.clone(),
+            }
+            .to_string()
+        };
+        let prefix = format!("{loc}: error: ");
+        let body = full.strip_prefix(&prefix).unwrap_or(&full);
+        let mut out = format!("{loc}: error[{}]: {body}", self.code());
+        if let Some(h) = self.help() {
+            out.push_str(&format!("\n  = help: {h}"));
+        }
+        out
+    }
+}
+
 impl std::error::Error for TypeError {}

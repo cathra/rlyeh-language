@@ -1,1 +1,3 @@
-错误: [borrowck] 7:14: borrow conflict: cannot mutably borrow `x` because it is already borrowed as mutable
+错误: [borrowck] 7:14: [BC003] borrow conflict: cannot mutably borrow `x` because it is already borrowed as mutable
+  = help: 缩短借用生命周期，确保新旧借用不重叠；或克隆数据以避免别名冲突
+  = note: 先前借用创建于此 (6:13)

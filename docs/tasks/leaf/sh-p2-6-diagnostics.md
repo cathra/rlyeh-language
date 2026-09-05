@@ -52,10 +52,18 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
   - 坐标体系一致：源码以 `{prelude}\n{source}` 合并后词法分析，节点 span 与函数 span 同为合并坐标，`render(prelude_lines)` 减偏移仍有效；用户态坐标正确。
   - 实测 `borrow-conflict-mutmut.rl` 由 `4:1`（main 函数级）修正为 `7:14`（`let r2 = &mut x;` 冲突行）；其余 11 例 typecheck 诊断坐标不变。
 - 重新生成 `tests/snapshots/.../diagnostics.txt` 基线（仅 `borrow-conflict-mutmut` 一例坐标变化），`check` 验证 12/0/0/0。
-- 遗留：**L2 结构化诊断**（稳定错误码 + 修复建议 + 相关 span 标注）仍待办。
+- 遗留：~~L2 结构化诊断~~ 已于 2026-09-05 落地（见下「L2 结构化诊断」实现纪要）。
+
+## 实现纪要（L2 结构化诊断：稳定错误码 + 修复建议 + 相关 span 标注，2026-09-05）
+- **稳定错误码**：`TypeError` / `BorrowError` / `RegionError` 各变体新增 `code()`，分别映射到 `TC0xx` / `BC0xx` / `RC0xx`（跨版本稳定，可作机器可读锚点）。错误文本渲染为 `行:列: error[TC006]: ...`（typecheck）与 `行:列: [BC003] ...`（borrow/region）。
+- **修复建议**：各变体新增 `help()` 返回 `Option<&'static str>`，高频错误给出中文修复提示，渲染为次级 `= help:` 行。
+- **相关 span 标注**：`BorrowError` / `RegionError` 变体新增 `related: Vec<(Span, String)>` 字段；borrowck 检查器在 `Borrow` 记录上登记创建处 `span`，冲突（`register_borrow` / 赋值冲突）时回指先前借用位置，渲染为次级 `= note: <标签> (行:列)` 行。
+- **向后兼容**：旧 `Display` / `render` / `to_string_with_offset` 输出格式**保持不变**（regionck 单测依赖其精确字符串）；driver 改用新增 `render_structured` / `to_string_structured`，`join_errors` 以换行分隔多错误块。
+- 验证：重新生成 `tests/snapshots/.../diagnostics.txt` 基线（12 例，均新增 `[CODE]` / `= help:` 行；`borrow-conflict-mutmut` 新增 `= note: 先前借用创建于此 (6:13)`），`check` 验证 12/0/0/0；`rlyeh test tests/` 全量 264/264 通过（`// expect:` 子串断言不受影响）。
+- 已知缺口：仅 borrowck 填充了相关 span；regionck 各错误的第二位置标注能力已就绪（`with_related`）但尚未填充来源 span；`TypeError` 暂不含相关 span（类型错误目前仅单位置）。
 
 ## 状态
-🟢 进行中（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断待办）。
+✅ 完成（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断（稳定错误码 + 修复建议 + 相关 span 标注）已于 2026-09-05 落地）。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -65,3 +73,4 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 | 2026-09-04 | L1 落地：typecheck 诊断行号对齐用户坐标（`to_string_with_offset` + `prelude_lines` 透传）；重新生成诊断基线（12 例，check 12/0/0/0）；borrowck/regionck Span 传播与 L2 待办 |
 | 2026-09-04 | L1 余量落地：borrowck/regionck 函数级坐标对齐（`Span` 透传 + `render(prelude_lines)` 前缀；`DiagnosticsText` trait + `join_errors` 透传 `prelude_lines`）；compile-fail 12 例片段校验无回归 |
 | 2026-09-05 | 语句级精确坐标落地：HIR Span 全量传播（`HirExpr`/`HirStmt`/`HirBlock` 携带 `span` + typecheck 填充 + borrowck/regionck 节点级 `cur_span`）；`borrow-conflict-mutmut` 基线由 `4:1` 修正为 `7:14`；diagnostics `check` 12/0/0/0 |
+| 2026-09-05 | L2 结构化诊断落地：稳定错误码（`TC/BC/RC0xx`）+ 修复建议（`= help:`）+ 相关 span 标注（`= note:`，borrow 冲突回指先前借用位置）；driver 改用 `render_structured`/`to_string_structured`，`join_errors` 换行分隔；diagnostics 基线重生成（12 例），`check` 12/0/0/0，`rlyeh test tests/` 264/264 |

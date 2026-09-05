@@ -1,1 +1,2 @@
-错误: [typecheck] 6:5: error: unsupported syntax: 对兜底模式使用守卫条件
+错误: [typecheck] 6:5: error[TC025]: unsupported syntax: 对兜底模式使用守卫条件
+  = help: 该语法在当前版本尚未支持，详见文档规划章节

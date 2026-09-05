@@ -50,6 +50,8 @@ struct Borrow {
     born: usize,
     /// 引用变量最后使用处全局语句序（临时借用 = `born`）。
     last_use: usize,
+    /// 创建处源码位置（SH-P2-6 L2 相关位置标注：冲突时回指此处）。
+    span: Span,
 }
 
 /// 借用检查器。
@@ -205,21 +207,39 @@ impl BorrowChecker {
         for b in self.active_borrows(source) {
             match (b.kind, is_mut) {
                 (BorrowKind::Mut, true) => {
-                    self.errors.push(BorrowError::borrow_conflict(format!(
-                        "cannot mutably borrow `{source}` because it is already borrowed as mutable"
-                    ), self.cur_span));
+                    self.errors.push(
+                        BorrowError::borrow_conflict(
+                            format!(
+                                "cannot mutably borrow `{source}` because it is already borrowed as mutable"
+                            ),
+                            self.cur_span,
+                        )
+                        .with_related(vec![(b.span, "先前借用创建于此".to_string())]),
+                    );
                     return;
                 }
                 (BorrowKind::Mut, false) => {
-                    self.errors.push(BorrowError::borrow_conflict(format!(
-                        "cannot borrow `{source}` as shared because it is already borrowed as mutable"
-                    ), self.cur_span));
+                    self.errors.push(
+                        BorrowError::borrow_conflict(
+                            format!(
+                                "cannot borrow `{source}` as shared because it is already borrowed as mutable"
+                            ),
+                            self.cur_span,
+                        )
+                        .with_related(vec![(b.span, "先前借用创建于此".to_string())]),
+                    );
                     return;
                 }
                 (BorrowKind::Shared, true) => {
-                    self.errors.push(BorrowError::borrow_conflict(format!(
-                        "cannot mutably borrow `{source}` because it is already borrowed as shared"
-                    ), self.cur_span));
+                    self.errors.push(
+                        BorrowError::borrow_conflict(
+                            format!(
+                                "cannot mutably borrow `{source}` because it is already borrowed as shared"
+                            ),
+                            self.cur_span,
+                        )
+                        .with_related(vec![(b.span, "先前借用创建于此".to_string())]),
+                    );
                     return;
                 }
                 (BorrowKind::Shared, false) => {}
@@ -248,6 +268,7 @@ impl BorrowChecker {
             kind,
             born: self.pos,
             last_use,
+            span: self.cur_span,
         });
     }
 
@@ -436,10 +457,19 @@ impl BorrowChecker {
             HirExprKind::Cast { expr, .. } => self.check_expr(expr),
             HirExprKind::Assign { target, value, .. } => {
                 // 借用互斥：不能赋值（写）被借用中的变量
-                if !self.active_borrows(target).is_empty() {
-                    self.errors.push(BorrowError::borrow_conflict(format!(
-                        "cannot assign to `{target}` because it is borrowed"
-                    ), self.cur_span));
+                let active = self.active_borrows(target);
+                if !active.is_empty() {
+                    let related: Vec<(Span, String)> = active
+                        .first()
+                        .map(|b| vec![(b.span, "该变量在此处被借用".to_string())])
+                        .unwrap_or_default();
+                    self.errors.push(
+                        BorrowError::borrow_conflict(
+                            format!("cannot assign to `{target}` because it is borrowed"),
+                            self.cur_span,
+                        )
+                        .with_related(related),
+                    );
                 }
                 if let Some(b) = self.lookup(target).cloned() {
                     if b.transferred {

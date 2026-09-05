@@ -20,6 +20,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 非法 transfer：对象不在所声明的源区域内。
     InvalidTransfer {
@@ -29,6 +31,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 引用了不存在的区域（区域名未在作用域内）。
     RegionNotFound {
@@ -38,6 +42,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 对无法静态判定归属的对象执行 transfer（MVP 阶段保留）。
     PartialTransfer {
@@ -47,6 +53,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 同一对象被重复 transfer。
     DoubleTransfer {
@@ -56,6 +64,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 不能 transfer 引用（P005：`transfer &x out of 'r`）。
     ///
@@ -68,6 +78,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 不能从内层区域转移外层区域的对象（P005 嵌套方向检查）。
     ///
@@ -80,6 +92,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
     /// 不能 transfer 非 `Sized` 对象（P005）。
     ///
@@ -91,6 +105,8 @@ pub enum RegionError {
         line: usize,
         /// 列号（预留）。
         col: usize,
+        /// 相关位置标注（SH-P2-6 L2）。
+        related: Vec<(Span, String)>,
     },
 }
 
@@ -101,6 +117,7 @@ impl RegionError {
             detail: detail.into(),
             line: span.line,
             col: span.col,
+            related: Vec::new(),
         }
     }
 
@@ -110,6 +127,7 @@ impl RegionError {
             name: name.into(),
             line: span.line,
             col: span.col,
+            related: Vec::new(),
         }
     }
 
@@ -119,6 +137,7 @@ impl RegionError {
             name: name.into(),
             line: span.line,
             col: span.col,
+            related: Vec::new(),
         }
     }
 
@@ -128,6 +147,7 @@ impl RegionError {
             detail: detail.into(),
             line: span.line,
             col: span.col,
+            related: Vec::new(),
         }
     }
 
@@ -137,7 +157,123 @@ impl RegionError {
             detail: detail.into(),
             line: span.line,
             col: span.col,
+            related: Vec::new(),
         }
+    }
+
+    /// 追加相关位置标注（SH-P2-6 L2）：`(位置, 标签)` 列表，渲染为次级 `= note:` 行。
+    ///
+    /// 当前 regionck 各错误尚未填充第二位置（能力已就绪，待检查器补充来源 span）。
+    #[allow(dead_code)]
+    pub(crate) fn with_related(mut self, spans: Vec<(Span, String)>) -> Self {
+        match &mut self {
+            RegionError::RegionEscape { related, .. }
+            | RegionError::InvalidTransfer { related, .. }
+            | RegionError::RegionNotFound { related, .. }
+            | RegionError::PartialTransfer { related, .. }
+            | RegionError::DoubleTransfer { related, .. }
+            | RegionError::CannotTransferReference { related, .. }
+            | RegionError::OuterRegionTransfer { related, .. }
+            | RegionError::UnsizedTransfer { related, .. } => *related = spans,
+        }
+        self
+    }
+
+    /// 稳定错误码（SH-P2-6 L2 结构化诊断），形如 `RC0xx`。
+    pub fn code(&self) -> &'static str {
+        match self {
+            RegionError::RegionEscape { .. } => "RC001",
+            RegionError::InvalidTransfer { .. } => "RC002",
+            RegionError::RegionNotFound { .. } => "RC003",
+            RegionError::PartialTransfer { .. } => "RC004",
+            RegionError::DoubleTransfer { .. } => "RC005",
+            RegionError::CannotTransferReference { .. } => "RC006",
+            RegionError::OuterRegionTransfer { .. } => "RC007",
+            RegionError::UnsizedTransfer { .. } => "RC008",
+        }
+    }
+
+    /// 修复建议（SH-P2-6 L2 结构化诊断）；无可行建议时返回 `None`。
+    pub fn help(&self) -> Option<&'static str> {
+        match self {
+            RegionError::RegionEscape { .. } => Some(
+                "在区域结束前 `transfer` 该对象出区域，或延长区域作用域",
+            ),
+            RegionError::InvalidTransfer { .. } => {
+                Some("仅可 `transfer` 位于声明源区域内的对象")
+            }
+            RegionError::RegionNotFound { .. } => {
+                Some("先 `region 'name { ... }` 声明该区域，再使用 `in 'name`")
+            }
+            RegionError::PartialTransfer { .. } => Some(
+                "确保 transfer 目标可静态判定归属（为整体变量，非表达式结果）",
+            ),
+            RegionError::DoubleTransfer { .. } => {
+                Some("同一对象只能 `transfer` 一次；重复转移前确认是否已转出")
+            }
+            RegionError::CannotTransferReference { .. } => {
+                Some("不能 transfer 引用；改为 transfer 其指向的值")
+            }
+            RegionError::OuterRegionTransfer { .. } => {
+                Some("`transfer ... out of 'r` 须写在 `'r` 直接作用域内")
+            }
+            RegionError::UnsizedTransfer { .. } => {
+                Some("仅可 transfer `Sized` 类型对象")
+            }
+        }
+    }
+
+    /// 结构化诊断文本（SH-P2-6 L2）：在用户文件坐标下渲染
+    /// `行:列: [CODE] 消息`，并附 `= help:` 修复建议与 `= note:` 相关位置标注。
+    ///
+    /// 旧 [`RegionError::render`] / [`std::fmt::Display`] 保持原 `行:列: 消息`
+    /// 格式不变（既有单测依赖其精确输出）；本方法供 `rlyeh-driver` 渲染 richer 诊断。
+    pub fn render_structured(&self, prelude_lines: usize) -> String {
+        let line = match self {
+            RegionError::RegionEscape { line, .. }
+            | RegionError::InvalidTransfer { line, .. }
+            | RegionError::RegionNotFound { line, .. }
+            | RegionError::PartialTransfer { line, .. }
+            | RegionError::DoubleTransfer { line, .. }
+            | RegionError::CannotTransferReference { line, .. }
+            | RegionError::OuterRegionTransfer { line, .. }
+            | RegionError::UnsizedTransfer { line, .. } => *line,
+        };
+        let col = match self {
+            RegionError::RegionEscape { col, .. }
+            | RegionError::InvalidTransfer { col, .. }
+            | RegionError::RegionNotFound { col, .. }
+            | RegionError::PartialTransfer { col, .. }
+            | RegionError::DoubleTransfer { col, .. }
+            | RegionError::CannotTransferReference { col, .. }
+            | RegionError::OuterRegionTransfer { col, .. }
+            | RegionError::UnsizedTransfer { col, .. } => *col,
+        };
+        let related = match self {
+            RegionError::RegionEscape { related, .. }
+            | RegionError::InvalidTransfer { related, .. }
+            | RegionError::RegionNotFound { related, .. }
+            | RegionError::PartialTransfer { related, .. }
+            | RegionError::DoubleTransfer { related, .. }
+            | RegionError::CannotTransferReference { related, .. }
+            | RegionError::OuterRegionTransfer { related, .. }
+            | RegionError::UnsizedTransfer { related, .. } => related,
+        };
+        let mut out = format!(
+            "{}:{}: [{}] {}",
+            line.saturating_sub(prelude_lines),
+            col,
+            self.code(),
+            self.message()
+        );
+        if let Some(h) = self.help() {
+            out.push_str(&format!("\n  = help: {h}"));
+        }
+        for (sp, label) in related {
+            let rl = sp.line.saturating_sub(prelude_lines);
+            out.push_str(&format!("\n  = note: {label} ({rl}:{})", sp.col));
+        }
+        out
     }
 
     /// 错误正文（不含 `line:col:` 前缀）。

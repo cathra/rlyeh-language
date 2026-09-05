@@ -1,1 +1,2 @@
-错误: [typecheck] 4:18: error: expected `3 元元组`, found `2 元解构模式`
+错误: [typecheck] 4:18: error[TC006]: expected `3 元元组`, found `2 元解构模式`
+  = help: 调整表达式类型以匹配期望，或显式转换（`as`）
