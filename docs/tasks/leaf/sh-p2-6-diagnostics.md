@@ -70,11 +70,11 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
     - 结构体字段类型不匹配（`construct.rs`）：回指字段声明处，span 取自新增的 `StructDef.field_spans`（`collect.rs` 由 `AstStructField.span` 收集，与 `fields` 同序）。
     - 返回类型不匹配（`fn_sig.rs` 函数 / `actor.rs` 方法）：回指函数/方法声明 span（`f.span`/`m.span`）。
     - 函数实参类型不匹配（`call.rs` 直接/间接调用）：回指第 `i+1` 个形参声明处，span 取自 `FnSignature.param_spans`（`fn_sig.rs` 由 `AstParam.span` 收集，与 `params` 同序；合成签名 / 无源码位置填 `Span::dummy()`，调用点按 dummy 跳过 note，避免 `(0:0)` 噪音）。
-  - **暂未填充（后续项，需 AST 注解 span 贯穿）**：`let x: T = expr` 注解处、`let (a,b) = tuple` 元组解构处、枚举命名字段处——因 `AstType` 枚举与 `AstStmt::Let` 不携带类型注解 span、`ResolvedVariant` 未携带字段 span，精确回指需先为这些节点补充 span（改动面较大，单独增量）。
+  - **暂未填充（后续项，需 AST 注解 span 贯穿）**：`let (a,b) = tuple` 元组解构处、枚举命名字段处——因 `AstType` 枚举、`ResolvedVariant` 未携带字段 span，精确回指需先为这些节点补充 span（改动面较大，单独增量）。`let x: T = expr` 注解处回指已落地（2026-09-06）：将 `AstStmt::Let.type_anno` 由 `Option<AstType>` 改为 `Option<SpannedAstType>`（`rlyeh_ast` 新增 `SpannedAstType { ty, span }`，parser 解析时记录 `T` 处 span），`check_stmt` 类型标注不匹配补 `= note: 类型标注 \`T\``；合成注解 span 填 `Span::dummy()`，渲染按 dummy 跳过。
 - 验证：新增回归用例 `tests/compile-fail/struct-field-type-mismatch.rl`（`// expect:` 同时断言 `= note: 字段 \`x\` 类型 \`i64\` 声明于此`）；`rlyeh test tests/` 全量 265/265 通过；diagnostics 探针基线 12/0/0/0（12 例均不含结构体字段/返回类型不匹配，无漂移）。
 
 ## 状态
-✅ 完成（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断（稳定错误码 + 修复建议 + 相关 span 标注）已于 2026-09-05 落地；L2 续 TypeError 多位置标注已部分落地——结构体字段/返回类型/函数实参回指声明处，let/元组/枚举命名字段因 AST 注解 span 缺失留作后续）。
+✅ 完成（L0 harness 诊断维度 + 探针基线已落地；L1 typecheck 用户态 span 已对齐；L1 余量 borrowck/regionck 坐标已对齐至语句级（HIR Span 传播，2026-09-05）；L2 结构化诊断（稳定错误码 + 修复建议 + 相关 span 标注）已于 2026-09-05 落地；L2 续 TypeError 多位置标注已部分落地——结构体字段/返回类型/函数实参/let 注解回指声明或标注处，元组解构/枚举命名字段因 AST 注解 span 缺失留作后续）。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -88,3 +88,4 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 | 2026-09-05 | L2 遗留补齐：regionck 填充相关 span（`DoubleTransfer` 回指首次 transfer 处、`InvalidTransfer`/`OuterRegionTransfer` 回指目标区域声明处），`with_related` 实际使用、移除 `#[allow(dead_code)]`；新增 regionck 单测断言 `= note:` 相关位置标注 |
 | 2026-09-05 | L2 续：TypeError 多位置标注部分落地——`WrongType`/`ArgumentTypeMismatch` 加 `related` + 偏移感知 `= note:`，结构体字段/返回类型回指声明处；`StructDef.field_spans` 贯穿字段 span；let/实参/元组/枚举命名字段因 `AstType`/`AstStmt::Let`/`FnSignature`/`ResolvedVariant` 缺失注解 span 留作后续；新增回归用例，全量 265/265、诊断基线 12/0/0/0 |
 | 2026-09-06 | L2 续：函数实参类型不匹配回指形参声明——`FnSignature` 加 `param_spans`（真实声明处填 `AstParam.span`，合成签名填 `Span::dummy()`）；`call.rs` 直接/间接调用实参不匹配按 dummy 跳过 note；新增回归用例 `func-arg-type-mismatch.rl`；全量 265/265、诊断基线 12/0/0/0 无漂移 |
+| 2026-09-06 | L2 续：let 类型标注不匹配回指注解处——`AstStmt::Let.type_anno` 由 `Option<AstType>` 改为 `Option<SpannedAstType>`（`rlyeh_ast` 新增 `SpannedAstType { ty, span }`，parser 解析 `let x: T = e` 时记录 `T` 处 span），`check_stmt` 两处 `WrongType`（dyn 注解非 Fn / 标注不匹配）补偏移感知 `= note: 类型标注 \`T\``（dummy 跳过合成注解噪音）；重写/转发点（`desugar` `LetInfo` / `type_anno.clone()`、formatter `rlyeh-fmt`、6 处合成 `Some(..)`）同步适配；新增回归用例 `let-type-anno-mismatch.rl`，重生成 `cast`/`union_basics` 的 `ast-user` 快照；全量 265/265、诊断基线 12/0/0/0 无漂移 |

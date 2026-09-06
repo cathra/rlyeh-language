@@ -584,7 +584,10 @@ pub(super) fn check_iterator_adapter(
     // —— 外层块：`let mut __out: Vec<U> = Vec::new();` (+ fold acc / take n / 迭代器绑定) + 循环 ——
     let mut ast_stmts = vec![AstStmt::Let {
         pattern: AstPattern::Ident(out_name.clone()),
-        type_anno: Some(vec_ast_ty),
+        type_anno: Some(rlyeh_ast::SpannedAstType {
+            ty: vec_ast_ty,
+            span: rlyeh_lexer::Span::dummy(),
+        }),
         init: AstExpr::new(
             ExprKind::Call {
                 callee: AstExpr::new(ExprKind::Path(vec!["Vec".to_string(), "new".to_string()]), span),

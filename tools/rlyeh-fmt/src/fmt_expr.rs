@@ -349,7 +349,7 @@ pub(crate) fn fmt_stmt_compact(s: &AstStmt) -> String {
             }
             out.push_str(&fmt_pattern(pattern));
             if let Some(t) = type_anno {
-                out.push_str(&format!(": {}", fmt_type(t)));
+                out.push_str(&format!(": {}", fmt_type(&t.ty)));
             }
             out.push_str(&format!(" = {};", fmt_expr(init)));
             out

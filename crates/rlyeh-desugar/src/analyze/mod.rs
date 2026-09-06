@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use rlyeh_ast::{
     AstBlock, AstExpr, AstFnDecl, AstParam, AstPattern, AstStmt, AstType, BinaryOp, CompareOp,
-    ExprKind, MatchArm,
+    ExprKind, MatchArm, SpannedAstType,
 };
 use rlyeh_lexer::Span;
 
@@ -151,7 +151,7 @@ struct LetInfo {
     /// 定义段序号
     def_seg: usize,
     /// 类型注解（可选）
-    type_anno: Option<AstType>,
+    type_anno: Option<SpannedAstType>,
     /// 初始化表达式
     init: AstExpr,
 }
@@ -371,7 +371,11 @@ pub fn analyze_async_fn(
                         span,
                     }
                 })?;
-                let ty = info.type_anno.clone().ok_or_else(|| {
+                let ty = info
+                    .type_anno
+                    .clone()
+                    .map(|s| s.ty)
+                    .ok_or_else(|| {
                     DesugarError::Unsupported {
                         what: format!("await 目标变量 `{var}` 须带类型注解（MVP）"),
                         span,
@@ -413,6 +417,7 @@ pub fn analyze_async_fn(
             let ty = info
                 .type_anno
                 .clone()
+                .map(|s| s.ty)
                 .or_else(|| infer_ast_type(&info.init))
                 .ok_or_else(|| DesugarError::Unsupported {
                     what: format!("跨 await 变量 `{var}` 类型无法确定，请添加类型注解（MVP）"),

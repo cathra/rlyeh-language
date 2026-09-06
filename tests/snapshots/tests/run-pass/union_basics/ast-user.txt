@@ -14,18 +14,26 @@ AstProgram {
                                     "a",
                                 ),
                                 type_anno: Some(
-                                    Union(
-                                        [
-                                            Path(
-                                                "i64",
-                                                [],
-                                            ),
-                                            Path(
-                                                "String",
-                                                [],
-                                            ),
-                                        ],
-                                    ),
+                                    SpannedAstType {
+                                        ty: Union(
+                                            [
+                                                Path(
+                                                    "i64",
+                                                    [],
+                                                ),
+                                                Path(
+                                                    "String",
+                                                    [],
+                                                ),
+                                            ],
+                                        ),
+                                        span: Span {
+                                            start: 368,
+                                            end: 381,
+                                            line: 6,
+                                            col: 10,
+                                        },
+                                    },
                                 ),
                                 init: AstExpr {
                                     kind: IntLiteral(
@@ -220,18 +228,26 @@ AstProgram {
                                     "b",
                                 ),
                                 type_anno: Some(
-                                    Union(
-                                        [
-                                            Path(
-                                                "i64",
-                                                [],
-                                            ),
-                                            Path(
-                                                "String",
-                                                [],
-                                            ),
-                                        ],
-                                    ),
+                                    SpannedAstType {
+                                        ty: Union(
+                                            [
+                                                Path(
+                                                    "i64",
+                                                    [],
+                                                ),
+                                                Path(
+                                                    "String",
+                                                    [],
+                                                ),
+                                            ],
+                                        ),
+                                        span: Span {
+                                            start: 581,
+                                            end: 594,
+                                            line: 13,
+                                            col: 10,
+                                        },
+                                    },
                                 ),
                                 init: AstExpr {
                                     kind: Ident(

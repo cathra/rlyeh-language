@@ -70,7 +70,10 @@ fn test_mutable_let_with_type() {
     };
     assert_eq!(pattern, &AstPattern::Ident("count".to_string()));
     assert!(*mutable);
-    let Some(AstType::Path(name, args)) = type_anno else {
+    let Some(spanned) = type_anno else {
+        panic!("expected type anno");
+    };
+    let AstType::Path(name, args) = &spanned.ty else {
         panic!("expected path type");
     };
     assert_eq!(name, "u32");

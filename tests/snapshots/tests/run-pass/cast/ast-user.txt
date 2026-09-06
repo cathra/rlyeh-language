@@ -404,10 +404,18 @@ AstProgram {
                                     "a",
                                 ),
                                 type_anno: Some(
-                                    Path(
-                                        "i8",
-                                        [],
-                                    ),
+                                    SpannedAstType {
+                                        ty: Path(
+                                            "i8",
+                                            [],
+                                        ),
+                                        span: Span {
+                                            start: 751,
+                                            end: 754,
+                                            line: 16,
+                                            col: 12,
+                                        },
+                                    },
                                 ),
                                 init: AstExpr {
                                     kind: Unary {

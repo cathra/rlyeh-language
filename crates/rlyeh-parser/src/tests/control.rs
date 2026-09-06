@@ -164,7 +164,10 @@ fn test_nested_generics_shr_split() {
     let AstStmt::Let { type_anno, .. } = &**stmt else {
         panic!();
     };
-    let Some(AstType::Path(name, args)) = type_anno else {
+    let Some(spanned) = type_anno else {
+        panic!("expected type anno");
+    };
+    let AstType::Path(name, args) = &spanned.ty else {
         panic!("expected path type");
     };
     assert_eq!(name, "Vec");

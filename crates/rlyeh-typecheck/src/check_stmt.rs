@@ -75,6 +75,9 @@ pub(crate) fn check_stmt_inner(
             mutable,
         } => {
             let span = init.span;
+            // SH-P2-6 L2：类型标注处位置，供类型不匹配时把 `= note:` 次级标注指向该
+            // 标注（如 `let x: i64 = "s";` 的 `i64` 处）；无标注时为 `None`。
+            let anno_span = type_anno.as_ref().map(|s| s.span);
             // H4 去虚拟化：`let d: dyn T = &obj;` 时待记录的具体类型
             // （在 Ident 分支按绑定名写入 ctx.dyn_concrete）
             let mut pending_dyn_concrete: Option<Type> = None;
@@ -91,13 +94,17 @@ pub(crate) fn check_stmt_inner(
             };
             let (mut h_init, mut ty) =
                 if type_anno.is_some() && matches!(&*init.kind, ExprKind::Closure { .. }) {
-                    let at = resolve_ast_type(ctx, type_anno.as_ref().unwrap(), span)?;
+                    let at = resolve_ast_type(ctx, &type_anno.as_ref().unwrap().ty, span)?;
                     if !matches!(&at, Type::Fn(_)) {
                         return Err(TypeError::WrongType {
                             expected: at.to_string(),
                             found: "闭包".to_string(),
                             span,
-                            related: vec![],
+                            related: anno_span
+                                .into_iter()
+                                .filter(|s| s.line != 0)
+                                .map(|s| (s, format!("类型标注 `{at}`")))
+                                .collect(),
                         });
                     }
                     check_closure_expected(ctx, init, &at, span)?
@@ -115,7 +122,7 @@ pub(crate) fn check_stmt_inner(
             // 以便统一 init 中残留的 `_`（Infer）占位（如 `Vec::with_capacity` 返回 `Vec<_>`）
             let anno_ty = match type_anno {
                 Some(anno) => {
-                    let at = resolve_ast_type(ctx, anno, span)?;
+                    let at = resolve_ast_type(ctx, &anno.ty, span)?;
                     // H4 `dyn Trait` 转换：注解为 `dyn Trait`、init 为 `&T`
                     // （T 实现了该 trait）时，把 init 转成 trait 对象胖指针，
                     // 并同步绑定类型，使后续 `at.compatible_with(&ty)` 一致。
@@ -171,7 +178,11 @@ pub(crate) fn check_stmt_inner(
                             expected: at.to_string(),
                             found: ty.to_string(),
                             span,
-                            related: vec![],
+                            related: anno_span
+                                .into_iter()
+                                .filter(|s| s.line != 0)
+                                .map(|s| (s, format!("类型标注 `{at}`")))
+                                .collect(),
                         });
                     }
                     Some(at)

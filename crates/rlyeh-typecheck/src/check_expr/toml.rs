@@ -271,10 +271,13 @@ pub(crate) fn toml_parse_ast(
                         },
                         AstStmt::Let {
                             pattern: AstPattern::Ident(v_name),
-                            type_anno: Some(AstType::Path(
-                                "Vec".to_string(),
-                                vec![ty_to_ast(&elem_ty)],
-                            )),
+                            type_anno: Some(rlyeh_ast::SpannedAstType {
+                                ty: AstType::Path(
+                                    "Vec".to_string(),
+                                    vec![ty_to_ast(&elem_ty)],
+                                ),
+                                span: rlyeh_lexer::Span::dummy(),
+                            }),
                             init: mk_path_call(
                                 vec!["Vec".to_string(), "new".to_string()],
                                 Vec::new(),
@@ -508,10 +511,13 @@ pub(crate) fn toml_parse_ast(
                         },
                         AstStmt::Let {
                             pattern: AstPattern::Ident(m_name),
-                            type_anno: Some(AstType::Path(
-                                "HashMap".to_string(),
-                                vec![ty_to_ast(&k_ty), ty_to_ast(&v_ty)],
-                            )),
+                            type_anno: Some(rlyeh_ast::SpannedAstType {
+                                ty: AstType::Path(
+                                    "HashMap".to_string(),
+                                    vec![ty_to_ast(&k_ty), ty_to_ast(&v_ty)],
+                                ),
+                                span: rlyeh_lexer::Span::dummy(),
+                            }),
                             init: mk_path_call(
                                 vec!["HashMap".to_string(), "new".to_string()],
                                 Vec::new(),
@@ -906,7 +912,10 @@ pub(crate) fn toml_parse_ast(
                         },
                         AstStmt::Let {
                             pattern: AstPattern::Ident(p_name),
-                            type_anno: Some(AstType::Path(n.clone(), Vec::new())),
+                            type_anno: Some(rlyeh_ast::SpannedAstType {
+                                ty: AstType::Path(n.clone(), Vec::new()),
+                                span: rlyeh_lexer::Span::dummy(),
+                            }),
                             init: zero_ctor,
                             mutable: true,
                         },

@@ -2,7 +2,7 @@
 
 use crate::error::ParseError;
 use crate::parser::Parser;
-use rlyeh_ast::{AstBlock, AstStmt, ExprKind, MatchArm};
+use rlyeh_ast::{AstBlock, AstStmt, ExprKind, MatchArm, SpannedAstType};
 use rlyeh_lexer::Token;
 
 impl<'src> Parser<'src> {
@@ -71,7 +71,18 @@ impl<'src> Parser<'src> {
         let mutable = self.eat(&Token::Mut);
         let pattern = self.parse_pattern()?;
         let type_anno = if self.eat(&Token::Colon) {
-            Some(self.parse_type()?)
+            // SH-P2-6 L2：记录类型标注的源码位置（首个类型 token 起，至 `=` 前止），
+            // 供类型不匹配时把 `= note:` 次级标注指向该标注处。
+            let start = self.peek().unwrap().span;
+            let t = self.parse_type()?;
+            let eq = self.peek().unwrap().span;
+            let span = rlyeh_lexer::Span {
+                start: start.start,
+                end: eq.start,
+                line: start.line,
+                col: start.col,
+            };
+            Some(SpannedAstType { ty: t, span })
         } else {
             None
         };

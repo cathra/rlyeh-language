@@ -340,7 +340,7 @@ impl Printer {
                 }
                 head.push_str(&fmt_pattern(pattern));
                 if let Some(t) = type_anno {
-                    head.push_str(&format!(": {}", fmt_type(t)));
+                    head.push_str(&format!(": {}", fmt_type(&t.ty)));
                 }
                 head.push_str(" = ");
                 self.print_expr_value(&head, init, ";");

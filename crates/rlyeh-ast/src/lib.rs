@@ -778,8 +778,8 @@ pub enum AstStmt {
     Let {
         /// 绑定模式
         pattern: AstPattern,
-        /// 类型标注
-        type_anno: Option<AstType>,
+        /// 类型标注（SH-P2-6 L2 多位置：携带标注处的源码位置，供类型不匹配时回指）
+        type_anno: Option<SpannedAstType>,
         /// 初始化表达式
         init: AstExpr,
         /// 是否可变
@@ -887,4 +887,18 @@ pub enum AstType {
     Union(Vec<AstType>),
     /// 推断类型 `_`
     Infer,
+}
+
+/// 带源码位置的类型注解（SH-P2-6 L2 多位置标注）。
+///
+/// 用于 `let x: T = e;` 的 `T`：既携带解析出的 [`AstType`]，也记录 `T` 在源码中的
+/// 位置，使类型不匹配（`expected T, found U`）时能把 `= note:` 次级标注指向该标注处，
+/// 而非仅指向初始化表达式。合成注解（desugar 注入）无真实源码位置，其 `span` 用
+/// [`Span::dummy`] 填充，渲染时按 dummy 跳过以避免 `(0:0)` 噪音。
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpannedAstType {
+    /// 解析出的类型
+    pub ty: AstType,
+    /// 标注处的源码位置
+    pub span: Span,
 }
