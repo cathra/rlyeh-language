@@ -63,6 +63,108 @@ pub(crate) fn make_union_ctor(
 ///
 /// 返回**语句序列**而非单条：M2（SH-P0-5）元组解构 `let (a, b) = e;` 需展开为
 /// 多条 `Let`（临时变量承载元组值 + 各元素按位置绑定），其余语句恒为单条。
+
+/// 递归展开元组解构（含嵌套 `let ((a, b), c) = e;`）。
+///
+/// `base` 为待读取的元组值表达式（或指向元组的引用，见 `Type::Ref` 分支），
+/// `base_ty` 为其类型，`pats` 为当前层级的模式，`pat_span` 用于类型 / 元数
+/// 不匹配时回指模式声明处。每个元素按位置经 `FieldGet` 取出：标识符直接绑定，
+/// 通配符 `_` 跳过，嵌套 `Tuple` 则以该字段值（元组）为新的 `base` 递归展开。
+fn lower_tuple_destructure(
+    ctx: &mut TypeContext,
+    base: HirExpr,
+    base_ty: &Type,
+    pats: &[AstPattern],
+    pat_span: Span,
+    mutable: bool,
+    span: Span,
+) -> Result<Vec<HirStmt>, TypeError> {
+    let ts = match base_ty {
+        Type::Tuple(ts) => Some(ts.clone()),
+        // 引用到元组：剥一层引用后按元组解构（`let (a, b) = &t;`）
+        Type::Ref(inner, _) => match &**inner {
+            Type::Tuple(ts) => Some(ts.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let ts = match ts {
+        Some(ts) => ts,
+        None => {
+            return Err(TypeError::WrongType {
+                expected: format!("元组（{} 元）", pats.len()),
+                found: base_ty.to_string(),
+                span,
+                related: vec![(pat_span, "元组解构模式声明于此".to_string())],
+            })
+        }
+    };
+    if ts.len() != pats.len() {
+        return Err(TypeError::WrongType {
+            expected: format!("{} 元元组", ts.len()),
+            found: format!("{} 元解构模式", pats.len()),
+            span,
+            related: vec![(pat_span, "元组解构模式声明于此".to_string())],
+        });
+    }
+    let mut out = Vec::new();
+    for (i, p) in pats.iter().enumerate() {
+        let fty = ts[i].clone();
+        let val = HirExpr::new(
+            HirExprKind::FieldGet {
+                base: Box::new(base.clone()),
+                index: i,
+                ty: field_scalar_of(&fty),
+            },
+            Span::dummy(),
+        );
+        match p {
+            AstPattern::Wildcard => {}
+            AstPattern::Ident(name) => {
+                let stored = ctx.insert_variable(name.clone(), fty);
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: stored,
+                        init: val,
+                        mutable,
+                    },
+                    Span::dummy(),
+                ));
+            }
+            AstPattern::Tuple(nested, nested_span) => {
+                // 嵌套元组：以当前字段值（元组）为新的 base 递归展开；
+                // 内层临时变量不可变（仅内部中转），最终标识符绑定沿用 `mutable`。
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_tuple_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    nested,
+                    *nested_span,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            _ => {
+                return Err(TypeError::Unsupported {
+                    what: "嵌套解构模式（元组内仅支持标识符 / `_` / 嵌套元组）".to_string(),
+                    span,
+                })
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub(crate) fn check_stmt_inner(
     ctx: &mut TypeContext,
     stmt: &AstStmt,
@@ -262,15 +364,17 @@ pub(crate) fn check_stmt_inner(
                         })
                     }
                 }
-                // M2（SH-P0-5，2026-09-02）：元组解构绑定
-                // `let (a, b) = e;` / `let (a, _, c) = e;`。
+                // M2（SH-P0-5，2026-09-02）：元组解构绑定，递归支持嵌套
+                // `let (a, b) = e;` / `let (a, _, c) = e;` / `let ((a, b), c) = e;`。
                 // desugar 为「临时变量承载元组值 + 各元素按位置取字段后绑定」：
-                //   __tup = e;        // init 只求值一次
-                //   a = __tup.f0;     // 与 `t.f0` 字段访问同构（FieldGet index）
+                //   __tup = e;            // init 只求值一次
+                //   a = __tup.f0;         // 与 `t.f0` 字段访问同构（FieldGet index）
+                //   __tup1 = __tup.f1;    // 嵌套元组：内层再按位置取字段
+                //   b = __tup1.f0;
                 //   c = __tup.f2;
-                // 元素模式支持标识符 / `_`；嵌套解构暂不支持（显式报错）。
+                // 元素模式支持标识符 / `_` / 嵌套 `Tuple`（其余模式仍报错）。
                 AstPattern::Tuple(pats, pat_span) => {
-                    let Some(ts) = (match &ty {
+                    let ts = match &ty {
                         Type::Tuple(ts) => Some(ts.clone()),
                         // 引用到元组：剥一层引用后按元组解构（`let (a, b) = &t;`）
                         Type::Ref(inner, _) => match &**inner {
@@ -278,16 +382,20 @@ pub(crate) fn check_stmt_inner(
                             _ => None,
                         },
                         _ => None,
-                    }) else {
-                        return Err(TypeError::WrongType {
-                            expected: format!("元组（{} 元）", pats.len()),
-                            found: ty.to_string(),
-                            span,
-                            related: vec![(
-                                *pat_span,
-                                "元组解构模式声明于此".to_string(),
-                            )],
-                        });
+                    };
+                    let ts = match ts {
+                        Some(ts) => ts,
+                        None => {
+                            return Err(TypeError::WrongType {
+                                expected: format!("元组（{} 元）", pats.len()),
+                                found: ty.to_string(),
+                                span,
+                                related: vec![(
+                                    *pat_span,
+                                    "元组解构模式声明于此".to_string(),
+                                )],
+                            })
+                        }
                     };
                     if ts.len() != pats.len() {
                         return Err(TypeError::WrongType {
@@ -306,32 +414,17 @@ pub(crate) fn check_stmt_inner(
                         init: h_init,
                         mutable: false,
                     }, Span::dummy())];
-                    for (i, p) in pats.iter().enumerate() {
-                        match p {
-                            // `_`：跳过（不绑定，仍占用对应位置）
-                            AstPattern::Wildcard => {}
-                            AstPattern::Ident(name) => {
-                                let fty = ts[i].clone();
-                                let val = HirExpr::new(HirExprKind::FieldGet{
-                                    base: Box::new(HirExpr::new(HirExprKind::Variable(tmp.clone()), Span::dummy())),
-                                    index: i,
-                                    ty: field_scalar_of(&fty),
-                                }, Span::dummy());
-                                let stored = ctx.insert_variable(name.clone(), fty);
-                                out.push(HirStmt::new(HirStmtKind::Let{
-                                    name: stored,
-                                    init: val,
-                                    mutable: *mutable,
-                                }, Span::dummy()));
-                            }
-                            _ => {
-                                return Err(TypeError::Unsupported {
-                                    what: "嵌套解构模式（元组内仅支持标识符 / `_`）".to_string(),
-                                    span,
-                                })
-                            }
-                        }
-                    }
+                    let base = HirExpr::new(HirExprKind::Variable(tmp), Span::dummy());
+                    let nested = lower_tuple_destructure(
+                        ctx,
+                        base,
+                        &ty,
+                        pats,
+                        *pat_span,
+                        *mutable,
+                        span,
+                    )?;
+                    out.extend(nested);
                     Ok((out, ty))
                 }
                 _ => Err(TypeError::Unsupported {
