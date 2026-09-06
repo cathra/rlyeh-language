@@ -176,7 +176,7 @@ impl Checker {
     fn bind_pattern(&mut self, p: &AstPattern, span: rlyeh_lexer::Span) {
         match p {
             AstPattern::Ident(name) => self.bind(name, span),
-            AstPattern::Tuple(ps) => {
+            AstPattern::Tuple(ps, _) => {
                 for p in ps {
                     self.bind_pattern(p, span);
                 }

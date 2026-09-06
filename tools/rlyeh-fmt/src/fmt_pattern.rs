@@ -11,7 +11,7 @@ pub(crate) fn fmt_pattern(p: &AstPattern) -> String {
         AstPattern::Ident(name) => name.clone(),
         AstPattern::Wildcard => "_".to_string(),
         AstPattern::Literal(l) => fmt_literal_value(l),
-        AstPattern::Tuple(ps) => format!(
+        AstPattern::Tuple(ps, _) => format!(
             "({})",
             ps.iter().map(fmt_pattern).collect::<Vec<_>>().join(", ")
         ),

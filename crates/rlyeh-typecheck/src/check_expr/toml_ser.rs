@@ -422,10 +422,13 @@ pub(crate) fn toml_serialize_ast_path(
             loop_stmts.push(AstStmt::Semi(push(out_id.clone(), val_ser)));
             let for_expr = AstExpr::new(
                 ExprKind::For {
-                    pattern: AstPattern::Tuple(vec![
-                        AstPattern::Ident(k_name),
-                        AstPattern::Ident(v_name),
-                    ]),
+                    pattern: AstPattern::Tuple(
+                        vec![
+                            AstPattern::Ident(k_name),
+                            AstPattern::Ident(v_name),
+                        ],
+                        Span::dummy(),
+                    ),
                     iterator: arg.clone(),
                     body: AstBlock {
                         stmts: loop_stmts,

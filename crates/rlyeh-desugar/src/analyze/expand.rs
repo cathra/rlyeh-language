@@ -472,7 +472,7 @@ pub(super) fn pattern_has_bindings(p: &AstPattern) -> bool {
         AstPattern::Ident(_) => true,
         // `_`（通配符）不绑定变量，不应阻止 match 内 await
         AstPattern::Wildcard => false,
-        AstPattern::Tuple(ps) => ps.iter().any(pattern_has_bindings),
+        AstPattern::Tuple(ps, _) => ps.iter().any(pattern_has_bindings),
         AstPattern::Struct(_, fields) => fields.iter().any(|(_, x)| pattern_has_bindings(x)),
         AstPattern::Enum(_, ps) | AstPattern::EnumPath(_, ps) => ps.iter().any(pattern_has_bindings),
         AstPattern::Ref(inner, _) => pattern_has_bindings(inner),

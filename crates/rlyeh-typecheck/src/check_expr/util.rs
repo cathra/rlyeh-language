@@ -699,7 +699,7 @@ pub(super) fn pattern_bind_names(pat: &rlyeh_ast::AstPattern) -> Vec<String> {
     match pat {
         AstPattern::Ident(name) => vec![name.clone()],
         AstPattern::Wildcard | AstPattern::Literal(_) | AstPattern::Range { .. } => Vec::new(),
-        AstPattern::Tuple(subs) | AstPattern::Enum(_, subs) | AstPattern::EnumPath(_, subs) => {
+        AstPattern::Tuple(subs, _) | AstPattern::Enum(_, subs) | AstPattern::EnumPath(_, subs) => {
             subs.iter().flat_map(pattern_bind_names).collect()
         }
         AstPattern::Struct(_, fields) => fields

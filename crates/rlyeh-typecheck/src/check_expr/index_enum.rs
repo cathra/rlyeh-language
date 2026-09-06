@@ -362,7 +362,7 @@ pub(super) fn check_variant_construct(
         value: Box::new(HirExpr::new(HirExprKind::IntLiteral(variant.tag as i128), Span::dummy())),
         ty: FieldScalar::Int,
     }, Span::dummy())), Span::dummy()));
-    for (i, (arg, (_, fty))) in args.iter().zip(&variant.fields).enumerate() {
+    for (i, (arg, (fname, fty))) in args.iter().zip(&variant.fields).enumerate() {
         let (hir, arg_ty) = infer_expr(ctx, arg)?;
         let fty = substitute(fty, &subst);
         if !arg_ty.compatible_with(&fty) {
@@ -372,7 +372,10 @@ pub(super) fn check_variant_construct(
                 expected: fty.to_string(),
                 found: arg_ty.to_string(),
                 span: arg.span,
-                related: vec![],
+                related: vec![(
+                    variant.field_spans[i],
+                    format!("字段 `{fname}` 类型 `{}` 声明于此", fty),
+                )],
             });
         }
         stmts.push(HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
@@ -819,7 +822,7 @@ pub(super) fn check_pattern(
             let pat = AstPattern::Enum(variant, sub_pats.clone());
             check_pattern(ctx, &pat, pat_ty, scrutinee, span)
         }
-        AstPattern::Tuple(_) | AstPattern::Struct(..) => Err(TypeError::Unsupported {
+        AstPattern::Tuple(_, _) | AstPattern::Struct(..) => Err(TypeError::Unsupported {
             what: "元组 / 结构体模式在 MVP 阶段".to_string(),
             span,
         }),

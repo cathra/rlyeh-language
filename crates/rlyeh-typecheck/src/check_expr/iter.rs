@@ -550,7 +550,7 @@ pub(super) fn check_for_hashmap(
 
     // 2. 模式必须为 `(k, v)` 二元元组，元素均为标识符
     let (k_name, v_name) = match pattern {
-        AstPattern::Tuple(pats) if pats.len() == 2 => {
+        AstPattern::Tuple(pats, _) if pats.len() == 2 => {
             match (&pats[0], &pats[1]) {
                 (AstPattern::Ident(k), AstPattern::Ident(v)) => (k.clone(), v.clone()),
                 _ => {

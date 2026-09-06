@@ -355,10 +355,13 @@ pub(crate) fn json_serialize_ast(
             // for (k, v) in m { ... }
             let for_expr = AstExpr::new(
                 ExprKind::For {
-                    pattern: AstPattern::Tuple(vec![
-                        AstPattern::Ident(k_name.clone()),
-                        AstPattern::Ident(v_name.clone()),
-                    ]),
+                    pattern: AstPattern::Tuple(
+                        vec![
+                            AstPattern::Ident(k_name.clone()),
+                            AstPattern::Ident(v_name.clone()),
+                        ],
+                        Span::dummy(),
+                    ),
                     iterator: arg.clone(),
                     body: AstBlock {
                         stmts: loop_stmts,

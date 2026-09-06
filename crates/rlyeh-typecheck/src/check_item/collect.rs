@@ -123,15 +123,19 @@ pub(crate) fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str)
     let mut max_fields = 0usize;
     for (idx, v) in e.variants.iter().enumerate() {
         let mut fields = Vec::new();
+        let mut field_spans = Vec::new();
         // 元组负载字段（`Some(T)`）以 `f0/f1/...` 命名
         for (i, t) in v.tuple_fields.iter().enumerate() {
             let ty = resolve_ast_type(ctx, t, v.span)?;
             fields.push((format!("f{i}"), ty));
+            // 元组域为匿名字段，无独立声明位置，回指至变体声明处
+            field_spans.push(v.span);
         }
         // 命名负载字段（`Variant { x: T }`）
         for sf in &v.struct_fields {
             let ty = resolve_ast_type(ctx, &sf.type_, sf.span)?;
             fields.push((sf.name.clone(), ty));
+            field_spans.push(sf.span);
         }
         max_fields = max_fields.max(fields.len());
         // U3：显式判别式优先（`Variant = 42`），未标注时按变体声明序号。
@@ -140,6 +144,7 @@ pub(crate) fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str)
         variants.push(VariantDef {
             name: v.name.clone(),
             fields,
+            field_spans,
             tag,
         });
     }

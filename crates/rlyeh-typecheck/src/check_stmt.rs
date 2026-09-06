@@ -269,7 +269,7 @@ pub(crate) fn check_stmt_inner(
                 //   a = __tup.f0;     // 与 `t.f0` 字段访问同构（FieldGet index）
                 //   c = __tup.f2;
                 // 元素模式支持标识符 / `_`；嵌套解构暂不支持（显式报错）。
-                AstPattern::Tuple(pats) => {
+                AstPattern::Tuple(pats, pat_span) => {
                     let Some(ts) = (match &ty {
                         Type::Tuple(ts) => Some(ts.clone()),
                         // 引用到元组：剥一层引用后按元组解构（`let (a, b) = &t;`）
@@ -283,7 +283,10 @@ pub(crate) fn check_stmt_inner(
                             expected: format!("元组（{} 元）", pats.len()),
                             found: ty.to_string(),
                             span,
-                            related: vec![],
+                            related: vec![(
+                                *pat_span,
+                                "元组解构模式声明于此".to_string(),
+                            )],
                         });
                     };
                     if ts.len() != pats.len() {
@@ -291,7 +294,10 @@ pub(crate) fn check_stmt_inner(
                             expected: format!("{} 元元组", ts.len()),
                             found: format!("{} 元解构模式", pats.len()),
                             span,
-                            related: vec![],
+                            related: vec![(
+                                *pat_span,
+                                "元组解构模式声明于此".to_string(),
+                            )],
                         });
                     }
                     let tmp = ctx.fresh_temp();

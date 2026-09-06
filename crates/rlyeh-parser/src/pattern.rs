@@ -151,6 +151,8 @@ impl<'src> Parser<'src> {
 
     /// 元组模式 `(a, b, c)`
     fn parse_tuple_pattern(&mut self) -> Result<AstPattern, ParseError> {
+        // SH-P2-6 L2：记录元组模式整体的源码位置，供解构绑定类型不匹配时回指
+        let start = self.peek().map(|lt| lt.span).unwrap_or(Span::dummy());
         self.expect(&Token::LParen, "'('")?;
         let mut elems = Vec::new();
         while !self.check(&Token::RParen) {
@@ -163,7 +165,14 @@ impl<'src> Parser<'src> {
             }
         }
         self.expect(&Token::RParen, "')'")?;
-        Ok(AstPattern::Tuple(elems))
+        let end = self.peek().map(|lt| lt.span).unwrap_or(start);
+        let span = Span {
+            start: start.start,
+            end: end.start,
+            line: start.line,
+            col: start.col,
+        };
+        Ok(AstPattern::Tuple(elems, span))
     }
 
     /// 枚举负载模式 `(a, b)`

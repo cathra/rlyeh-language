@@ -803,7 +803,9 @@ pub enum AstPattern {
     /// 字面量模式
     Literal(LiteralValue),
     /// 元组模式 `(a, b, c)`
-    Tuple(Vec<AstPattern>),
+    /// 携带模式整体的源码位置（SH-P2-6 L2 多位置：解构绑定 `let (a, b) = e` 类型
+    /// 不匹配时，把 `= note:` 次级标注指向该解构模式，而非仅指向初始化表达式）。
+    Tuple(Vec<AstPattern>, Span),
     /// 结构体模式 `Point { x, y }`
     Struct(String, Vec<(String, AstPattern)>),
     /// 枚举模式 `Some(x)`

@@ -390,6 +390,9 @@ pub struct VariantDef {
     pub name: String,
     /// 字段名与类型
     pub fields: Vec<(String, Type)>,
+    /// 字段声明处的源码位置（SH-P2-6 L2 多位置：与 `fields` 同序；命名域为字段声明
+    /// span，元组域为变体声明 span），供字段类型不匹配时把 `= note:` 回指声明处。
+    pub field_spans: Vec<Span>,
     /// 判别值（变体在枚举中的序号，槽 0 存储）
     pub tag: usize,
 }
