@@ -202,6 +202,28 @@ fn lower_tuple_destructure(
                 )?;
                 out.extend(inner);
             }
+            AstPattern::EnumStructPath(segments, named) => {
+                let (nv, positional) = enum_struct_path_to_positional(ctx, &fty, segments, named, span)?;
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    &nv,
+                    &positional,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
             _ => {
                 return Err(TypeError::Unsupported {
                     what: "嵌套解构模式（元组内仅支持标识符 / `_` / 嵌套元组 / 嵌套枚举）".to_string(),
@@ -378,6 +400,28 @@ fn lower_struct_destructure(
                 )?;
                 out.extend(inner);
             }
+            AstPattern::EnumStructPath(segments, named) => {
+                let (nv, positional) = enum_struct_path_to_positional(ctx, &fty, segments, named, span)?;
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    &nv,
+                    &positional,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
             _ => {
                 return Err(TypeError::Unsupported {
                     what: "嵌套解构模式（结构体字段仅支持标识符 / `_` / 嵌套元组 / 嵌套结构体 / 嵌套枚举）"
@@ -398,6 +442,66 @@ fn lower_struct_destructure(
 ///
 /// 非标量枚举运行时为对象 {槽0=tag, 槽1..=payload}，字段按 `1+i` 槽经 `FieldGet` 读取
 /// （与构造时对齐）；标量枚举值即 tag 本身、变体均为单元（无字段），故子模式必为空。
+/// 枚举结构式负载模式 `Enum::Variant { x, y }` → 按变体字段声明顺序排成位置子模式，
+/// 缺失字段补 `Wildcard`（部分解构），未知名报 `has no field`（与结构体模式一致）。
+/// 供 `let` / `match` 位置的 `EnumStructPath` 共用——转换为位置 `Enum` 后复用既有逻辑。
+fn enum_struct_path_to_positional(
+    ctx: &TypeContext,
+    base_ty: &Type,
+    segments: &[String],
+    named_fields: &[(String, AstPattern)],
+    span: Span,
+) -> Result<(String, Vec<AstPattern>), TypeError> {
+    let variant = segments.last().cloned().ok_or_else(|| TypeError::Unsupported {
+        what: "空路径枚举结构式模式".to_string(),
+        span,
+    })?;
+    let en = match base_ty {
+        Type::Named(en, _) => en.clone(),
+        Type::ScalarEnum(en) => en.clone(),
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: format!("枚举结构式模式需要枚举类型，得到 `{base_ty}`"),
+                span,
+            })
+        }
+    };
+    let enum_def = ctx
+        .lookup_enum(&en)
+        .cloned()
+        .or_else(|| {
+            ctx.resolve_full_name(&en)
+                .and_then(|full| ctx.lookup_enum(&full).cloned())
+        })
+        .ok_or_else(|| TypeError::UndefinedType { name: en.clone(), span })?;
+    let variant_def = enum_def
+        .variants
+        .iter()
+        .find(|v| v.name == variant)
+        .cloned()
+        .ok_or_else(|| TypeError::FunctionNotFound {
+            name: format!("{en}::{variant}"),
+            span,
+        })?;
+    for (n, _) in named_fields {
+        if !variant_def.fields.iter().any(|(fn2, _)| fn2 == n) {
+            return Err(TypeError::UnknownField {
+                struct_name: format!("{en}::{variant}"),
+                field: n.clone(),
+                span,
+            });
+        }
+    }
+    let mut positional: Vec<AstPattern> = Vec::with_capacity(variant_def.fields.len());
+    for (fname, _) in &variant_def.fields {
+        match named_fields.iter().find(|(n, _)| n == fname) {
+            Some((_, p)) => positional.push(p.clone()),
+            None => positional.push(AstPattern::Wildcard),
+        }
+    }
+    Ok((variant, positional))
+}
+
 fn lower_enum_destructure(
     ctx: &mut TypeContext,
     base: HirExpr,
@@ -561,6 +665,28 @@ fn lower_enum_destructure(
                     &fty_sub,
                     &nv,
                     nested_sub,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::EnumStructPath(segments, named) => {
+                let (nv, positional) = enum_struct_path_to_positional(ctx, &fty_sub, segments, named, span)?;
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty_sub,
+                    &nv,
+                    &positional,
                     mutable,
                     span,
                 )?;
@@ -912,6 +1038,31 @@ pub(crate) fn check_stmt_inner(
                         &ty,
                         &variant,
                         sub_pats,
+                        *mutable,
+                        span,
+                    )?;
+                    out.extend(nested);
+                    Ok((out, ty))
+                }
+                AstPattern::EnumStructPath(segments, sub_pats) => {
+                    let (variant, positional) =
+                        enum_struct_path_to_positional(ctx, &ty, segments, sub_pats, span)?;
+                    let tmp = ctx.fresh_temp();
+                    let mut out = vec![HirStmt::new(
+                        HirStmtKind::Let {
+                            name: tmp.clone(),
+                            init: h_init,
+                            mutable: false,
+                        },
+                        Span::dummy(),
+                    )];
+                    let base = HirExpr::new(HirExprKind::Variable(tmp), Span::dummy());
+                    let nested = lower_enum_destructure(
+                        ctx,
+                        base,
+                        &ty,
+                        &variant,
+                        &positional,
                         *mutable,
                         span,
                     )?;

@@ -702,6 +702,9 @@ pub(super) fn pattern_bind_names(pat: &rlyeh_ast::AstPattern) -> Vec<String> {
         AstPattern::Tuple(subs, _) | AstPattern::Enum(_, subs) | AstPattern::EnumPath(_, subs) => {
             subs.iter().flat_map(pattern_bind_names).collect()
         }
+        AstPattern::EnumStructPath(_, subs) => {
+            subs.iter().flat_map(|(_, p)| pattern_bind_names(p)).collect()
+        }
         AstPattern::Struct(_, fields) => fields
             .iter()
             .flat_map(|(_, p)| pattern_bind_names(p))

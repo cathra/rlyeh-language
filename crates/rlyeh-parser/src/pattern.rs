@@ -132,6 +132,10 @@ impl<'src> Parser<'src> {
             segments.push(variant);
             let args = if self.check(&Token::LParen) {
                 self.parse_pattern_paren_args()?
+            } else if self.check(&Token::LBrace) {
+                // 枚举结构式负载模式 `Enum::Variant { x, y }`（SH-P1-2 续）
+                let fields = self.parse_pattern_struct_fields()?;
+                return Ok(AstPattern::EnumStructPath(segments, fields));
             } else {
                 Vec::new()
             };
@@ -192,8 +196,11 @@ impl<'src> Parser<'src> {
         Ok(args)
     }
 
-    /// 结构体模式 `Point { field: pat, other }`
-    fn parse_struct_pattern(&mut self, name: String) -> Result<AstPattern, ParseError> {
+    /// 解析结构体 / 枚举结构式负载模式内部的 `{ field: pat, other }` 字段列表
+    /// （含两侧花括号），供 `parse_struct_pattern` 与路径枚举结构式模式共用。
+    fn parse_pattern_struct_fields(
+        &mut self,
+    ) -> Result<Vec<(String, AstPattern)>, ParseError> {
         self.expect(&Token::LBrace, "'{'")?;
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace) {
@@ -212,6 +219,12 @@ impl<'src> Parser<'src> {
             }
         }
         self.expect(&Token::RBrace, "'}'")?;
+        Ok(fields)
+    }
+
+    /// 结构体模式 `Point { field: pat, other }`
+    fn parse_struct_pattern(&mut self, name: String) -> Result<AstPattern, ParseError> {
+        let fields = self.parse_pattern_struct_fields()?;
         Ok(AstPattern::Struct(name, fields))
     }
 

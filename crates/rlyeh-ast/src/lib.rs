@@ -812,6 +812,11 @@ pub enum AstPattern {
     Enum(String, Vec<AstPattern>),
     /// 带模块路径的枚举模式 `mod::Enum::Variant(x)`（最后一段为变体名）
     EnumPath(Vec<String>, Vec<AstPattern>),
+    /// 带模块路径的枚举**结构式负载**模式 `mod::Enum::Variant { x, y }`
+    /// （最后一段为变体名，字段为命名子模式）。语义上等价于把命名字段按变体
+    /// 声明顺序重排为位置子模式后走 `Enum` 路径（见 typecheck 的
+    /// `enum_struct_path_to_positional`）。
+    EnumStructPath(Vec<String>, Vec<(String, AstPattern)>),
     /// 范围模式 `0..<10` / `0...10` / `0<..10`
     Range {
         /// 下界

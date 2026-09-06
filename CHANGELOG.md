@@ -47,6 +47,27 @@
 
 - **match 位置元组 / 结构体解构（SH-P1-2，2026-09-06）**：`match` 臂的元组 / 结构体模式由 `check_pattern` 显式 `Unsupported` 变为支持，与 `let` 位置解构同构——按位置（元组）/ 按名（结构体）经 `FieldGet` 取出后**递归 `check_pattern`**，故嵌套元组 / 结构体 / 枚举 / 字面量子模式（如 `(0, x)`、`Point { x: 0, y }`、`Pair { p: (a, b) }`、`(Shape::Pair(a, b), n)`）均经递归覆盖；子条件以 `And` 合并（仅字段读取、无副作用，安全），整体可反驳性取决于子模式——任一元素含可反驳子模式则生成 `If` 条件链，全为标识符 / `_` 时不可反驳直接兜底。`if let` / `while let` 经 parser desugar 成 `match` 自动继承该能力（无需改动 typecheck / codegen）。门禁：元组元数不符报 `expected N 元元组, found M 元解构模式`、结构体未知字段报 `struct X has no field Y`。验收：新增 `tests/run-pass/match_destructure.rl`（覆盖 顶层元组 / 元组+字面量兜底 / 顶层结构体 / 结构体+字面量兜底 / 枚举（元组负载）解构 / 元组内含枚举子模式 / 结构体字段为元组 `field:(a,b)` / if let 元组 / if let 结构体 / while let 枚举内嵌，12 行输出）+ 删除过期负向用例 `tests/compile-fail/if-let-tuple-pattern.rl`（其锁定「if let 元组模式须报错」的旧限制，功能实现后自然失效）+ `tests/compile-fail/match-destructure-{arity,unknown-field}.rl`（`// expect: 3 元解构模式` / `// expect: has no field`）；全量 `rlyeh test tests` 套件（含 std）无回归。
 
+- **枚举变体结构式负载：构造 + 解构（SH-P1-2 续，2026-09-06）**：枚举变体
+  `Enum::Variant { x, y }` 的**结构式负载**此前在 `let` / `match` / `if let` /
+  `while let` / 构造位置完全不支持（parser 把 `{` 当结构体字面量报未定义类型），
+  仅 `(元组负载)` 可用。本次补齐两端：① 解析——`parse_pattern` 路径枚举分支在 `(`
+  之外新增 `{` 分支产出 `AstPattern::EnumStructPath(segments, 命名字段)`（抽出
+  `parse_pattern_struct_fields` 供结构体模式复用）；② 构造——`check_struct_construct`
+  在 `lookup_struct` 失败后，对多段 `type_name` 回退为「枚举变体结构式构造」：拆出
+  枚举名 + 末段变体，校验字段后按变体声明顺序排成位置实参复用
+  `check_variant_construct`（与 `Enum::Variant(x)` 同构）；③ 解构——typecheck 与
+  `let` 位置经 `enum_struct_path_to_positional` 把命名字段按变体字段顺序重排为位置
+  子模式（缺失补 `_`、未知名报 `has no field`），随后复用既有枚举收窄逻辑，`if let`
+  / `while let` 经 parser desugar 成 `match` 自动继承。消费点（`AstPattern::EnumStructPath`）
+  同步更新：`index_enum.rs` `check_pattern`、`check_stmt.rs` `lower_enum_destructure`
+  4 处、`util.rs` `pattern_bind_names`、`rlyeh-check` `bind_pattern`、`rlyeh-fmt`
+  `fmt_pattern`、`rlyeh-desugar` `pattern_has_bindings`。门禁：解构未知名 / 构造缺字段
+  分别报 `has no field` / `missing field`。验收：新增 `tests/run-pass/enum_struct_destructure.rl`
+  （覆盖 match 顶层 / 字面量子模式+兜底 / let 位置含重命名 / if let / 嵌套于元组 /
+  枚举元组负载混用 / 部分解构，8 行输出）+ `tests/compile-fail/enum-destructure-struct-{unknown-field,construct-missing-field}.rl`
+  （`// expect: has no field` / `// expect: missing field`）；全量 `rlyeh test tests`
+  套件（含 std）无回归。
+
 - **运算符重载（语言机制）+ 集合运算符糖（V5d，2026-09-02）**：交付通用运算符重载——`check_expr/binary.rs` 新增 `overload_method(BinaryOp)`（`Add→add`…`BitOr→bitor`…`Mod→rem`；`&&`/`||` 短路不可重载），`check_expr/mod.rs` 的 `Binary` 派发在内建 `check_binary` 失败处加回退：可重载运算符降级为 `left.<method>(right)` 方法调用（复用既有 method-call 全链路，**codegen 零改动**）；`core.rl` 新增 10 个运算符 trait（`Add`/`Sub`/`Mul`/`Div`/`Rem`/`BitAnd`/`BitOr`/`BitXor`/`Shl`/`Shr`，含 `type Output` 关联类型，对标 P009 设计稿），并为 `HashSet<T>` 实现 `BitOr`/`BitAnd`/`Sub`/`BitXor`（降级到 V5b 的 `union`/`intersection`/`difference`/`symmetric_difference`）。范围：仅 `BinaryOp`（`+ - * / % & | ^ << >>`）可重载；逻辑 `&&`/`||` 与比较链 `<`/`>` 等走独立路径（集合子集/超集仍以命名方法 `is_subset`/`is_superset` 表达）。验收：`tests/run-pass/hashset_ops_symbol.{rl,out}`（`| & - ^` 集合运算规模 4/1/2/3 + 自定义 `Point` 的 `+` 算术重载 11/22）；全量 `rlyeh test tests` 258/258 通过。
 
 - **比较链运算符重载（`<`/`<=`/`>`/`>=` 子集/超集糖，V5d+，2026-09-02）**：补齐 V5d 延后的比较运算符重载——`core.rl` 新增 `PartialOrd` trait（`lt`/`le`/`gt`/`ge`，按引用 `&self`/`&other`，对齐既有 `PartialEq`），并为 `HashSet<T>` 实现（降级到 V5b 关系方法：`A < B`=`is_proper_subset`/`A <= B`=`is_subset`/`A > B`=`is_proper_superset`/`A >= B`=`is_superset`，与 Python `set` 语义一致）；`comparison.rs` 在单比较与比较链两类分支注入回退——`try_ordering_overload` 经 `infer_expr` 构造 `left.<lt|le|gt|ge>(&right)` 方法调用（复用 `PartialEq` 的 `a.eq(&b)` desugar 同构，**codegen 零改动**），`has_partial_ord`（`ctx.find_impl_candidates`）门控仅对真正实现 `PartialOrd` 的类型尝试，避免对无该 trait 的类型误发「lt not found」（无实现时精确报 `MissingPartialOrd`）；比较链新增 `check_build_pair` 逐对生成 HIR（`try_ordering_overload` 失败则退回 `check_comparison`+`compare_hir`），`expand_forward`/`expand_backward` 复用预生成 HIR（重写并移除不再使用的 `reverse_op`）。按引用设计同时规避 `a < b < c` 链式复用操作数 `b` 的二次 move。验收：`tests/run-pass/hashset_cmp_symbol.{rl,out}`（`A < B`/`A <= B`/`A < A`/`A <= A`/`B > A`/`B >= A`/`A < C`/`C > A`/正向链 `a < b < d`/反向链 `d > b > a`，输出 `true true false true true true false false true true`）；全量 `rlyeh test tests` 259/259 通过。

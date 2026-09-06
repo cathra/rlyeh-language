@@ -822,6 +822,62 @@ pub(super) fn check_pattern(
             let pat = AstPattern::Enum(variant, sub_pats.clone());
             check_pattern(ctx, &pat, pat_ty, scrutinee, span)
         }
+        AstPattern::EnumStructPath(segments, named_fields) => {
+            // 枚举结构式负载模式 `Enum::Variant { x, y }`（SH-P1-2 续）：按变体字段
+            // 声明顺序把命名字段重排为位置子模式（缺失补 `_`、未知名报 `has no
+            // field`），再转为位置 `Enum` 复用既有枚举收窄逻辑（与 `let` 侧一致）。
+            let variant = segments.last().cloned().ok_or_else(|| {
+                TypeError::Unsupported {
+                    what: "空路径枚举结构式模式".to_string(),
+                    span,
+                }
+            })?;
+            let en = match pat_ty {
+                Type::Named(en, _) => en.clone(),
+                Type::ScalarEnum(en) => en.clone(),
+                _ => {
+                    return Err(TypeError::Unsupported {
+                        what: format!("对非枚举类型 `{pat_ty}` 使用枚举结构式模式 `{variant}`"),
+                        span,
+                    });
+                }
+            };
+            let enum_def = ctx
+                .lookup_enum(&en)
+                .cloned()
+                .or_else(|| {
+                    ctx.resolve_full_name(&en)
+                        .and_then(|full| ctx.lookup_enum(&full).cloned())
+                })
+                .ok_or_else(|| TypeError::UndefinedType { name: en.clone(), span })?;
+            let variant_def = enum_def
+                .variants
+                .iter()
+                .find(|v| v.name == variant)
+                .cloned()
+                .ok_or_else(|| TypeError::FunctionNotFound {
+                    name: format!("{en}::{variant}"),
+                    span,
+                })?;
+            for (n, _) in named_fields {
+                if !variant_def.fields.iter().any(|(fn2, _)| fn2 == n) {
+                    return Err(TypeError::UnknownField {
+                        struct_name: format!("{en}::{variant}"),
+                        field: n.clone(),
+                        span,
+                    });
+                }
+            }
+            let mut positional: Vec<AstPattern> = Vec::with_capacity(variant_def.fields.len());
+            for (fname, _) in &variant_def.fields {
+                match named_fields.iter().find(|(n, _)| n == fname) {
+                    Some((_, p)) => positional.push(p.clone()),
+                    None => positional.push(AstPattern::Wildcard),
+                }
+            }
+            let pat = AstPattern::Enum(variant, positional);
+            check_pattern(ctx, &pat, pat_ty, scrutinee, span)
+        }
         AstPattern::Tuple(pats, pat_span) => {
             // match 位置元组解构（SH-P1-2，2026-09-06）：与 `let (a, b) = e;` 同构——
             // 按位置 `FieldGet` 取出后递归 `check_pattern`（嵌套元组 / 结构体 / 枚举 /

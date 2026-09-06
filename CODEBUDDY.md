@@ -291,9 +291,10 @@ let (name, len) = split_name(String::from("rlyeh"));   // len = 5
 > 不运行时校验）；`match` / `if let` / `while let` 经 `check_pattern` 递归处理
 > 嵌套（元组 / 结构体 / 枚举 / 字面量子模式），可反驳子模式生成 `If` 条件链，
 > `if let` / `while let` 由 parser desugar 成 `match` 自动继承。仍不支持
-> `(mut a, b)`（parser 不接受元组模式内的 `mut`）与 `..` 剩余模式；枚举变体模式
-> 仅接受 `(` 元组负载、**不接受 `{` 结构式负载**（`Shape::Rect { w, h }` 在 `let` /
-> `match` 位置同此 parser 限制）。
+> `(mut a, b)`（parser 不接受元组模式内的 `mut`）与 `..` 剩余模式；枚举变体结构式
+> 负载 `Enum::Variant { w, h }` 的**构造与解构**均已支持（SH-P1-2 续，2026-09-06），
+> 但仅限**路径限定**形式 `Enum::Variant { .. }`（裸名 `Variant { .. }` 因与结构体
+> 字面量歧义，在 `let` / `match` / `if let` / `while let` / 构造位置同不支持）。
 
 ### 3.5.2 `if let` / `while let` 模式控制流（SH-P0-6 ✅，2026-09-02）
 
@@ -324,8 +325,9 @@ while let Option::Some(got) = rx.recv() {
 `crates/rlyeh-parser/src/expr/control.rs`，typecheck / codegen 无改动。
 
 > 已知限制：元组 / 结构体模式在 `match` / `if let` / `while let` 位置均已支持
-> （SH-P1-2，2026-09-06，与 `let` 位置同构），仅枚举变体模式不支持 `{` 结构式
-> 负载；无 let 链 `if let a = .. && let b = ..`。
+> （SH-P1-2，2026-09-06，与 `let` 位置同构）；枚举变体结构式负载 `Enum::Variant
+> { w, h }` 的模式与构造均已支持（SH-P1-2 续，2026-09-06），仅限路径限定形式；
+> 无 let 链 `if let a = .. && let b = ..`。
 
 ### 3.5.3 `match` 守卫 / 范围模式 / 或模式（SH-P0-7 ✅，2026-09-02）
 

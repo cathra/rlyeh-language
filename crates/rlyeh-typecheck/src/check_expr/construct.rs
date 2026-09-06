@@ -19,6 +19,46 @@ pub(super) fn check_struct_construct(
     let struct_name = ctx
         .resolve_full_name(&struct_name)
         .unwrap_or(struct_name);
+    // SH-P1-2 续：枚举变体结构式构造 `Enum::Variant { x, y }`——仅当 type_name
+    // 为多段（可拆出枚举名）且末段确为某枚举的变体时生效，避免与模块限定
+    // 结构体字面量 `mod::Struct { .. }` 冲突；命名字段按变体声明顺序排成位置
+    // 实参后复用 `check_variant_construct`（与 `Enum::Variant(x)` 同构）。
+    if type_name.len() >= 2 {
+        let variant = type_name[type_name.len() - 1].clone();
+        let enum_name = type_name[..type_name.len() - 1].join("::");
+        if let Some(enum_def) = ctx.lookup_enum(&enum_name).cloned() {
+            if let Some(variant_def) = enum_def
+                .variants
+                .iter()
+                .find(|v| v.name == variant)
+                .cloned()
+            {
+                for (fname, fval) in fields {
+                    if !variant_def.fields.iter().any(|(n, _)| n == fname) {
+                        return Err(TypeError::UnknownField {
+                            struct_name: format!("{enum_name}::{variant}"),
+                            field: fname.clone(),
+                            span: fval.span,
+                        });
+                    }
+                }
+                let mut positional: Vec<AstExpr> = Vec::with_capacity(variant_def.fields.len());
+                for (fname, _) in &variant_def.fields {
+                    match fields.iter().find(|(n, _)| n == fname) {
+                        Some((_, v)) => positional.push(v.clone()),
+                        None => {
+                            return Err(TypeError::MissingField {
+                                struct_name: format!("{enum_name}::{variant}"),
+                                field: fname.clone(),
+                                span,
+                            })
+                        }
+                    }
+                }
+                return check_variant_construct(ctx, &enum_name, &variant, &positional, span);
+            }
+        }
+    }
     let def = ctx.lookup_struct(&struct_name).cloned().ok_or_else(|| {
         TypeError::UndefinedType {
             name: struct_name.clone(),

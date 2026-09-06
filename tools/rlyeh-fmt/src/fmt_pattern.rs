@@ -33,6 +33,14 @@ pub(crate) fn fmt_pattern(p: &AstPattern) -> String {
             path.join("::"),
             ps.iter().map(fmt_pattern).collect::<Vec<_>>().join(", ")
         ),
+        AstPattern::EnumStructPath(path, ps) => format!(
+            "{} {{ {} }}",
+            path.join("::"),
+            ps.iter()
+                .map(|(f, fp)| format!("{}: {}", f, fmt_pattern(fp)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         AstPattern::Range {
             lower,
             upper,

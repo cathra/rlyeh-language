@@ -191,6 +191,11 @@ impl Checker {
                     self.bind_pattern(p, span);
                 }
             }
+            AstPattern::EnumStructPath(_, ps) => {
+                for (_, p) in ps {
+                    self.bind_pattern(p, span);
+                }
+            }
             AstPattern::Ref(inner, _) => self.bind_pattern(inner, span),
             // 或模式：各备选绑定同名变量（typecheck 已强制），绑定一次即可
             AstPattern::Or(alts) => {

@@ -475,6 +475,7 @@ pub(super) fn pattern_has_bindings(p: &AstPattern) -> bool {
         AstPattern::Tuple(ps, _) => ps.iter().any(pattern_has_bindings),
         AstPattern::Struct(_, fields) => fields.iter().any(|(_, x)| pattern_has_bindings(x)),
         AstPattern::Enum(_, ps) | AstPattern::EnumPath(_, ps) => ps.iter().any(pattern_has_bindings),
+        AstPattern::EnumStructPath(_, ps) => ps.iter().any(|(_, x)| pattern_has_bindings(x)),
         AstPattern::Ref(inner, _) => pattern_has_bindings(inner),
         _ => false,
     }
