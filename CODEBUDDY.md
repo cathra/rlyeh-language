@@ -286,12 +286,14 @@ let (name, len) = split_name(String::from("rlyeh"));   // len = 5
 「临时变量承载元组值（init 只求值一次）+ 各元素按位置 `FieldGet` 绑定」。
 
 > 已知限制：解构的元素模式支持标识符、`_`、**嵌套元组**、**结构体**
-> 与**枚举**（含任意相互嵌套）；`let` 位置 `let Some(x) = e;` /
-> `let Some((a, b)) = e;` / `let Point { v: Some(a) } = e;` / 嵌套枚举
-> `let Some(Some(x)) = e;` 均已支持（2026-09-06，与 match 位置收窄同构、仅绑定
-> 不运行时校验）；仍不支持 `(mut a, b)`（parser 不接受元组模式内的 `mut`）
-> 与 `..` 剩余模式；match 位置的元组 / 结构体模式仍 Unsupported（仅 `let`
-> 位置解构路径支持）。
+> 与**枚举**（含任意相互嵌套）；`let` 位置（2026-09-06）与 `match` / `if let` /
+> `while let` 位置（SH-P1-2，2026-09-06）均已支持——`let` 仅绑定（信任类型推断、
+> 不运行时校验）；`match` / `if let` / `while let` 经 `check_pattern` 递归处理
+> 嵌套（元组 / 结构体 / 枚举 / 字面量子模式），可反驳子模式生成 `If` 条件链，
+> `if let` / `while let` 由 parser desugar 成 `match` 自动继承。仍不支持
+> `(mut a, b)`（parser 不接受元组模式内的 `mut`）与 `..` 剩余模式；枚举变体模式
+> 仅接受 `(` 元组负载、**不接受 `{` 结构式负载**（`Shape::Rect { w, h }` 在 `let` /
+> `match` 位置同此 parser 限制）。
 
 ### 3.5.2 `if let` / `while let` 模式控制流（SH-P0-6 ✅，2026-09-02）
 
@@ -321,10 +323,9 @@ while let Option::Some(got) = rx.recv() {
 `else if let` 链由 `if` 解析递归处理。落点仅
 `crates/rlyeh-parser/src/expr/control.rs`，typecheck / codegen 无改动。
 
-> 已知限制：模式能力继承 `match` 臂——元组 / 结构体模式在 match 位置尚不支持
-> （`if let (a, b) = t` 报 `unsupported syntax: 元组 / 结构体模式在 MVP 阶段`，
-> 可解构绑定 `let (a, b) = t;` 走另一路径不受此限）；
-> 无 let 链 `if let a = .. && let b = ..`。
+> 已知限制：元组 / 结构体模式在 `match` / `if let` / `while let` 位置均已支持
+> （SH-P1-2，2026-09-06，与 `let` 位置同构），仅枚举变体模式不支持 `{` 结构式
+> 负载；无 let 链 `if let a = .. && let b = ..`。
 
 ### 3.5.3 `match` 守卫 / 范围模式 / 或模式（SH-P0-7 ✅，2026-09-02）
 

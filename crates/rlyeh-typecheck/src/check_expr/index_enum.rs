@@ -822,10 +822,160 @@ pub(super) fn check_pattern(
             let pat = AstPattern::Enum(variant, sub_pats.clone());
             check_pattern(ctx, &pat, pat_ty, scrutinee, span)
         }
-        AstPattern::Tuple(_, _) | AstPattern::Struct(..) => Err(TypeError::Unsupported {
-            what: "元组 / 结构体模式在 MVP 阶段".to_string(),
-            span,
-        }),
+        AstPattern::Tuple(pats, pat_span) => {
+            // match 位置元组解构（SH-P1-2，2026-09-06）：与 `let (a, b) = e;` 同构——
+            // 按位置 `FieldGet` 取出后递归 `check_pattern`（嵌套元组 / 结构体 / 枚举 /
+            // 字面量子模式均经递归处理）。整体可反驳性取决于子模式：任一元素含可反驳
+            // 子模式（字面量 / 范围 / 嵌套枚举）则 `is_binding = false`，生成 `If` 条件链；
+            // 全为标识符 / `_` 时不可反驳，`is_binding = true` 直接兜底。
+            let ts = match pat_ty {
+                Type::Tuple(ts) => Some(ts.clone()),
+                // 引用到元组：剥一层引用后按元组解构（`match &t { (a, b) => .. }`）
+                Type::Ref(inner, _) => match &**inner {
+                    Type::Tuple(ts) => Some(ts.clone()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let ts = match ts {
+                Some(ts) => ts,
+                None => {
+                    return Err(TypeError::WrongType {
+                        expected: format!("元组（{} 元）", pats.len()),
+                        found: pat_ty.to_string(),
+                        span,
+                        related: vec![],
+                    })
+                }
+            };
+            if ts.len() != pats.len() {
+                return Err(TypeError::WrongType {
+                    expected: format!("{} 元元组", ts.len()),
+                    found: format!("{} 元解构模式", pats.len()),
+                    span,
+                    related: vec![(pat_span.clone(), "元组解构模式声明于此".to_string())],
+                });
+            }
+            let mut binds = Vec::new();
+            let mut bound_tys = Vec::new();
+            let mut cond: Option<HirExpr> = None;
+            for (i, p) in pats.iter().enumerate() {
+                let fty = ts[i].clone();
+                let (sub_cond, sub_binds, _, sub_tys) = check_pattern(
+                    ctx,
+                    p,
+                    &fty,
+                    HirExpr::new(
+                        HirExprKind::FieldGet {
+                            base: Box::new(scrutinee.clone()),
+                            index: i,
+                            ty: field_scalar_of(&fty),
+                        },
+                        Span::dummy(),
+                    ),
+                    span,
+                )?;
+                binds.extend(sub_binds);
+                bound_tys.extend(sub_tys);
+                if let Some(sc) = sub_cond {
+                    cond = Some(match cond {
+                        None => sc,
+                        Some(c) => HirExpr::new(
+                            HirExprKind::Binary(
+                                HirBinaryOp::And,
+                                Box::new(c),
+                                Box::new(sc),
+                            ),
+                            Span::dummy(),
+                        ),
+                    });
+                }
+            }
+            let is_binding = cond.is_none();
+            Ok((cond, binds, is_binding, bound_tys))
+        }
+        AstPattern::Struct(_name, fields) => {
+            // match 位置结构体解构（SH-P1-2，2026-09-06）：与 `let Point { x, y } = e;`
+            // 同构，按名查字段下标后递归 `check_pattern`。struct def 由 `pat_ty`
+            // （裸名 / 引用均经 resolve_full_name）取得，与 `let` 侧
+            // `lower_struct_destructure` 一致；`name` 仅作文档用途。
+            let struct_name = match pat_ty {
+                Type::Named(n, _) => n.clone(),
+                // 引用到结构体：剥一层引用后按结构体解构
+                Type::Ref(inner, _) => match &**inner {
+                    Type::Named(n, _) => n.clone(),
+                    _ => {
+                        return Err(TypeError::ExpectedStruct {
+                            found: pat_ty.to_string(),
+                            span,
+                        })
+                    }
+                },
+                _ => {
+                    return Err(TypeError::ExpectedStruct {
+                        found: pat_ty.to_string(),
+                        span,
+                    })
+                }
+            };
+            let def = ctx
+                .lookup_struct(&struct_name)
+                .cloned()
+                .or_else(|| {
+                    ctx.resolve_full_name(&struct_name)
+                        .and_then(|full| ctx.lookup_struct(&full).cloned())
+                })
+                .ok_or_else(|| TypeError::UndefinedType {
+                    name: struct_name.clone(),
+                    span,
+                })?;
+            let mut binds = Vec::new();
+            let mut bound_tys = Vec::new();
+            let mut cond: Option<HirExpr> = None;
+            for (fname, p) in fields {
+                let idx = def
+                    .fields
+                    .iter()
+                    .position(|(n, _)| n == fname)
+                    .ok_or_else(|| TypeError::UnknownField {
+                        struct_name: struct_name.clone(),
+                        field: fname.clone(),
+                        span,
+                    })?;
+                let fty = def.fields[idx].1.clone();
+                let (sub_cond, sub_binds, _, sub_tys) = check_pattern(
+                    ctx,
+                    p,
+                    &fty,
+                    HirExpr::new(
+                        HirExprKind::FieldGet {
+                            base: Box::new(scrutinee.clone()),
+                            index: idx,
+                            ty: field_scalar_of(&fty),
+                        },
+                        Span::dummy(),
+                    ),
+                    span,
+                )?;
+                binds.extend(sub_binds);
+                bound_tys.extend(sub_tys);
+                if let Some(sc) = sub_cond {
+                    cond = Some(match cond {
+                        None => sc,
+                        Some(c) => HirExpr::new(
+                            HirExprKind::Binary(
+                                HirBinaryOp::And,
+                                Box::new(c),
+                                Box::new(sc),
+                            ),
+                            Span::dummy(),
+                        ),
+                    });
+                }
+            }
+            let is_binding = cond.is_none();
+            Ok((cond, binds, is_binding, bound_tys))
+        }
         AstPattern::Range {
             lower,
             upper,
