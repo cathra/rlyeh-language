@@ -99,6 +99,7 @@ pub(crate) fn fn_signature_with_self(
     ctx.type_params = saved_params;
     Ok(FnSignature {
         params,
+        param_spans: f.params.iter().map(|p| p.span).collect(),
         return_type,
     })
 }

@@ -85,6 +85,7 @@ pub(crate) fn emit_closure_fn(
     ctx.insert_fn_signature(
         name.clone(),
         FnSignature {
+            param_spans: vec![Span::dummy(); fn_params.len()],
             params: fn_params,
             return_type: body_ty.clone(),
         },
@@ -545,6 +546,7 @@ pub(crate) fn try_closure_value_as_fn(ty: &Type) -> Option<(HirExpr, Type)> {
     }
     let sig = FnSignature {
         params: params.clone(),
+        param_spans: vec![Span::dummy(); params.len()],
         return_type: (**ret).clone(),
     };
     Some((
@@ -668,6 +670,7 @@ pub(crate) fn check_closure_expected(
     };
     let FnSignature {
         params: sig_params,
+        param_spans: _,
         return_type,
     } = match expected {
         Type::Fn(sig) => (**sig).clone(),
@@ -742,6 +745,7 @@ pub(crate) fn check_closure_expected(
         name.clone(),
         FnSignature {
             params: sig_params.clone(),
+            param_spans: vec![Span::dummy(); sig_params.len()],
             return_type: return_type.clone(),
         },
     );
@@ -764,6 +768,7 @@ pub(crate) fn check_closure_expected(
     Ok((
         HirExpr::new(HirExprKind::FnPtr(name), Span::dummy()),
         Type::Fn(Box::new(FnSignature {
+            param_spans: vec![Span::dummy(); sig_params.len()],
             params: sig_params,
             return_type,
         })),

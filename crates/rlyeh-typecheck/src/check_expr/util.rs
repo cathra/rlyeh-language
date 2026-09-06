@@ -478,6 +478,7 @@ pub(crate) fn substitute(ty: &Type, subst: &HashMap<String, Type>) -> Type {
         // 函数名 / 闭包实参均无法 unify（expects fn(T, T) -> i64 错误）。
         Type::Fn(sig) => Type::Fn(Box::new(FnSignature {
             params: sig.params.iter().map(|p| substitute(p, subst)).collect(),
+            param_spans: sig.param_spans.clone(),
             return_type: substitute(&sig.return_type, subst),
         })),
         Type::AssocProjection { base, assoc } => Type::AssocProjection {

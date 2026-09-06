@@ -164,13 +164,14 @@ pub(super) fn replace_type_self(ty: &Type, concrete: &Type) -> Type {
         Tuple(items) => Tuple(items.iter().map(|i| replace_type_self(i, concrete)).collect()),
         Array(inner, size) => Array(Box::new(replace_type_self(inner, concrete)), *size),
         Fn(sig) => {
-            let params = sig
+            let params: Vec<Type> = sig
                 .params
                 .iter()
                 .map(|p| replace_type_self(p, concrete))
                 .collect();
             let ret = replace_type_self(&sig.return_type, concrete);
             Fn(Box::new(crate::types::FnSignature {
+                param_spans: vec![Span::dummy(); params.len()],
                 params,
                 return_type: ret,
             }))

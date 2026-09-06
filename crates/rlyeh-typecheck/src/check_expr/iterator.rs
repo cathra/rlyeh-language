@@ -327,6 +327,7 @@ pub(super) fn check_iterator_adapter(
             let u = closure_return_ty(ctx, c, std::slice::from_ref(elem_ty), c.span)?;
             let fn_sig = FnSignature {
                 params: vec![elem_ty.clone()],
+                param_spans: vec![Span::dummy()],
                 return_type: u.clone(),
             };
             let binding =
@@ -352,6 +353,7 @@ pub(super) fn check_iterator_adapter(
             let u = closure_return_ty(ctx, c, &[acc_ty.clone(), elem_ty.clone()], c.span)?;
             let fn_sig = FnSignature {
                 params: vec![acc_ty.clone(), elem_ty.clone()],
+                param_spans: vec![Span::dummy(); 2],
                 return_type: u.clone(),
             };
             let binding =

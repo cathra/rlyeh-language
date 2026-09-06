@@ -362,6 +362,9 @@ impl fmt::Display for Type {
 pub struct FnSignature {
     /// 参数类型
     pub params: Vec<Type>,
+    /// 参数声明位置（SH-P2-6 L2 多位置）：与 `params` 同序，用于实参类型不匹配
+    /// 回指形参声明处；合成 / 无源码位置的签名填 `Span::dummy()`
+    pub param_spans: Vec<Span>,
     /// 返回类型
     pub return_type: Type,
 }

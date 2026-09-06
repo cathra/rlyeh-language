@@ -312,6 +312,7 @@ pub(super) fn emit_thread_entry(
         name.clone(),
         FnSignature {
             params: vec![Type::I64],
+            param_spans: vec![Span::dummy()],
             return_type: ret.clone(),
         },
     );

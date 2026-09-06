@@ -199,6 +199,7 @@ pub(crate) fn resolve_ast_type(
                 .collect::<Result<Vec<_>, _>>()?;
             let ret = resolve_ast_type(ctx, ret, span)?;
             Ok(Type::Fn(Box::new(FnSignature {
+                param_spans: vec![span; params.len()],
                 params,
                 return_type: ret,
             })))

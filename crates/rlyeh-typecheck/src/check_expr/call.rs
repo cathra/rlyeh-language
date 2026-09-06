@@ -810,13 +810,18 @@ pub(super) fn check_call(
             (hir, ty)
         };
         if !ty.compatible_with(param_ty) {
+            let related = if signature.param_spans.get(i).map_or(true, |s| *s == Span::dummy()) {
+                vec![]
+            } else {
+                vec![(signature.param_spans[i], format!("形参 #{} 声明于此", i + 1))]
+            };
             return Err(TypeError::ArgumentTypeMismatch {
                 name: name.clone(),
                 index: i,
                 expected: param_ty.to_string(),
                 found: ty.to_string(),
                 span: arg.span,
-                related: vec![],
+                related,
             });
         }
         // S2 unsize coercion：`&[T; N]` 实参传给 `&[T]` / `&mut [T]` 形参时构造
@@ -874,13 +879,18 @@ pub(super) fn check_indirect_call(
             (hir, ty)
         };
         if !ty.compatible_with(param_ty) {
+            let related = if signature.param_spans.get(i).map_or(true, |s| *s == Span::dummy()) {
+                vec![]
+            } else {
+                vec![(signature.param_spans[i], format!("形参 #{} 声明于此", i + 1))]
+            };
             return Err(TypeError::ArgumentTypeMismatch {
                 name: "<函数指针>".to_string(),
                 index: i,
                 expected: param_ty.to_string(),
                 found: ty.to_string(),
                 span: arg.span,
-                related: vec![],
+                related,
             });
         }
         hir_args.push(hir);
