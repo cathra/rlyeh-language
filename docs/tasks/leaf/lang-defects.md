@@ -137,9 +137,9 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 
 - **症状**：用户程序跨模块调用 `io::nio::Poller` 的 `&mut self` 方法 `q.register(...)` → typecheck 报 `expected (), found io::nio::Poller`；同模块 `future.rl` 调用 `q.register(...)` 正常（W3 executor 已落地）。
 - **对照**：跨模块调用 `&self` 方法（如 `q.poll(0)`）正常；仅 `&mut self` 自动借用跨模块失败。
-- **绕过**：显式 `(&mut q).register(...)` 提供 `&mut` 接收者，功能正确（y2c_poller_kqueue.rl 已验证）。
-- **影响**：std 跨模块 `&mut self` API（`Poller::register`/`reregister`/`deregister`）从用户代码直接调用报错，需显式 `&mut` 借用；属 API 人体工学名实非阻塞。
-- **状态**：📋 登记（MVP 已知限制，非阻塞）。
+- **绕过（已不需）**：原以显式 `(&mut q).register(...)` 提供 `&mut` 接收者规避；现自动借用已生效，`q.register(...)` 直接可用（y2c_poller_kqueue.rl 已改为直接调用）。
+- **影响**：修复前 std 跨模块 `&mut self` API（`Poller::register`/`reregister`/`deregister`）从用户代码直接调用报错，需显式 `&mut` 借用；属 API 人体工学名实非阻塞。
+- **状态**：✅ 已修复（2026-09-06，复现验证）：用户代码跨模块调用 std `&mut self` 方法 `q.register(...)`（接收者 `q` 无论 `let`/`let mut` 绑定）已能自动借用 `&mut`，正确编译运行；用户模块内 `&mut self` 方法跨模块调用（不可变绑定 `c` 上 `c.inc()` 仍正确变更状态）亦正常。新增回归用例 `tests/run-pass/cross_module_mut_self.rl`（用户模块 `&mut self` 跨模块调用，输出 2）锁定修复。
 
 ## 变更记录
 
@@ -154,3 +154,4 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 2026-08-29 | 新增 #9（方法返回 `&self.struct_field` 引用悬空，源自 P7d-1 / Y6c 实证）：V1 真实取址对按值 self 字段生成临时栈地址、返回即悬空，MVP 借用检查未判定为 DanglingReference；规避——内部引用用引用类型字段存储并返回引用值（非取地址） |
 | 2026-08-29 | #7 完整 Poller kqueue 分派标记已完成（Y2c，y2c_poller_kqueue.rl 端到端验证 macOS kqueue EV_ADD/kq_poll）；新增 #10（跨模块 &mut self 自动借用失效，源自 Y2c） |
 | 2026-08-29 | #6 std Mutex 泛型化（Y4b-2，P5）与 #8 Channel<T> 泛型化（Y4c，P7c）标记已完成（代码早已落地，本轮补 mutex_value.rl 验证 + 文档收尾）；173 用例全绿 |
+| 2026-09-06 | #10 跨模块 `&mut self` 自动借用失效标记已修复：复现验证用户代码跨模块调用 std / 用户模块 `&mut self` 方法（`q.register(...)` / `c.inc()`，接收者无论 `let`/`let mut` 绑定）均正确自动借用 `&mut` 并变更状态；原 y2c_poller_kqueue.rl 的 `(&mut q).register(...)` 冗余写法已改为 `q.register(...)`；新增回归用例 `tests/run-pass/cross_module_mut_self.rl`（输出 2）锁定修复 |

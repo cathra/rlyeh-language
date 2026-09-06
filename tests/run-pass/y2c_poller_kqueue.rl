@@ -4,8 +4,8 @@
 // socketpair：fd1 写数据 → fd0 可读 → poll 返回 token + Readable 就绪事件。
 //
 // 注：跨模块调用 io::nio::Poller 的 &mut self 方法（register）时，自动借用 &mut
-// 暂未生效（已知语言限制，未来修复后可直接写 q.register(...)），此处显式 (&mut q)
-// 借用绕过。kqueue 路径本身（EV_ADD / kq_poll 分派）已正确工作。
+// 已生效（lang-defects #10，2026-09-06 修复），故直接写 `q.register(...)` 即可，
+// 不再需要显式 (&mut q) 借用。kqueue 路径本身（EV_ADD / kq_poll 分派）已正确工作。
 
 fn main() {
     match Poller::new() {
@@ -14,7 +14,7 @@ fn main() {
             let sp = net::socketpair_stream();
             let fd0 = net::fd_at(sp, 0);
             let fd1 = net::fd_at(sp, 1);
-            match (&mut q).register(fd0, 7, io::nio::Interest::Readable) {
+            match q.register(fd0, 7, io::nio::Interest::Readable) {
                 Result::Ok(_) => {}
                 Result::Err(_) => { println(-1); return; }
             }
