@@ -341,6 +341,7 @@ pub(crate) fn check_item(
                 .iter()
                 .map(|p| HirParam { span: Span::dummy(),
                     name: p.name.clone(),
+                    is_ref: matches!(&p.type_, rlyeh_ast::AstType::Ref(..)),
                 })
                 .collect();
             // extern 声明：序列化签名（参数类型名 + 返回类型名）供 LIR 解析

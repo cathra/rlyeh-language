@@ -70,6 +70,14 @@ pub struct HirParam {
     pub name: String,
     /// 源码位置
     pub span: Span,
+    /// 是否为引用参数（`&T` / `&mut T` / `&self` / `&mut self`）。
+    ///
+    /// 借用检查据此区分「按引用参数」（指向调用方内存，返回 `&param.field`
+    /// 合法）与「按值参数」（`self` 按值等，返回 `&param.field` 悬垂，
+    /// 见 lang-defects #9）。由 typecheck 在 HIR 构建时按 AST 参数类型
+    /// `AstType::Ref` 判定填充；合成参数（`actor`/`closure`/`thread`/extern）
+    /// 一律记为 `true`（调用方/运行时所有，沿用「参数永不被标记悬垂」现状）。
+    pub is_ref: bool,
 }
 
 /// const 声明。

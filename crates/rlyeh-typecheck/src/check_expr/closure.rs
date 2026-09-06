@@ -96,7 +96,7 @@ pub(crate) fn emit_closure_fn(
         kind: HirItemKind::Fn(HirFnDecl {
             params: fn_names
                 .iter()
-                .map(|n| HirParam { span: Span::dummy(), name: n.clone() })
+                .map(|n| HirParam { span: Span::dummy(), name: n.clone(), is_ref: true })
                 .collect(),
             body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],
@@ -755,7 +755,7 @@ pub(crate) fn check_closure_expected(
         kind: HirItemKind::Fn(HirFnDecl {
             params: names
                 .iter()
-                .map(|n| HirParam { span: Span::dummy(), name: n.clone() })
+                .map(|n| HirParam { span: Span::dummy(), name: n.clone(), is_ref: true })
                 .collect(),
             body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],

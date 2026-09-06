@@ -81,6 +81,18 @@ struct Borrow {
 /// HIR 子节点（表达式 / 语句 / 块）现已携带源 `Span`；错误坐标取自查错节点
 /// 自身的 `span`（表达式 / 语句 / 块级粒度，合并源码坐标），经 `render`
 /// 还原为用户坐标（取代此前函数级 `HirItem.span` 的粗粒度坐标）。
+/// 解析 `&expr` 的「引用根变量」：沿 `FieldGet` / `Index` 链下钻到底层变量名
+///（如 `&x.a.b[0].c` → `x`）。用于悬垂判定（lang-defects #9）。
+fn ref_root(expr: &HirExpr) -> Option<String> {
+    match &expr.kind {
+        HirExprKind::Variable(name) => Some(name.clone()),
+        HirExprKind::FieldGet { base, .. } => ref_root(base),
+        HirExprKind::Index { base, .. } => ref_root(base),
+        _ => None,
+    }
+}
+
+/// 借用检查器。
 pub struct BorrowChecker {
     scopes: Vec<Scope>,
     errors: Vec<BorrowError>,
@@ -92,6 +104,10 @@ pub struct BorrowChecker {
     pos: usize,
     /// 当前函数参数名（悬垂判定：借参数不悬垂）。
     param_names: Vec<String>,
+    /// 当前函数**引用参数**名（`&T` / `&mut T` / `&self` / `&mut self`）：
+    /// 指向调用方内存，返回 `&param.field` 合法（不悬垂）。由 `HirParam::is_ref`
+    /// 填充（lang-defects #9 修复：区分按值/按引用参数）。
+    ref_param_names: Vec<String>,
     /// 当前查错节点的坐标（表达式 / 语句 / 块 / 函数级回退）：由 `check_expr` /
     /// `check_stmt` / `check_block` 在入口处设为被查节点自身的 `span`，取代此前
     /// 函数级 `HirItem.span` 的粗粒度坐标，使报错定位到具体节点。
@@ -108,6 +124,7 @@ impl BorrowChecker {
             uses: HashMap::new(),
             pos: 0,
             param_names: Vec::new(),
+            ref_param_names: Vec::new(),
             cur_span: Span {
                 start: 0,
                 end: 0,
@@ -127,6 +144,12 @@ impl BorrowChecker {
                     // 函数级状态复位
                     self.cur_span = item.span;
                     self.param_names = f.params.iter().map(|p| p.name.clone()).collect();
+                    self.ref_param_names = f
+                        .params
+                        .iter()
+                        .filter(|p| p.is_ref)
+                        .map(|p| p.name.clone())
+                        .collect();
                     self.borrows.clear();
                     self.uses.clear();
                     self.scopes.push(Scope::default());
@@ -202,7 +225,7 @@ impl BorrowChecker {
     ///
     /// `var`：`let r = &x;` 的引用变量名；表达式内临时借用（`f(&x)`、
     /// 聚合字段内嵌 `&x`）传 `None`（仅当前语句活跃）。
-    fn register_borrow(&mut self, var: Option<&str>, source: &str, is_mut: bool) {
+    fn register_borrow(&mut self, var: Option<&str>, source: &str, is_mut: bool, check_mut: bool) {
         // 可变性互斥 / 别名冲突
         for b in self.active_borrows(source) {
             match (b.kind, is_mut) {
@@ -245,8 +268,10 @@ impl BorrowChecker {
                 (BorrowKind::Shared, false) => {}
             }
         }
-        // `&mut x` 要求 `x` 为 `let mut`（E0596）；全局 / 未绑定（const）宽松跳过
-        if is_mut {
+        // `&mut x` 要求 `x` 为 `let mut`（E0596）；全局 / 未绑定（const）宽松跳过。
+        // `check_mut=false` 用于字段/索引引用：字段级 `&mut`（含 `&mut self.field`）
+        // 由 check_expr 既有路径处理，此处仅登记借用做悬垂判定，跳过可变性检查（#9 修复）。
+        if is_mut && check_mut {
             if let Some(b) = self.lookup(source) {
                 if !b.mutable {
                     self.errors.push(BorrowError::borrow_mut_immutable(source, self.cur_span));
@@ -272,21 +297,41 @@ impl BorrowChecker {
         });
     }
 
+    /// 引用根变量 `root` 指向的存储是否「逃出当前函数帧即悬垂」。
+    ///
+    /// - 引用参数（`&self` 等，`ref_param_names`）：指向调用方内存 → 不悬垂；
+    /// - 全局 / const（既非局部绑定也非参数）→ 生命周期静态 → 不悬垂；
+    /// - 局部 `let` 绑定 / 按值参数（`self` 按值等）→ 帧销毁即失效 → 悬垂。
+    fn is_escaping_root(&self, root: &str) -> bool {
+        if self.ref_param_names.iter().any(|n| n == root) {
+            return false;
+        }
+        let is_local_or_param =
+            self.lookup(root).is_some() || self.param_names.iter().any(|n| n == root);
+        if !is_local_or_param {
+            return false;
+        }
+        true
+    }
+
     /// 悬垂检查：返回的引用必须指向参数（或全局），不能是局部变量的引用。
+    /// （`fn f() -> &i64 { let x = 1; &x }`，Rust E0597 对应）。
     fn check_dangling_return(&mut self, expr: &HirExpr) {
         match &expr.kind {
             HirExprKind::Variable(v) => {
                 for b in &self.borrows {
-                    if b.var.as_deref() == Some(v) && !self.param_names.contains(&b.source) {
+                    if b.var.as_deref() == Some(v) && self.is_escaping_root(&b.source) {
                         self.errors.push(BorrowError::dangling_reference(v, self.cur_span));
                         return;
                     }
                 }
             }
             HirExprKind::Ref { expr: inner, .. } => {
-                if let HirExprKind::Variable(src) = &(inner.as_ref()).kind {
-                    if !self.param_names.contains(src) {
-                        self.errors.push(BorrowError::dangling_reference(src, self.cur_span));
+                // #9：沿字段/索引链解析引用根变量；按值参数 / 局部绑定逃逸出
+                // 函数帧即悬垂，引用参数（`&self` 等）指向调用方内存则合法。
+                if let Some(root) = ref_root(inner) {
+                    if self.is_escaping_root(&root) {
+                        self.errors.push(BorrowError::dangling_reference(&root, self.cur_span));
                     }
                 }
             }
@@ -370,7 +415,7 @@ impl BorrowChecker {
             }
         }
         if let Some(src) = base_src {
-            if !self.param_names.contains(&src) {
+            if self.is_escaping_root(&src) {
                 self.errors
                     .push(BorrowError::dangling_reference(&sf_name, self.cur_span));
             }
@@ -416,11 +461,21 @@ impl BorrowChecker {
                 // 具名借用（引用变量 = r），借用活跃到 r 最后一次使用。
                 // 先检查借用（shadowing 时 init 引用的是旧绑定），再注册绑定。
                 if let HirExprKind::Ref { expr, is_mut, .. } = &(init).kind {
-                    if let HirExprKind::Variable(src) = &(expr.as_ref()).kind {
-                        self.register_borrow(Some(name), src, *is_mut);
-                    } else {
-                        // 非变量源（防御：typecheck 已限制 `&` 目标为变量）
-                        self.check_expr(init);
+                    match &(expr.as_ref()).kind {
+                        HirExprKind::Variable(src) => {
+                            // 直接变量引用：完整借用检查（含可变性 E0596）
+                            self.register_borrow(Some(name), src, *is_mut, true);
+                        }
+                        _ => {
+                            if let Some(src) = ref_root(expr) {
+                                // 字段/索引引用：仅登记用于悬垂判定，跳过可变性检查
+                                // （字段级 &mut 由 check_expr 既有路径处理，#9 修复避免误报）
+                                self.register_borrow(Some(name), &src, *is_mut, false);
+                            } else {
+                                // 非变量源（防御：typecheck 已限制 `&` 目标为变量）
+                                self.check_expr(init);
+                            }
+                        }
                     }
                 } else {
                     self.check_expr(init);
@@ -619,10 +674,17 @@ impl BorrowChecker {
             // - `*p` 读 / `*p = v` 写经引用进行：读原变量不受限（宽松），
             //   写是借用用途（`&mut` 借出即为此），均不额外检查。
             HirExprKind::Ref { expr, is_mut, .. } => {
-                if let HirExprKind::Variable(src) = &(expr.as_ref()).kind {
-                    self.register_borrow(None, src, *is_mut);
-                } else {
-                    self.check_expr(expr);
+                match &(expr.as_ref()).kind {
+                    HirExprKind::Variable(src) => {
+                        self.register_borrow(None, src, *is_mut, true);
+                    }
+                    _ => {
+                        if let Some(src) = ref_root(expr) {
+                            self.register_borrow(None, &src, *is_mut, false);
+                        } else {
+                            self.check_expr(expr);
+                        }
+                    }
                 }
             }
             HirExprKind::Deref { expr, .. } => self.check_expr(expr),

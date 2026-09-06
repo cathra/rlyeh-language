@@ -1,2 +1,3 @@
 错误: [typecheck] 4:18: error[TC006]: expected `i64`, found `string`
   = help: 调整表达式类型以匹配期望，或显式转换（`as`）
+  = note: 类型标注 `i64` (4:12)

@@ -322,6 +322,7 @@ pub(super) fn emit_thread_entry(
         kind: HirItemKind::Fn(HirFnDecl {
             params: vec![HirParam { span: Span::dummy(),
                 name: "__input".to_string(),
+                is_ref: true,
             }],
             body: Some(HirBlock { span: Span::dummy(),
                 stmts: vec![],

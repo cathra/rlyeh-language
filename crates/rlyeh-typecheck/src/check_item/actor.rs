@@ -176,15 +176,18 @@ pub(crate) fn expand_actor(
         let m_name = format!("{actor_full}::__m{i}");
         let mut params = vec![HirParam { span: Span::dummy(),
             name: "self".to_string(),
+            is_ref: true,
         }];
         for p in &m.params {
             params.push(HirParam { span: Span::dummy(),
                 name: p.name.clone(),
+                is_ref: true,
             });
         }
         for j in params.len()..4 {
             params.push(HirParam { span: Span::dummy(),
                 name: format!("__p{j}"),
+                is_ref: true,
             });
         }
         let body = check_actor_method_body(ctx, m, &actor_full)?;
@@ -208,6 +211,7 @@ pub(crate) fn expand_actor(
             params: (0..5)
                 .map(|j| HirParam { span: Span::dummy(),
                     name: ["self", "kind", "a", "b", "c"][j].to_string(),
+                    is_ref: true,
                 })
                 .collect(),
             body: Some(HirBlock { span: Span::dummy(),
@@ -334,6 +338,7 @@ pub(crate) fn emit_actor_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<Hi
                     .enumerate()
                     .map(|(i, _)| HirParam { span: Span::dummy(),
                         name: format!("__a{i}"),
+                        is_ref: true,
                     })
                     .collect(),
                 body: None,
@@ -369,7 +374,7 @@ pub(crate) fn emit_gc_runtime_externs(ctx: &mut TypeContext, out: &mut Vec<HirIt
                 params: args
                     .iter()
                     .enumerate()
-                    .map(|(i, _)| HirParam { span: Span::dummy(), name: format!("__a{i}") })
+                    .map(|(i, _)| HirParam { span: Span::dummy(), name: format!("__a{i}"), is_ref: true })
                     .collect(),
                 body: None,
                 is_extern: true,

@@ -223,6 +223,7 @@ pub(super) fn instantiate_generic_fn(
         .iter()
         .map(|p| HirParam { span: Span::dummy(),
             name: p.name.clone(),
+            is_ref: matches!(&p.type_, rlyeh_ast::AstType::Ref(..)),
         })
         .collect();
     ctx.mono_items.push(HirItem {
@@ -380,6 +381,7 @@ pub(super) fn instantiate_impl_method(
         .iter()
         .map(|p| HirParam { span: Span::dummy(),
             name: p.name.clone(),
+            is_ref: matches!(&p.type_, rlyeh_ast::AstType::Ref(..)),
         })
         .collect();
     ctx.mono_items.push(HirItem {
