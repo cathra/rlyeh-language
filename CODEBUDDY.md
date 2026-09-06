@@ -285,11 +285,13 @@ let (name, len) = split_name(String::from("rlyeh"));   // len = 5
 语义：元组为 N 槽聚合，元素按位置命名 `f0..fN-1`；解构 desugar 为
 「临时变量承载元组值（init 只求值一次）+ 各元素按位置 `FieldGet` 绑定」。
 
-> 已知限制：解构的元素模式支持标识符、`_`、**嵌套元组**与**结构体**
-> （`let ((a, b), c) = e;` / `let Point { x, y } = e;` 均已支持，2026-09-06；
-> 结构体字段可嵌套元组 / 结构体模式、`&` 引用剥层）；仍不支持 `(mut a, b)`
-> （parser 不接受元组模式内的 `mut`）、`..` 剩余模式，以及**枚举**解构模式
-> （`let` 与 `match` 位置均 Unsupported）。
+> 已知限制：解构的元素模式支持标识符、`_`、**嵌套元组**、**结构体**
+> 与**枚举**（含任意相互嵌套）；`let` 位置 `let Some(x) = e;` /
+> `let Some((a, b)) = e;` / `let Point { v: Some(a) } = e;` / 嵌套枚举
+> `let Some(Some(x)) = e;` 均已支持（2026-09-06，与 match 位置收窄同构、仅绑定
+> 不运行时校验）；仍不支持 `(mut a, b)`（parser 不接受元组模式内的 `mut`）
+> 与 `..` 剩余模式；match 位置的元组 / 结构体模式仍 Unsupported（仅 `let`
+> 位置解构路径支持）。
 
 ### 3.5.2 `if let` / `while let` 模式控制流（SH-P0-6 ✅，2026-09-02）
 

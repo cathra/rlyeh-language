@@ -6,7 +6,7 @@ use rlyeh_hir::{FieldScalar, HirBlock, HirExpr, HirStmt, HirExprKind, HirStmtKin
 
 use crate::check_expr::{
     check_closure_expected, check_closure_value_binding, check_deferred_closure_binding, coerce_to_dyn,
-    infer_expr, make_slice_fat, resolve_ast_type,
+    infer_expr, make_slice_fat, resolve_ast_type, substitute,
 };
 use crate::context::TypeContext;
 use crate::error::TypeError;
@@ -154,9 +154,57 @@ fn lower_tuple_destructure(
                 )?;
                 out.extend(inner);
             }
+            AstPattern::Enum(nv, ns) => {
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    nv,
+                    ns,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::EnumPath(segments, ns) => {
+                let nv = segments.last().cloned().ok_or_else(|| {
+                    TypeError::Unsupported {
+                        what: "空路径枚举模式".to_string(),
+                        span,
+                    }
+                })?;
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    &nv,
+                    ns,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
             _ => {
                 return Err(TypeError::Unsupported {
-                    what: "嵌套解构模式（元组内仅支持标识符 / `_` / 嵌套元组）".to_string(),
+                    what: "嵌套解构模式（元组内仅支持标识符 / `_` / 嵌套元组 / 嵌套枚举）".to_string(),
                     span,
                 })
             }
@@ -282,9 +330,245 @@ fn lower_struct_destructure(
                 )?;
                 out.extend(inner);
             }
+            AstPattern::Enum(nv, ns) => {
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    nv,
+                    ns,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::EnumPath(segments, ns) => {
+                let nv = segments.last().cloned().ok_or_else(|| {
+                    TypeError::Unsupported {
+                        what: "空路径枚举模式".to_string(),
+                        span,
+                    }
+                })?;
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    &nv,
+                    ns,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
             _ => {
                 return Err(TypeError::Unsupported {
-                    what: "嵌套解构模式（结构体字段仅支持标识符 / `_` / 嵌套元组 / 嵌套结构体）"
+                    what: "嵌套解构模式（结构体字段仅支持标识符 / `_` / 嵌套元组 / 嵌套结构体 / 嵌套枚举）"
+                        .to_string(),
+                    span,
+                })
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 枚举解构绑定 `let Some(x) = e;` / `let Some((a, b)) = e;` / `let Point { v: Some(a) } = e;`。
+///
+/// desugar 为「临时变量承载枚举值 + 按变体字段槽经 `FieldGet` 取出后按子模式绑定」，
+/// 与 match 位置 `AstPattern::Enum` 收窄（check_expr/index_enum.rs）同构；此处只绑定、
+/// 不生成运行时 tag 校验（与 `let (a,b)` / `let Point{..}` 同哲学：信任类型推断）。
+///
+/// 非标量枚举运行时为对象 {槽0=tag, 槽1..=payload}，字段按 `1+i` 槽经 `FieldGet` 读取
+/// （与构造时对齐）；标量枚举值即 tag 本身、变体均为单元（无字段），故子模式必为空。
+fn lower_enum_destructure(
+    ctx: &mut TypeContext,
+    base: HirExpr,
+    base_ty: &Type,
+    variant: &str,
+    sub_pats: &[AstPattern],
+    mutable: bool,
+    span: Span,
+) -> Result<Vec<HirStmt>, TypeError> {
+    let en = match base_ty {
+        Type::Named(en, _) => en.clone(),
+        Type::ScalarEnum(en) => en.clone(),
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: format!("枚举解构绑定需要枚举类型，得到 `{base_ty}`"),
+                span,
+            })
+        }
+    };
+    // 枚举名可能为 use 导入的本地名，回退经 resolve_full_name 解析完整符号名。
+    let enum_def = ctx
+        .lookup_enum(&en)
+        .cloned()
+        .or_else(|| {
+            ctx.resolve_full_name(&en)
+                .and_then(|full| ctx.lookup_enum(&full).cloned())
+        })
+        .ok_or_else(|| TypeError::UndefinedType {
+            name: en.clone(),
+            span,
+        })?;
+    let variant_def = enum_def
+        .variants
+        .iter()
+        .find(|v| v.name == variant)
+        .cloned()
+        .ok_or_else(|| TypeError::FunctionNotFound {
+            name: format!("{en}::{variant}"),
+            span,
+        })?;
+    if sub_pats.len() != variant_def.fields.len() {
+        return Err(TypeError::UnexpectedArgumentCount {
+            name: format!("{en}::{variant}"),
+            expected: variant_def.fields.len(),
+            found: sub_pats.len(),
+            span,
+        });
+    }
+    // 字段类型经泛型替换（优先 generic_subst，再从 `base_ty` 类型实参推导枚举泛型映射）。
+    let mut subst = ctx.generic_subst.clone();
+    if let Type::Named(_, pat_args) = base_ty {
+        if !pat_args.is_empty() && pat_args.len() == enum_def.type_params.len() {
+            for (tp, arg) in enum_def.type_params.iter().zip(pat_args) {
+                subst.insert(tp.clone(), arg.clone());
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for (i, (sub, (_, fty))) in sub_pats.iter().zip(&variant_def.fields).enumerate() {
+        let fty_sub = substitute(fty, &subst);
+        let val = HirExpr::new(
+            HirExprKind::FieldGet {
+                base: Box::new(base.clone()),
+                index: 1 + i,
+                ty: field_scalar_of(&fty_sub),
+            },
+            Span::dummy(),
+        );
+        match sub {
+            AstPattern::Wildcard => {}
+            AstPattern::Ident(name) => {
+                let stored = ctx.insert_variable(name.clone(), fty_sub);
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: stored,
+                        init: val,
+                        mutable,
+                    },
+                    Span::dummy(),
+                ));
+            }
+            AstPattern::Tuple(nested, nested_span) => {
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_tuple_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty_sub,
+                    nested,
+                    *nested_span,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::Struct(_, nested_fields) => {
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_struct_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty_sub,
+                    nested_fields,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::Enum(nested_variant, nested_sub) => {
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty_sub,
+                    nested_variant,
+                    nested_sub,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::EnumPath(segments, nested_sub) => {
+                let nv = segments.last().cloned().ok_or_else(|| TypeError::Unsupported {
+                    what: "空路径枚举模式".to_string(),
+                    span,
+                })?;
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_enum_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty_sub,
+                    &nv,
+                    nested_sub,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            _ => {
+                return Err(TypeError::Unsupported {
+                    what: "枚举解构子模式仅支持标识符 / `_` / 嵌套元组 / 嵌套结构体 / 嵌套枚举"
                         .to_string(),
                     span,
                 })
@@ -574,6 +858,60 @@ pub(crate) fn check_stmt_inner(
                         base,
                         &ty,
                         fields,
+                        *mutable,
+                        span,
+                    )?;
+                    out.extend(nested);
+                    Ok((out, ty))
+                }
+                // 枚举解构绑定 `let Some(x) = e;`（含 `lib::Opt::Some(x)` 路径形式）。
+                // 临时变量承载枚举值后按变体字段槽展开（与 lower_enum_destructure 同构）。
+                AstPattern::Enum(variant, sub_pats) => {
+                    let tmp = ctx.fresh_temp();
+                    let mut out = vec![HirStmt::new(
+                        HirStmtKind::Let {
+                            name: tmp.clone(),
+                            init: h_init,
+                            mutable: false,
+                        },
+                        Span::dummy(),
+                    )];
+                    let base = HirExpr::new(HirExprKind::Variable(tmp), Span::dummy());
+                    let nested = lower_enum_destructure(
+                        ctx,
+                        base,
+                        &ty,
+                        variant,
+                        sub_pats,
+                        *mutable,
+                        span,
+                    )?;
+                    out.extend(nested);
+                    Ok((out, ty))
+                }
+                AstPattern::EnumPath(segments, sub_pats) => {
+                    let variant = segments.last().cloned().ok_or_else(|| {
+                        TypeError::Unsupported {
+                            what: "空路径枚举模式".to_string(),
+                            span,
+                        }
+                    })?;
+                    let tmp = ctx.fresh_temp();
+                    let mut out = vec![HirStmt::new(
+                        HirStmtKind::Let {
+                            name: tmp.clone(),
+                            init: h_init,
+                            mutable: false,
+                        },
+                        Span::dummy(),
+                    )];
+                    let base = HirExpr::new(HirExprKind::Variable(tmp), Span::dummy());
+                    let nested = lower_enum_destructure(
+                        ctx,
+                        base,
+                        &ty,
+                        &variant,
+                        sub_pats,
                         *mutable,
                         span,
                     )?;

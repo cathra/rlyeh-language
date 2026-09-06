@@ -612,6 +612,7 @@ pub(crate) use closure::fix_deferred_closure_with_sig;
 pub(crate) use closure::check_closure_expected;
 pub(crate) use resolve::resolve_ast_type;
 pub(crate) use construct::check_string_from;
+pub(crate) use util::substitute;
 // block/misc 对外 API
 pub(crate) use block::{check_block, check_block_inner};
 pub(crate) use misc::{builtin_signature, coerce_to_dyn, type_mentions_self,

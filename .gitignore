@@ -22,6 +22,7 @@ dist/
 !tests/run-pass/atomic_i64.out
 !tests/run-pass/concurrent_counter.out
 !tests/run-pass/tuple_destructure.out
+!tests/run-pass/enum_destructure.out
 !tests/run-pass/if_while_let.out
 !tests/run-pass/match_guard_range_or.out
 !tests/run-pass/drop_raii.out
