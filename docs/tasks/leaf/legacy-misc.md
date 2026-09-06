@@ -53,9 +53,9 @@
 
 ### 4.（新增）`dyn Trait` 作函数参数/返回值受限（源自 H4/F）
 
-**现状**：`fn_sig.rs:74-94` H4 MVP 限制——`dyn Trait` 为 2 槽胖指针，仅支持 `let d: dyn Trait = &obj;` 局部变量主路径，**暂不支持作为函数/方法参数与返回值**。
+**现状**：H4 MVP 曾限制 `dyn Trait` 仅支持 `let d: dyn Trait = &obj;` 局部变量主路径。现 `&dyn Trait`（2 槽胖指针）作函数/方法参数与返回值已可用（见 lang-defects #2 / P4 `coerce_to_dyn`）：`fn source(&self) -> Option<&dyn Error>`、`fn f(x: &dyn Trait)` 等均正常，`p4_dyn_upshift.rl` / `error_source.rl` 已验证。裸 `dyn Trait`（按值，DST 不可存储）仍不可作参数/返回值，与 Rust 一致，非缺陷。
 
-**处理建议**：已登记 lang-defects #2（`&dyn Error` 上转型）连带解决；此处记录 H4 原始限制。
+**处理建议**：已随 lang-defects #2（P4 `&dyn Error` 上转型）解决；此处保留 H4 原始限制记录。
 
 ### 5.（新增）空数组字面量 `[]` 与范围/元组模式（源自 J/B）
 
@@ -83,3 +83,4 @@
 |------|------|
 | 2026-08-26 | 由阶段 A–F 执行记录细化为独立叶子文档 |
 | 2026-08-28 | 细化：三主题补充实现文件与「遗留限制」细目（rlyeh new 缺 --target/lib 空壳；切片缺 [..]/HashMap/负索引；String::from 仅 let+直链+fn 边界）；新增 #4 dyn Trait 参数限制、#5 空数组字面量/模式限制；新增「阶段 A–F 其他遗留项」跨阶段待补表（E1 Windows/ARM、F1 LSP MVP、B3/B4/L2 延后承接项） |
+| 2026-09-06 | #4 `dyn Trait` 作参数/返回值标记已随 lang-defects #2（P4 `coerce_to_dyn`）解决：`&dyn Trait` 胖指针作函数/方法参数与返回值已可用（error_source.rl/p4_dyn_upshift.rl 验证）；裸 `dyn Trait` 按值不可存储与 Rust 一致 |
