@@ -165,6 +165,135 @@ fn lower_tuple_destructure(
     Ok(out)
 }
 
+/// 递归展开结构体解构（含嵌套 `let Point { x, y: (a, b) } = e;`）。
+///
+/// `base` 为待读取的结构体值表达式（或 `&` 引用），`base_ty` 须为具名结构体
+/// `Type::Named`（或其引用）。`fields` 为模式中的「字段名 → 子模式」列表；每个字段
+/// 按名查 `StructDef.fields` 得下标，经 `FieldGet` 取出后按子模式绑定（标识符 / `_` /
+/// 嵌套 `Tuple` / 嵌套 `Struct`），与 `p.x` 字段访问同构。
+fn lower_struct_destructure(
+    ctx: &mut TypeContext,
+    base: HirExpr,
+    base_ty: &Type,
+    fields: &[(String, AstPattern)],
+    mutable: bool,
+    span: Span,
+) -> Result<Vec<HirStmt>, TypeError> {
+    let struct_name = match base_ty {
+        Type::Named(n, _) => n.clone(),
+        // 引用到结构体：剥一层引用后按结构体解构（`let Point { x } = &p;`）
+        Type::Ref(inner, _) => match &**inner {
+            Type::Named(n, _) => n.clone(),
+            _ => {
+                return Err(TypeError::ExpectedStruct {
+                    found: base_ty.to_string(),
+                    span,
+                })
+            }
+        },
+        _ => {
+            return Err(TypeError::ExpectedStruct {
+                found: base_ty.to_string(),
+                span,
+            })
+        }
+    };
+    let def = ctx
+        .lookup_struct(&struct_name)
+        .cloned()
+        .ok_or_else(|| TypeError::UndefinedType {
+            name: struct_name.clone(),
+            span,
+        })?;
+    let mut out = Vec::new();
+    for (fname, p) in fields {
+        let idx = def
+            .fields
+            .iter()
+            .position(|(n, _)| n == fname)
+            .ok_or_else(|| TypeError::UnknownField {
+                struct_name: struct_name.clone(),
+                field: fname.clone(),
+                span,
+            })?;
+        let fty = def.fields[idx].1.clone();
+        let val = HirExpr::new(
+            HirExprKind::FieldGet {
+                base: Box::new(base.clone()),
+                index: idx,
+                ty: field_scalar_of(&fty),
+            },
+            Span::dummy(),
+        );
+        match p {
+            AstPattern::Wildcard => {}
+            AstPattern::Ident(name) => {
+                let stored = ctx.insert_variable(name.clone(), fty);
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: stored,
+                        init: val,
+                        mutable,
+                    },
+                    Span::dummy(),
+                ));
+            }
+            AstPattern::Tuple(nested, nested_span) => {
+                // 嵌套元组字段：`field: (a, b)` —— 取出字段值（元组）后递归展开
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_tuple_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    nested,
+                    *nested_span,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            AstPattern::Struct(_, nested_fields) => {
+                // 嵌套结构体字段：`inner: Inner { a, b }` —— 取出字段值（结构体）
+                // 后递归展开（内层临时变量不可变，最终标识符绑定沿用 `mutable`）
+                let inner_tmp = ctx.fresh_temp();
+                out.push(HirStmt::new(
+                    HirStmtKind::Let {
+                        name: inner_tmp.clone(),
+                        init: val,
+                        mutable: false,
+                    },
+                    Span::dummy(),
+                ));
+                let inner = lower_struct_destructure(
+                    ctx,
+                    HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
+                    &fty,
+                    nested_fields,
+                    mutable,
+                    span,
+                )?;
+                out.extend(inner);
+            }
+            _ => {
+                return Err(TypeError::Unsupported {
+                    what: "嵌套解构模式（结构体字段仅支持标识符 / `_` / 嵌套元组 / 嵌套结构体）"
+                        .to_string(),
+                    span,
+                })
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub(crate) fn check_stmt_inner(
     ctx: &mut TypeContext,
     stmt: &AstStmt,
@@ -421,6 +550,30 @@ pub(crate) fn check_stmt_inner(
                         &ty,
                         pats,
                         *pat_span,
+                        *mutable,
+                        span,
+                    )?;
+                    out.extend(nested);
+                    Ok((out, ty))
+                }
+                // 结构体解构绑定 `let Point { x, y } = e;` / `let Point { x, .. } = e;`
+                // （含嵌套字段模式 `let Point { p: (a, b) } = e;`）。desugar 为
+                // 「临时变量承载结构体值 + 各命名字段按名取字段后绑定」，与 `p.x`
+                // 字段访问同构（FieldGet index = 字段在 `def.fields` 中的序）。
+                // 实际结构体类型以推断出的 `ty` 为准（模式名不强制校验，兼容模块路径）。
+                AstPattern::Struct(_, fields) => {
+                    let tmp = ctx.fresh_temp();
+                    let mut out = vec![HirStmt::new(HirStmtKind::Let{
+                        name: tmp.clone(),
+                        init: h_init,
+                        mutable: false,
+                    }, Span::dummy())];
+                    let base = HirExpr::new(HirExprKind::Variable(tmp), Span::dummy());
+                    let nested = lower_struct_destructure(
+                        ctx,
+                        base,
+                        &ty,
+                        fields,
                         *mutable,
                         span,
                     )?;
