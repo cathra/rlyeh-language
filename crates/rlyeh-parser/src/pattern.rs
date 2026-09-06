@@ -60,6 +60,12 @@ impl<'src> Parser<'src> {
     /// 解析模式原子（不含范围后缀）
     fn parse_pattern_atom(&mut self) -> Result<AstPattern, ParseError> {
         match self.current().cloned() {
+            Some(Token::Mut) => {
+                // `mut` 绑定修饰符：`mut x` / `mut (a, b)` / `mut Point { x }` ——令该绑定可变
+                self.bump();
+                let inner = self.parse_pattern()?;
+                Ok(AstPattern::Mut(Box::new(inner)))
+            }
             Some(Token::IntLiteral(v)) => {
                 self.bump();
                 Ok(AstPattern::Literal(LiteralValue::Int(v)))
@@ -163,6 +169,15 @@ impl<'src> Parser<'src> {
             if self.at_eof() {
                 return Err(self.unexpected("')'"));
             }
+            // 剩余模式 `..`（SH-P1-2 收尾）：吸收末位剩余元素；须位于末位
+            if self.check(&Token::Range) {
+                self.bump();
+                elems.push(AstPattern::Rest);
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+                continue;
+            }
             elems.push(self.parse_pattern()?);
             if !self.eat(&Token::Comma) {
                 break;
@@ -187,6 +202,15 @@ impl<'src> Parser<'src> {
             if self.at_eof() {
                 return Err(self.unexpected("')'"));
             }
+            // 剩余模式 `..`（`Some(x, ..)` 跳过其余负载字段）；须位于末位
+            if self.check(&Token::Range) {
+                self.bump();
+                args.push(AstPattern::Rest);
+                if !self.eat(&Token::Comma) {
+                    break;
+                }
+                continue;
+            }
             args.push(self.parse_pattern()?);
             if !self.eat(&Token::Comma) {
                 break;
@@ -207,11 +231,24 @@ impl<'src> Parser<'src> {
             if self.at_eof() {
                 return Err(self.unexpected("'}'"));
             }
+            // 剩余模式 `..`（`Point { x, .. }` 跳过其余字段）；须位于末位
+            if self.check(&Token::Range) {
+                self.bump();
+                fields.push(("..".to_string(), AstPattern::Rest));
+                break;
+            }
+            // 字段级 `mut` 修饰符：`Point { mut x }` / `Point { x: mut px }` 令该字段绑定为可变
+            let field_mut = self.eat(&Token::Mut);
             let fname = self.expect_ident()?;
             let pat = if self.eat(&Token::Colon) {
                 self.parse_pattern()?
             } else {
                 AstPattern::Ident(fname.clone())
+            };
+            let pat = if field_mut {
+                AstPattern::Mut(Box::new(pat))
+            } else {
+                pat
             };
             fields.push((fname, pat));
             if !self.eat(&Token::Comma) {

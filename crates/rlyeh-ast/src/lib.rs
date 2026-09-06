@@ -833,6 +833,15 @@ pub enum AstPattern {
     /// 或模式 `A | B`（SH-P0-7 P-M3）：任一备选命中即进入 arm。
     /// 各备选必须绑定**数量与类型均相同**的变量集（与 Rust 一致）。
     Or(Vec<AstPattern>),
+    /// 剩余模式 `..`（`(a, b, ..)` / `Point { x, .. }` / `Some(x, ..)` 中跳过其余
+    /// 元素 / 字段；不绑定任何变量）。仅作为解构模式内部元素出现，须位于末位
+    /// （中间 `..` 暂不支持）；顶层 `let .. = e` 非法。由 lexer 的 `Token::Range`
+    /// （`..`）在模式位置识别。
+    Rest,
+    /// `mut` 绑定修饰符：`mut x` / `mut (a, b)` ——模式内绑定为可变。
+    /// 仅可用于 `let` 解构绑定（`match` / `if let` / `while let` 位置绑定的变量
+    /// 不可变，使用 `mut` 修饰符报 `Unsupported`）。
+    Mut(Box<AstPattern>),
 }
 
 /// 字面量值（用于模式匹配）。

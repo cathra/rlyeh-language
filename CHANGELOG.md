@@ -82,6 +82,40 @@
 
 - **HashMap 按键集合运算符糖补齐 `-`/`^`（差集/对称差，V5d+，2026-09-02）**：延续上项，为 `HashMap<K, V>` 新增 `difference`/`symmetric_difference` 命名方法（返回新 `HashMap`，复用既有 `keys()`/`get().unwrap()`/`contains_key`/`insert`），并实现 `Sub`/`BitXor`（降级到上述方法，**codegen 零改动**）。语义：`a - b` 键集合 `A - B`（仅 a 独有键）、值取左操作数 a（结果 ⊆ a）；`a ^ b` 键集合 `(A - B) ∪ (B - A)`（仅一方独有键）、a 独有取 a 值 / b 独有取 b 值。至此 `|`/`&`/`-`/`^` 四则与 `HashSet` 运算符糖同构（`sub`/`bitxor` 亦按值消费两操作数）。扩展 `tests/run-pass/hashmap_ops_symbol.{rl,out}` 覆盖 `-`（`a - b` 仅 a 独有键 2 个、取 a 值 10）/ `^`（独有键 3 个、a 独有取 10、b 独有取 40，输出追加 `2 10 3 10 40`）；全量 `rlyeh test tests` 260/260 通过。
 
+- **`..` 剩余模式（SH-P1-2 收尾，2026-09-06）**：元组 / 结构体 / 枚举解构在 `let` 与
+  `match` / `if let` / `while let` 位置均支持**末位** `..` 吸收其余元素 / 字段
+  （`(a, b, ..)` / `Point { x, .. }` / `Some(x, ..)`），不绑定任何变量。`AstPattern`
+  新增 `Rest` 变体；parser 在三处模式元素位置（元组 / 枚举负载 / 结构体字段）消费
+  `..`（复用 lexer 的 `Token::Range`，此前该 token 在模式位置直接报错），typecheck
+  在 `lower_tuple/struct/enum_destructure` 与 `check_pattern`（match 位置）分别跳过
+  `Rest` 并放宽元数 / 字段数校验（有 `..` 时 `explicit <= 元数`，`..` 吸收
+  `ts.len() - explicit` 个元素）。约束：剩余模式须位于末位（中间 `..` 显式报
+  `Unsupported`）；顶层 `..` 非法（`let .. = e` 由 parser 直接拒）；`rlyeh-fmt` 渲染
+  `..`、`rlyeh-check` 绑定分析跳过。验收：新增 `tests/run-pass/pattern_rest.rl`
+  （let/match 三处末位 `..` + 嵌套元组内枚举 `..`，12 行输出）+ `tests/compile-fail/
+  pattern-rest-middle.rl`（中间 `..`）+ `tests/compile-fail/pattern-rest-top.rl`
+  （顶层 `..`）；全量 `rlyeh test tests` 套件（258 run-pass 基线）通过、`cargo test
+  -p rlyeh-typecheck` 单元测试 39/39 通过。已知限制：仅支持末位 `..`（中间
+  `(a, .., b)` 暂未支撑）；元组 / 结构体 / 枚举解构仍不支持 `(mut a, b)`。
+
+- **`mut` 绑定修饰符（SH-P1-2 续，2026-09-06）**：`let` 解构模式内的 `mut x`
+  令该绑定可变，关闭 §3.5.1 剩余限制。parser 在模式原子位置识别 `mut` 前缀
+  （`Token::Mut` → `AstPattern::Mut(Box<AstPattern>)`；此前 `let (mut a, b)` 被误
+  解析为「绑定名为 `mut` 的标识符 + 绑定 `a`」）；结构体字段模式额外在字段名前
+  消费可选的 `mut` 修饰符（`Point { mut x }` / `Point { x: mut px }`）。typecheck
+  在三处 `lower_*` 解构 helper 的循环顶部解包 `Mut`、按 `elem_mut = mutable ||
+  is_mut` 计算元素绑定可变性（整体 `mut` 与元素级 `mut` 任一为真即绑定可变），并
+  透传到嵌套解构的递归调用；标识符绑定与递归 `lower_*` 调用均改用 `elem_mut`。
+  `match` / `if let` / `while let` 位置绑定的变量不可变（与 Rust 一致），
+  `check_pattern` 显式拒绝 `mut` 修饰符报 `Unsupported`。`rlyeh-fmt` 渲染
+  `mut <inner>`、`rlyeh-check` 绑定分析递归 `Mut` 内层、`pattern_bind_names` 补
+  `Mut` 臂。验收：新增 `tests/run-pass/mut_destructure.rl`（元组元素 / 整体 mut
+  元组 / 结构体字段 / 枚举负载 / 嵌套元组 / 混合绑定，12 行输出）+
+  `tests/compile-fail/mut-in-match.rl`（match 位置 `mut`）；全量 `rlyeh test
+  tests` 套件（259 run-pass 基线）通过、`cargo test -p rlyeh-typecheck` 单元测试
+  39/39 通过。已知限制：仅 `let` 位置支持 `mut`，`match` / `if let` / `while let`
+  不支持（语义上绑定不可变）；结构体字段仅支持 `Point { mut x }` 前缀形式。
+
 ## [0.1.0] 补充记录（2026-08-23 开发迭代，随 v0.1.0 首发）
 
 ### 新增

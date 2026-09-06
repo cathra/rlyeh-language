@@ -204,6 +204,8 @@ impl Checker {
                 }
             }
             AstPattern::Wildcard | AstPattern::Literal(_) | AstPattern::Range { .. } => {}
+            AstPattern::Rest => {}
+            AstPattern::Mut(inner) => self.bind_pattern(inner, span),
         }
     }
 

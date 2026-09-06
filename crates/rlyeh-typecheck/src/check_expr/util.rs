@@ -711,5 +711,7 @@ pub(super) fn pattern_bind_names(pat: &rlyeh_ast::AstPattern) -> Vec<String> {
             .collect(),
         AstPattern::Ref(inner, _) => pattern_bind_names(inner),
         AstPattern::Or(alts) => alts.iter().flat_map(pattern_bind_names).collect(),
+        AstPattern::Rest => Vec::new(),
+        AstPattern::Mut(inner) => pattern_bind_names(inner),
     }
 }

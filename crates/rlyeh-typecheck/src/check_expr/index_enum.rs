@@ -646,6 +646,20 @@ pub(super) fn check_pattern(
 ) -> Result<PatternResult, TypeError> {
     use rlyeh_ast::AstPattern;
     match pat {
+        AstPattern::Rest => {
+            // 顶层 `..` 非法：剩余模式仅作为解构模式内部元素（`(a, ..)` 等）
+            return Err(TypeError::Unsupported {
+                what: "剩余模式 `..` 不能单独作为模式（仅可用于解构内部末位）".to_string(),
+                span,
+            });
+        }
+        AstPattern::Mut(_) => {
+            // `mut` 修饰符仅可用于 `let` 解构绑定；match / if let / while let 绑定的变量不可变
+            return Err(TypeError::Unsupported {
+                what: "`mut` 模式修饰符仅可用于 `let` 解构绑定；`match` / `if let` / `while let` 位置绑定的变量不可变".to_string(),
+                span,
+            });
+        }
         AstPattern::Ident(name) => {
             // U2：**类型臂收窄**——`pat_ty` 为联合且 `name` 恰为某成员的类型名时，
             // 按该成员收窄：`cond` = `tag == 成员下标`，并把 payload（槽 1）按成员
@@ -742,11 +756,24 @@ pub(super) fn check_pattern(
                     name: format!("{en}::{variant}"),
                     span,
                 })?;
-            if sub_pats.len() != variant_def.fields.len() {
+            // `..` 剩余模式（`Some(x, ..)`）：吸收末位剩余负载字段，须位于末位（SH-P1-2 收尾）。
+            let has_rest = sub_pats.iter().any(|p| matches!(p, AstPattern::Rest));
+            if let Some(r) = sub_pats.iter().position(|p| matches!(p, AstPattern::Rest)) {
+                if r != sub_pats.len() - 1 {
+                    return Err(TypeError::Unsupported {
+                        what: "剩余模式 `..` 须位于枚举模式末位（暂不支持中间 `..`）".to_string(),
+                        span,
+                    });
+                }
+            }
+            let explicit = sub_pats.len() - if has_rest { 1 } else { 0 };
+            if (!has_rest && explicit != variant_def.fields.len())
+                || (has_rest && explicit > variant_def.fields.len())
+            {
                 return Err(TypeError::UnexpectedArgumentCount {
                     name: format!("{en}::{variant}"),
                     expected: variant_def.fields.len(),
-                    found: sub_pats.len(),
+                    found: explicit,
                     span,
                 });
             }
@@ -786,6 +813,9 @@ pub(super) fn check_pattern(
             let mut bound_tys = Vec::new();
             let mut cond = tag_cond;
             for (i, (sub, (_, fty))) in sub_pats.iter().zip(&variant_def.fields).enumerate() {
+                if matches!(sub, AstPattern::Rest) {
+                    continue;
+                }
                 let fty_sub = substitute(fty, &subst);
                 let (sub_cond, sub_binds, _, sub_tys) = check_pattern(
                     ctx,
@@ -904,10 +934,28 @@ pub(super) fn check_pattern(
                     })
                 }
             };
-            if ts.len() != pats.len() {
+            // `..` 剩余模式（`(a, b, ..)`）：吸收末位剩余元素，须位于末位（SH-P1-2 收尾）。
+            let has_rest = pats.iter().any(|p| matches!(p, AstPattern::Rest));
+            if let Some(r) = pats.iter().position(|p| matches!(p, AstPattern::Rest)) {
+                if r != pats.len() - 1 {
+                    return Err(TypeError::Unsupported {
+                        what: "剩余模式 `..` 须位于元组模式末位（暂不支持中间 `..`）".to_string(),
+                        span,
+                    });
+                }
+            }
+            let expected = ts.len();
+            // 无 `..`：`pats.len()` 须等于元数；有 `..`：`..` 吸收其余元素，须 `pats.len()-1 <= 元数`
+            let explicit = pats.len() - if has_rest { 1 } else { 0 };
+            let ok = if has_rest {
+                explicit <= expected
+            } else {
+                explicit == expected
+            };
+            if !ok {
                 return Err(TypeError::WrongType {
-                    expected: format!("{} 元元组", ts.len()),
-                    found: format!("{} 元解构模式", pats.len()),
+                    expected: format!("{} 元元组", expected),
+                    found: format!("{} 元解构模式", explicit),
                     span,
                     related: vec![(pat_span.clone(), "元组解构模式声明于此".to_string())],
                 });
@@ -916,6 +964,9 @@ pub(super) fn check_pattern(
             let mut bound_tys = Vec::new();
             let mut cond: Option<HirExpr> = None;
             for (i, p) in pats.iter().enumerate() {
+                if matches!(p, AstPattern::Rest) {
+                    continue;
+                }
                 let fty = ts[i].clone();
                 let (sub_cond, sub_binds, _, sub_tys) = check_pattern(
                     ctx,
@@ -989,6 +1040,10 @@ pub(super) fn check_pattern(
             let mut bound_tys = Vec::new();
             let mut cond: Option<HirExpr> = None;
             for (fname, p) in fields {
+                // 剩余模式 `..`：`Point { x, .. }` 跳过其余字段（末位标记）
+                if fname == ".." {
+                    continue;
+                }
                 let idx = def
                     .fields
                     .iter()

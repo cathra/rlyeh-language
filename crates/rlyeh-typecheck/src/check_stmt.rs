@@ -99,16 +99,47 @@ fn lower_tuple_destructure(
             })
         }
     };
-    if ts.len() != pats.len() {
+    // 含 `..` 时末位元素被吸收：非 `..` 子模式数须等于元组元数
+    let has_rest = pats.iter().any(|p| matches!(p, AstPattern::Rest));
+    let explicit = pats.len() - if has_rest { 1 } else { 0 };
+    // 无 `..`：explicit 须等于元数；有 `..`：`..` 吸收其余元素，须 explicit <= 元数
+    if (!has_rest && explicit != ts.len()) || (has_rest && explicit > ts.len()) {
         return Err(TypeError::WrongType {
             expected: format!("{} 元元组", ts.len()),
-            found: format!("{} 元解构模式", pats.len()),
+            found: format!("{} 元解构模式", explicit),
             span,
             related: vec![(pat_span, "元组解构模式声明于此".to_string())],
         });
     }
     let mut out = Vec::new();
-    for (i, p) in pats.iter().enumerate() {
+    // `..` 剩余模式（`(a, b, ..)`）：吸收末位剩余元素，须位于末位（SH-P1-2 收尾）。
+    let rest_pos = pats.iter().position(|p| matches!(p, AstPattern::Rest));
+    if let Some(r) = rest_pos {
+        if r != pats.len() - 1 {
+            return Err(TypeError::Unsupported {
+                what: "剩余模式 `..` 须位于元组模式末位（暂不支持中间 `..`）".to_string(),
+                span,
+            });
+        }
+        if pats.len() - 1 > ts.len() {
+            return Err(TypeError::WrongType {
+                expected: format!("{} 元元组", ts.len()),
+                found: format!("{} 元解构模式（含 `..`）", pats.len() - 1),
+                span,
+                related: vec![],
+            });
+        }
+    }
+    for (i, raw) in pats.iter().enumerate() {
+        if matches!(raw, AstPattern::Rest) {
+            continue;
+        }
+        // `mut` 绑定修饰符：`mut x` 令该元素绑定为可变（整体 `mut` 与元素级 `mut` 任一为真）
+        let elem_mut = mutable || matches!(raw, AstPattern::Mut(_));
+        let p = match raw {
+            AstPattern::Mut(inner) => &**inner,
+            other => other,
+        };
         let fty = ts[i].clone();
         let val = HirExpr::new(
             HirExprKind::FieldGet {
@@ -126,7 +157,7 @@ fn lower_tuple_destructure(
                     HirStmtKind::Let {
                         name: stored,
                         init: val,
-                        mutable,
+                        mutable: elem_mut,
                     },
                     Span::dummy(),
                 ));
@@ -149,7 +180,7 @@ fn lower_tuple_destructure(
                     &fty,
                     nested,
                     *nested_span,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -170,7 +201,7 @@ fn lower_tuple_destructure(
                     &fty,
                     nv,
                     ns,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -197,7 +228,7 @@ fn lower_tuple_destructure(
                     &fty,
                     &nv,
                     ns,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -219,7 +250,7 @@ fn lower_tuple_destructure(
                     &fty,
                     &nv,
                     &positional,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -277,6 +308,16 @@ fn lower_struct_destructure(
         })?;
     let mut out = Vec::new();
     for (fname, p) in fields {
+        // 剩余模式 `..`：`Point { x, .. }` 跳过其余字段（末位标记）
+        if fname == ".." {
+            continue;
+        }
+        // `mut` 绑定修饰符：`mut x` 令该字段绑定为可变（整体 `mut` 与元素级 `mut` 任一为真）
+        let elem_mut = mutable || matches!(p, AstPattern::Mut(_));
+        let p = match p {
+            AstPattern::Mut(inner) => &**inner,
+            other => other,
+        };
         let idx = def
             .fields
             .iter()
@@ -303,7 +344,7 @@ fn lower_struct_destructure(
                     HirStmtKind::Let {
                         name: stored,
                         init: val,
-                        mutable,
+                        mutable: elem_mut,
                     },
                     Span::dummy(),
                 ));
@@ -325,7 +366,7 @@ fn lower_struct_destructure(
                     &fty,
                     nested,
                     *nested_span,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -347,7 +388,7 @@ fn lower_struct_destructure(
                     HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
                     &fty,
                     nested_fields,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -368,7 +409,7 @@ fn lower_struct_destructure(
                     &fty,
                     nv,
                     ns,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -395,7 +436,7 @@ fn lower_struct_destructure(
                     &fty,
                     &nv,
                     ns,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -417,7 +458,7 @@ fn lower_struct_destructure(
                     &fty,
                     &nv,
                     &positional,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -542,11 +583,25 @@ fn lower_enum_destructure(
             name: format!("{en}::{variant}"),
             span,
         })?;
-    if sub_pats.len() != variant_def.fields.len() {
+    // `..` 剩余模式（`Some(x, ..)`）：吸收末位剩余负载字段，须位于末位（SH-P1-2 收尾）。
+    let has_rest = sub_pats.iter().any(|p| matches!(p, AstPattern::Rest));
+    if let Some(r) = sub_pats.iter().position(|p| matches!(p, AstPattern::Rest)) {
+        if r != sub_pats.len() - 1 {
+            return Err(TypeError::Unsupported {
+                what: "剩余模式 `..` 须位于枚举模式末位（暂不支持中间 `..`）".to_string(),
+                span,
+            });
+        }
+    }
+    // 含 `..` 时末位元素被吸收：非 `..` 子模式数 <= 变体字段数（无 `..` 时须相等）
+    let explicit = sub_pats.len() - if has_rest { 1 } else { 0 };
+    if (!has_rest && explicit != variant_def.fields.len())
+        || (has_rest && explicit > variant_def.fields.len())
+    {
         return Err(TypeError::UnexpectedArgumentCount {
             name: format!("{en}::{variant}"),
             expected: variant_def.fields.len(),
-            found: sub_pats.len(),
+            found: explicit,
             span,
         });
     }
@@ -560,7 +615,16 @@ fn lower_enum_destructure(
         }
     }
     let mut out = Vec::new();
-    for (i, (sub, (_, fty))) in sub_pats.iter().zip(&variant_def.fields).enumerate() {
+    for (i, (raw, (_, fty))) in sub_pats.iter().zip(&variant_def.fields).enumerate() {
+        if matches!(raw, AstPattern::Rest) {
+            continue;
+        }
+        // `mut` 绑定修饰符：`mut x` 令该负载字段绑定为可变（整体 `mut` 与元素级 `mut` 任一为真）
+        let elem_mut = mutable || matches!(raw, AstPattern::Mut(_));
+        let sub = match raw {
+            AstPattern::Mut(inner) => &**inner,
+            other => other,
+        };
         let fty_sub = substitute(fty, &subst);
         let val = HirExpr::new(
             HirExprKind::FieldGet {
@@ -578,7 +642,7 @@ fn lower_enum_destructure(
                     HirStmtKind::Let {
                         name: stored,
                         init: val,
-                        mutable,
+                        mutable: elem_mut,
                     },
                     Span::dummy(),
                 ));
@@ -599,7 +663,7 @@ fn lower_enum_destructure(
                     &fty_sub,
                     nested,
                     *nested_span,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -619,7 +683,7 @@ fn lower_enum_destructure(
                     HirExpr::new(HirExprKind::Variable(inner_tmp), Span::dummy()),
                     &fty_sub,
                     nested_fields,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -640,7 +704,7 @@ fn lower_enum_destructure(
                     &fty_sub,
                     nested_variant,
                     nested_sub,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -665,7 +729,7 @@ fn lower_enum_destructure(
                     &fty_sub,
                     &nv,
                     nested_sub,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -687,7 +751,7 @@ fn lower_enum_destructure(
                     &fty_sub,
                     &nv,
                     &positional,
-                    mutable,
+                    elem_mut,
                     span,
                 )?;
                 out.extend(inner);
@@ -936,10 +1000,13 @@ pub(crate) fn check_stmt_inner(
                             })
                         }
                     };
-                    if ts.len() != pats.len() {
+                    // 含 `..` 时末位元素被吸收：非 `..` 子模式数 <= 元数（无 `..` 须相等）
+                    let has_rest = pats.iter().any(|p| matches!(p, AstPattern::Rest));
+                    let explicit = pats.len() - if has_rest { 1 } else { 0 };
+                    if (!has_rest && explicit != ts.len()) || (has_rest && explicit > ts.len()) {
                         return Err(TypeError::WrongType {
                             expected: format!("{} 元元组", ts.len()),
-                            found: format!("{} 元解构模式", pats.len()),
+                            found: format!("{} 元解构模式", explicit),
                             span,
                             related: vec![(
                                 *pat_span,

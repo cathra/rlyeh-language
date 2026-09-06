@@ -290,9 +290,18 @@ let (name, len) = split_name(String::from("rlyeh"));   // len = 5
 > `while let` 位置（SH-P1-2，2026-09-06）均已支持——`let` 仅绑定（信任类型推断、
 > 不运行时校验）；`match` / `if let` / `while let` 经 `check_pattern` 递归处理
 > 嵌套（元组 / 结构体 / 枚举 / 字面量子模式），可反驳子模式生成 `If` 条件链，
-> `if let` / `while let` 由 parser desugar 成 `match` 自动继承。仍不支持
-> `(mut a, b)`（parser 不接受元组模式内的 `mut`）与 `..` 剩余模式；枚举变体结构式
-> 负载 `Enum::Variant { w, h }` 的**构造与解构**均已支持（SH-P1-2 续，2026-09-06），
+> `if let` / `while let` 由 parser desugar 成 `match` 自动继承。`..` 剩余模式
+> （SH-P1-2 收尾，2026-09-06）**已支持**——元组 / 结构体 / 枚举解构在 `let` 与
+> `match` / `if let` / `while let` 位置均可用**末位** `..` 吸收其余元素 / 字段
+> （中间 `..` 暂不支持）；`mut` 绑定修饰符（SH-P1-2 续，2026-09-06）**已支持**——
+> `let` 解构模式内的 `mut x`（元组元素 / 结构体字段 `Point { mut x }` / 枚举负载
+> `Some(mut v)` / 嵌套元组 `mut (a, b)` / 整体 `mut (a, b)`）令该绑定可变，元素级
+> `mut` 与整体 `mut` 任一为真即绑定可变；`match` / `if let` / `while let` 位置绑定
+> 的变量不可变（使用 `mut` 修饰符报 `Unsupported`）。已知限制：结构体字段模式仅
+> 支持 `Point { mut x }` 形式（字段名前缀 `mut`），暂不支持 Rust 式 `mut` 在字段
+> 值位置的特殊语法。
+> 枚举变体结构式负载 `Enum::Variant { w, h }` 的**构造与解构**均已支持
+> （SH-P1-2 续，2026-09-06），
 > 但仅限**路径限定**形式 `Enum::Variant { .. }`（裸名 `Variant { .. }` 因与结构体
 > 字面量歧义，在 `let` / `match` / `if let` / `while let` / 构造位置同不支持）。
 

@@ -61,6 +61,8 @@ pub(crate) fn fmt_pattern(p: &AstPattern) -> String {
             .map(fmt_pattern)
             .collect::<Vec<_>>()
             .join(" | "),
+        AstPattern::Rest => "..".to_string(),
+        AstPattern::Mut(inner) => format!("mut {}", fmt_pattern(inner)),
     }
 }
 
