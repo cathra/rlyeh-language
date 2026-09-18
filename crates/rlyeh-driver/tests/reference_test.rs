@@ -1,6 +1,6 @@
 //! 引用与借用（G1）集成测试：`&x` / `&mut x` / `*p` 解引用。
 //!
-//! 文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`。
+//! 文件入口 API，自动注入 `rlyeh-std/rlyeh/`。
 //!
 //! 覆盖：
 //! - 标量引用：`&i64` 参数 + `*p` 读取 / `*p = v` 写入 / `*p += v` 复合赋值
@@ -24,7 +24,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

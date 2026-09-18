@@ -9,7 +9,7 @@ fn mk_g(x: i64) -> G {
     G { state: 0, x: x }
 }
 
-impl Future for G {
+impl G: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {
@@ -29,7 +29,7 @@ fn mk_f() -> F {
     F { state: 0, __fut_0: mk_g(0), v: 0 }
 }
 
-impl Future for F {
+impl F: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {

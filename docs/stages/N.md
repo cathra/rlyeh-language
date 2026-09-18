@@ -13,7 +13,7 @@
 | N1C | **读写与元数据方法**：`read_to_string`/`read(&mut [u8])`/`write(&[u8])`/`write_all`/`flush`/`metadata`/`size` | ✅ 已完成 | [`n1c-rw-metadata.md`](../tasks/leaf/n1c-rw-metadata.md) |
 | N2A | **stdout/stderr 模块**：`stdout`/`stderr`（`write`/`writeln`/`flush`）+ 绑定层 | ✅ 已完成 | [`n2a-stdout-stderr.md`](../tasks/leaf/n2a-stdout-stderr.md) |
 | N2B | **stdin 增强**：`read_to_string`/`lines`（迭代行读取，复用 J1 循环形态） | ✅ 已完成 | [`n2b-stdin.md`](../tasks/leaf/n2b-stdin.md) |
-| N3A | **`Path` 对象**：`Path::new`/`join`/`parent`/`file_name`/`extension`/`exists`/`is_file`/`is_dir` | ✅ 已完成 | [`n3a-path.md`](../tasks/leaf/n3a-path.md) |
+| N3A | **`Path` 对象**：`Path::new`/`join`/`parent`/`file_name`/`path_extension`/`exists`/`is_file`/`is_dir` | ✅ 已完成 | [`n3a-path.md`](../tasks/leaf/n3a-path.md) |
 | N3B | **`fs` 核心读写**：`fs::read_to_string`/`fs::write`/`fs::copy` | ✅ 已完成 | [`n3b-fs-rw.md`](../tasks/leaf/n3b-fs-rw.md) |
 | N3C | **`fs` 目录操作**：`fs::remove_file`/`remove_dir_all`/`rename`/`create_dir`/`create_dir_all`/`read_dir`（目录条目迭代） | ✅ 已完成 | [`n3c-fs-dir.md`](../tasks/leaf/n3c-fs-dir.md) |
 | N4 | **`eprintln!`/`eprint!` 宏**：内置格式化宏扩展 stderr 输出（typecheck 新增分支，desugar 复用格式化引擎 + 内建 stderr 打印，与 `println!` 同构） | ✅ 已完成 | [`n4-eprintln.md`](../tasks/leaf/n4-eprintln.md) |

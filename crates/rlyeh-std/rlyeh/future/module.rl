@@ -34,7 +34,7 @@ struct Context {
 
 // S1a/W1：Future trait——`poll` 推进状态机，返回 `Ready(值)` 或 `Pending`。
 // 关联类型 `type Output` 声明输出类型（U2 ✅）；`&mut self` 聚合指针传递。
-trait Future {
+protocol Future {
     type Output;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>;
 }
@@ -108,14 +108,14 @@ struct Sleep {
     target: i64,
 }
 
-fn sleep(duration: time::Duration) -> future::Sleep {
+fn sleep(duration: time::duration::Duration) -> future::Sleep {
     let d = duration.micros();
     let t0 = __rlyeh_clock_monotonic();
     let start = if t0 >= 0 { t0 } else { clock() };
     future::Sleep { target: start + d }
 }
 
-impl Future for Sleep {
+impl Sleep: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         let t0 = __rlyeh_clock_monotonic();
@@ -145,7 +145,7 @@ fn wait_fd(fd: i64, interest: io::nio::Interest) -> future::WaitFd {
     }
 }
 
-impl Future for WaitFd {
+impl WaitFd: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         match Poller::new() {
@@ -203,7 +203,7 @@ impl TimeoutError {
     }
 }
 
-impl Error for TimeoutError {
+impl TimeoutError: Error {
     fn message(&self) -> String {
         self.message
     }
@@ -219,13 +219,13 @@ impl Error for TimeoutError {
 // - 泛型 `f: &mut F` 带 `F: Future` 约束（实例化时按具体类型解析 poll，
 //   返回类型 `Result<F::Output, TimeoutError>`）；
 // - 超时判定经墙钟 `__rlyeh_clock_monotonic`（S2b ✅ clock_gettime
-//   MONOTONIC，与 `time::Instant` 相同的退化逻辑：返回 -1 退回 `clock()`
+//   MONOTONIC，与 `time::instant::Instant` 相同的退化逻辑：返回 -1 退回 `clock()`
 //   CPU 时钟）。注：MVP 静态方法调用不支持模块路径前缀
-//   （`time::Instant::now` 不可用），故直接复用 extern；
+//   （`time::instant::Instant::now` 不可用），故直接复用 extern；
 // - W3（2026-08-25）事件驱动：`Pending` 且 future 经 `cx.deadline` 请求唤醒
 //   时刻时，休眠到该时刻或超时截止（取更早），替代忙等；`deadline = 0`
 //   退回忙等（向后兼容）。
-fn timeout<F: Future>(duration: time::Duration, f: &mut F) -> Result<F::Output, TimeoutError> {
+fn timeout<F: Future>(duration: time::duration::Duration, f: &mut F) -> Result<F::Output, TimeoutError> {
     let limit = duration.micros();
     let t0 = __rlyeh_clock_monotonic();
     let start = if t0 >= 0 { t0 } else { clock() };

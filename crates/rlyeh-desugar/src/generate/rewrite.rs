@@ -303,6 +303,7 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             type_name,
             type_args,
             fields,
+            ..
         } => AstExpr::new(
             ExprKind::StructCtor {
                 type_name: type_name.clone(),
@@ -311,6 +312,7 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
                     .iter()
                     .map(|(k, v)| (k.clone(), rewrite_expr(v, lifted, span)))
                     .collect(),
+                base: None,
             },
             span,
         ),

@@ -8,7 +8,7 @@
 //   /list         → 查看在线列表
 //   /quit 或 Ctrl-D → 退出聊天
 
-module protocol;
+module chat_protocol;
 module client;
 
 import client::run_client;

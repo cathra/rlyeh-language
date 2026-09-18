@@ -15,7 +15,7 @@ Rlyeh 语言与 **C / C++ / Go / Swift / Rust** 的全方位性能对比用例�
 | `actor_pingpong` | 5 万次 actor 同步往返 | **Actor 并发模型**（消息调度吞吐） |
 | `btree` | 深度 15 完全二叉树构造 + 递归求和 | 层次内存访问 + 递归 |
 | `hashmap_str` | 1 万条字符串键 insert + get | 字符串哈希 + 运行时键构造 |
-| `dyn_dispatch` | 2000 万次多态分派 | **dyn Trait / 虚函数 vtable** |
+| `dyn_dispatch` | 2000 万次多态分派 | **dyn Protocol / 虚函数 vtable** |
 | `region_alloc` | 100 万次小对象分配 | **region 批量分配 vs 逐次分配** |
 | `region_batch` | 100 万循环 × 每次 4 小对象分配 | **region 多 bump 点批量提升 vs 手动 bump（真实写带宽）** |
 | `nqueens` | 12 皇后回溯搜索 | 深度搜索 + 递归 + 剪枝分支 |
@@ -97,7 +97,7 @@ python3 run.py --skip-rlyeh-build   # 跳过 Rlyeh 重编译（复用已有二�
 4. **`region_alloc` 优化（内部提升真实有效）**：内联 bump 快路径（codegen 直接读写 `Region` 首部 cursor/limit，仅溢出才走运行时扩容）+ 循环级 region 状态提升（循环头 phi 维护寄存器级 base/cursor/limit，热路径零内存访问，退出仅回写一次 cursor）+ 慢路径 cursor 回写修复 + 字面量直接构造 + 热路径去统计——优化前后热循环反汇编 Region 头访存 3 次/迭代 → 0（详见 docs/memory-model.md §7.4 与附录 A.4/A.5）；对照 C 的 1.13x 为单对象场景每迭代越界检查的语义成本。
 5. **`region_batch` 多 bump 点批量提升（P4 vs P3 A/B：12.70 vs 13.39ms，+5.5%）**：循环内每次迭代分配 4 个小对象的场景，codegen 将 latch 内同 region 的全部 bump 点**聚合为单次溢出检查 + 单次指针推进**（整组提升状态共享一组 header phi，各对象经 `gep` 派生），消除逐 bump 的 Region 头访存与检查冗余；修复前含字段读取的批量循环因 span 越界被整体拒绝（19.5ms 退化），修复后批量提升生效（详见 docs/memory-model.md 附录 A.6）。
 6. **`actor_pingpong` 本轮大幅优化（28.3x → 0.55x，341ms → 6.7ms）**：ask 快速路径（fast path）——同线程同步短路：`ask_blocking` 先 `running` CAS 抢占（与 Worker 同一互斥域），抢到后直连 mailbox 检查 + state `try_lock` + CallbackActor supertrait upcasting 直接 downcast 调 Rlyeh handler，全程零调度/零通道；竞争（running 占用 / 邮箱非空 / 锁被占 / 非 CallbackActor）经 `FastPathOutcome` 原样回退慢路径（`Envelope` 回复通道）。**Rlyeh 7.5ms 超越 Go 11.4ms（1.5x）、C 177ms（23.6x）、Rust/Swift 158–167ms（21–22x），成为全部 6 语言最快**（详见 docs/actor-model.md 附录 A：fast path 纪要）。
-7. **`dyn_dispatch` 本轮大幅优化（5.64x → 1.08x，15.5ms → 3.6ms）**：H4 去虚拟化（devirtualize）——`let d: dyn Trait = &obj;` 绑定变量时记录具体类型，`d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀/泛型实例化），LLVM 可内联/常量折叠；变量被重新赋值（`d = ...`）映射失效自动回退 vtable 间接调用，语义保守安全。**Rlyeh 4.84ms 仅慢于 Rust 2.25ms（2.15x），超越 Go 4.99ms、C 13.4ms、Swift 24.3ms**（详见 docs/guide/03-basic-syntax.md §3.8 H4 说明）。
+7. **`dyn_dispatch` 本轮大幅优化（5.64x → 1.08x，15.5ms → 3.6ms）**：H4 去虚拟化（devirtualize）——`let d: dyn Protocol = &obj;` 绑定变量时记录具体类型，`d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀/泛型实例化），LLVM 可内联/常量折叠；变量被重新赋值（`d = ...`）映射失效自动回退 vtable 间接调用，语义保守安全。**Rlyeh 4.84ms 仅慢于 Rust 2.25ms（2.15x），超越 Go 4.99ms、C 13.4ms、Swift 24.3ms**（详见 docs/guide/03-basic-syntax.md §3.8 H4 说明）。
 8. **编译耗时（单次全量冷编译）**：Rlyeh 239–256ms/基准（LLVM 全量管线），vs C 75–84ms（约 3.1x）、Go 75–83ms（约 3.2x）、Rust 170–265ms、C++ 69–255ms、Swift 180–330ms——Rlyeh 处 C++/Swift 区间；「编译速度对标 Go」的目标需靠增量缓存 / 惰性 LLVM 后端兑现。
 9. **剩余差距与后续方向**：`hashmap` 已换 Robin Hood 线性探测（7/8 负载 + 交换式重哈希 + dist 早退，2.15x → 1.5x，超越 C++/Go/Swift，与 Rust 相当）；`hashmap_str` 2.0x 差距主要来自 Rlyeh `format!` 键构造（每次 2–3 次分配 vs C `sprintf`+`strdup` 1 次）；`loop_sum` clang 强度削减优势；`as f64` 数值转换 IR 支持（恢复 mandelbrot 复平面算力基准）。
 

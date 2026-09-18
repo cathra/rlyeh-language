@@ -5,7 +5,7 @@
 //! 替换（单次/多次/未命中原样/替换串更长/空 old/空 new 删除/old == new）、
 //! 链式组合（trim + replace + 大小写 + 前缀后缀 + 子串 + find + contains）。
 //!
-//! 实现：core.rl 纯 Rlyeh 方法（`starts_with`/`ends_with` 逐字节比较 +
+//! 实现：标准库纯 Rlyeh 方法（`starts_with`/`ends_with` 逐字节比较 +
 //! 标志变量 + result 模式，`replace` 滑动窗口扫描 + 空 old 特判防死循环）。
 //!
 //! 需要系统 clang（与 string_case_trim_test.rs 相同）。
@@ -23,7 +23,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

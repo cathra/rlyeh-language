@@ -4,7 +4,7 @@
 
 struct Resource { id: i64 }
 
-impl Drop for Resource {
+impl Resource: Drop {
     fn drop(&mut self) {
         println(self.id);
     }
@@ -28,7 +28,7 @@ struct Outer { a: Resource, b: Resource }
 // Q-M3 自身有 Drop 的 struct：先 `drop()`，再析构字段（drop glue，同 Rust）
 struct Both { tag: i64, r: Resource }
 
-impl Drop for Both {
+impl Both: Drop {
     fn drop(&mut self) {
         println(self.tag);
     }

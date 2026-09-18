@@ -162,6 +162,10 @@ pub fn gen_struct(
         fields,
         derive: Vec::new(),
         repr_c: false,
+        region_param: None,
+        conformances: Vec::new(),
+        methods: Vec::new(),
+        assoc_types: Vec::new(),
         span,
     }));
     (item, spec)
@@ -215,6 +219,8 @@ pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
         generics: a.decl.generics.clone(),
         // P6c：trait 泛型实参（Future 无泛型实参，空）。
         trait_type_args: Vec::new(),
+        // PC-9：多协议一致性（Future 为单协议，空）。
+        extra_traits: Vec::new(),
         // W6：关联类型定义 `type Output = <ret_ty or i64>;`（U2）。
         // `()` 返回沿用 i64（尾值 Ready(0)）；泛型返回 `T` 经单态化替换。
         types: vec![(
@@ -250,6 +256,7 @@ pub fn gen_ctor(
             type_name: vec![fut_ty_name(&a.decl.name)],
             type_args: gen_args.clone(),
             fields,
+            base: None,
         },
         span,
     );
@@ -378,6 +385,7 @@ fn gen_fields(a: &AnalyzedAsync, layout: &HashMap<String, Vec<FieldSpec>>, cycli
                 type_name: vec![ty_name.clone()],
                 type_args: Vec::new(),
                 fields: base_zero_fields.clone(),
+                base: None,
             },
             span,
         );
@@ -430,6 +438,7 @@ fn zero_ctor(type_name: &str, layout: &HashMap<String, Vec<FieldSpec>>, span: Sp
                 type_name: vec![type_name.to_string()],
                 type_args: Vec::new(),
                 fields: spec.iter().map(|f| (f.name.clone(), f.zero_init.clone())).collect(),
+                base: None,
             },
             span,
         ),
@@ -440,6 +449,7 @@ fn zero_ctor(type_name: &str, layout: &HashMap<String, Vec<FieldSpec>>, span: Sp
                     type_name: vec![type_name.to_string()],
                     type_args: Vec::new(),
                     fields: vec![("state".to_string(), int_expr(0, span))],
+                    base: None,
                 },
                 span,
             )

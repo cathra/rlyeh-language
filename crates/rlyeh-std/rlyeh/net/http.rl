@@ -377,7 +377,7 @@ struct GetAsync {
     state: i64,
 }
 
-impl Future for GetAsync {
+impl GetAsync: Future {
     type Output = net::http::Response;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {

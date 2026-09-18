@@ -17,7 +17,7 @@
 | 文件 | 说明 |
 |------|------|
 | `json_api.rl` | Q2 JSON API：to_string/from_str + stringify/parse + to_writer/from_reader |
-| `json_serde.rl` | Serialize / Deserialize trait 序列化综合 |
+| `json_serde.rl` | Serialize / Deserialize protocol 序列化综合 |
 | `json_derive.rl` | `#[derive(Serialize, Deserialize)]` 派生宏 |
 | `toml_io.rl` | Q4 TOML：stringify / parse + 嵌套表 + Vec/HashMap round-trip |
 

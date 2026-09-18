@@ -142,6 +142,16 @@ pub struct AstStructDecl {
     /// 是否 `#[repr(C)]`（SH-P0-1 E2：C ABI 内存布局标记；当前基础设施已解析并存储，
     /// 真布局（sub-8 字节字段打包）待 MIR/LIR/codegen 字段尺寸下传专项落地）
     pub repr_c: bool,
+    /// region 参数（B-4：`struct Foo 'a { ... }` 后缀生命参数，region 参数化语法）。
+    /// 当前仅捕获存储，生命周期仍按既有 drop 语义处理；region 感知校验留待严格借用检查专项。
+    pub region_param: Option<String>,
+    /// 声明点一致性列表（PC-1：`struct C: P, Q { .. }`，元素为「协议名 + 泛型实参」）。
+    /// desugar 阶段归一为 `AstImplBlock`（见 `docs/rfc/protocol-syntax.md` §6）。
+    pub conformances: Vec<(String, Vec<AstType>)>,
+    /// 类型体内联方法（PC-1：`struct C { fn m(&self) { .. } }`），desugar 归一为 impl。
+    pub methods: Vec<AstFnDecl>,
+    /// 类型体内联关联类型（PC-1：`struct C: P { type Item = i64; }`），desugar 归一为 impl。
+    pub assoc_types: Vec<(String, AstType)>,
     /// 源码位置
     pub span: Span,
 }
@@ -169,6 +179,14 @@ pub struct AstEnumDecl {
     pub generics: Vec<AstTypeParam>,
     /// 变体列表
     pub variants: Vec<AstEnumVariant>,
+    /// region 参数（B-4：`enum E 'a { ... }` 后缀生命参数，region 参数化语法）
+    pub region_param: Option<String>,
+    /// 声明点一致性列表（PC-1：`enum E: P { .. }`），desugar 归一为 `AstImplBlock`。
+    pub conformances: Vec<(String, Vec<AstType>)>,
+    /// 类型体内联方法（PC-1），desugar 归一为 impl。
+    pub methods: Vec<AstFnDecl>,
+    /// 类型体内联关联类型（PC-1），desugar 归一为 impl。
+    pub assoc_types: Vec<(String, AstType)>,
     /// 源码位置
     pub span: Span,
 }
@@ -202,6 +220,10 @@ pub struct AstTraitDecl {
     pub types: Vec<String>,
     /// 抽象方法列表
     pub methods: Vec<AstFnDecl>,
+    /// region 参数（B-4：`trait T 'a { ... }` 后缀生命参数，region 参数化语法）
+    pub region_param: Option<String>,
+    /// 父协议（supertrait）列表（PC-4：`protocol A: B, C { .. }`，元素为「协议名 + 泛型实参」）。
+    pub supertraits: Vec<(String, Vec<AstType>)>,
     /// 源码位置
     pub span: Span,
 }
@@ -221,6 +243,11 @@ pub struct AstImplBlock {
     /// 此前 parser 消费后丢弃，导致 trait 关联方法的泛型参数无法绑定；
     /// P6c（2026-08-29）补回以支持 trait 关联函数调用（如 `From::from`）。
     pub trait_type_args: Vec<AstType>,
+    /// 额外协议（`impl T: A, B` 中 `trait_name` 之外的协议，元素为「协议名 + 泛型实参」）。
+    ///
+    /// desugar 阶段（`lower_impl_conformance`）按协议成员名裁决，拆分为多个独立 impl 块
+    /// （见 `docs/rfc/protocol-syntax.md` §3.4）。
+    pub extra_traits: Vec<(String, Vec<AstType>)>,
     /// 关联类型定义列表（`type Item = Concrete;`）
     pub types: Vec<(String, AstType)>,
     /// 方法列表
@@ -238,6 +265,8 @@ pub struct AstModDecl {
     pub items: Vec<AstItem>,
     /// 是否为外部文件形式（`module foo;` → 内容在 `foo.rl` 或 `foo/module.rl`）
     pub external: bool,
+    /// 模块属性：`#[memory(gc)]` → `Some("gc")`（B-6 模块级 GC 逃逸舱）
+    pub memory: Option<String>,
     /// 源码位置
     pub span: Span,
 }
@@ -569,6 +598,10 @@ pub enum ExprKind {
         type_args: Vec<AstType>,
         /// 命名字段初始化列表
         fields: Vec<(String, AstExpr)>,
+        /// `..base` 更新语法基底：`base` 须与结构体同类型，其未显式给出的字段
+        /// 由 typecheck 注入 `base.field`；字段简写 `Foo { x }` 已在 parser 层
+        /// 展开为 `Foo { x: x }`，此处无需承载。
+        base: Option<Box<AstExpr>>,
     },
 
     /// 索引访问

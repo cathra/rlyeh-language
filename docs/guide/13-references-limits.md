@@ -38,7 +38,7 @@
 | 引用类型 | ✅ 已实现（`&x`/`&mut x`、`&T`/`&mut T`、`*` 解引用、`ref`/`ref mut` 模式、严格借用检查、`&str` 只读视图、`str` 值一等类型、字面量实参自动升级） |
 | 闭包 | ✅ H2 无捕获 / H3 捕获闭包（IIFE）/ H5 闭包值对象；**跨线程闭包已支持（F-M2/F-M3/F-M4，0.2.0-F）**：`Thread::start(move || ..)` 将 `move` 闭包（捕获拥有环境）跨线程执行，捕获类型须满足 `'static`（禁止捕获借用引用）；无捕获闭包值仍可经 fn 签名降级为 fn 指针跨边界。限制：按引用捕获规划中；一般「闭包作 fn 实参/返回值」的闭包参数类型语法仍规划中 |
 | 函数指针 | ✅ 已实现（H1） |
-| 运算符 | ✅ `?`（K1）、`as` 转换（U6）、`dyn Trait`（H4，非泛型 trait/impl、含 Self 签名方法不可经 dyn 调用） |
+| 运算符 | ✅ `?`（K1）、`as` 转换（U6）、`dyn Protocol`（H4，非泛型 protocol/impl、含 Self 签名方法不可经 dyn 调用） |
 | 所有权层级 | ✅ K2 `Box`/K3 `Rc`/`Arc`/K4 `Gc` |
 | 并发 | ✅ Actor `async`/`.await`/交叉编译 WASM（L4）；普通 `async fn`/`.await` 已支持（S1c/W1–W5） |
 | 表达式 | ✅ 比较链、集合/区间 `in`、`if` 表达式、块表达式尾值、`loop`/`while`/`for`、赋值表达式值 |

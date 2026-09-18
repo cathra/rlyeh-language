@@ -5,7 +5,7 @@ struct Counter {
     pos: i64,
 }
 
-impl Iterator for Counter {
+impl Counter: Iterator {
     type Item = i64;
     fn new(limit: i64) -> Counter {
         Counter { limit: limit, pos: 0 }

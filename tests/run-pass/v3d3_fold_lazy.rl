@@ -6,7 +6,7 @@ struct Range {
     end: i64,
 }
 
-impl Iterator for Range {
+impl Range: Iterator {
     type Item = i64;
     fn next(&mut self) -> Option<i64> {
         if self.cur < self.end {

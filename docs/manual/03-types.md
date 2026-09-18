@@ -55,7 +55,7 @@ let unit = ();          // ()
 | `*const T` / `*mut T` | 裸指针（与 `&T` 互视，G3 ✅） | `let p: *const i64 = &x;` |
 | `Box<T>` / `Rc<T>` / `Arc<T>` / `Gc<T>` | 智能指针 | 见 §9 / [std/smart-pointers](./std/smart-pointers.md) |
 | `Option<T>` / `Result<T, E>` | 代数数据类型（标准库） | `Some(5)` / `Result::Ok(10)` |
-| `dyn Trait` | trait 对象（2 槽胖指针，H4 ✅） | `let d: dyn Shape = &c;` |
+| `dyn Protocol` | protocol 对象（2 槽胖指针，H4 ✅） | `let d: dyn Shape = &c;` |
 | `fn(T) -> R` | 函数指针类型（H1 ✅） | `let f: fn(i64) -> i64 = add;` |
 | `A | B` | 类型联合（U1/U2 ✅） | `let x: i64 | String = 5;` |
 | `enum { ... }` | 具名变体枚举；可带显式判别式（U3 ✅） | `enum Code { Ok = 200 }` |

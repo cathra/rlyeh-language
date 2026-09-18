@@ -1,11 +1,11 @@
 // smoke4：项目依赖特性综合验证
 // dyn Trait / region adaptive / ? 运算符 / HashMap / sort_by / 闭包 / 数值区间
 
-trait Shape {
+protocol Shape {
     fn area(&self) -> f64;
 }
 struct Circle { radius: f64 }
-impl Shape for Circle {
+impl Circle: Shape {
     fn area(&self) -> f64 {
         let r = self.radius;
         let r2 = r * r;

@@ -6,7 +6,7 @@ struct Counter {
     cur: i64,
     end: i64,
 }
-impl Iterator for Counter {
+impl Counter: Iterator {
     fn next(&mut self) -> Option<i64> {
         if self.cur > self.end {
             return Option::None;
@@ -23,7 +23,7 @@ struct Step {
     end: i64,
     step: i64,
 }
-impl Iterator for Step {
+impl Step: Iterator {
     fn next(&mut self) -> Option<i64> {
         if self.cur >= self.end {
             return Option::None;

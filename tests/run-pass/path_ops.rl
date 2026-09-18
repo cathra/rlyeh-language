@@ -1,4 +1,4 @@
-// N3a：Path 对象（new/join/parent/file_name/extension/exists/is_file/is_dir）
+// N3a：Path 对象（new/join/parent/file_name/path_extension/exists/is_file/is_dir）
 // exists/is_file/is_dir 使用 /tmp 绝对路径（不依赖工作目录），自创建自清理。
 fn main() {
     // join（自动处理尾部斜杠）
@@ -11,9 +11,9 @@ fn main() {
     println(Path::new(String::from("c.txt")).parent().as_string());       // .
     // file_name
     println(Path::new(String::from("a/b/c.txt")).file_name().as_string()); // c.txt
-    // extension
-    println(Path::new(String::from("a/b/c.txt")).extension());  // txt
-    println(Path::new(String::from("noext")).extension());      // 空串
+    // path_extension
+    println(Path::new(String::from("a/b/c.txt")).path_extension());  // txt
+    println(Path::new(String::from("noext")).path_extension());      // 空串
     // exists / is_file / is_dir（自创建文件 + 系统目录）
     let _ = fs::remove_file(String::from("/tmp/rlyeh_path_ops.txt"));
     let _ = fs::write(String::from("/tmp/rlyeh_path_ops.txt"), String::from("x"));

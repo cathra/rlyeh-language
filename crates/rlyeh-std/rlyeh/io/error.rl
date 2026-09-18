@@ -45,12 +45,12 @@ impl IoError {
 // `Option<String>`（仅返回源错误 message 字符串）。
 // P7d-1（2026-08-29）：利用 P4 已完成的 `&dyn Error` 上转型，升级为
 // `Option<&dyn Error>`，形成真实错误链（逐层 source 追溯，而非字符串拷贝）。
-trait Error {
+protocol Error {
     fn message(&self) -> String;
     fn source(&self) -> Option<&dyn Error>;
 }
 
-impl Error for IoError {
+impl IoError: Error {
     fn message(&self) -> String {
         self.message
     }
@@ -66,16 +66,16 @@ impl Error for IoError {
 // P6c（2026-08-29）：`From::from` + `?` 运算符 From 自动转换已落地；
 // P6c-1/2（2026-08-29）：`Into::into` 经 blanket 语义实现——`Into::<U>::into(x)`
 // 约束求解确认 `impl From<A> for U` 存在后改写 `From::from(x)`（std 无需注册 blanket impl）。
-trait From<T> {
+protocol From<T> {
     fn from(v: T) -> Self;
 }
 
-trait Into<T> {
+protocol Into<T> {
     fn into(self) -> T;
 }
 
 // IoErrorKind → IoError（复用 from_kind 的默认 message 生成）。
-impl From<IoErrorKind> for IoError {
+impl IoError: From<IoErrorKind> {
     fn from(v: IoErrorKind) -> io::error::IoError {
         IoError::from_kind(v)
     }

@@ -8,13 +8,13 @@
 // 输出与 display_fmt.out 精确对比
 struct Point { x: i64, y: i64 }
 
-impl Display for Point {
+impl Point: Display {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::FmtError> {
         f.write_str(String::from("P(") + int_to_string(self.x) + String::from(",") + int_to_string(self.y) + String::from(")"));
         Result::Ok(())
     }
 }
-impl Debug for Point {
+impl Point: Debug {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::FmtError> {
         f.write_str(String::from("Point{x:") + int_to_string(self.x) + String::from(",y:") + int_to_string(self.y) + String::from("}"));
         Result::Ok(())

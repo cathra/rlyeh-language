@@ -176,6 +176,7 @@ pub(crate) fn fmt_expr(e: &AstExpr) -> String {
             type_name,
             type_args,
             fields,
+            ..
         } => {
             // 泛型实参 MVP 不美化输出（`Foo<T> { .. }` 原样保留路径，实参暂略）
             let _ = type_args;

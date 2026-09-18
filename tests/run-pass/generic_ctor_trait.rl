@@ -9,10 +9,10 @@ impl<T> Pair<T> {
     }
 }
 
-trait Wrap<T> {
+protocol Wrap<T> {
     fn wrap(&self) -> T;
 }
-impl<T> Wrap<T> for Pair<T> {
+impl<T> Pair<T>: Wrap<T> {
     fn wrap(&self) -> T {
         self.a
     }

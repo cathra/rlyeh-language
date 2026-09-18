@@ -27,7 +27,7 @@ impl XorShift {
 /// Rlyeh 语法中常见的字节片段（覆盖关键字、运算符、字面量、标点）
 const FRAGMENTS: &[&str] = &[
     "fn", "let", "mut", "if", "else", "while", "loop", "for", "in", "match", "region", "'r",
-    "transfer", "out of", "actor", "struct", "enum", "trait", "impl", "pub", "async", "unsafe",
+    "transfer", "out of", "actor", "struct", "enum", "protocol", "impl", "pub", "async", "unsafe",
     "import", "module", "const", "static", "and", "not", "return", "break", "continue", "send", "move",
     "ref", "self", "Self", "as", "0", "42", "3.14", "true", "false", "\"str\"", "'c'", "9am",
     "6pm", "x", "y", "data", "u32", "f64", "Result", "Vec", "String", "+", "-", "*", "/", "%", "=",

@@ -6,21 +6,21 @@
 // `parse_fn`（返回类型之后、函数体之前），约束按参数名合并进 `generics`，
 // 复用既有 bound 校验路径（与内联 bound 同一套诊断）。
 
-trait Speak {
+protocol Speak {
     fn speak(&self) -> i64;
 }
 
-trait Named {
+protocol Named {
     fn name_id(&self) -> i64;
 }
 
 struct Dog { id: i64 }
 
-impl Speak for Dog {
+impl Dog: Speak {
     fn speak(&self) -> i64 { self.id }
 }
 
-impl Named for Dog {
+impl Dog: Named {
     fn name_id(&self) -> i64 { 100 }
 }
 
@@ -45,11 +45,11 @@ impl Helper {
 //    trait 类型实参不参与推导，故此处用无类型参数的 trait。
 struct Pair<T> { a: T }
 
-trait Wrap {
+protocol Wrap {
     fn wrap(&self) -> i64;
 }
 
-impl<T> Wrap for Pair<T> where T: Speak {
+impl<T> Pair<T>: Wrap where T: Speak {
     fn wrap(&self) -> i64 { self.a.speak() }
 }
 

@@ -109,7 +109,7 @@ pub fn doc_program(program: &AstProgram, source: &str, options: &DocOptions) -> 
             "函数" => funcs.push(item),
             "结构体" => structs.push(item),
             "枚举" => enums.push(item),
-            "Trait" => traits.push(item),
+            "Protocol" => traits.push(item),
             "impl" => impls.push(item),
             "Actor" => actors.push(item),
             "常量" => consts.push(item),
@@ -121,7 +121,7 @@ pub fn doc_program(program: &AstProgram, source: &str, options: &DocOptions) -> 
     render_section(&mut out, "函数", &funcs, &scan, &code_lines);
     render_section(&mut out, "结构体", &structs, &scan, &code_lines);
     render_section(&mut out, "枚举", &enums, &scan, &code_lines);
-    render_section(&mut out, "Trait", &traits, &scan, &code_lines);
+    render_section(&mut out, "Protocol", &traits, &scan, &code_lines);
     render_section(&mut out, "impl", &impls, &scan, &code_lines);
     render_section(&mut out, "Actor", &actors, &scan, &code_lines);
     render_section(&mut out, "常量与静态量", &consts, &scan, &code_lines);
@@ -218,7 +218,7 @@ fn category(item: &AstItem) -> &'static str {
         AstItem::FnDecl(_) => "函数",
         AstItem::StructDecl(_) => "结构体",
         AstItem::EnumDecl(_) => "枚举",
-        AstItem::TraitDecl(_) => "Trait",
+        AstItem::TraitDecl(_) => "Protocol",
         AstItem::ImplBlock(_) => "impl",
         AstItem::ModDecl(_) => "模块",
         AstItem::UseDecl(_) => "其他项",

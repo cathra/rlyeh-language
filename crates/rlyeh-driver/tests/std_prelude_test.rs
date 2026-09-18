@@ -1,4 +1,4 @@
-//! 标准库预置（prelude）集成测试：文件入口 API 自动注入 `rlyeh-std/rlyeh/core.rl`，
+//! 标准库预置（prelude）集成测试：文件入口 API 自动注入 `rlyeh-std/rlyeh/`，
 //! 用户程序无需内联即可使用 `Option<T>` / `Result<T, E>`。
 //!
 //! 需要系统 clang（与 driver_test.rs / std_test.rs 相同）。

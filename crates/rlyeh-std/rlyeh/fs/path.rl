@@ -78,7 +78,7 @@ impl Path {
         fs::path::Path { path: res }
     }
     // 扩展名（文件名最后一个 '.' 之后；无 '.' 返回空串）。
-    fn extension(self) -> String {
+    fn path_extension(self) -> String {
         let name = self.file_name();
         let n = name.path;
         let mut dot = n.len;

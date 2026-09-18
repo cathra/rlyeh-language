@@ -8,7 +8,7 @@
 > `rlyeh_region_transfer`/`rlyeh_region_exit`），聚合对象 `in 'r` 经 bump 分配器分配（值镜像浅拷贝，不注册析构），
 > `transfer x out of 'r` 标记所有权移出；PGO 数据回灌（F2，`.rl_profile`，简化格式）注入 `adaptive` 初始容量）；
 > L0（§2）已实现（值拷贝/移动语义 + 方法接收者 + `&`/`&mut` 引用与宽松借用检查 G1 ✅ + `Box` K2 ✅；
-> `Copy` trait 规划中）；L2 引用计数（§4）已实现（K3 ✅：`Rc`/`Arc`/`Weak`，含 `strong_count`/`downgrade`/
+> `Copy` protocol 规划中）；L2 引用计数（§4）已实现（K3 ✅：`Rc`/`Arc`/`Weak`，含 `strong_count`/`downgrade`/
 > `try_unwrap`）；L3 可选 GC（§5）已实现（K4 ✅：保守标记-清除 `Gc<T>`，多线程/增量回收规划中）。
 > 区域用法见 [`guide/08-memory.md`](./guide/08-memory.md) §8。
 

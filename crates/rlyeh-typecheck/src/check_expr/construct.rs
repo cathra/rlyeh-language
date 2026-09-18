@@ -11,6 +11,7 @@ pub(super) fn check_struct_construct(
     type_name: &[String],
     type_args: &[AstType],
     fields: &[(String, AstExpr)],
+    base: &Option<Box<AstExpr>>,
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
     let struct_name = type_name.join("::");
@@ -66,6 +67,27 @@ pub(super) fn check_struct_construct(
         }
     })?;
 
+    // SH-P2-11：`..base` 更新语法——对 base 的每个未显式给出的字段注入
+    // `base.field`（字段简写 `Foo { x }` 已在 parser 层展开为 `Foo { x: x }`，
+    // 此处仅需处理 `..base`）。base 须与结构体同类型，缺失字段经 FieldAccess 取。
+    let mut fields = fields.to_vec();
+    if let Some(base_expr) = base {
+        for (fname, _) in &def.fields {
+            if !fields.iter().any(|(n, _)| n == fname) {
+                fields.push((
+                    fname.clone(),
+                    AstExpr::new(
+                        rlyeh_ast::ExprKind::FieldAccess {
+                            expr: (**base_expr).clone(),
+                            field: fname.clone(),
+                        },
+                        span,
+                    ),
+                ));
+            }
+        }
+    }
+
     // U8：泛型结构体构造——解析 `Pair<i64>` 的类型实参，构造实例类型
     // `Named(struct_name, resolved_args)`；字段类型用实参替换泛型参数后校验。
     let mut resolved_args: Vec<Type> = Vec::new();
@@ -80,7 +102,7 @@ pub(super) fn check_struct_construct(
     // 递归统一 args（`Vec<T>` vs `Vec<i64>` → T = i64），不匹配时静默跳过。
     if resolved_args.is_empty() && !def.type_params.is_empty() {
         let mut field_subst_infer: HashMap<String, Type> = HashMap::new();
-        for (fname, fval) in fields {
+        for (fname, fval) in &fields {
             if let Some((_, fty)) = def.fields.iter().find(|(n, _)| n == fname) {
                 let (_, arg_ty) = infer_expr(ctx, fval)?;
                 unify(fty, &arg_ty, &mut field_subst_infer)?;
@@ -107,7 +129,7 @@ pub(super) fn check_struct_construct(
     }
 
     // 未知字段校验
-    for (fname, fval) in fields {
+    for (fname, fval) in &fields {
         if !def.fields.iter().any(|(n, _)| n == fname) {
             return Err(TypeError::UnknownField {
                 struct_name: struct_name.clone(),

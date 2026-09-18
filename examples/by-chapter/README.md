@@ -11,7 +11,7 @@
 | [02 快速上手](../../docs/guide/02-quick-start.md) | [`02-quick-start.rl`](./02-quick-start.rl) | 编译/检查/格式化命令 |
 | [03 基础语法](../../docs/guide/03-basic-syntax.md) | [`03-basic-syntax.rl`](./03-basic-syntax.rl) | 变量遮蔽、函数、无捕获闭包 |
 | [04 数学式条件判断](../../docs/guide/04-math-conditions.md) | [`04-math-conditions.rl`](./04-math-conditions.rl) | 比较链、集合/区间 `in`、时间字面量 |
-| [05 聚合类型与泛型](../../docs/guide/05-aggregates-generics.md) | [`05-aggregates-generics.rl`](./05-aggregates-generics.rl) | struct / enum / match / trait |
+| [05 聚合类型与泛型](../../docs/guide/05-aggregates-generics.md) | [`05-aggregates-generics.rl`](./05-aggregates-generics.rl) | struct / enum / match / protocol |
 | [06 数组、Vec 与切片](../../docs/guide/06-arrays-slices.md) | [`06-arrays-slices.rl`](./06-arrays-slices.rl) | 切片引用、`map` 适配器 |
 | [07 模块系统](../../docs/guide/07-modules.md) | [`07-modules/`](./07-modules/)（多文件） | `geometry.rl` + `main.rl` 一起编译 |
 | [08 内存管理](../../docs/guide/08-memory.md) | [`08-memory.rl`](./08-memory.rl) | 四层模型：L0 借用 / L2 Box·Rc |

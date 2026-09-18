@@ -3,6 +3,7 @@
 > **目录定位**：本目录是 Rlyeh 的**权威规范文档**与**开发进度文档**所在地（唯一真相来源）。
 > 早期设计稿按模块归档于 [`design/`](design/README.md)（不再更新，仅供追溯）。
 > 项目总纲（全景/工具链/特性速览）见 [`../CODEBUDDY.md`](../CODEBUDDY.md)。
+> **提案 / RFC**：语言演进提案存放于 [`rfc/`](rfc/)（如借用语法简化 [`rfc/borrow-simplification.md`](rfc/borrow-simplification.md)、Protocol 语法 [`rfc/protocol-syntax.md`](rfc/protocol-syntax.md)），供评审，评审通过后再并入权威规范。
 
 > **目标读者**：本套文档（尤其是 `tutorial/`、`guide/`、`manual/`）面向**有 C 语言基础、但 Rust 与 Rlyeh 零基础**的读者。凡是 C 里没有或行为不同的概念，文档均用 `> **C 程序员对照**` 块给出等价写法与陷阱提示；每章末尾附**练习**，可运行示例集中在 [`../examples/by-chapter/`](../examples/by-chapter/README.md)（按文档章节对应）。
 

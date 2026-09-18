@@ -36,6 +36,10 @@ AstProgram {
                 ],
                 derive: [],
                 repr_c: true,
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 240,
                     end: 280,
@@ -94,6 +98,7 @@ AstProgram {
                                                 },
                                             ),
                                         ],
+                                        base: None,
                                     },
                                     span: Span {
                                         start: 306,

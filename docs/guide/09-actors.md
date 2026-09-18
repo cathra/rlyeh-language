@@ -140,7 +140,7 @@ fn main() {
 }
 ```
 
-> **MVP 限制**：`map![...]` / `vec![...]` 绑定后 K/V 类型为 `Infer`，需显式注解（如 `let m: HashMap<i64, i64>`）；嵌套 `HashMap` 值的 parse 暂不支持（值限标量）；自定义 `Serialize`/`Deserialize` trait 与 `#[derive]` 已实现。
+> **MVP 限制**：`map![...]` / `vec![...]` 绑定后 K/V 类型为 `Infer`，需显式注解（如 `let m: HashMap<i64, i64>`）；嵌套 `HashMap` 值的 parse 暂不支持（值限标量）；自定义 `Serialize`/`Deserialize` protocol 与 `#[derive]` 已实现。
 
 ---
 

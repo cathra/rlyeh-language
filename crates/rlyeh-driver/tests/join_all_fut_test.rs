@@ -18,7 +18,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");
@@ -35,7 +35,7 @@ fn join_all_collects_all_results_in_order() {
     let out = run(
         r#"
 struct MyFut { n: i64 }
-impl Future for MyFut {
+impl MyFut: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.n = self.n + 1;
@@ -64,7 +64,7 @@ fn join_all_immediate_futures() {
     let out = run(
         r#"
 struct Quick { v: i64 }
-impl Future for Quick {
+impl Quick: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         Poll::Ready(self.v)
@@ -90,7 +90,7 @@ fn join_all_empty() {
     let out = run(
         r#"
 struct Quick { v: i64 }
-impl Future for Quick {
+impl Quick: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         Poll::Ready(self.v)
@@ -113,7 +113,7 @@ fn join_all_supports_non_i64_output() {
     let out = run(
         r#"
 struct StrFut { s: String, n: i64 }
-impl Future for StrFut {
+impl StrFut: Future {
     type Output = String;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.n = self.n + 1;

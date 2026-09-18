@@ -48,6 +48,10 @@ AstProgram {
                         },
                     },
                 ],
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 287,
                     end: 338,

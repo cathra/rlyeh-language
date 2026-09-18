@@ -1,6 +1,6 @@
 // V5d HashSet 运算符糖（2026-09-02）：| & - ^ 经运算符重载降级为集合方法
 struct Point { x: i64, y: i64 }
-impl Add for Point {
+impl Point: Add {
     type Output = Point;
     fn add(self, other: Point) -> Point { Point { x: self.x + other.x, y: self.y + other.y } }
 }

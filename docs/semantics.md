@@ -5,7 +5,7 @@
 
 > **⚠️ 实现状态**：本文为**目标语义规范**。所有权/借用（§1）、`?` 运算符（§6）、闭包（§10）、
 > 引用类型等均已实现（G1 引用与借用 / G2 `&str` / G3 裸指针 / H1–H5 闭包与一等函数 / K1 `?`）。
-> `Copy` trait 与生命周期严格验证仍为规划（MVP：值拷贝/移动语义 + 宽松借用检查，`'a` 语法接受后丢弃）。
+> `Copy` protocol 与生命周期严格验证仍为规划（MVP：值拷贝/移动语义 + 宽松借用检查，`'a` 语法接受后丢弃）。
 > 已实现语义的教程见 [`guide/index.md`](./guide/index.md)，已知限制见 [`guide/13-references-limits.md`](./guide/13-references-limits.md) §13。
 
 ## 相关文档
@@ -23,14 +23,14 @@
 
 > **MVP 状态**：本节为**目标语义（规划）**。MVP 已实现：`let s2 = s1` 为值拷贝（对象为堆数据
 > 拷贝，见 §8 聚合对象），对象修改需 `let mut`；`&self`/`&mut self` 方法接收者、`&x`/`&mut x` 表达式、
-> `&T`/`&mut T` 参数与返回、`*` 解引用与借用检查（G1 ✅）；`Copy` trait 与生命周期严格验证规划中。
+> `&T`/`&mut T` 参数与返回、`*` 解引用与借用检查（G1 ✅）；`Copy` protocol 与生命周期严格验证规划中。
 
 ### 1.1 所有权规则（目标）
 
 1. 每个值有且只有一个所有者（owner）。
 2. 当所有者离开作用域时，值被自动销毁（调用 `Drop`）。
 3. 赋值或传参时，所有权默认转移（move）。
-4. 实现了 `Copy` trait 的类型除外（按位拷贝）。
+4. 实现了 `Copy` protocol 的类型除外（按位拷贝）。
 
 ```rlyeh
 let s1 = String::from("hello");
@@ -349,7 +349,7 @@ enum MyError {
     Parse(ParseError),
 }
 
-impl From<IoError> for MyError {
+impl MyError: From<IoError> {
     fn from(e: IoError) -> Self { MyError::Io(e) }
 }
 
@@ -406,7 +406,7 @@ fn sort(data: &mut [u32]) {
 ### 7.3 编译期反射
 
 ```rlyeh
-impl Serialize for Point {
+impl Point: Serialize {
     fn serialize(&self) -> JsonValue {
         let mut json = Map::new();
         @for field in Self::fields() {
@@ -463,7 +463,7 @@ MVP 中不能独立存储、不能作值类型、也不能作函数返回值类�
 边界 clamp 规则：下界 `< 0` 取 `0`；上界 `> len` 取 `len`；并保证结果上界不小于
 下界（退化为空区间，长度 0）。
 
-**内建方法**（切片在 `core.rl` 无 impl，由类型检查层直接特判）：
+**内建方法**（切片在标准库无 impl，由类型检查层直接特判）：
 
 | 方法 | 语义 |
 |------|------|

@@ -856,6 +856,14 @@ pub(crate) fn check_stmt_inner(
                             }
                         }
                     }
+                    // PC-10：`dyn 子协议 → dyn 父协议` 上转——值层 `dyn A → dyn B` 与引用层
+                    // `&dyn A → &dyn B` 同构。线性化 vtable 保证父协议方法槽位于子协议 vtable
+                    // 前部，故直接复用同一胖指针、仅编译期改类型（零运行时开销）。
+                    else if let Some(up) =
+                        crate::check_expr::dyn_supertrait_upshift(ctx, &at, &ty)
+                    {
+                        ty = up;
+                    }
                     // U2：联合构造——注解为 `A | B`、init 为其中某成员类型的值时，
                     // desugar 为匿名 enum 构造（槽 0 = tag、槽 1 = payload），
                     // 运行时表示与具名 enum 一致，复用现有 enum codegen 通道。
@@ -879,16 +887,26 @@ pub(crate) fn check_stmt_inner(
                         }
                     }
                     if !at.compatible_with(&ty) {
-                        return Err(TypeError::WrongType {
-                            expected: at.to_string(),
-                            found: ty.to_string(),
-                            span,
-                            related: anno_span
-                                .into_iter()
-                                .filter(|s| s.line != 0)
-                                .map(|s| (s, format!("类型标注 `{at}`")))
-                                .collect(),
-                        });
+                        // B-2（P0'）：标注类型 `at`、推断类型 `ty`；若 `ty == &T`
+                        // 且 `at == T` 且 `T: Copy`，自动解引用取值（`let v: T = r;`）
+                        match crate::check_expr::try_auto_deref_coerce(ctx, &at, &ty, init, span) {
+                            Some(Ok((h, t))) => {
+                                h_init = h;
+                                ty = t;
+                            }
+                            _ => {
+                                return Err(TypeError::WrongType {
+                                    expected: at.to_string(),
+                                    found: ty.to_string(),
+                                    span,
+                                    related: anno_span
+                                        .into_iter()
+                                        .filter(|s| s.line != 0)
+                                        .map(|s| (s, format!("类型标注 `{at}`")))
+                                        .collect(),
+                                });
+                            }
+                        }
                     }
                     Some(at)
                 }

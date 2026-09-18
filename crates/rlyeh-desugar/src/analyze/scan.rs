@@ -464,6 +464,7 @@ pub(super) fn extract_expr_awaits(
             type_name,
             type_args,
             fields,
+            ..
         } => ExprKind::StructCtor {
             type_name: type_name.clone(),
             type_args: type_args.clone(),
@@ -474,6 +475,7 @@ pub(super) fn extract_expr_awaits(
                 }
                 f
             },
+            base: None,
         },
         ExprKind::MacroCall { name, args } => ExprKind::MacroCall {
             name: name.clone(),

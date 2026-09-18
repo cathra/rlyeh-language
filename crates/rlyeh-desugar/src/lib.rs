@@ -34,7 +34,7 @@ mod guard;
 use std::collections::{HashMap, HashSet};
 
 use thiserror::Error;
-use rlyeh_ast::{AstFnDecl, AstItem, AstProgram};
+use rlyeh_ast::{AstFnDecl, AstImplBlock, AstItem, AstProgram, AstType, AstTypeParam};
 use rlyeh_lexer::Span;
 
 pub use analyze::{AnalyzedAsync, AwaitInfo, Segment};
@@ -83,6 +83,9 @@ impl From<()> for DesugarError {
 /// 无 async fn 时原样返回；有则按依赖拓扑序分析并生成
 /// struct/impl/构造器，替换原 async fn 项。
 pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
+    // PC-1：声明点一致性 + 类型体内联成员 → 既有 impl 结构（先于 guard，使其可见方法体）
+    lower_type_conformance(program)?;
+
     // P2：MutexGuard 作用域守卫自动解锁注入（独立 pass，先于 async desugar）
     guard::inject_guard_unlocks(program);
 
@@ -167,6 +170,257 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
         }
     }
     program.items = new_items;
+    Ok(())
+}
+
+/// PC-1/PC-3：把类型声明的「声明点一致性 + 类型体内联成员」归一为既有 `impl` 块
+/// （见 `docs/rfc/protocol-syntax.md` §3.3 / §6）：
+///
+/// - `struct C { fields; members }`（无协议）→ `struct C { fields }` + `impl C { members }`
+/// - `struct C: P { fields; members }` → 按「成员名是否属于 P 的需求集」拆分：属于 P 的成员入
+///   `impl P for C`，其余入固有 `impl C`；协议无匹配成员时仍发空 impl（用于默认方法一致性声明）。
+/// - 多协议 `struct C: A, B { .. }` → 逐协议展开；成员按「首个接受它的协议」归属，未匹配者入固有 impl。
+/// - `enum E: P { .. }` 同理。内置 trait（`Drop`/`Any`）或预扫描未命中的协议视为「接受全部成员」。
+///
+/// 递归处理模块项。
+fn lower_type_conformance(program: &mut AstProgram) -> Result<(), DesugarError> {
+    // 预扫描全程序协议成员名（simple name 与 `mod::Name` 两种键），供成员归属裁决（§3.3）。
+    let mut proto_members: HashMap<String, HashSet<String>> = HashMap::new();
+    collect_protocol_members(&program.items, "", &mut proto_members);
+    lower_items(&mut program.items, &proto_members)
+}
+
+/// 递归收集协议（`protocol`/`trait`）的成员名集合（方法 + 关联类型），供裁决拆分使用。
+fn collect_protocol_members(
+    items: &[AstItem],
+    prefix: &str,
+    out: &mut HashMap<String, HashSet<String>>,
+) {
+    for item in items {
+        match item {
+            AstItem::TraitDecl(t) => {
+                let mut names: HashSet<String> = HashSet::new();
+                for m in &t.methods {
+                    names.insert(m.name.clone());
+                }
+                for ty in &t.types {
+                    names.insert(ty.clone());
+                }
+                out.insert(t.name.clone(), names.clone());
+                if !prefix.is_empty() {
+                    out.insert(format!("{prefix}::{}", t.name), names);
+                }
+            }
+            AstItem::ModDecl(m) => {
+                let child = if prefix.is_empty() {
+                    m.name.clone()
+                } else {
+                    format!("{prefix}::{}", m.name)
+                };
+                collect_protocol_members(&m.items, &child, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 构造一个归一后的 `AstItem::ImplBlock`。
+#[allow(clippy::too_many_arguments)]
+fn make_impl(
+    trait_name: Option<String>,
+    trait_type_args: Vec<AstType>,
+    type_name: String,
+    span: Span,
+    generics: Vec<AstTypeParam>,
+    methods: Vec<AstFnDecl>,
+    types: Vec<(String, AstType)>,
+) -> AstItem {
+    AstItem::ImplBlock(Box::new(AstImplBlock {
+        trait_name,
+        type_name,
+        generics,
+        trait_type_args,
+        extra_traits: Vec::new(),
+        types,
+        methods,
+        span,
+    }))
+}
+
+/// PC-9：把 `impl T: A, B { .. }` 的多协议一致性拆分为多个独立 impl 块。
+///
+/// 第 0 个协议（原 `trait_name`）保留在原块（位置不变），其余协议追加到 `synthesized`。
+/// 成员按「首个接受它的协议」归属（与声明点一致性 `struct C: A, B` 同一规则）；无处归属者
+/// 并入首个协议块——保证 `impl T: A, B { .. }` 与「拆成多个 `impl` 分别书写」在成员全属
+/// 首协议时等价。
+fn lower_impl_conformance(
+    i: &mut AstImplBlock,
+    synthesized: &mut Vec<AstItem>,
+    proto_members: &HashMap<String, HashSet<String>>,
+) {
+    let type_name = i.type_name.clone();
+    let span = i.span;
+    let generics = i.generics.clone();
+    let first = i.trait_name.take();
+    let first_args = std::mem::take(&mut i.trait_type_args);
+    let mut protocols: Vec<(String, Vec<AstType>)> = Vec::new();
+    if let Some(f) = first {
+        protocols.push((f, first_args));
+    }
+    protocols.extend(std::mem::take(&mut i.extra_traits));
+    if protocols.len() < 2 {
+        // 防御：无额外协议时不应进入此处；回填后原样返回。
+        if let Some((p, a)) = protocols.pop() {
+            i.trait_name = Some(p);
+            i.trait_type_args = a;
+        }
+        return;
+    }
+    let methods = std::mem::take(&mut i.methods);
+    let assoc_types = std::mem::take(&mut i.types);
+    // 协议 `p` 是否「接受」成员名 `name`：已预扫描者查其需求集；
+    // 未命中（内置协议 / 跨编译单元协议）者视为接受全部。
+    let accepts = |p: &str, name: &str| -> bool {
+        proto_members.get(p).map_or(true, |s| s.contains(name))
+    };
+    let mut buckets: Vec<(Vec<AstFnDecl>, Vec<(String, AstType)>)> =
+        protocols.iter().map(|_| (Vec::new(), Vec::new())).collect();
+    for m in methods {
+        match protocols.iter().position(|(n, _)| accepts(n, &m.name)) {
+            Some(k) => buckets[k].0.push(m),
+            None => buckets[0].0.push(m),
+        }
+    }
+    for (tn, ty) in assoc_types {
+        match protocols.iter().position(|(n, _)| accepts(n, &tn)) {
+            Some(k) => buckets[k].1.push((tn, ty)),
+            None => buckets[0].1.push((tn, ty)),
+        }
+    }
+    let (m0, t0) = buckets.remove(0);
+    let (p0, a0) = protocols.remove(0);
+    i.trait_name = Some(p0);
+    i.trait_type_args = a0;
+    i.methods = m0;
+    i.types = t0;
+    for ((pn, pargs), (pm, pt)) in protocols.into_iter().zip(buckets) {
+        synthesized.push(make_impl(
+            Some(pn),
+            pargs,
+            type_name.clone(),
+            span,
+            generics.clone(),
+            pm,
+            pt,
+        ));
+    }
+}
+
+/// 递归处理一层 items（模块内递归 + 本层 struct/enum/impl 归一）。
+fn lower_items(
+    items: &mut Vec<AstItem>,
+    proto_members: &HashMap<String, HashSet<String>>,
+) -> Result<(), DesugarError> {
+    // 先递归模块（外部模块 `module m;` 的 items 为空，天然跳过）
+    for item in items.iter_mut() {
+        if let AstItem::ModDecl(m) = item {
+            lower_items(&mut m.items, proto_members)?;
+        }
+    }
+    // 再处理本层：合成的 impl 追加到末尾（typecheck 先收集全部再检查，顺序无关）。
+    let mut synthesized: Vec<AstItem> = Vec::new();
+    for item in items.iter_mut() {
+        // PC-9：`impl T: A, B { .. }`（多协议一致性）→ 按协议成员名裁决拆分为多个 impl 块。
+        if let AstItem::ImplBlock(i) = item {
+            if !i.extra_traits.is_empty() {
+                lower_impl_conformance(i, &mut synthesized, proto_members);
+            }
+            continue;
+        }
+        let (type_name, span, generics, conformances, methods, assoc_types) = match item {
+            AstItem::StructDecl(s) => (
+                s.name.clone(),
+                s.span,
+                s.generics.clone(),
+                std::mem::take(&mut s.conformances),
+                std::mem::take(&mut s.methods),
+                std::mem::take(&mut s.assoc_types),
+            ),
+            AstItem::EnumDecl(e) => (
+                e.name.clone(),
+                e.span,
+                e.generics.clone(),
+                std::mem::take(&mut e.conformances),
+                std::mem::take(&mut e.methods),
+                std::mem::take(&mut e.assoc_types),
+            ),
+            _ => continue,
+        };
+        if methods.is_empty() && assoc_types.is_empty() && conformances.is_empty() {
+            continue;
+        }
+        // 无协议：单一固有 impl。
+        if conformances.is_empty() {
+            synthesized.push(make_impl(
+                None,
+                Vec::new(),
+                type_name,
+                span,
+                generics,
+                methods,
+                assoc_types,
+            ));
+            continue;
+        }
+        // 每个声明协议一个成员桶；未匹配任何协议需求的成员入固有 impl。
+        let mut per_proto: Vec<(String, Vec<AstType>, Vec<AstFnDecl>, Vec<(String, AstType)>)> =
+            conformances
+                .iter()
+                .map(|(n, a)| (n.clone(), a.clone(), Vec::new(), Vec::new()))
+                .collect();
+        let mut inherent_methods: Vec<AstFnDecl> = Vec::new();
+        let mut inherent_types: Vec<(String, AstType)> = Vec::new();
+        // 协议 `p` 是否「接受」成员名 `name`：已预扫描者查其需求集；
+        // 未命中（内置 trait / 跨编译单元协议）者视为接受全部。
+        let accepts = |p: &str, name: &str| -> bool {
+            proto_members.get(p).map_or(true, |s| s.contains(name))
+        };
+        for m in methods {
+            match per_proto.iter().position(|(n, ..)| accepts(n, &m.name)) {
+                Some(i) => per_proto[i].2.push(m),
+                None => inherent_methods.push(m),
+            }
+        }
+        for (tn, ty) in assoc_types {
+            match per_proto.iter().position(|(n, ..)| accepts(n, &tn)) {
+                Some(i) => per_proto[i].3.push((tn, ty)),
+                None => inherent_types.push((tn, ty)),
+            }
+        }
+        for (pn, pargs, pm, pt) in per_proto {
+            synthesized.push(make_impl(
+                Some(pn),
+                pargs,
+                type_name.clone(),
+                span,
+                generics.clone(),
+                pm,
+                pt,
+            ));
+        }
+        if !inherent_methods.is_empty() || !inherent_types.is_empty() {
+            synthesized.push(make_impl(
+                None,
+                Vec::new(),
+                type_name,
+                span,
+                generics,
+                inherent_methods,
+                inherent_types,
+            ));
+        }
+    }
+    items.extend(synthesized);
     Ok(())
 }
 

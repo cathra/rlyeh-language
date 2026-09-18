@@ -75,7 +75,7 @@ RLYEH_PREFIX=/opt/rlyeh ./toolchains/install.sh   # 自定义前缀
 ```
 <prefix>/
 ├── bin/              # rlyeh / rlyeh-driver / rlyeh-fmt / rlyeh-check / rlyeh-doc / rlyeh-bench / dagon
-├── std/             # 标准库源码（core.rl + time/io/net/sync/fs 模块）
+├── std/             # 标准库源码（module.rl + core/ + time/io/net/sync/fs 模块）
 └── registry/         # 本地 dagon 注册表（发布第三方包的目标）
 ```
 

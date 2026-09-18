@@ -1,4 +1,4 @@
-//! `String` 前缀/后缀剥离与截断集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `String` 前缀/后缀剥离与截断集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`strip_prefix`（命中/未命中/空串/长于自身/恰好相等）、`strip_suffix`
 //! （命中/未命中/空串/长于自身/完全相等）、`truncate`（截断/0/负数/超长/
@@ -22,7 +22,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

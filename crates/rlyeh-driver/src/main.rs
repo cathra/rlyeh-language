@@ -6,7 +6,7 @@
 //! rlyeh test [<tests-dir>]                       # 运行 tests/ 目录用例（默认 ./tests）
 //! rlyeh run|build <file> --force                 # 忽略缓存，强制全量编译
 //! rlyeh run|build <file> --cache-dir <dir>       # 指定缓存根目录（默认源文件所在目录）
-//! rlyeh run|build <file> --no-std                # 不注入标准库预置（core.rl）
+//! rlyeh run|build <file> --no-std                # 不注入标准库预置（标准库预置）
 //! rlyeh run|build <file> --verbose               # 打印缓存命中/未命中与统计
 //! rlyeh build <file> --target <triple>           # 交叉编译（如 arm64-apple-macosx / x86_64-apple-macosx）
 //! rlyeh run|build <file> --emit <ir|ast|hir|ast-user|hir-user> [-o <out>]  # 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行
@@ -406,6 +406,8 @@ fn run_fmt(args: &[String]) -> ExitCode {
         match args[i].as_str() {
             "--check" => check = true,
             "-w" | "--write" => write = true,
+            // PC-5 / PC-8：输出旧写法（`trait` / `impl Trait for Type`）；
+            // 默认输出新语法（`protocol` / `impl Type: Trait`）。
             "--indent" => {
                 i += 1;
                 let Some(v) = args.get(i) else {
@@ -446,7 +448,9 @@ fn run_fmt(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let opts = rlyeh_fmt::FmtOptions { indent_width: indent };
+    let opts = rlyeh_fmt::FmtOptions {
+        indent_width: indent,
+    };
     let formatted = match rlyeh_fmt::format_source_with_options(&src, &opts) {
         Ok(s) => s,
         Err(e) => {

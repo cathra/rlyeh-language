@@ -106,7 +106,7 @@ pub(crate) fn json_parse_ast(
                 span,
             ))
         }
-        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.rl）
+        // String → `json_unescape(s)`（引号剥离 + 转义还原，标准库预置）
         Type::Named(n, _) if n == "String" => Ok(mk_ident_call(
             "json_unescape".to_string(),
             vec![s],
@@ -443,6 +443,7 @@ pub(crate) fn json_parse_ast(
                     type_name: vec![n.clone()],
                     type_args: Vec::new(),
                     fields: zero_fields,
+                    base: None,
                 },
                 span,
             );

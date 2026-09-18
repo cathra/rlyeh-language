@@ -1,4 +1,4 @@
-//! `Vec<T>` 查找/排序集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `Vec<T>` 查找/排序集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`find`（首个命中下标 / 未命中 -1 / 空 Vec / String 内容相等）、
 //! `sort`（升序 / 已排序不动 / 空与单元素 / 重复元素 / String 字典序）、
@@ -19,7 +19,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

@@ -1,19 +1,19 @@
 // U4 `-> Self` 返回：trait 方法 / static 方法 / inherent 方法签名返回 Self
-trait Clone {
+protocol Clone {
     fn clone(&self) -> Self;
 }
 
-trait Zero {
+protocol Zero {
     fn zero() -> Self;
 }
 
 struct Point { x: i64, y: i64 }
-impl Clone for Point {
+impl Point: Clone {
     fn clone(&self) -> Self {
         Point { x: self.x, y: self.y }
     }
 }
-impl Zero for Point {
+impl Point: Zero {
     fn zero() -> Self {
         Point { x: 0, y: 0 }
     }

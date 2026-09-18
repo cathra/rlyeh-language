@@ -21,12 +21,23 @@ use crate::error::DriverError;
 
 /// 加载入口文件及其全部外部子模块，返回组合后的单文件等价源码。
 pub(crate) fn load_combined_source(entry: &Path) -> Result<String, DriverError> {
-    let mut visited = HashSet::new();
     let project_dir = entry
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
-    load_file(entry, Path::new(""), &project_dir, &mut visited)
+    load_combined_source_in(entry, &project_dir)
+}
+
+/// 指定项目根目录的加载变体。
+///
+/// 供标准库预置分片使用：分片位于 `rlyeh-std/rlyeh/core/` 子目录，但其 `module xxx;`
+/// 声明须相对 std 根目录（`rlyeh-std/rlyeh/`）解析，故须显式传入 `project_dir`。
+pub(crate) fn load_combined_source_in(
+    entry: &Path,
+    project_dir: &Path,
+) -> Result<String, DriverError> {
+    let mut visited = HashSet::new();
+    load_file(entry, Path::new(""), project_dir, &mut visited)
 }
 
 /// 读取并解析单个模块文件，将其外部子模块声明展开为内联模块。

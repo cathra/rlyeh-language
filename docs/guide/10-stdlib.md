@@ -2,7 +2,7 @@
 
 > 本章目标：概览 Rlyeh 标准库提供的核心类型与模块，知道"什么场景用什么"，并能写出基本可用的代码。每个类型的**完整成员、方法签名、边界条件与用例**见 [语言手册 · 标准库详述](../manual/std/index.md)（那里逐一讲解）。
 >
-> **标准库采用模块化拆分**：根模块 `rlyeh-std/rlyeh/core.rl` 提供 `String` / `Vec` / `HashMap` / `Option` / `Result` 及全部 `extern` 声明，并重新导出子模块（`time` / `io` / `net` / `sync` 等），所以**裸名就能用**，不必层层 `import`。
+> **标准库采用模块化拆分**：`rlyeh-std/rlyeh/module.rl` 是**声明与导出**入口（子模块声明 + 根命名空间重导出），`core/module.rl` 提供 `String` / `Vec` / `HashMap` / `Option` / `Result` 等根类型，与其**平级**的平铺单元 `str_ext/` / `convert/` / `collections/` / `externs/`（各为 `<name>/module.rl`）承载字符串扩展、数值/JSON 转换、集合类型与全部 `extern` 声明，故**裸名就能用**，不必层层 `import`。
 
 ---
 

@@ -2,13 +2,13 @@
 // 把具体类型引用上转为胖指针引用 `&dyn Trait`，虚调用经 vtable/去虚拟化分派。
 // 覆盖：&dyn 上转型 + 虚调用 + 去虚拟化。
 
-trait Error {
+protocol Error {
     fn message(&self) -> String;
 }
 
 struct MyError { code: i64 }
 
-impl Error for MyError {
+impl MyError: Error {
     fn message(&self) -> String {
         String::from("my error ")
     }

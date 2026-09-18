@@ -4,7 +4,7 @@
 //! 操作组合（len/starts_with/ends_with/拼接/substring）、字符串转整数（纯数字/
 //! 前导零/负数/空串/遇非数字停止）、转换结果参与算术、数字 ↔ 字符串往返。
 //!
-//! 实现：core.rl 顶层自由函数（`int_to_string` 逐位取模存 Vec 后反向输出 +
+//! 实现：标准库（convert/module.rl）顶层自由函数（`int_to_string` 逐位取模存 Vec 后反向输出 +
 //! 负数 '-' 前缀 + 0 特判；`string_to_int` 累加解析 + 遇非数字停止 + 负号支持）。
 //!
 //! 需要系统 clang（与 string_common_ops_test.rs 相同）。
@@ -22,7 +22,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

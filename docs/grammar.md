@@ -143,7 +143,7 @@ ModuleDecl  ::= 'module' Ident ';'                              <!-- 外部文�
               | 'module' Ident '{' ModuleItem* '}'              <!-- 内联模块 -->
               | 'pub' ModuleDecl                                <!-- 规划：公开模块 -->
 ImportDecl  ::= 'import' ImportTree ';'
-              | 'pub' 'import' ImportTree ';'                   <!-- 规划：再导出（re-export） -->
+              | 'pub' 'import' ImportTree ';'                   <!-- 再导出（re-export），2026-09-02 实现 -->
 ImportTree  ::= Path                                            <!-- 单路径导入（含 as 别名） -->
               | Path ':' ':' '{' ImportList '}'                 <!-- 规划：组导入 -->
               | Path ':' ':' '*'                                <!-- 规划：glob 导入 -->
@@ -238,27 +238,30 @@ TypeList    ::= Type (',' Type)* ','?
 ### 2.5 结构体与枚举
 
 ```
-StructDecl  ::= 'pub'? 'struct' Ident GenParams? WhereClause?
-                '{' FieldDecl* '}'
-FieldDecl   ::= 'pub'? Ident ':' Type ';'
+StructDecl   ::= 'pub'? 'struct' Ident RegionParam? GenParams? (':' ProtocolList)? WhereClause?
+                 '{' StructMember* '}'
+StructMember ::= FieldDecl | FnDecl | 'type' Ident '=' Type ';'   (* PC-1：字段 / 内联方法 / 关联类型 *)
+FieldDecl    ::= 'pub'? Ident ':' Type ';'
 
-EnumDecl    ::= 'pub'? 'enum' Ident GenParams? WhereClause?
-                '{' EnumVariant (',' EnumVariant)* ','? '}'
-EnumVariant ::= Ident ( '(' TypeList ')' | '{' FieldDecl* '}' )?
+EnumDecl     ::= 'pub'? 'enum' Ident RegionParam? GenParams? (':' ProtocolList)? WhereClause?
+                 '{' EnumMember* '}'
+EnumMember   ::= EnumVariant | FnDecl | 'type' Ident '=' Type ';'   (* PC-1 *)
+EnumVariant  ::= Ident ( '(' TypeList ')' | '{' FieldDecl* '}' )?
 ```
 
-### 2.6 Trait 与实现
+### 2.6 Protocol 与实现
 
 ```
-TraitDecl   ::= 'pub'? 'trait' Ident GenParams? ':' TraitBound? WhereClause?
-                '{' TraitItem* '}'
-TraitItem   ::= FnDecl | TypeAlias | ConstDecl
+ProtocolDecl ::= 'pub'? 'protocol' Ident RegionParam? GenParams? (':' ProtocolList)? WhereClause?
+                 '{' ProtocolItem* '}'
+ProtocolItem ::= FnDecl | TypeAlias | ConstDecl
 
-ImplBlock   ::= 'impl' GenParams? Type 'for' Type WhereClause?
-                '{' ImplItem* '}'
-              | 'impl' GenParams? Type WhereClause?
-                '{' ImplItem* '}'
-ImplItem    ::= FnDecl | TypeAlias | ConstDecl
+ProtocolList ::= ProtocolRef (',' ProtocolRef)*
+ProtocolRef  ::= Path GenArgs?
+
+ImplDecl   ::= 'pub'? 'impl' GenParams? Type (':' ProtocolList)? WhereClause?
+               '{' ImplItem* '}'
+ImplItem   ::= FnDecl | TypeAlias | ConstDecl
 ```
 
 ### 2.7 泛型与生命周期
@@ -268,6 +271,11 @@ GenParams   ::= '<' GenParam (',' GenParam)* '>'
 GenParam    ::= LifetimeParam | TypeParam
 LifetimeParam ::= Lifetime (':' Lifetime)?
 Lifetime    ::= ''' Ident
+
+// B-4：region 参数化后缀 `struct Foo 'a { x: &'a T }`（声明名后、GenParams 前的
+// 可选生命参数）。与 GenParams 内的 LifetimeParam 并存；当前仅捕获存储（region 感知
+// 校验规划中）。
+RegionParam ::= Lifetime
 TypeParam   ::= Ident (':' TraitBound)?
 
 WhereClause ::= 'where' WherePred (',' WherePred)*

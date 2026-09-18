@@ -1,7 +1,7 @@
 // U2 trait 关联类型（assoc type）：
 // `trait T { type Item; ... }` 声明 + `impl T for X { type Item = Concrete; }`
 // 定义；impl 方法签名中 `Self::Item` 在收集期替换为具体类型。
-trait Container {
+protocol Container {
     type Item;
     type Label;
     fn get(&self) -> Self::Item;
@@ -11,7 +11,7 @@ trait Container {
 }
 
 struct Box { value: i64 }
-impl Container for Box {
+impl Box: Container {
     type Item = i64;
     type Label = String;
     fn get(&self) -> Self::Item { self.value }
@@ -27,7 +27,7 @@ impl Container for Box {
 }
 
 struct Bag { name: String }
-impl Container for Bag {
+impl Bag: Container {
     type Item = String;
     type Label = String;
     fn get(&self) -> Self::Item { self.name.clone() }

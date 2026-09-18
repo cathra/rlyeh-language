@@ -31,7 +31,7 @@ async fn early(x: i64) -> i64 {
 // 手动 Future：首次 Pending、二次 Ready（验证恢复轮询）
 struct H { state: i64, x: i64 }
 
-impl Future for H {
+impl H: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {

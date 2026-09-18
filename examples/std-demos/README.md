@@ -8,7 +8,7 @@
 
 | 目录 | 功能点 | std-lib 章节 | 用例数 |
 |------|--------|--------------|--------|
-| [01-option-result](01-option-result/) | Option / Result / `?` / Error trait | §2.1/2.2, §12 | 3 |
+| [01-option-result](01-option-result/) | Option / Result / `?` / Error protocol | §2.1/2.2, §12 | 3 |
 | [02-collections](02-collections/) | Vec / String / HashMap / str | §3 | 4 |
 | [03-iterator](03-iterator/) | 迭代器与适配器（map/filter/fold/...） | §2.3 | 4 |
 | [04-file-io](04-file-io/) | File / 路径 / 文件系统 / stdio | §4 | 8 |

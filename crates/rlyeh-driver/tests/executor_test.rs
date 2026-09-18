@@ -20,7 +20,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 ///
 /// 编译深递归程序（async 状态机）时 Rlyeh 编译器递归较深，macOS 上默认测试线程
 /// 栈仅 ~2MB 会溢出；`run_source_file` 已在 64MB 栈线程中执行编译+运行（见
@@ -77,7 +77,7 @@ fn manual_future_can_request_deadline() {
     let out = run(
         r#"
 struct Timer { target: i64, n: i64 }
-impl Future for Timer {
+impl Timer: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.n = self.n + 1;

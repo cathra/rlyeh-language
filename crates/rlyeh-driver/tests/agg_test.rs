@@ -146,18 +146,18 @@ fn main() {
 }
 "#;
 
-/// trait 定义 + impl Trait for Type + trait 方法调用。
+/// 协议定义 + `impl Type: Protocol` + 协议方法调用。
 const TRAIT_IMPL: &str = r#"
 enum Option {
     None,
     Some(i64),
 }
 
-trait Get {
+protocol Get {
     fn get(self) -> i64;
 }
 
-impl Get for Option {
+impl Option: Get {
     fn get(self) -> i64 {
         match self {
             Option::Some(v) => v,

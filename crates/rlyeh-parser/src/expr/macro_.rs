@@ -258,6 +258,10 @@ impl <'src> Parser<'src> {
         if !self.check(&Token::LBrace) {
             return false;
         }
+        // `..base` 更新语法（无显式字段）：`{ ..` 即结构体构造
+        if self.peek_n(1).is_some_and(|t| t.token == Token::Range) {
+            return true;
+        }
         // `{ Ident :`（冒号后不能是 `:`，避免 `Ident { Enum::Variant` 歧义）
         if !self.peek_n(1).is_some_and(|t| matches!(t.token, Token::Ident(_))) {
             return false;

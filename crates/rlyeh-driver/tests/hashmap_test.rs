@@ -1,4 +1,4 @@
-//! `HashMap<K, V>` 标准库集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `HashMap<K, V>` 标准库集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`HashMap::new` / `with_capacity` 构造、insert / get / contains_key / len、
 //! 同键覆盖、翻倍扩容 rehash（20 键压力）、remove 墓碑语义、负数键、
@@ -19,7 +19,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

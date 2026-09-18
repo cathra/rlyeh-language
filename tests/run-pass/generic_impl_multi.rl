@@ -10,32 +10,32 @@
 // 修复（check_method_call 重构）：收集全部候选 impl，按「代入 trait 类型实参后的
 // 方法签名与实参类型兼容」选取首个匹配者；impl / 方法级泛型参数由对应实参反推。
 
-trait Wrap<T> {
+protocol Wrap<T> {
     fn wrap(&self, v: T) -> T;
 }
 
 // 限制①：同一 self_type 上同一泛型 trait 的多 impl，按 trait 类型实参 / 实参选取
 struct W1 { base: i64 }
 
-impl Wrap<i64> for W1 {
+impl W1: Wrap<i64> {
     fn wrap(&self, v: i64) -> i64 { v + self.base }
 }
 
-impl Wrap<bool> for W1 {
+impl W1: Wrap<bool> {
     fn wrap(&self, v: bool) -> bool { v }
 }
 
 // 限制②回归：impl 泛型参数由**接收者类型**推导（既有能力）
 struct Pair<T> { a: T }
 
-impl<T> Wrap<T> for Pair<T> {
+impl<T> Pair<T>: Wrap<T> {
     fn wrap(&self, v: T) -> T { v }
 }
 
 // 限制②：impl 泛型参数由**实参**推导（`W2` 非泛型，此前报 undefined type T）
 struct W2 { base: i64 }
 
-impl<T> Wrap<T> for W2 {
+impl<T> W2: Wrap<T> {
     fn wrap(&self, v: T) -> T { v }
 }
 

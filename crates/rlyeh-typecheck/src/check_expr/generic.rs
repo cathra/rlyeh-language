@@ -1,8 +1,11 @@
 //! 表达式检查子模块：泛型实例化与类型统一。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use std::collections::HashSet;
+
 use rlyeh_hir::HirExprKind;
 use rlyeh_lexer::Span;
+use crate::types::MethodSig;
 use super::*;
 
 pub(super) fn check_generic_call(
@@ -152,19 +155,159 @@ pub(super) fn resolve_trait_def_name(ctx: &TypeContext, name: &str) -> String {
         .unwrap_or_else(|| name.to_string())
 }
 
+/// 类型 `concrete` 是否实现 trait `bound`（直接实现，或经父协议蕴含实现）。
+///
+/// PC-4：`protocol A: B` 时，实现了 `A` 的类型自动满足 `B`（父协议传递闭包）。
 pub(super) fn type_implements_trait(ctx: &TypeContext, bound: &str, concrete: &Type) -> bool {
+    // 直接实现。
+    if ctx.impl_defs.iter().any(|imp| {
+        imp.trait_name.as_deref() == Some(bound) && impl_self_type_matches(imp, concrete)
+    }) {
+        return true;
+    }
+    // 经父协议蕴含：∃ 已实现 trait C，`bound` ∈ C 的父协议传递闭包。
     ctx.impl_defs.iter().any(|imp| {
-        if imp.trait_name.as_deref() != Some(bound) {
-            return false;
-        }
-        let Type::Named(iname, _) = &imp.self_type else {
+        let Some(c) = imp.trait_name.as_deref() else {
             return false;
         };
-        match concrete {
-            Type::Named(cname, _) => iname == cname,
-            t => iname == &t.to_string(),
-        }
+        impl_self_type_matches(imp, concrete) && trait_supertrait_closure(ctx, c).contains(bound)
     })
+}
+
+/// impl 的目标类型是否等于 `concrete`（按名字比较）。
+fn impl_self_type_matches(imp: &ImplDef, concrete: &Type) -> bool {
+    let Type::Named(iname, _) = &imp.self_type else {
+        return false;
+    };
+    match concrete {
+        Type::Named(cname, _) => iname == cname,
+        t => iname == &t.to_string(),
+    }
+}
+
+/// PC-10：trait 方法线性化顺序（即 `dyn T` 的 vtable 方法槽顺序）。
+///
+/// 规则：**supertrait 方法在前**（按继承深度递归，基类更靠前），本 trait 方法在后；
+/// 同名方法去重（保留首次出现者，即基类版本）。
+///
+/// 该顺序保证 `protocol A: B` 时 **`dyn A` 的 vtable 前缀与 `dyn B` 相同**，因此
+/// `dyn A → dyn B` 上转可零开销复用同一胖指针（见 `check_stmt` 的 `dyn` 上转分支）。
+///
+/// 返回 `(owner_trait, sig)`：`owner_trait` 是该方法的**声明协议**（用于定位对应 `impl`）。
+pub(crate) fn linearize_trait_methods(
+    ctx: &TypeContext,
+    trait_name: &str,
+) -> Vec<(String, MethodSig)> {
+    let root = resolve_trait_def_name(ctx, trait_name);
+    let mut out: Vec<(String, MethodSig)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    collect_trait_methods(ctx, &root, &mut out, &mut seen);
+    out
+}
+
+/// 递归收集方法（父协议在前、本协议在后；按方法名去重）。
+fn collect_trait_methods(
+    ctx: &TypeContext,
+    name: &str,
+    out: &mut Vec<(String, MethodSig)>,
+    seen: &mut HashSet<String>,
+) {
+    let Some(def) = ctx.trait_defs.get(name) else {
+        return;
+    };
+    let supers: Vec<String> = def
+        .supertraits
+        .iter()
+        .map(|s| resolve_trait_def_name(ctx, s))
+        .collect();
+    let methods: Vec<MethodSig> = def.methods.clone();
+    for s in supers {
+        collect_trait_methods(ctx, &s, out, seen);
+    }
+    for m in methods {
+        if seen.insert(m.name.clone()) {
+            out.push((name.to_string(), m));
+        }
+    }
+}
+
+/// PC-10：判定 `dyn 子协议 → dyn 父协议` 上转是否成立；成立则返回目标类型（即 `at`）。
+///
+/// 适用值层 `dyn A → dyn B` 与引用层 `&dyn A → &dyn B`（引用层同构）。依据「线性化
+/// vtable」（父协议方法槽在前），子协议胖指针可直接复用为父协议胖指针——仅编译期改类型，
+/// 零运行时开销（见 `check_stmt` 的 `dyn` 上转分支）。
+pub(crate) fn dyn_supertrait_upshift(ctx: &TypeContext, at: &Type, ty: &Type) -> Option<Type> {
+    let (target_t, src_t) = match (at, ty) {
+        (Type::Dyn(a), Type::Dyn(b)) => (a, b),
+        (Type::Ref(a, _), Type::Ref(b, _)) => match (&**a, &**b) {
+            (Type::Dyn(x), Type::Dyn(y)) => (x, y),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let src_full = resolve_trait_def_name(ctx, src_t);
+    let target_full = resolve_trait_def_name(ctx, target_t);
+    if src_full == target_full {
+        return None;
+    }
+    trait_supertrait_closure(ctx, &src_full)
+        .contains(&target_full)
+        .then(|| at.clone())
+}
+
+/// trait `trait_full` 的父协议传递闭包（解析后的 trait_defs 键集合，不含自身）。
+///
+/// PC-10：供 `dyn A → dyn B` 上转判定（`check_stmt`）复用。
+pub(super) fn trait_supertrait_closure(ctx: &TypeContext, trait_full: &str) -> HashSet<String> {
+    let mut out: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = vec![trait_full.to_string()];
+    while let Some(t) = stack.pop() {
+        if let Some(def) = ctx.trait_defs.get(&t) {
+            for st in &def.supertraits {
+                let full = resolve_trait_def_name(ctx, st);
+                if out.insert(full.clone()) {
+                    stack.push(full);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// PC-4：校验父协议一致性——实现了协议 `A` 的类型必须同时实现 `A` 的各父协议。
+///
+/// 在声明收集完成后调用（全部 trait / impl 已注册）。
+pub(crate) fn validate_supertraits(ctx: &TypeContext) -> Result<(), TypeError> {
+    for imp in &ctx.impl_defs {
+        let Some(a_full) = imp.trait_name.as_deref() else {
+            continue; // 固有 impl
+        };
+        let Some(def) = ctx.trait_defs.get(a_full) else {
+            continue; // trait 未注册（错误在别处报出）
+        };
+        if def.supertraits.is_empty() {
+            continue;
+        }
+        let Type::Named(tname, _) = &imp.self_type else {
+            continue;
+        };
+        for st_raw in &def.supertraits {
+            let b_full = resolve_trait_def_name(ctx, st_raw);
+            let satisfied = ctx.impl_defs.iter().any(|i| {
+                i.trait_name.as_deref() == Some(b_full.as_str())
+                    && matches!(&i.self_type, Type::Named(n, _) if n == tname)
+            });
+            if !satisfied {
+                return Err(TypeError::MissingSupertrait {
+                    type_: tname.clone(),
+                    trait_: def.name.clone(),
+                    supertrait_: st_raw.clone(),
+                    span: imp.span,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn instantiate_generic_fn(

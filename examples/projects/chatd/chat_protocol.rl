@@ -7,6 +7,7 @@
 //   QUIT          退出聊天
 //
 // 服务器/客户端两侧共用：encode 组装线，decode 还原消息。
+// 注：模块名由 `protocol` 改为 `chat_protocol`（`protocol` 自 PC-0 起为语言保留字）。
 
 pub enum Msg {
     Nick(String),

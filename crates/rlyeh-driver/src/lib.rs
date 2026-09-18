@@ -90,7 +90,7 @@ pub fn run_source(source: &str) -> Result<String, DriverError> {
 ///
 /// 入口文件所在目录下的 `<name>.rl` 或 `<name>/module.rl` 会被自动加载，
 /// 所有模块文件合并为单一符号空间（扁平符号名 `模块名::item`）。
-/// 标准库预置（`rlyeh-std/rlyeh/core.rl`，若存在）自动注入为前缀。
+/// 标准库预置（`rlyeh-std/rlyeh/`，若存在）自动注入为前缀。
 pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;
     let (combined, prelude_len, prelude_lines) = source_with_std(source, false)?;
@@ -327,7 +327,7 @@ impl IncrementalDriver {
         self
     }
 
-    /// 禁用标准库预置注入（文件入口 API 默认注入 `core.rl`）。
+    /// 禁用标准库预置注入（文件入口 API 默认注入标准库）。
     pub fn with_no_std(mut self, no_std: bool) -> Self {
         self.no_std = no_std;
         self
@@ -481,9 +481,14 @@ fn full_pipeline_with_hints(
     prelude_len: usize,
     prelude_lines: usize,
 ) -> Result<String, DriverError> {
-    // 1. 类型检查（内部完成 lex + parse → HIR）
-    let hir = rlyeh_typecheck::typecheck_source_with_region_hints(source, region_hints, prelude_len)
+    // 1. 类型检查（内部完成 lex + parse → HIR），并收集建议性警告
+    let (hir, warnings) = rlyeh_typecheck::typecheck_source_with_warnings(source, region_hints, prelude_len)
         .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
+
+    // 打印建议性警告（借用简化 RFC B-1：冗余 `*` 等），不阻断编译
+    for w in &warnings {
+        eprintln!("{}", w.to_string_with_offset(prelude_len, prelude_lines));
+    }
 
     // 2. 借用检查（L0 所有权）
     BorrowChecker::new()

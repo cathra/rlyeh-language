@@ -25,7 +25,7 @@ struct Outer { tag: i64, inner: Inner }
 // Q1a：自定义类型手写 Serialize impl（to_json 方法调用可用）
 struct Wrapped { v: i64 }
 
-impl Serialize for Wrapped {
+impl Wrapped: Serialize {
     fn to_json(&self) -> String {
         format!("{{\"w\":{}}}", self.v)
     }

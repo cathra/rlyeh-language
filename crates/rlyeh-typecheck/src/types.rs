@@ -175,6 +175,33 @@ impl Type {
         matches!(self, Type::F32 | Type::F64)
     }
 
+    /// B-2（P0'）：类型是否为 Copy（可按值安全拷贝，允许 `&T → T` 自动解引用取值）。
+    ///
+    /// 仅标量为 Copy；用户定义结构体 / 枚举 / 引用 / 堆装箱 / `Str` 视图均非 Copy，
+    /// 以避免隐式移动 / 克隆大对象（与 RFC P0'「仅对 Copy 类型生效」一致）。
+    pub fn is_copy(&self) -> bool {
+        matches!(
+            self,
+            Type::I8
+                | Type::I16
+                | Type::I32
+                | Type::I64
+                | Type::I128
+                | Type::ISize
+                | Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::U128
+                | Type::USize
+                | Type::F32
+                | Type::F64
+                | Type::Bool
+                | Type::Char
+                | Type::Unit
+        )
+    }
+
     /// 与另一类型是否兼容（可参与同一比较 / 集合）。
     ///
     /// 数值类型互相兼容；`_`（Infer）与任意类型兼容（类型由上下文推断）；
@@ -435,6 +462,8 @@ pub struct TraitDef {
     pub type_params: Vec<String>,
     /// 关联类型声明名（`type Item;`，U2）
     pub assoc_types: Vec<String>,
+    /// 父协议（supertrait）名列表（PC-4：`protocol A: B` 的 `B`；裸名，使用时解析）。
+    pub supertraits: Vec<String>,
     /// 抽象方法签名
     pub methods: Vec<MethodSig>,
 }
@@ -459,6 +488,8 @@ pub self_type: Type,
 /// 泛型参数顺序；如 `impl From<IoErrorKind> for IoError` 为 `[IoErrorKind]`）。
 /// P6c（2026-08-29）：此前丢失，导致关联方法泛型参数无法绑定。
 pub trait_type_args: Vec<Type>,
+/// 源码位置（PC-4：父协议缺失校验定位用）
+pub span: Span,
 /// 泛型参数名
     pub type_params: Vec<String>,
     /// 泛型参数 → 约束 trait 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并）。

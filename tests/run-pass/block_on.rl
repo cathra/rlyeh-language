@@ -5,7 +5,7 @@ struct MyFut {
     state: i64,
 }
 
-impl Future for MyFut {
+impl MyFut: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.state += 1;

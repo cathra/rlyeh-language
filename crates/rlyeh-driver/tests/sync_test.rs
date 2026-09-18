@@ -1,5 +1,5 @@
 //! `Mutex` / `RwLock` 同步模块集成测试（文件入口 API，自动注入
-//! `rlyeh-std/rlyeh/core.rl`；基于 extern FFI 绑定 pthread，原语对象承载于
+//! `rlyeh-std/rlyeh/`；基于 extern FFI 绑定 pthread，原语对象承载于
 //! malloc 缓冲）。
 //!
 //! 单线程下利用 `trylock` 的 EBUSY 语义真实验证互斥性：
@@ -22,7 +22,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

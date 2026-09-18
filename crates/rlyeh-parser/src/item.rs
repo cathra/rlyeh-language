@@ -261,16 +261,72 @@ impl<'src> Parser<'src> {
         Ok(params)
     }
 
+    /// 声明点一致性列表（PC-1）：`Ident GenArgs? (',' Ident GenArgs?)*`（前导 `:` 由调用方消费）。
+    fn parse_conformance_list(&mut self) -> Result<Vec<(String, Vec<AstType>)>, ParseError> {
+        let mut list = Vec::new();
+        loop {
+            let name = self.expect_ident()?;
+            let mut args = Vec::new();
+            if self.check(&Token::Lt) {
+                self.bump();
+                while !self.check(&Token::Gt) {
+                    if self.at_eof() {
+                        return Err(self.unexpected("'>'"));
+                    }
+                    args.push(self.parse_type()?);
+                    if !self.eat(&Token::Comma) {
+                        break;
+                    }
+                }
+                self.expect(&Token::Gt, "'>'")?;
+            }
+            list.push((name, args));
+            if !self.eat(&Token::Comma) {
+                break;
+            }
+        }
+        Ok(list)
+    }
+
     /// 结构体声明
     pub(crate) fn parse_struct(&mut self) -> Result<AstStructDecl, ParseError> {
         let start = self.expect(&Token::Struct, "'struct'")?.span;
         let name = self.expect_ident()?;
+        // B-4：可选 region 参数后缀 `struct Foo 'a { ... }`（region 参数化语法）。
+        // 当前仅捕获存储；生命周期仍按既有 drop 语义处理，region 感知校验留待严格借用检查专项。
+        let region_param = if matches!(self.current(), Some(Token::Lifetime(_))) {
+            Some(self.expect_lifetime()?)
+        } else {
+            None
+        };
         let generics = self.parse_generics()?;
+        // PC-1：声明点一致性 `struct C: P, Q { .. }`。
+        let conformances = if self.eat(&Token::Colon) {
+            self.parse_conformance_list()?
+        } else {
+            Vec::new()
+        };
         self.expect(&Token::LBrace, "'{'")?;
         let mut fields = Vec::new();
+        let mut methods = Vec::new();
+        let mut assoc_types = Vec::new();
         while !self.check(&Token::RBrace) {
             if self.at_eof() {
                 return Err(self.unexpected("'}'"));
+            }
+            // PC-1：类型体内联方法 / 关联类型（Swift 风格）
+            if self.check(&Token::Fn) {
+                methods.push(self.parse_fn()?);
+                continue;
+            }
+            if self.check(&Token::Type) {
+                self.bump();
+                let tname = self.expect_ident()?;
+                self.expect(&Token::Assign, "'='")?;
+                let ty = self.parse_type()?;
+                self.expect(&Token::Semicolon, "';'")?;
+                assoc_types.push((tname, ty));
+                continue;
             }
             let fstart = self.peek().expect("non-eof").span;
             let is_pub = self.eat(&Token::Pub);
@@ -283,15 +339,24 @@ impl<'src> Parser<'src> {
                 is_pub,
                 span: self.span_until_current(fstart),
             });
-            if !self.eat(&Token::Comma) {
-                break;
+            // 字段间以 `,` 分隔；字段后允许直接接 `fn` / `type` / `}`（混排）
+            if !self.eat(&Token::Comma)
+                && !self.check(&Token::RBrace)
+                && !self.check(&Token::Fn)
+                && !self.check(&Token::Type)
+            {
+                return Err(self.unexpected("',' / '}' / 'fn' / 'type'"));
             }
         }
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstStructDecl {
             name,
+            region_param,
             generics,
+            conformances,
             fields,
+            methods,
+            assoc_types,
             derive: Vec::new(),
             repr_c: false,
             span: self.merge_span(start, end),
@@ -302,12 +367,40 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_enum(&mut self) -> Result<AstEnumDecl, ParseError> {
         let start = self.expect(&Token::Enum, "'enum'")?.span;
         let name = self.expect_ident()?;
+        // B-4：可选 region 参数后缀 `enum E 'a { ... }`。
+        let region_param = if matches!(self.current(), Some(Token::Lifetime(_))) {
+            Some(self.expect_lifetime()?)
+        } else {
+            None
+        };
         let generics = self.parse_generics()?;
+        // PC-1：声明点一致性 `enum E: P { .. }`。
+        let conformances = if self.eat(&Token::Colon) {
+            self.parse_conformance_list()?
+        } else {
+            Vec::new()
+        };
         self.expect(&Token::LBrace, "'{'")?;
         let mut variants = Vec::new();
+        let mut methods = Vec::new();
+        let mut assoc_types = Vec::new();
         while !self.check(&Token::RBrace) {
             if self.at_eof() {
                 return Err(self.unexpected("'}'"));
+            }
+            // PC-1：类型体内联方法 / 关联类型
+            if self.check(&Token::Fn) {
+                methods.push(self.parse_fn()?);
+                continue;
+            }
+            if self.check(&Token::Type) {
+                self.bump();
+                let tname = self.expect_ident()?;
+                self.expect(&Token::Assign, "'='")?;
+                let ty = self.parse_type()?;
+                self.expect(&Token::Semicolon, "';'")?;
+                assoc_types.push((tname, ty));
+                continue;
             }
             let vstart = self.peek().expect("non-eof").span;
             let vname = self.expect_ident()?;
@@ -366,24 +459,45 @@ impl<'src> Parser<'src> {
                 discriminant,
                 span: self.span_until_current(vstart),
             });
-            if !self.eat(&Token::Comma) {
-                break;
+            if !self.eat(&Token::Comma)
+                && !self.check(&Token::RBrace)
+                && !self.check(&Token::Fn)
+                && !self.check(&Token::Type)
+            {
+                return Err(self.unexpected("',' / '}' / 'fn' / 'type'"));
             }
         }
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstEnumDecl {
             name,
+            region_param,
             generics,
+            conformances,
             variants,
+            methods,
+            assoc_types,
             span: self.merge_span(start, end),
         })
     }
 
     /// Trait 声明（抽象方法无函数体）
     pub(crate) fn parse_trait(&mut self) -> Result<AstTraitDecl, ParseError> {
-        let start = self.expect(&Token::Trait, "'trait'")?.span;
+        // 协议声明关键字为 `protocol`（`trait` 已从语法中彻底移除）。
+        let start = self.expect(&Token::Protocol, "'protocol'")?.span;
         let name = self.expect_ident()?;
+        // B-4：可选 region 参数后缀 `trait T 'a { ... }`。
+        let region_param = if matches!(self.current(), Some(Token::Lifetime(_))) {
+            Some(self.expect_lifetime()?)
+        } else {
+            None
+        };
         let generics = self.parse_generics()?;
+        // PC-4：父协议（supertrait）列表 `protocol A: B, C { .. }`。
+        let supertraits = if self.eat(&Token::Colon) {
+            self.parse_conformance_list()?
+        } else {
+            Vec::new()
+        };
         self.expect(&Token::LBrace, "'{'")?;
         let mut types = Vec::new();
         let mut methods = Vec::new();
@@ -410,69 +524,44 @@ impl<'src> Parser<'src> {
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstTraitDecl {
             name,
+            region_param,
             generics,
+            supertraits,
             types,
             methods,
             span: self.merge_span(start, end),
         })
     }
 
-    /// impl 块：`impl [Trait for] Type { ... }`
+    /// impl 块（RFC `docs/rfc/protocol-syntax.md` §3.4）：
+    ///
+    /// **唯一语序**：`impl [<G>] Type [<...>] (: ProtocolList)? WhereClause? { .. }`
+    /// ——`impl T: P`（协议一致性，可多协议）/ `impl T`（固有实现）。
+    /// 旧 Rust 语序 `impl Trait for Type` 已移除（PC-12）。
     pub(crate) fn parse_impl(&mut self) -> Result<AstImplBlock, ParseError> {
         let start = self.expect(&Token::Impl, "'impl'")?.span;
         let mut generics = self.parse_generics()?;
+        // `first` 即被实现类型；随后消费其泛型实参（仅校验并丢弃——
+        // self 类型由 typecheck 依据 impl `generics` 重建）。
         let first = self.expect_ident()?;
-        // U8：区分 trait impl 与 inherent impl——
-        // - `impl Trait for X`：`first` 后紧跟 `for`；
-        // - `impl<T> Trait<T> for X`：`first` 后 `<...>`（trait 泛型实参）再 `for`；
-        // - `impl<T> Foo<T>`：`first` 后 `<...>` 但 `>` 后非 `for`（inherent，目标类型泛型实参）。
-        // 用 lookahead（`<...>for` 模式）区分， 避免无回溯误判。
-        let is_trait_impl = self.check(&Token::For) || self.looks_like_generic_trait_impl();
-        // P6c（2026-08-29）：trait 泛型实参收集（如 `impl From<IoErrorKind> for IoError`
-        // 的 `IoErrorKind`），此前消费后丢弃导致 trait 关联方法泛型无法绑定。
+        self.skip_type_generic_args()?;
+        // P6c（2026-08-29）：协议泛型实参收集（如 `impl T: From<IoErrorKind>` 的
+        // `IoErrorKind`），此前消费后丢弃导致协议关联方法泛型无法绑定。
         let mut trait_type_args: Vec<AstType> = Vec::new();
-        let (trait_name, type_name) = if is_trait_impl {
-            // `first` 可能带 trait 泛型实参 `<T>`（`Trait<T>`），消费后遇 `for`
-            if self.check(&Token::Lt) {
-                self.bump();
-                while !self.check(&Token::Gt) {
-                    if self.at_eof() {
-                        return Err(self.unexpected("'>'"));
-                    }
-                    // P6a（2026-08-29）：trait 泛型实参走完整类型解析——
-                    // 支持 `::` 路径（`impl From<io::error::IoErrorKind>`）与嵌套泛型
-                    // （此前 `expect_ident()` 只取裸名，遇 `::` 报 `expected '>', found Colon`）。
-                    trait_type_args.push(self.parse_type()?);
-                    if !self.eat(&Token::Comma) {
-                        break;
-                    }
-                }
-                self.expect(&Token::Gt, "'>'")?;
-            }
-            self.expect(&Token::For, "'for'")?;
-            let type_name = self.expect_ident()?;
-            (Some(first), type_name)
+        let mut extra_traits: Vec<(String, Vec<AstType>)> = Vec::new();
+        let (trait_name, type_name) = if self.eat(&Token::Colon) {
+            // PC-9：`impl T: A, B`——协议一致性列表（可多协议，协议可带泛型实参如
+            // `impl T: From<i64>`）。首个协议写入 `trait_name`，其余记录到
+            // `extra_traits`，由 desugar 按协议成员名裁决拆分为多个 impl 块。
+            let mut list = self.parse_conformance_list()?;
+            let (proto, args) = list.remove(0);
+            trait_type_args = args;
+            extra_traits = list;
+            (Some(proto), first)
         } else {
             (None, first)
         };
-        // 消费被实现类型的泛型参数列表（如 `impl<T> Option<T>` 的 `<T>`）。
-        // MVP：仅校验参数为标识符列表并丢弃；self 类型由 typecheck 依据 impl
-        // generics 重建（`Named(type_name, generics)`），故无需保留此处实参。
-        if self.check(&Token::Lt) {
-            self.bump();
-            while !self.check(&Token::Gt) {
-                if self.at_eof() {
-                    return Err(self.unexpected("'>'"));
-                }
-                // P6a：self 类型泛型实参同样走完整类型解析（路径 + 嵌套泛型）
-                self.parse_type()?;
-                if !self.eat(&Token::Comma) {
-                    break;
-                }
-            }
-            self.expect(&Token::Gt, "'>'")?;
-        }
-        // where 子句（U3）：`impl<K, V> Trait for Type where K: Hash + Eq { ... }`
+        // where 子句（U3）：`impl<T> Type: Protocol where T: Hash + Eq { ... }`
         self.parse_where_clause(&mut generics)?;
         self.expect(&Token::LBrace, "'{'")?;
         let mut types = Vec::new();
@@ -499,46 +588,37 @@ impl<'src> Parser<'src> {
             type_name,
             generics,
             trait_type_args,
+            extra_traits,
             types,
             methods,
             span: self.merge_span(start, end),
         })
     }
 
-    /// U8：泛型 trait impl lookahead——`impl<T> Trait<T> for X`。
+    /// 消费并丢弃类型名后的泛型实参列表（`<T, U>`；无则空操作）。
     ///
-    /// 当前 token 为 `<`（`first` 后的 trait 泛型实参），向前扫描到匹配的 `>`，
-    /// 若其后紧跟 `for` 则判定为 trait impl（区别于 inherent `impl<T> Foo<T>`）。
-    /// 不消费 token，仅前瞻，避免无回溯误判。
-    fn looks_like_generic_trait_impl(&self) -> bool {
+    /// MVP：仅校验并丢弃——self 类型由 typecheck 依据 impl `generics` 重建，
+    /// 故无需保留此处实参。P6a：实参走完整类型解析（支持 `::` 路径与嵌套泛型）。
+    fn skip_type_generic_args(&mut self) -> Result<(), ParseError> {
         if !self.check(&Token::Lt) {
-            return false;
+            return Ok(());
         }
-        let mut depth = 0;
-        let mut i = 0;
-        loop {
-            let Some(tok) = self.peek_n(i) else {
-                return false;
-            };
-            match tok.token {
-                Token::Lt => depth += 1,
-                Token::Gt => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return self
-                            .peek_n(i + 1)
-                            .is_some_and(|t| t.token == Token::For);
-                    }
-                }
-                Token::RBrace | Token::Eof => return false,
-                _ => {}
+        self.bump();
+        while !self.check(&Token::Gt) {
+            if self.at_eof() {
+                return Err(self.unexpected("'>'"));
             }
-            i += 1;
+            self.parse_type()?;
+            if !self.eat(&Token::Comma) {
+                break;
+            }
         }
+        self.expect(&Token::Gt, "'>'")?;
+        Ok(())
     }
 
     /// 模块声明：`mod name { ... }` 或 `mod name;`
-    pub(crate) fn parse_mod(&mut self) -> Result<AstModDecl, ParseError> {
+    pub(crate) fn parse_mod(&mut self, memory: Option<String>) -> Result<AstModDecl, ParseError> {
         let start = self.expect(&Token::Mod, "'mod'")?.span;
         let name = self.expect_ident()?;
         let (items, external) = if self.check(&Token::LBrace) {
@@ -561,6 +641,7 @@ impl<'src> Parser<'src> {
             name,
             items,
             external,
+            memory,
             span: self.merge_span(start, end),
         })
     }

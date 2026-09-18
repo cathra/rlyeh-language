@@ -1,9 +1,9 @@
 // 普通（非 dyn）方法按值返回 Self 聚合，定位 codegen 返回约定
-trait Copyable {
+protocol Copyable {
     fn make(&self) -> Self;
 }
 struct Pair { a: i64, b: i64 }
-impl Copyable for Pair {
+impl Pair: Copyable {
     fn make(&self) -> Self { Pair { a: self.a, b: self.b } }
 }
 fn main() {

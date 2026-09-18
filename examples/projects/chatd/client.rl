@@ -6,8 +6,8 @@
 //
 // 命令：普通输入 = 广播消息；/list = 在线列表；/quit = 退出；Ctrl-D = 退出。
 
-import protocol::Msg;
-import protocol::encode;
+import chat_protocol::Msg;
+import chat_protocol::encode;
 
 // 运行聊天客户端（阻塞直到退出）
 pub fn run_client(host: String, port: i64, nick: String) -> i64 {

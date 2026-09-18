@@ -8,24 +8,24 @@
 // 同时压实「同 trait 多 impl 单态化缓存键含 trait_type_args」修复：
 // 三 impl 方法体各异（i64 加 base / bool 恒等 / String 恒等），均被调用。
 
-trait Wrap<T> {
+protocol Wrap<T> {
     fn wrap(&self, v: T) -> T;
 }
 
 // 三 impl 同 self_type：按 trait 类型实参 / 实参选取
 struct W3 { base: i64 }
-impl Wrap<i64> for W3 { fn wrap(&self, v: i64) -> i64 { v + self.base } }
-impl Wrap<bool> for W3 { fn wrap(&self, v: bool) -> bool { v } }
-impl Wrap<String> for W3 { fn wrap(&self, v: String) -> String { v } }
+impl W3: Wrap<i64> { fn wrap(&self, v: i64) -> i64 { v + self.base } }
+impl W3: Wrap<bool> { fn wrap(&self, v: bool) -> bool { v } }
+impl W3: Wrap<String> { fn wrap(&self, v: String) -> String { v } }
 
 // 泛型 self_type + 泛型 impl 参数，由接收者推导
 struct Pair<T> { a: T }
-impl<T> Wrap<T> for Pair<T> { fn wrap(&self, v: T) -> T { v } }
+impl<T> Pair<T>: Wrap<T> { fn wrap(&self, v: T) -> T { v } }
 
 // 模糊：精确 impl 与泛型 impl 并存
 struct Amb { k: i64 }
-impl Wrap<i64> for Amb { fn wrap(&self, v: i64) -> i64 { v + self.k } }
-impl<T> Wrap<T> for Amb { fn wrap(&self, _v: T) -> T { _v } }
+impl Amb: Wrap<i64> { fn wrap(&self, v: i64) -> i64 { v + self.k } }
+impl<T> Amb: Wrap<T> { fn wrap(&self, _v: T) -> T { _v } }
 
 fn main() {
     let w3 = W3 { base: 1 };

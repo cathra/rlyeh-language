@@ -178,24 +178,24 @@ fn main() {
 
 MVP 约束（见 §13）：参数有注解用注解、无注解由首次调用点实参推断（半注解亦可用，从未调用则惰性不检查；注解与推断/签名冲突报类型不匹配）；仅按值捕获；**无捕获闭包值可作 fn 实参/返回值**（降级为函数指针或按 fn 签名固化参数类型）；捕获闭包值不跨函数边界传递（作 fn 实参/返回值报 Unsupported/类型不匹配）；不支持嵌套捕获闭包。
 
-#### trait 对象（H4，`dyn Trait`）
+#### 协议对象（H4，`dyn Protocol`）
 
-`dyn Trait` 是 trait 对象类型：**2 槽胖指针**（数据指针 + vtable 指针），`&T`（具体类型引用）可强制转换为 `dyn Trait`——desugar 为运行时构造 vtable（drop/size/align 槽 MVP 置 0 + 方法表）+ 胖指针。方法调用经 vtable 间接分派，同一签名可分派到不同 impl：
+`dyn Shape` 是协议对象类型：**2 槽胖指针**（数据指针 + vtable 指针），`&T`（具体类型引用）可强制转换为 `dyn Shape`——desugar 为运行时构造 vtable（drop/size/align 槽 MVP 置 0 + 方法表）+ 胖指针。方法调用经 vtable 间接分派，同一签名可分派到不同 impl：
 
 ```rlyeh
-trait Shape {
+protocol Shape {
     fn area(&self) -> f64;
     fn sides(&self) -> i64;
 }
 
 struct Circle { radius: f64 }
-impl Shape for Circle {
+impl Circle: Shape {
     fn area(&self) -> f64 { 3.14 * self.radius * self.radius }
     fn sides(&self) -> i64 { 0 }
 }
 
 struct Rect { w: f64, h: f64 }
-impl Shape for Rect {
+impl Rect: Shape {
     fn area(&self) -> f64 { self.w * self.h }
     fn sides(&self) -> i64 { 4 }
 }
@@ -204,7 +204,7 @@ fn main() {
     let c = Circle { radius: 2.0 };
     let r = Rect { w: 3.0, h: 4.0 };
 
-    let d1: dyn Shape = &c;          // &T → dyn Trait 强制转换
+    let d1: dyn Shape = &c;          // &T → dyn 协议 强制转换
     let d2: dyn Shape = &r;
     println(d1.area());              // 12.56（vtable 分派到 Circle::area）
     println(d2.area());              // 12.0（分派到 Rect::area）
@@ -216,7 +216,7 @@ fn main() {
 }
 ```
 
-MVP 约束（见 §13）：trait 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用；vtable 的 drop/size/align 槽置 0（显式释放语义与 `Box`/`Rc` 一致）。
+MVP 约束（见 §13）：protocol 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用；vtable 的 drop/size/align 槽置 0（显式释放语义与 `Box`/`Rc` 一致）。
 
 **去虚拟化（2026-08-24 ✅）**：`let d: dyn Trait = &obj;` 绑定变量时记录来源具体类型，后续 `d.method()` 静态分派到具体类型实现（经 `instantiate_impl_method` 取 mono 符号，含模块前缀 / 泛型实例化），LLVM 可内联 / 常量折叠——`dyn_dispatch` 基准 15.5ms → 3.6ms，与 Rust（rustc -O 去虚拟化）持平（1.08x）。保守回退：dyn 变量被重新赋值（`d = ...`）时映射失效，自动回退 vtable 间接调用，多态语义不变；仅局部 `let` 绑定变量适用（H4 本就限定 dyn 仅局部变量）。
 
@@ -310,7 +310,7 @@ let chained = Counter::new(6).filter(|x| x > 1).map(|x| x * x); // Vec: [4, 9, 1
 ```
 
 - 适配器语义（内建 desugar）：`map` 变换元素、`filter` 保留满足谓词的元素、`fold(init, |acc, x| ..)` 归约返回 `acc`、`collect` 原样收集、`take(n)` 取前 n 个、`skip(n)` 跳过前 n 个
-- MVP 约束：适配器参数必须是无捕获闭包（捕获外部变量报错，H3 规划）；适配器返回 `Vec<T>`（急切求值），结果 Vec 可作下一适配器源（链式）；`Iterator` trait 定义（std-lib §2.3）为规划 API（适配器为编译器内建）
+- MVP 约束：适配器参数必须是无捕获闭包（捕获外部变量报错，H3 规划）；适配器返回 `Vec<T>`（急切求值），结果 Vec 可作下一适配器源（链式）；`Iterator` protocol 定义（std-lib §2.3）为规划 API（适配器为编译器内建）
 
 ## 3.3 控制流
 

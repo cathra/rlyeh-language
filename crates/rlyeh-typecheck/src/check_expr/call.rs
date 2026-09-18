@@ -257,14 +257,23 @@ pub(super) fn check_trait_static_call(
     let mut hir_args = Vec::with_capacity(arg_infos.len());
     for (i, (hir, ty)) in arg_infos.into_iter().enumerate() {
         if !ty.compatible_with(&expected[i]) {
-            return Err(TypeError::ArgumentTypeMismatch {
-                name: format!("{trait_key}::{method}"),
-                index: i,
-                expected: expected[i].to_string(),
-                found: ty.to_string(),
-                span,
-                related: vec![],
-            });
+            // B-2（P0'）：实参为 `&T`（Copy）而形参为 `T` 时自动解引用取值
+            match crate::check_expr::try_auto_deref_coerce(ctx, &expected[i], &ty, &args[i], args[i].span) {
+                Some(Ok((c_hir, _))) => {
+                    hir_args.push(c_hir);
+                    continue;
+                }
+                _ => {
+                    return Err(TypeError::ArgumentTypeMismatch {
+                        name: format!("{trait_key}::{method}"),
+                        index: i,
+                        expected: expected[i].to_string(),
+                        found: ty.to_string(),
+                        span,
+                        related: vec![],
+                    });
+                }
+            }
         }
         hir_args.push(hir);
     }
@@ -448,7 +457,14 @@ pub(super) fn check_call(
         }
         let mut hir_args = Vec::with_capacity(args.len());
         for (i, (a, pty)) in args.iter().zip(&params).enumerate() {
-            let (hir, ty) = infer_expr(ctx, a)?;
+            let (mut hir, mut ty) = infer_expr(ctx, a)?;
+            // B-2（P0'）：实参为 `&T`（Copy）而形参为 `T` 时自动解引用取值
+            if let Some(Ok((c_hir, c_ty))) =
+                crate::check_expr::try_auto_deref_coerce(ctx, pty, &ty, a, a.span)
+            {
+                hir = c_hir;
+                ty = c_ty;
+            }
             if !ty.compatible_with(pty) {
                 return Err(TypeError::ArgumentTypeMismatch {
                     name: name.clone(),
@@ -774,12 +790,19 @@ pub(super) fn check_call(
     for (i, (arg, param_ty)) in args.iter().zip(&signature.params).enumerate() {
         // H2 无捕获闭包实参：形参为 fn 类型且实参为闭包 → 按预期签名检查
         // （闭包参数无类型注解，无法脱离 fn 上下文推断参数类型）
-        let (hir, ty) =
+        let (mut hir, mut ty) =
             if matches!(param_ty, Type::Fn(_)) && matches!(&*arg.kind, ExprKind::Closure { .. }) {
                 check_closure_expected(ctx, arg, param_ty, arg.span)?
             } else {
                 infer_expr(ctx, arg)?
             };
+        // B-2（P0'）：实参为 `&T`（Copy）而形参为 `T` 时自动解引用取值
+        if let Some(Ok((c_hir, c_ty))) =
+            crate::check_expr::try_auto_deref_coerce(ctx, param_ty, &ty, arg, arg.span)
+        {
+            hir = c_hir;
+            ty = c_ty;
+        }
         // Str 值实参 → 非 Str 形参自动升级（`fn f(s: String)` 传 `f("hi")`）
         let (hir, ty) = upgrade_str_arg(ctx, hir, ty, param_ty, arg)?;
         // 闭包值实参 → fn 形参（H5 补全）：
@@ -863,12 +886,19 @@ pub(super) fn check_indirect_call(
     for (i, (arg, param_ty)) in args.iter().zip(&signature.params).enumerate() {
         // H2 无捕获闭包实参：形参为 fn 类型且实参为闭包 → 按预期签名检查
         // （闭包参数无类型注解，无法脱离 fn 上下文推断参数类型）
-        let (hir, ty) =
+        let (mut hir, mut ty) =
             if matches!(param_ty, Type::Fn(_)) && matches!(&*arg.kind, ExprKind::Closure { .. }) {
                 check_closure_expected(ctx, arg, param_ty, arg.span)?
             } else {
                 infer_expr(ctx, arg)?
             };
+        // B-2（P0'）：实参为 `&T`（Copy）而形参为 `T` 时自动解引用取值
+        if let Some(Ok((c_hir, c_ty))) =
+            crate::check_expr::try_auto_deref_coerce(ctx, param_ty, &ty, arg, arg.span)
+        {
+            hir = c_hir;
+            ty = c_ty;
+        }
         // Str 值实参 → 非 Str 形参自动升级（函数指针调用 `f("a", "b")`）
         let (hir, ty) = upgrade_str_arg(ctx, hir, ty, param_ty, arg)?;
         // 无捕获闭包值实参 → fn 形参：降级为函数指针（H5 补全，

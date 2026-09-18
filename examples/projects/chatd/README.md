@@ -6,7 +6,7 @@
 ## 特性
 
 - **服务器**：`Poller`（poll(2)）+ 非阻塞 accept/读/写，单线程事件循环
-- **协议**：`NICK` / `MSG` / `LIST` / `QUIT` 行协议（`protocol.rl`）
+- **协议**：`NICK` / `MSG` / `LIST` / `QUIT` 行协议（`chat_protocol.rl`）
 - **会话**：`Hub` 双向映射（nick ↔ fd），昵称占用检测，在线列表
 - **广播**：单条消息写遍所有连接（`MSG` 广播 / 上下线通知）
 - **客户端**：与服务器同构的单线程 NIO——`poll` 同时监听键盘（fd 0）与 socket，
@@ -48,7 +48,7 @@ scripts/smoke.sh   # 两客户端互发 + 昵称占用校验，全部通过输�
 ## 架构
 
 ```
-protocol.rl   Msg 枚举 + 行协议 encode/decode（两侧共用）
+chat_protocol.rl   Msg 枚举 + 行协议 encode/decode（两侧共用）
 hub.rl        Hub：nick↔fd 双向映射、join/leave/count
 server.rl     run_server：Poller 事件循环、accept、逐行处理、广播、断开清理
 client.rl     run_client：Poller 监听 stdin(0)+socket，读键盘发协议行 / 收消息打印
@@ -62,7 +62,7 @@ client_main.rl 客户端入口（地址/昵称硬编码，MVP 无命令行参数
 - **非阻塞 TCP**：`TcpListener::bind/accept/set_nonblocking`、`TcpStream::connect/fd/read_line/write`
 - **泛型集合**：`HashMap<i64, TcpStream>`、`HashMap<String, i64>` + `keys()/values()/get/insert/remove`
 - **引用参数**：`&mut Hub`、`&HashMap<i64, TcpStream>` 透传（无全局变量下的共享方式）
-- **枚举 + match**：协议消息经 `use` 跨模块导入（`use protocol::Msg`），模块内枚举经
+- **枚举 + match**：协议消息经 `use` 跨模块导入（`use chat_protocol::Msg`），模块内枚举经
   模块前缀定位（`fn encode(m: Msg)`）
 - **`&mut` 结构体**：会话状态整体收容在 `Hub`，避免全局可变状态
 

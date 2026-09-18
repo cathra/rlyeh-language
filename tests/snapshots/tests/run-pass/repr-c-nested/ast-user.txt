@@ -36,6 +36,10 @@ AstProgram {
                 ],
                 derive: [],
                 repr_c: true,
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 331,
                     end: 362,
@@ -94,6 +98,10 @@ AstProgram {
                 ],
                 derive: [],
                 repr_c: true,
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 375,
                     end: 429,
@@ -138,6 +146,10 @@ AstProgram {
                 ],
                 derive: [],
                 repr_c: true,
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 442,
                     end: 490,
@@ -205,6 +217,7 @@ AstProgram {
                                                                 },
                                                             ),
                                                         ],
+                                                        base: None,
                                                     },
                                                     span: Span {
                                                         start: 530,
@@ -243,6 +256,7 @@ AstProgram {
                                                 },
                                             ),
                                         ],
+                                        base: None,
                                     },
                                     span: Span {
                                         start: 520,
@@ -529,6 +543,7 @@ AstProgram {
                                                         },
                                                     ),
                                                 ],
+                                                base: None,
                                             },
                                             span: Span {
                                                 start: 737,
@@ -848,6 +863,7 @@ AstProgram {
                                                                                 },
                                                                             ),
                                                                         ],
+                                                                        base: None,
                                                                     },
                                                                     span: Span {
                                                                         start: 1007,
@@ -886,6 +902,7 @@ AstProgram {
                                                                 },
                                                             ),
                                                         ],
+                                                        base: None,
                                                     },
                                                     span: Span {
                                                         start: 997,
@@ -910,6 +927,7 @@ AstProgram {
                                                 },
                                             ),
                                         ],
+                                        base: None,
                                     },
                                     span: Span {
                                         start: 983,

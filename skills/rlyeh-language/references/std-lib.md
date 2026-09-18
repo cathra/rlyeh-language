@@ -1,6 +1,6 @@
 # Rlyeh 标准库速查（v0.1.0）
 
-> 实际布局（2026-08-22 模块化拆分）：`rlyeh-std/rlyeh/core.rl` 根模块（String / Vec / HashMap / Option /
+> 实际布局（2026-08-22 模块化拆分）：`rlyeh-std/rlyeh/module.rl` 根模块（String / Vec / HashMap / Option /
 > Result + 全部 extern 声明 + `module` 声明 + `import` 重新导出）+ 子模块文件 `time.rl` / `io.rl` /
 > `net.rl` / `sync.rl`。**裸名即用**（`import time::Duration;` 等已在根模块重导出）。
 > 完整 API 与目标架构见 `docs/std-lib.md`；本速查只列 MVP 已实现（✅）项，编写代码可用。

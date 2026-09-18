@@ -1,4 +1,4 @@
-//! net 模块集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! net 模块集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`htons` 字节序转换、`socketpair_stream` 全双工字节流
 //! （send/recv 单向 + 双向 + 循环多包 + 4096 大数据块）、
@@ -24,7 +24,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

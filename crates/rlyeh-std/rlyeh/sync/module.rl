@@ -345,7 +345,7 @@ struct RecvAsync<T> {
     ch: Arc<sync::Channel<T>>,
 }
 
-impl<T> Future for RecvAsync<T> {
+impl<T> RecvAsync<T>: Future {
     type Output = Option<T>;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         // 消费唤醒字节（send/close 写入），避免 fd 永久就绪导致忙等

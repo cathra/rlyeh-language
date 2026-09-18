@@ -4,8 +4,8 @@
 // 同时展示 Rlyeh 的 NIO 能力）：poll 监听监听 fd 与所有连接 fd，
 // 可读事件分派 accept / 消息处理 / 广播 / 断开清理。
 
-import protocol::Msg;
-import protocol::decode;
+import chat_protocol::Msg;
+import chat_protocol::decode;
 import hub::Hub;
 
 // 运行服务器（阻塞事件循环，Ctrl-C 终止）

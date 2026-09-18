@@ -7,7 +7,8 @@ use rlyeh_typecheck::{typecheck, TypeError};
 /// 对源码执行类型检查。
 fn check(source: &str) -> Result<rlyeh_hir::HirProgram, TypeError> {
     let program = parse(source).expect("parse should succeed");
-    typecheck(&program)
+    // B-1：`typecheck` 现返回 `(HirProgram, Vec<Warning>)`；本集成测试只关心 HIR，丢弃警告。
+    typecheck(&program).map(|(hir, _warnings)| hir)
 }
 
 /// 提取 HIR 项名集合（验证模块扁平化命名）。

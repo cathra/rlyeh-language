@@ -17,6 +17,7 @@ use crate::check_expr::{
 };
 use crate::context::{FnTemplate, TypeContext};
 use crate::error::TypeError;
+use crate::Warning;
 use crate::types::{
     field_scalar_of, EnumDef, FnSignature, ImplDef, ImplMethod, MethodSig, Mutability, StructDef,
     TraitDef, Type, VariantDef,
@@ -30,7 +31,7 @@ use crate::types::{
 /// 2. 检查函数体与 const 初始值，生成 HIR（模块项以 `mod::item` 扁平化命名）。
 ///
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
-pub fn typecheck(program: &AstProgram) -> Result<HirProgram, TypeError> {
+pub fn typecheck(program: &AstProgram) -> Result<(HirProgram, Vec<Warning>), TypeError> {
     typecheck_with_region_hints(program, &Default::default(), 0)
 }
 
@@ -41,11 +42,13 @@ pub fn typecheck_with_region_hints(
     program: &AstProgram,
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
-) -> Result<HirProgram, TypeError> {
+) -> Result<(HirProgram, Vec<Warning>), TypeError> {
     let mut ctx = TypeContext::new();
     ctx.region_hints = region_hints.clone();
     ctx.prelude_len = prelude_len;
     collect_declarations(&mut ctx, program)?;
+    // PC-4：父协议一致性校验（`protocol A: B` → 实现 A 的类型必须同时实现 B）。
+    crate::check_expr::validate_supertraits(&ctx)?;
     // 第二遍：所有 struct 名注册后解析字段（支持自引用/前向引用递归类型）。
     resolve_all_struct_fields(&mut ctx, program)?;
 
@@ -55,7 +58,7 @@ pub fn typecheck_with_region_hints(
     }
     // 泛型实例化产生的函数项追加到末尾
     items.append(&mut ctx.mono_items);
-    Ok(HirProgram { items })
+    Ok((HirProgram { items }, ctx.warnings.clone()))
 }
 
 /// 拼接模块前缀与名称（`mod::name`），顶层直接返回原名。
@@ -141,6 +144,10 @@ fn collect_item_decls(
         AstItem::ActorDecl(a) => collect_actor(ctx, a, prefix)?,
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
+            // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
+            if m.memory.as_deref() == Some("gc") {
+                ctx.gc_modules.insert(new_prefix.clone());
+            }
             // Q3a 修复：模块内符号（struct/trait/impl）的短名解析须感知模块前缀。
             // 模块内 trait/impl 方法签名在收集阶段即 resolve_ast_type（如
             // `fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
@@ -214,18 +221,22 @@ fn register_use(
             .map(|s| norm(s))
             .collect::<Vec<String>>()
             .join("::");
+        let base = resolve_import_path(ctx, prefix, &base);
         register_use_group(ctx, members, &base, prefix, u.is_pub);
         return Ok(());
     }
     if u.path.last().map(String::as_str) == Some("*") {
         // glob 导入 `a::*`：枚举 `a` 的直接子项（不含 `a::b::` 嵌套），逐一定位全名。
-        let base = u
-            .path
-            .iter()
-            .take(u.path.len() - 1)
-            .map(|s| norm(s))
-            .collect::<Vec<String>>()
-            .join("::");
+        let base = resolve_import_path(
+            ctx,
+            prefix,
+            &u.path
+                .iter()
+                .take(u.path.len() - 1)
+                .map(|s| norm(s))
+                .collect::<Vec<String>>()
+                .join("::"),
+        );
         let prefix2 = base.clone();
         let mut members: Vec<String> = Vec::new();
         for k in ctx.fn_signatures.keys() {
@@ -279,8 +290,31 @@ fn register_use(
         Some(a) => norm(a),
         None => u.path.last().map(|s| norm(s)).unwrap_or_default(),
     };
-    register_one(ctx, local, path, prefix, u.is_pub);
+    let full = resolve_import_path(ctx, prefix, &path);
+    register_one(ctx, local, full, prefix, u.is_pub);
     Ok(())
+}
+
+/// 把导入路径归一为**完整符号名**（`use_aliases` 的目标）。
+///
+/// - `prefix` 为空（顶层）：路径原样即完整名（如 `time::duration::Duration`）；
+/// - `prefix` 非空（模块内）：**优先按相对本模块**解析——`import duration::Duration;`
+///   归一为 `time::duration::Duration`，即模块内无需写绝对路径；仅当相对目标**确实
+///   不存在**时，才视为引用外部模块的绝对路径（如 `module outer` 内
+///   `import inner::secret;` 引用顶层 `inner`）。已写明绝对路径（首段与本模块同名）
+///   时原样保留。
+///
+/// 结论：模块内引用**自身子模块**写相对路径，引用**外部模块**写完整路径。
+fn resolve_import_path(ctx: &TypeContext, prefix: &str, path: &str) -> String {
+    if prefix.is_empty() || path == prefix || path.starts_with(&format!("{prefix}::")) {
+        return path.to_string();
+    }
+    let rel = format!("{prefix}::{path}");
+    if ctx.resolve_full_name(&rel).is_some() {
+        rel
+    } else {
+        path.to_string()
+    }
 }
 
 /// 递归登记组导入成员（`import a::{b::{x, y}, c}`）。
@@ -388,6 +422,10 @@ pub(crate) fn check_item(
         }
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
+            // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
+            if m.memory.as_deref() == Some("gc") {
+                ctx.gc_modules.insert(new_prefix.clone());
+            }
             // 与收集阶段一致：模块内短名解析感知模块前缀（Q3a）
             let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {

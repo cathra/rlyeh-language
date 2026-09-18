@@ -116,7 +116,7 @@ impl Builder {
 // S2a：阻塞当前线程指定时长（`__rlyeh_thread_sleep` usleep 绑定；
 // micros 截断 u32，上限约 71 分钟）。返回 0 成功 / -1 失败
 // （WASI/Windows 下 stub 恒 -1，禁用文档化）。
-fn sleep(duration: time::Duration) -> i64 {
+fn sleep(duration: time::duration::Duration) -> i64 {
     __rlyeh_thread_sleep(duration.micros())
 }
 

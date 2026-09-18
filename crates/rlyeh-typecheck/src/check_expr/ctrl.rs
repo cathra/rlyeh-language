@@ -8,6 +8,33 @@
 use rlyeh_hir::HirExprKind;
 use rlyeh_lexer::Span;
 use super::*;
+use crate::{Warning, WarningKind};
+
+/// B-1（借用简化 RFC）：检测「对引用显式 `*` 解引用后紧接成员访问」的冗余写法
+/// `(*r).field` / `(*r).method()` / `(*r)[i]`。引用会自动解引用，提示去掉 `*`。
+///
+/// 仅当操作数类型为 `&T` / `&mut T` 时告警；裸指针（`*p`）与自定义 `Deref` trait
+/// 解引用仍需 `*`——前者是 `Type::RawPtr`，后者操作数本身不是引用。
+fn warn_redundant_deref(ctx: &mut TypeContext, recv: &AstExpr, _span: Span) {
+    if let ExprKind::Unary {
+        op: UnaryOp::Deref,
+        operand,
+    } = &*recv.kind
+    {
+        if let Ok((_, o_ty)) = infer_expr(ctx, operand) {
+            if matches!(o_ty, Type::Ref(..)) {
+                ctx.emit_warning(Warning {
+                    kind: WarningKind::RedundantDeref {
+                        suggestion:
+                            "引用会自动解引用，去掉 `*`，直接写 `x.field` / `x.method()` / `x[i]`"
+                                .to_string(),
+                    },
+                    span: recv.span,
+                });
+            }
+        }
+    }
+}
 
 /// `infer_expr` 尾部分支的下沉入口。
 ///
@@ -117,12 +144,21 @@ pub(crate) fn infer_expr_tail(
                 }
             }
             if !t_ty.compatible_with(&v_ty) {
-                return Err(TypeError::WrongType {
-                    expected: t_ty.to_string(),
-                    found: v_ty.to_string(),
-                    span,
-                    related: vec![],
-                });
+                // B-2（P0'）：目标类型 `t_ty`、右值类型 `v_ty`；若 `v_ty == &T`
+                // 且 `t_ty == T` 且 `T: Copy`，自动解引用取值（`x = r;`）
+                match crate::check_expr::try_auto_deref_coerce(ctx, &t_ty, &v_ty, value, span) {
+                    Some(Ok((c_hir, _))) => {
+                        v_hir = c_hir;
+                    }
+                    _ => {
+                        return Err(TypeError::WrongType {
+                            expected: t_ty.to_string(),
+                            found: v_ty.to_string(),
+                            span,
+                            related: vec![],
+                        });
+                    }
+                }
             }
             let target_name = match t_hir.kind {
                 HirExprKind::Variable(v) => v,
@@ -390,17 +426,25 @@ pub(crate) fn infer_expr_tail(
             method,
             args,
             trait_hint,
-        } => check_method_call(ctx, receiver, method, args, trait_hint.as_deref(), span, 0),
+        } => {
+            warn_redundant_deref(ctx, receiver, span);
+            check_method_call(ctx, receiver, method, args, trait_hint.as_deref(), span, 0)
+        }
         ExprKind::StructCtor {
             type_name,
             type_args,
             fields,
-        } => check_struct_construct(ctx, type_name, type_args, fields, span),
+            base,
+        } => check_struct_construct(ctx, type_name, type_args, fields, base, span),
         ExprKind::TupleLit(elems) => check_tuple_construct(ctx, elems, span),
         ExprKind::FieldAccess { expr, field } => {
+            warn_redundant_deref(ctx, expr, span);
             check_field_access(ctx, expr, field, span, 0)
         }
-        ExprKind::Index { expr, index } => check_index(ctx, expr, index, span, 0),
+        ExprKind::Index { expr, index } => {
+            warn_redundant_deref(ctx, expr, span);
+            check_index(ctx, expr, index, span, 0)
+        }
         ExprKind::ArrayLit(elems) => check_array_lit(ctx, elems, span),
         ExprKind::Closure { .. } => Err(TypeError::Unsupported {
             what: "闭包缺少 fn 类型上下文（H2 无捕获闭包：用作 fn 形参实参，或 `let f: fn(..) = |..| ..` 注解绑定；捕获闭包 H3 规划中）"

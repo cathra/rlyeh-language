@@ -1,4 +1,4 @@
-//! `HashMap<K, V>` for-in 元组模式迭代集成测试（文件入口 API，自动注入 core.rl）。
+//! `HashMap<K, V>` for-in 元组模式迭代集成测试（文件入口 API，自动注入标准库）。
 //!
 //! 覆盖：`for (k, v) in m` 求和/计数、删除（墓碑）后仅遍历存活项、
 //! 空 map 迭代 0 次、扩容 rehash 后遍历、非 i64 值类型。
@@ -21,7 +21,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

@@ -1,5 +1,5 @@
 //! `HashMap<K, V>` 的 `len` / `is_empty` 集成测试（文件入口 API，
-//! 自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! 自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：空表 is_empty、insert 后 len 增长、同键覆盖不重复计数、remove
 //! 墓碑后 len 递减、clear 后归零、扩容 rehash 后 len 保持、String 键实例化。
@@ -19,7 +19,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

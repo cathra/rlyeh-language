@@ -23,7 +23,7 @@
 | 领域 | 约束 |
 |------|------|
 | **模块** | 不支持 `pub use` 重导出、相对 `super::`、嵌套模块声明 |
-| **dyn Trait** | 非泛型 trait/impl、含 `Self` 签名方法不可经 dyn 调用；vtable 的 drop/size/align 槽置 0 |
+| **dyn Protocol** | 非泛型 protocol/impl、含 `Self` 签名方法不可经 dyn 调用；vtable 的 drop/size/align 槽置 0 |
 | **闭包** | 仅按值捕获；捕获闭包值不跨函数边界（作 fn 实参 / 返回值报 Unsupported）；参数类型有注解用注解、无注解由首次调用点实参推断（半注解亦可用） |
 | **泛型 `Self`** | 仅返回位置；参数位置（关联返回）禁止 |
 | **`as` 转换** | i128/u128、指针/引用/聚合转换保持擦除（不支持） |
@@ -42,7 +42,7 @@
 以下**均已实现**，可放心使用：
 
 - 引用 `&T`/`&mut T`、严格借用检查、`str` 一等类型、字面量实参自动升级
-- `?` 错误传播、`as` 数值转换、`dyn Trait`
+- `?` 错误传播、`as` 数值转换、`dyn Protocol`
 - 闭包 H2（无捕获）/ H3（捕获 IIFE）/ H5（闭包值对象）
 - `Box`/`Rc`/`Arc`/`Gc`
 - Actor + 交叉编译 WASM、`async`/`.await`

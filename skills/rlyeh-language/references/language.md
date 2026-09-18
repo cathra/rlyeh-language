@@ -71,14 +71,14 @@ if x not in (6am..<10pm) {}     // 跨午夜时间区间（分钟单位）
 > **优先级**（从高到低）：`*` > `+` > `<<` > `&` > `^` > `|`，且**比较运算高于位运算**。
 > 裸 `x & 3 == 2` 会把 `&` 当逻辑与处理——必须写 `(x & 3) == 2`。
 
-## 8. 聚合类型（struct / enum / trait / 泛型）
+## 8. 聚合类型（struct / enum / protocol / 泛型）
 
 ```rlyeh
 struct Point { x: i64, y: i64 }
 enum Shape { Circle(f64), Rect { w: f64, h: f64 } }
 
-trait Area { fn area(&self) -> f64; }
-impl Area for Shape {
+protocol Area { fn area(&self) -> f64; }
+impl Shape: Area {
     fn area(&self) -> f64 {
         match self {
             Shape::Circle(r) => 3.14 * r * r,

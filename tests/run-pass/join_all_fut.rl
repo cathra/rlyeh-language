@@ -1,6 +1,6 @@
 // W4：Future 版 join_all（并发轮询多个 future 直至全部 Ready）
 struct MyFut { n: i64 }
-impl Future for MyFut {
+impl MyFut: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.n = self.n + 1;

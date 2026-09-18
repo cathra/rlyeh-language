@@ -1,5 +1,5 @@
 //! R 阶段（2026-08）NIO（非阻塞模式 + Poller 事件轮询）+ sendfile 零拷贝
-//! 集成测试（自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! 集成测试（自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 免外网策略：本地 `socketpair_stream`（同一进程内全双工 fd）+ Rust
 //! `std::net::TcpListener` 起本地 mock 对端（随机端口 + 单连接线程）。
@@ -30,7 +30,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

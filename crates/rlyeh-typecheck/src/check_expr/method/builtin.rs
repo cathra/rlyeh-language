@@ -3,7 +3,7 @@
 //!
 //! 覆盖：切片胖指针 `len`/`first`/`last`、`Vec` 切片视图、`&str` → String 升级、
 //! `push_str(字面量)` 快速路径、`Rc`/`Arc`/`Weak` 引用计数、`dyn Trait` 虚调用。
-//! 这些分支必须早于常规 impl 分派——切片在 core.rl 无对应 impl（无法为 `[T]`
+//! 这些分支必须早于常规 impl 分派——切片在 标准库无对应 impl（无法为 `[T]`
 //! 写 impl），引用计数需要原始对象，虚调用走 vtable 而非静态分派。
 
 use rlyeh_hir::{HirExprKind, HirStmtKind};
@@ -33,7 +33,7 @@ pub(super) fn try_builtin_method_call(
     span: Span,
 ) -> Result<BuiltinOutcome, TypeError> {
     // S3：切片胖指针 `&[T]` / `&mut [T]` 的内建方法（`len` / `first` / `last`）。
-    // 切片在 core.rl 无对应 impl（无法为 `[T]` 写 impl），故在 impl 分派前特判，
+    // 切片在 标准库无对应 impl（无法为 `[T]` 写 impl），故在 impl 分派前特判，
     // 避免落入 impl 查找报「无此方法」。布局与 StrFat 同为 `{data, len}`：
     // 槽 0 = data 指针、槽 1 = 长度。
     if args.is_empty()
@@ -339,7 +339,8 @@ pub(super) fn try_builtin_method_call(
                 return Ok(BuiltinOutcome::Handled(h, t));
             }
         }
-        let trait_def = ctx
+        // 校验协议存在（未定义时报 UndefinedType，保持既有行为）。
+        let _trait_def = ctx
             .trait_defs
             .get(&trait_name)
             .cloned()
@@ -347,15 +348,18 @@ pub(super) fn try_builtin_method_call(
                 name: trait_name.clone(),
                 span,
             })?;
-        let idx = trait_def
-            .methods
+        // PC-10：方法槽索引按**线性化顺序**（supertrait 方法在前）查找——与
+        // `coerce_to_dyn` 的 vtable 填充顺序一致；因此 `dyn 子协议` 接收者也可调用
+        // 父协议方法（其槽位在 vtable 前部）。
+        let lin = crate::check_expr::linearize_trait_methods(ctx, &trait_name);
+        let idx = lin
             .iter()
-            .position(|m| m.name == method)
+            .position(|(_, m)| m.name == method)
             .ok_or_else(|| TypeError::FunctionNotFound {
                 name: format!("dyn {trait_name}::{method}"),
                 span,
             })?;
-        let sig = &trait_def.methods[idx];
+        let sig = lin[idx].1.clone();
         // MVP 限制：trait 方法签名含 `Self`（关联返回类型 / 参数）时无法确定
         // 具体类型，不支持经 dyn 调用
         if sig.params.iter().skip(1).any(type_mentions_self) || type_mentions_self(&sig.return_type) {

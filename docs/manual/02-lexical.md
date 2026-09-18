@@ -63,7 +63,7 @@ let nested = r##"他说："hi""##;            // 用更多 # 可包含 " 或 # �
 ## 2.3 关键字与保留字
 
 ```
-fn let mut pub const struct enum trait impl module import if else while loop for
+fn let mut pub const struct enum protocol impl module import if else while loop for
 in break continue match return async await send actor region transfer self
 true false type extern as ref
 ```

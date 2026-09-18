@@ -59,7 +59,7 @@ pub(crate) fn toml_parse_ast(
                 span,
             ))
         }
-        // String → `json_unescape(s)`（引号剥离 + 转义还原，core.rl）
+        // String → `json_unescape(s)`（引号剥离 + 转义还原，标准库预置）
         // 字符串 → 多行字符串 `"""` 感知（`toml_string_value_ast`）
         Type::Named(n, _) if n == "String" => Ok(toml_string_value_ast(&s, span)),
         // X2（2026-08-30）：f64 → `string_to_float(s)`
@@ -604,6 +604,7 @@ pub(crate) fn toml_parse_ast(
                     type_name: vec![n.clone()],
                     type_args: Vec::new(),
                     fields: zero_fields,
+                    base: None,
                 },
                 span,
             );

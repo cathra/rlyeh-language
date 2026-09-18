@@ -1,11 +1,11 @@
 // 期望编译失败：泛型实参不满足 trait bound（i64 未实现 HasArea）
 // expect: does not implement trait `HasArea`
-trait HasArea {
+protocol HasArea {
     fn area(&self) -> f64;
 }
 
 struct Point { x: i64, y: i64 }
-impl HasArea for Point {
+impl Point: HasArea {
     fn area(&self) -> f64 { 0.0 }
 }
 

@@ -238,6 +238,17 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 类型实现了协议 A，但缺少其父协议 B 的实现（PC-4：`protocol A: B`）。
+    MissingSupertrait {
+        /// 目标类型名
+        type_: String,
+        /// 已实现的协议名
+        trait_: String,
+        /// 缺失的父协议名
+        supertrait_: String,
+        /// 源码位置
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -280,6 +291,7 @@ impl TypeError {
             | TypeError::UnionMembersNotDisjoint { span, .. }
             | TypeError::GenericBoundMismatch { span, .. }
             | TypeError::GenericArityMismatch { span, .. }
+            | TypeError::MissingSupertrait { span, .. }
             | TypeError::UnsafeExternCall { span, .. } => *span,
         }
     }
@@ -422,6 +434,15 @@ fn write_message(f: &mut fmt::Formatter<'_>, loc: &str, err: &TypeError) -> fmt:
             f,
             "{loc}: error: generic type `{name}` expects {expected} type argument(s), but {found} were provided"
         ),
+        TypeError::MissingSupertrait {
+            type_,
+            trait_,
+            supertrait_,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: type `{type_}` implements protocol `{trait_}` but does not implement its superprotocol `{supertrait_}`"
+        ),
     }
 }
 
@@ -501,6 +522,7 @@ impl TypeError {
             TypeError::UnionMembersNotDisjoint { .. } => "TC026",
             TypeError::GenericBoundMismatch { .. } => "TC027",
             TypeError::GenericArityMismatch { .. } => "TC028",
+            TypeError::MissingSupertrait { .. } => "TC029",
         }
     }
 
@@ -568,6 +590,9 @@ impl TypeError {
             }
             TypeError::GenericArityMismatch { .. } => {
                 Some("调整类型实参数量以匹配泛型参数")
+            }
+            TypeError::MissingSupertrait { .. } => {
+                Some("为该类型补上父协议一致性（声明点 `T: .., Super` 或 `extension T: Super { .. }`）")
             }
         }
     }

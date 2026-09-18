@@ -24,7 +24,7 @@ fn temp_dir() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_dir();
     let file = dir.join("main.rl");

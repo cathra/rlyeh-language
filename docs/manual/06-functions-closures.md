@@ -1,6 +1,6 @@
 # 6. 函数与闭包
 
-> 速查函数定义、闭包四种形态、函数指针、trait 对象。讲解见 [指南 §3.2 函数与闭包](../guide/03-basic-syntax.md)、[§5.3 trait](../guide/05-aggregates-generics.md)。
+> 速查函数定义、闭包四种形态、函数指针、protocol 对象。讲解见 [指南 §3.2 函数与闭包](../guide/03-basic-syntax.md)、[§5.3 protocol](../guide/05-aggregates-generics.md)。
 
 ---
 
@@ -90,11 +90,11 @@ fn main() {
 
 ---
 
-## 6.4 trait 对象（H4）
+## 6.4 protocol 对象（H4）
 
-`let d: dyn Trait = &obj;` 经 vtable 胖指针间接分派。去虚拟化（2026-08-24 ✅）：绑定变量时记录来源具体类型，后续 `d.method()` 静态分派；`d` 被重新赋值时保守回退 vtable 间接调用。
+`let d: dyn Protocol = &obj;` 经 vtable 胖指针间接分派。去虚拟化（2026-08-24 ✅）：绑定变量时记录来源具体类型，后续 `d.method()` 静态分派；`d` 被重新赋值时保守回退 vtable 间接调用。
 
-**MVP 限制**：非泛型 trait/impl、含 `Self` 签名方法不可经 dyn 调用；vtable drop/size/align 槽置 0。
+**MVP 限制**：非泛型 protocol/impl、含 `Self` 签名方法不可经 dyn 调用；vtable drop/size/align 槽置 0。
 
 ---
 

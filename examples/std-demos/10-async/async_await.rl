@@ -9,7 +9,7 @@ struct __Fut_f {
     v: i64,
 }
 
-impl Future for __Fut_f {
+impl __Fut_f: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         if self.state == 0 {

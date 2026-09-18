@@ -109,7 +109,7 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     out.push_str("declare i32 @dprintf(i32, i8*, ...)\n");
     out.push_str("declare i8* @malloc(i64)\n");
     // calloc 预置声明必须**早于所有调用点**（LLVM IR parser 对 call 自动创建的
-    // 隐式声明与后续显式 declare 视为 redefinition 报错）。标准库 core.rl 的
+    // 隐式声明与后续显式 declare 视为 redefinition 报错）。标准库的
     // `extern fn calloc -> i64` 声明由 emit_function 跳过（见下），避免重复。
     // 返回值为 i64，内置分配点经 inttoptr 转 i8*。
     out.push_str("declare i64 @calloc(i64, i64)\n");

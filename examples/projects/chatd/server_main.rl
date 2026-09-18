@@ -4,7 +4,7 @@
 // MVP 无命令行参数 API（args），端口硬编码于此，修改后重新编译。
 // 构建：scripts/build.sh；运行：./chatd-server
 
-module protocol;
+module chat_protocol;
 module hub;
 module server;
 

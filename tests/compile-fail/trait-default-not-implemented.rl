@@ -1,5 +1,5 @@
 // V3：trait 无默认方法（抽象方法）且 impl 未实现时，调用必须报错（不回退）
-trait Worker {
+protocol Worker {
     fn work(&self) -> i64;
 }
 
@@ -7,7 +7,7 @@ struct Machine {
     x: i64,
 }
 
-impl Worker for Machine {
+impl Machine: Worker {
     // 未实现 work（抽象方法必须实现）
 }
 

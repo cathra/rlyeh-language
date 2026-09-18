@@ -4,10 +4,11 @@
 //! rlyeh-fmt [--check] [-w|--write] [--indent N] <file>
 //! ```
 //!
-//! - 无选项：格式化结果打印到 stdout。
+//! - 无选项：格式化结果打印到 stdout（默认输出**新语法** `protocol` / `extension`，即迁移目标）。
 //! - `--check`：仅检查文件是否已格式化（已格式化 exit 0，否则 exit 1）。
 //! - `-w`/`--write`：将格式化结果写回文件。
 //! - `--indent N`：缩进宽度（默认 4）。
+//!   PC-5（RFC `protocol-syntax.md`）：默认 `rlyeh fmt` 即把旧语法迁移为新语法。
 
 use std::process::ExitCode;
 
@@ -65,7 +66,9 @@ fn main() -> ExitCode {
         }
     };
 
-    let opts = rlyeh_fmt::FmtOptions { indent_width: indent };
+    let opts = rlyeh_fmt::FmtOptions {
+        indent_width: indent,
+    };
     let formatted = match rlyeh_fmt::format_source_with_options(&src, &opts) {
         Ok(s) => s,
         Err(e) => {

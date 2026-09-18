@@ -1,6 +1,6 @@
 # 5. 聚合类型与泛型
 
-> 本章目标：掌握 Rlyeh 的**结构体（struct）**、**枚举（enum）与模式匹配（match）**、**trait 与泛型**、**类型联合**和**显式判别式**。这些是你从 C 的 `struct`/`enum` 进阶到"带行为的复合类型"的关键。
+> 本章目标：掌握 Rlyeh 的**结构体（struct）**、**枚举（enum）与模式匹配（match）**、**protocol 与泛型**、**类型联合**和**显式判别式**。这些是你从 C 的 `struct`/`enum` 进阶到"带行为的复合类型"的关键。
 >
 > 读完你能回答：Rlyeh 的 `struct` 和 C 的 `struct` 有何不同？`enum` + `match` 比 C 的 `enum` + `switch` 强在哪？泛型怎么用？
 
@@ -107,18 +107,18 @@ match res {
 
 ---
 
-## 5.3 trait 与泛型（单态化）
+## 5.3 protocol 与泛型（单态化）
 
-### trait：定义"能做什么"的接口
+### protocol：定义"能做什么"的接口
 
-`trait` 类似 C++ 的纯虚类 / Java 的 interface / C 的"函数指针结构体"，描述一组方法：
+`protocol`（早期版本写作 `trait`，该关键字已从语法中移除）类似 C++ 的纯虚类 / Java 的 interface / C 的"函数指针结构体"，描述一组方法：
 
 ```rlyeh
-trait Area {
+protocol Area {
     fn area(&self) -> f64;
 }
 
-impl Area for Shape {
+impl Shape: Area {
     fn area(&self) -> f64 {
         match self {
             Shape::Circle(r) => 3.14 * r * r,
@@ -128,7 +128,7 @@ impl Area for Shape {
 }
 ```
 
-> **C 程序员的视角**：C 里要实现"多种形状都能算面积"，通常要手写一个 `struct ShapeVtable { area_fp area; }` 然后每个类型挂一个 vtable——这正是 Rlyeh `trait` + `impl` 自动替你做的事。你只写"谁实现了什么方法"，调用时编译器（默认）在编译期决定调哪个版本（单态化，零运行时开销）。
+> **C 程序员的视角**：C 里要实现"多种形状都能算面积"，通常要手写一个 `struct ShapeVtable { area_fp area; }` 然后每个类型挂一个 vtable——这正是 Rlyeh `protocol` + `impl` 自动替你做的事。你只写"谁实现了什么方法"，调用时编译器（默认）在编译期决定调哪个版本（单态化，零运行时开销）。
 
 ### 泛型：写一个适用于多种类型的函数/类型
 
@@ -148,16 +148,16 @@ impl<T> Wrapper<T> {
 
 > **单态化（monomorphization）**：Rlyeh 的泛型在编译期为用到的每个具体类型**生成一份专用代码**（和 C++ 模板同理）。所以 `Wrapper<i64>` 和 `Wrapper<String>` 是两份不同的机器码，调用零开销——但编译产物会稍大（模板膨胀）。
 
-### 泛型 trait 约束（bound）
+### 泛型 protocol 约束（bound）
 
-可以为特定类型实现特定泛型 trait：
+可以为特定类型实现特定泛型 protocol：
 
 ```rlyeh
-trait Convert<T> {
+protocol Convert<T> {
     fn convert(&self) -> T;
 }
 
-impl Convert<i64> for f64 {
+impl f64: Convert<i64> {
     fn convert(&self) -> i64 {
         *self as i64          // f64 → i64（向零截断）
     }
@@ -166,7 +166,7 @@ impl Convert<i64> for f64 {
 let n = 3.7.convert();         // n: i64 = 3
 ```
 
-> **MVP 限制**：`Self` 仅支持出现在**返回位置**（如 `fn from(v) -> Self`）；出现在参数位置的关联类型暂禁。含 `Self` 签名的方法不能经 `dyn Trait` 调用（见 [§3.4 dyn Trait](../guide/03-basic-syntax.md)）。
+> **MVP 限制**：`Self` 仅支持出现在**返回位置**（如 `fn from(v) -> Self`）；出现在参数位置的关联类型暂禁。含 `Self` 签名的方法不能经 `dyn` 协议调用（见 [§3.4 dyn 协议](../guide/03-basic-syntax.md)）。
 
 ---
 
@@ -245,7 +245,7 @@ fn describe(s: State) -> String {
 ## 练习
 
 1. 运行 [`examples/by-chapter/05-aggregates-generics.rl`](../../examples/by-chapter/05-aggregates-generics.rl)，给 `Shape` 加一个 `Triangle(f64, f64)` 变体并在 `area` 里处理它，体会 `match` 的穷尽检查（漏写会编译报错）。
-2. 写一个 `trait Draw { fn draw(&self); }`，让 `Circle`/`Rect` 都实现，再用 `dyn Draw` 把多个形状放进一个集合统一绘制。
+2. 写一个 `protocol Draw { fn draw(&self); }`，用 `impl Circle: Draw { .. }` / `impl Rect: Draw { .. }` 让 `Circle`/`Rect` 都满足它，再用 `dyn Draw` 把多个形状放进一个集合统一绘制。
 3. 用类型联合 `i64 | String` 模拟"可能是数字也可能是文本"的字段，并 `match` 分别处理两种类型。
 
 ---

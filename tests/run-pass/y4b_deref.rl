@@ -2,13 +2,13 @@
 // `MutexGuard<T>` 实现 Deref<T>，`*guard` 生成 `guard.deref()` 返回 T。
 // 此前 `*g` 仅支持内建类型（&T/裸指针/Box/Rc/Arc/Gc）——报 unsupported syntax。
 
-trait Deref<T> {
+protocol Deref<T> {
     fn deref(&self) -> T;
 }
 
 struct MutexGuard<T> { value: T }
 
-impl<T> Deref<T> for MutexGuard<T> {
+impl<T> MutexGuard<T>: Deref<T> {
     fn deref(&self) -> T {
         let g: T = self.value;
         g

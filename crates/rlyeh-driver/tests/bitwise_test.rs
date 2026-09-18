@@ -1,4 +1,4 @@
-//! 位运算全链路集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! 位运算全链路集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`&`/`|`/`^` 基础运算（常量折叠 + 变量两条路径）、`<<`/`>>` 移位
 //! （含负数算术右移）、与算术/比较的优先级混合、字节打包/解包
@@ -19,7 +19,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

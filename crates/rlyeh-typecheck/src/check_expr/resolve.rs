@@ -120,6 +120,11 @@ pub(crate) fn resolve_ast_type(
         }
         AstType::Ref(inner, is_mut) => {
             let inner = resolve_ast_type(ctx, inner, span)?;
+            // B-6（P3）：`#[memory(gc)]` 模块内引用默认映射为 `Gc<T>`（L3），
+            // 指针图 / 树结构免写 `&`/`&mut`（`next: &Node` ≡ `next: Gc<Node>`）。
+            if ctx.in_gc_module() {
+                return Ok(Type::Named("Gc".to_string(), vec![inner]));
+            }
             let m = if *is_mut {
                 Mutability::Mutable
             } else {

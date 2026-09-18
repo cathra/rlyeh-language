@@ -1,4 +1,4 @@
-//! `String` 拼接集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `String` 拼接集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`a + b` 运算符拼接、链式拼接 `a + b + c`、`push_str` 方法直接调用、
 //! 拼接后 len / 索引 / 内容相等比较、多次拼接触发扩容。
@@ -21,7 +21,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

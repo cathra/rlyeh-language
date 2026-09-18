@@ -1,4 +1,4 @@
-//! S 阶段（2026-08）线程支持集成测试（自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! S 阶段（2026-08）线程支持集成测试（自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：
 //! - `Thread::start(f: fn() -> i64)`：派生线程运行零参数函数（H1 函数指针值
@@ -28,7 +28,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

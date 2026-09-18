@@ -1,6 +1,6 @@
 # 8. 泛型与单态化
 
-> 速查泛型语法、trait、类型联合、显式判别式。讲解见 [指南 §5.3 trait 与泛型](../guide/05-aggregates-generics.md)。
+> 速查泛型语法、protocol、类型联合、显式判别式。讲解见 [指南 §5.3 protocol 与泛型](../guide/05-aggregates-generics.md)。
 
 ---
 
@@ -23,24 +23,24 @@ let w = Wrapper::new(5);        // T 推断为 i64 → Wrapper<i64>
 
 ---
 
-## 8.2 trait 与 impl
+## 8.2 protocol 与 impl
 
 ```rlyeh
-trait Area { fn area(&self) -> f64; }
-impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
+protocol Area { fn area(&self) -> f64; }
+impl Shape: Area { fn area(&self) -> f64 { /* ... */ } }
 ```
 
-- `trait`：定义一组方法签名（类似 C++ 纯虚类 / Java interface）。
-- `impl Trait for Type`：为某个类型实现该 trait。
+- `protocol`：定义一组方法签名（类似 C++ 纯虚类 / Java interface）。
+- `impl Type: Protocol`：为某个类型实现该 protocol（早期写法 `impl Trait for Type` 已从语法中移除）。
 - 泛型 impl 单态化后 `Self` 替换为具体类型（`Wrapper<i64>::new(v) -> Self` → `Wrapper<i64>`）。
 
-### 泛型 trait 约束（bound）
+### 泛型 protocol 约束（bound）
 
 ```rlyeh
-trait Convert<T> {
+protocol Convert<T> {
     fn convert(&self) -> T;
 }
-impl Convert<i64> for f64 {
+impl f64: Convert<i64> {
     fn convert(&self) -> i64 { *self as i64 }
 }
 let n = 3.7.convert();          // n: i64 = 3
@@ -48,8 +48,8 @@ let n = 3.7.convert();          // n: i64 = 3
 
 > **MVP 限制**：
 > - `Self` 仅支持**返回位置**——参数位置（关联返回）保持禁止。
-> - 含 `Self` 签名的方法不可经 `dyn Trait` 调用（见 [§4.6](./04-expressions-operators.md) H4 限制）。
-> - `From::from(v) -> Self` / `Into::into() -> Self` / `Deserialize::from_json(s) -> Self` 落地待 std trait 声明。
+> - 含 `Self` 签名的方法不可经 `dyn` 协议调用（见 [§4.6](./04-expressions-operators.md) H4 限制）。
+> - `From::from(v) -> Self` / `Into::into() -> Self` / `Deserialize::from_json(s) -> Self` 落地待 std protocol 声明。
 
 ---
 
@@ -95,7 +95,7 @@ impl<T> Wrapper<T> {
 let w = Wrapper::new(5);        // 推断为 Wrapper<i64>
 ```
 
-可运行版本见 [`examples/by-chapter/05-aggregates-generics.rl`](../../examples/by-chapter/05-aggregates-generics.rl)（含 enum / match / trait）。
+可运行版本见 [`examples/by-chapter/05-aggregates-generics.rl`](../../examples/by-chapter/05-aggregates-generics.rl)（含 enum / match / protocol）。
 
 ---
 

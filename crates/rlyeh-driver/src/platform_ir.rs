@@ -8,7 +8,7 @@ use super::*;
 ///
 /// `llvm` 为 codegen 已生成的 IR 文本：用于判断切片 IO 转发内建是否必要。
 /// `__rlyeh_fread_ptr`/`__rlyeh_fwrite_ptr` 内部 `call @fread`/`@fwrite`，而
-/// `fread`/`fwrite` 是 core.rl 声明的 Rlyeh extern——仅当程序用到切片 IO（codegen
+/// `fread`/`fwrite` 是 标准库声明的 Rlyeh extern——仅当程序用到切片 IO（codegen
 /// 已为 extern 生成 `declare @fread`）时才注入这层转发，避免不用 std 的程序出现
 /// `use of undefined value '@fread'`；同时避免与 codegen 的 declare 重复声明冲突。
 pub(crate) fn platform_builtin_ir(target: Option<&str>, llvm: &str) -> String {
@@ -36,7 +36,7 @@ pub(crate) fn platform_builtin_ir(target: Option<&str>, llvm: &str) -> String {
 /// 原子读改写（`atomicrmw`）/ 比较交换（`cmpxchg`）在 LLVM IR 层表达，**无对应
 /// C 链接符号**（C11 `<stdatomic.h>` 的 `atomic_fetch_add` 为泛型宏，不可链接），
 /// 故由 driver 注入 `define internal`，与 `__rlyeh_clock_monotonic` /
-/// `__rlyeh_target_os` 同一机制（core.rl 以 `__rlyeh_` 前缀声明，codegen 不生成
+/// `__rlyeh_target_os` 同一机制（标准库以 `__rlyeh_` 前缀声明，codegen 不生成
 /// declare，避免与注入定义冲突）。
 ///
 /// 全部操作为 **SeqCst**（`seq_cst`，最强内存序，等价 Rust `Ordering::SeqCst`）：
@@ -110,7 +110,7 @@ fn atomic_builtin_ir() -> String {
 }
 
 /// `__rlyeh_kqueue`/`__rlyeh_kevent` 平台内建（Y，2026-08-28）。
-/// core.rl 以 `__rlyeh_` 前缀声明（不生成 declare，与 sendfile 同一机制），driver 按
+/// 标准库以 `__rlyeh_` 前缀声明（不生成 declare，与 sendfile 同一机制），driver 按
 /// 目标注入定义：
 /// - macOS(2)/BSD(4)：转发系统 `kqueue`/`kevent`（String 经 StrFat 取 data 指针）。
 /// - 其他目标（Linux/RISC-V/LoongArch/WASI）：stub 定义返回 -1（标准库 nio 按
@@ -557,7 +557,7 @@ entry:
 
 /// S3（2026-08-30）：切片 IO 转发内建（`File::read_slice` / `write_slice` 的底层）。
 ///
-/// core.rl 中 `fread`/`fwrite` 的 extern 签名第一参为 `String`——codegen 对
+/// 标准库中 `fread`/`fwrite` 的 extern 签名第一参为 `String`——codegen 对
 /// `LirType::Str` 在 extern 调用点特判取 data 指针，故无法直接接收切片的裸指针
 /// 实参（`RawPtr` → `LirType::Ptr`，与 `String` 形参类型检查不兼容）。
 /// 这里注入 `__rlyeh_fread_ptr` / `__rlyeh_fwrite_ptr` 两个转发入口：首参为

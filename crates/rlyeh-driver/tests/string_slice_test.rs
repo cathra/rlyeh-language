@@ -4,7 +4,7 @@
 //! 朴素查找命中/未命中/空子串、包含判断、find+substring 组合提取、
 //! 拼接 + 子串链式操作。
 //!
-//! 实现：core.rl 纯 Rlyeh 方法（`substring` 逐字节 push_byte 拷贝，
+//! 实现：标准库纯 Rlyeh 方法（`substring` 逐字节 push_byte 拷贝，
 //! `find` 朴素滑动窗口匹配 + result 变量返回，`contains` = `find >= 0`）。
 //!
 //! 需要系统 clang（与 driver_test.rs / string_eq_test.rs 相同）。
@@ -22,7 +22,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

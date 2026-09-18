@@ -56,7 +56,7 @@ pub(crate) fn json_serialize_ast(
                 span,
             ))
         }
-        // String → `"` + json_escape(s) + `"`（json_escape 在 core.rl）
+        // String → `"` + json_escape(s) + `"`（json_escape 在标准库预置）
         Type::Named(n, _) if n == "String" => {
             let quote = |s: &str| string_from_lit_ast(s.to_string(), span);
             let esc = mk_ident_call("json_escape".to_string(), vec![arg.clone()], span);

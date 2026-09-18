@@ -47,7 +47,7 @@
 
 ## 6. 类型系统行为
 
-- 泛型**单态化**（无擦除、无 trait 对象、无 `dyn`）。
+- 泛型**单态化**（无擦除、无协议对象、无 `dyn`）。
 - `match` 枚举解构按**具体实例化**处理（含嵌套泛型 `Option<Vec<T>>`、`Result<Option<String>, i64>`）。
 - 裸 `Ok`/`Err`/`Some` 构造 + `unwrap_or` 等可自动定型（Infer 回填）。
 - `String::from(s)`：仅接受字面量或绑定字面量的变量（非字面量 Str 长度表达未实现）。

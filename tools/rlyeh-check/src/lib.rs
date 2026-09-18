@@ -530,6 +530,7 @@ impl Checker {
                 type_name: _,
                 type_args: _,
                 fields,
+                ..
             } => {
                 for (_, v) in fields {
                     self.walk_expr(v);

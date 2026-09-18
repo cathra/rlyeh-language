@@ -9,6 +9,7 @@ use rlyeh_ast::{AstActorDecl, AstExpr, AstFnDecl};
 
 use crate::error::TypeError;
 use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, TraitDef, Type};
+use crate::Warning;
 
 /// 延迟闭包值绑定记录（H5 补全：非注解闭包 `let f = |x| body;`）。
 ///
@@ -108,6 +109,9 @@ pub struct TypeContext {
     pub generated_gc_externs: std::collections::HashSet<String>,
     /// 当前检查的模块前缀（顶层为空串，`mod math` 内为 `"math"`）
     pub module_prefix: String,
+    /// B-6：标注 `#[memory(gc)]` 的模块前缀集合（含嵌套继承），供引用→`Gc<T>`
+    /// 默认映射判定（见 `in_gc_module`）。
+    pub gc_modules: std::collections::HashSet<String>,
     /// 当前作用域的泛型参数名（如 `["T"]`）
     pub type_params: Vec<String>,
     /// 当前泛型替换表（泛型参数名 → 具体类型，实例化 body 检查时有效）
@@ -160,6 +164,8 @@ pub struct TypeContext {
     pub prelude_len: usize,
     /// extern 函数名集合（SH-P0-1 E3：门禁查表，键与 `fn_signatures` 一致）
     pub extern_fns: std::collections::HashSet<String>,
+    /// 类型检查期间收集的建议性警告（非致命；见 [`crate::Warning`]）。
+    pub warnings: Vec<Warning>,
 }
 
 impl TypeContext {
@@ -180,6 +186,19 @@ impl TypeContext {
     /// 离开作用域（同时丢弃其中的变量/初始化表达式/dyn 具体类型）。
     pub fn pop_scope(&mut self) {
         self.scopes.pop();
+    }
+
+    /// 提交一条建议性警告。
+    ///
+    /// 按 `(位置, 种类)` 去重，避免泛型实例化对同一源码位置重复触发
+    /// （实例化 AST 与原模板共享 `span`）。
+    pub fn emit_warning(&mut self, w: Warning) {
+        let dup = self.warnings.iter().any(|e| {
+            e.span == w.span && std::mem::discriminant(&e.kind) == std::mem::discriminant(&w.kind)
+        });
+        if !dup {
+            self.warnings.push(w);
+        }
     }
 
     /// 计算变量在当前作用域应使用的存储槽名：
@@ -381,6 +400,13 @@ impl TypeContext {
     /// （含 `pub use` 重导出的多级链，如 `c → M::c → a::b`，经 `use_aliases` 传递追踪
     /// 直至命中真实符号或回退模块前缀；`visited` 防环）。
     /// 无法解析时返回 `None`（由调用方决定如何报错）。
+    /// B-6：当前 `module_prefix` 是否处于 `#[memory(gc)]` 模块（含嵌套继承）。
+    pub fn in_gc_module(&self) -> bool {
+        self.gc_modules.iter().any(|p| {
+            self.module_prefix == *p || self.module_prefix.starts_with(&format!("{p}::"))
+        })
+    }
+
     pub fn resolve_full_name(&self, name: &str) -> Option<String> {
         let is_direct = |k: &str| {
             self.structs.contains_key(k)
@@ -497,6 +523,34 @@ impl TypeContext {
                     return Ok(Type::ScalarEnum(full));
                 }
                 return Ok(Type::Named(full, Vec::new()));
+            }
+        }
+        // 模块化兜底（2026-09-18）：标准库按子模块拆分后，跨模块引用可能仍写拆分前的
+        // 短路径（如 `fmt::FmtError` 实际注册为 `fmt::error::FmtError`），而签名收集
+        // 阶段早于模块内 `pub import` 的别名生效。此处在**唯一**后缀匹配时接受该名，
+        // 避免为每个子模块强绑别名注册时机。
+        if name.contains("::") {
+            let suffix = format!("::{}", name.rsplit("::").next().unwrap_or_default());
+            let mut hit: Option<String> = None;
+            let mut ambiguous = false;
+            for k in self.structs.keys().chain(self.enum_defs.keys()) {
+                if k.ends_with(&suffix) {
+                    if hit.is_some() {
+                        ambiguous = true;
+                        break;
+                    }
+                    hit = Some(k.clone());
+                }
+            }
+            if !ambiguous {
+                if let Some(k) = hit {
+                    if self.enum_defs.contains_key(&k) {
+                        if self.is_scalar_enum(&k) {
+                            return Ok(Type::ScalarEnum(k));
+                        }
+                    }
+                    return Ok(Type::Named(k, Vec::new()));
+                }
             }
         }
         Err(TypeError::UndefinedType {
@@ -627,7 +681,7 @@ impl TypeContext {
         self.impl_defs
             .iter()
             .filter(|d| {
-                d.trait_name.as_deref() == Some(trait_name)
+                trait_names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
                     && type_matches(d, self_type)
                     && d.methods.iter().any(|m| m.sig.name == method)
             })
@@ -638,14 +692,27 @@ impl TypeContext {
     /// X4：按目标类型 + trait 名查找含指定方法的 trait impl 块。
     /// 用于同名方法分属不同 trait 时（如 `Display::fmt` 与 `Debug::fmt`），
     /// 按 trait 名精确区分；`trait_name` 为解析后的完整符号名（如 `fmt::Display`）。
+    ///
+    /// 匹配经 [`trait_names_match`]：先**精确**、未命中再**短名等价**——标准库按
+    /// 子模块拆分后，impl 注册名可能是 `fmt::display::Display`，而调用方（如
+    /// 占位符引擎）仍以 `fmt::Display` 查询。
     pub fn find_impl_for_trait_method(
         &self,
         self_type: &Type,
         trait_name: &str,
         method: &str,
     ) -> Option<&ImplDef> {
-        self.impl_defs.iter().find(|d| {
+        // 精确匹配优先（避免同名 trait 串味）
+        if let Some(d) = self.impl_defs.iter().find(|d| {
             d.trait_name.as_deref() == Some(trait_name)
+                && type_matches(d, self_type)
+                && d.methods.iter().any(|m| m.sig.name == method)
+        }) {
+            return Some(d);
+        }
+        // 短名等价兜底（模块化后注册名可能是 `fmt::display::Display`）
+        self.impl_defs.iter().find(|d| {
+            trait_names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
                 && type_matches(d, self_type)
                 && d.methods.iter().any(|m| m.sig.name == method)
         })
@@ -680,6 +747,22 @@ impl TypeContext {
 
 /// impl 块目标类型与具体类型匹配（未含泛型参数的 impl 需精确匹配；
 /// 含泛型参数的 impl 匹配同名类型，参数在调用点替换）。
+/// trait 名等价判定：**精确相等**，或**最后一段相同**（模块化兼容）。
+///
+/// 标准库把 `fmt::Display` 下沉为子模块 `fmt::display::Display` 后，impl 的注册名与
+/// 调用方的查询名（占位符引擎、`#[derive]` 展开仍写 `fmt::Display`）可能处于不同
+/// 层级，故提供短名兜底；精确比较在调用点优先尝试
+/// （见 [`TypeContext::find_impl_for_trait_method`]）。
+pub(crate) fn trait_names_match(registered: &str, query: &str) -> bool {
+    if registered == query {
+        return true;
+    }
+    if registered.is_empty() || query.is_empty() {
+        return false;
+    }
+    registered.rsplit("::").next() == query.rsplit("::").next()
+}
+
 pub(crate) fn type_matches(imp: &ImplDef, concrete: &Type) -> bool {
     // P6c（2026-08-29）：blanket impl（`impl<T, U> Into<U> for T`——self_type 为裸
     // 泛型参数）可匹配任意具体类型；类型参数在调用点按 turbofish / 实参替换。

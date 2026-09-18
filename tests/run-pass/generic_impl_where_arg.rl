@@ -8,14 +8,14 @@
 // implement Num` 而未回退到精确 impl（候选选择未因 where 不满足而过滤该 impl）。
 // 故本用例刻意只保留带 where 的泛型 impl，避免该限制触发。
 
-trait Convert<T> { fn convert(&self, v: T) -> i64; }
-trait Num { fn val(&self) -> i64; }
+protocol Convert<T> { fn convert(&self, v: T) -> i64; }
+protocol Num { fn val(&self) -> i64; }
 
 struct IntN { v: i64 }
-impl Num for IntN { fn val(&self) -> i64 { self.v } }
+impl IntN: Num { fn val(&self) -> i64 { self.v } }
 
 struct C { k: i64 }
-impl<T> Convert<T> for C where T: Num {
+impl<T> C: Convert<T> where T: Num {
     fn convert(&self, v: T) -> i64 { v.val() + self.k }
 }
 

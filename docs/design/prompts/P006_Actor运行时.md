@@ -97,7 +97,7 @@ impl ActorId {
 
 /// Actor 的私有状态
 /// 每个 Actor 拥有独立的状态对象
-pub trait ActorState: Any + Send + 'static {
+pub protocol ActorState: Any + Send + 'static {
     /// Actor 初始化
     fn init(&mut self) -> Result<(), ActorError>;
     
@@ -864,7 +864,7 @@ crates/rlyeh-actor-runtime/
 ├── src/
 │   ├── lib.rs           ← 入口
 │   ├── runtime.rs       ← Runtime + Builder
-│   ├── actor.rs         ← ActorState trait + Context
+│   ├── actor.rs         ← ActorState protocol + Context
 │   ├── mailbox.rs       ← 无锁邮箱
 │   ├── scheduler.rs     ← 工作窃取调度
 │   ├── supervisor.rs    ← Supervisor + 重启策略

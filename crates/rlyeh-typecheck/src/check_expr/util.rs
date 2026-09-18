@@ -28,6 +28,7 @@ pub(super) fn ty_to_zero_ast(ctx: &TypeContext, ty: &Type, span: Span) -> Result
                     type_name: vec![n.clone()],
                     type_args: Vec::new(),
                     fields,
+                    base: None,
                 },
                 span,
             ))

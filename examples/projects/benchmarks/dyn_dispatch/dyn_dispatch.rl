@@ -2,7 +2,7 @@
 // 测: 虚方法分派开销（Rlyeh 胖指针 + vtable 间接调用）
 // 逻辑: 循环交替调用 Tri/Quad 的 dyn 对象方法 sides()（读字段）。
 //       输出 = 10,000,000 * (3 + 4) = 70,000,000
-trait Shape {
+protocol Shape {
     fn sides(&self) -> i64;
 }
 
@@ -10,7 +10,7 @@ struct Tri {
     n: i64,
 }
 
-impl Shape for Tri {
+impl Tri: Shape {
     fn sides(&self) -> i64 {
         self.n + 3
     }
@@ -20,7 +20,7 @@ struct Quad {
     n: i64,
 }
 
-impl Shape for Quad {
+impl Quad: Shape {
     fn sides(&self) -> i64 {
         self.n + 4
     }

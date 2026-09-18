@@ -419,7 +419,11 @@ pub(crate) fn coerce_to_dyn(
             span,
         });
     }
-    let n = trait_def.methods.len();
+    // PC-10：vtable 方法槽按「supertrait 方法在前」线性化填充——保证 `protocol A: B` 时
+    // `dyn A` 的 vtable **前缀**与 `dyn B` 一致，从而使 `dyn A → dyn B` 上转零开销复用。
+    let trait_full = resolve_trait_def_name(ctx, trait_name);
+    let methods = linearize_trait_methods(ctx, &trait_full);
+    let n = methods.len();
     let mut stmts = Vec::new();
     // 1) vtable 数组：3 元槽（drop/size/align，MVP = 0）+ N 方法槽
     let vt = ctx.fresh_temp();
@@ -440,19 +444,37 @@ pub(crate) fn coerce_to_dyn(
             ty: FieldScalar::Int,
         }, Span::dummy())), Span::dummy()));
     }
-    // 2) 方法表：按 trait 方法声明顺序填充具体 impl 方法函数指针
+    // 2) 方法表：按线性化顺序填充；方法可声明于父协议，此时从其父协议 impl 取实现。
     let subst = HashMap::new();
-    for (i, m) in trait_def.methods.iter().enumerate() {
-        let impl_method = impl_def.methods.iter().find(|im| im.sig.name == m.name).ok_or_else(|| {
-            TypeError::Unsupported {
+    for (i, (owner, m)) in methods.iter().enumerate() {
+        let owner_impl = if *owner == trait_full {
+            impl_def.clone()
+        } else {
+            ctx.impl_defs
+                .iter()
+                .find(|d| {
+                    d.trait_name.as_deref() == Some(owner.as_str()) && d.self_type == *concrete
+                })
+                .cloned()
+                .ok_or_else(|| TypeError::Unsupported {
+                    what: format!(
+                        "类型 `{concrete}` 未实现父协议 `{owner}`，无法构造 `dyn {trait_name}` 的 vtable"
+                    ),
+                    span,
+                })?
+        };
+        let impl_method = owner_impl
+            .methods
+            .iter()
+            .find(|im| im.sig.name == m.name)
+            .ok_or_else(|| TypeError::Unsupported {
                 what: format!(
-                    "`{trait_name}` 的 impl for `{concrete}` 缺少方法 `{}`",
+                    "`{owner}` 的 impl for `{concrete}` 缺少方法 `{}`",
                     m.name
                 ),
                 span,
-            }
-        })?;
-        let fn_name = instantiate_impl_method(ctx, &impl_def, impl_method, &subst, span)?;
+            })?;
+        let fn_name = instantiate_impl_method(ctx, &owner_impl, impl_method, &subst, span)?;
         let m_var = ctx.fresh_temp();
         stmts.push(HirStmt::new(HirStmtKind::Let{
             name: m_var.clone(),

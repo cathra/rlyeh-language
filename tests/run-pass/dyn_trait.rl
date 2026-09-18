@@ -1,5 +1,5 @@
 // H4 `dyn Trait` trait 对象（MVP）：数据指针 + vtable 胖指针
-trait Shape {
+protocol Shape {
     fn area(&self) -> f64;
     fn sides(&self) -> i64;
 }
@@ -7,7 +7,7 @@ trait Shape {
 struct Circle {
     radius: f64,
 }
-impl Shape for Circle {
+impl Circle: Shape {
     fn area(&self) -> f64 {
         3.14 * self.radius * self.radius
     }
@@ -20,7 +20,7 @@ struct Rect {
     w: f64,
     h: f64,
 }
-impl Shape for Rect {
+impl Rect: Shape {
     fn area(&self) -> f64 {
         self.w * self.h
     }

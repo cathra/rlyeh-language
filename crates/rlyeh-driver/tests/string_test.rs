@@ -1,4 +1,4 @@
-//! `String` 标准库集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `String` 标准库集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`String::from` / `new` / `with_capacity` 构造、`println(String)`、
 //! `len` / `is_empty`、按字节 get / push_byte + 翻倍扩容、`s[i]` 索引。
@@ -18,7 +18,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

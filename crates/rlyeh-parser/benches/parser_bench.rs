@@ -45,17 +45,17 @@ actor Counter {
 }
 "#;
 
-/// 大型程序（region + transfer + 结构体 + trait + impl）
+/// 大型程序（region + transfer + 结构体 + protocol + impl）
 const LARGE_SRC: &str = r#"
 struct Point { x: f64, y: f64 }
 struct BigStruct { data: [u8; 4096] }
 
-trait Shape {
+protocol Shape {
     fn area(&self) -> f64;
     fn name() -> String;
 }
 
-impl Shape for Point {
+impl Point: Shape {
     fn area(&self) -> f64 { 0.0 }
     fn name() -> String { "point" }
 }

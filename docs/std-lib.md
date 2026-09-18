@@ -4,7 +4,7 @@
 > 最后更新：2026-08-31
 
 > **⚠️ 实现状态**：本文为**目标标准库规范**（含规划中 API）。MVP 已实现部分位于
-> `crates/rlyeh-std/rlyeh/`（**目录化模块**：`core.rl` 根模块 + `time/`、`sync/`、`io/`、
+> `crates/rlyeh-std/rlyeh/`（**目录化模块**：`module.rl` 对外界面 + `core/` + `time/`、`sync/`、`io/`、
 > `net/`、`fs/` 子目录（`<name>/module.rl` + 类型独立文件），driver 加载时经模块展开 +
 > import 重新导出合入，用户侧裸名即用）。
 > 根模块保留 String / Vec / HashMap / Option / Result 等编译器特判类型；未实现章节属规划（详见下方总览）。
@@ -17,11 +17,11 @@
 | 章节 | 状态 | MVP 实际形态 | 规划阶段 |
 |------|------|--------------|---------|
 | §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 | — |
-| §2.3 Iterator | ✅ 已实现（MVP 退化 + V3 默认方法） | `trait Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core.rl 顶部；关联类型 `type Item` 规划——parser/typecheck 无 trait `type` 成员载体，归属 **U2/V3**）；自定义迭代器 `impl Iterator for T` 经 for 接入（J2）；**V3 默认方法 ✅ 2026-08-26**——`count`/`sum`/`any`/`all`（trait 默认实现 + typecheck trait 默认方法回退机制）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar（迁移为 trait 默认方法仍 **V3** 规划，需 `Iterator::Item` + 包装迭代器） | U2/V3 |
+| §2.3 Iterator | ✅ 已实现（MVP 退化 + V3 默认方法） | `protocol Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core/module.rl 顶部；关联类型 `type Item` 规划——parser/typecheck 无 protocol `type` 成员载体，归属 **U2/V3**）；自定义迭代器 `impl T: Iterator` 经 for 接入（J2）；**V3 默认方法 ✅ 2026-08-26**——`count`/`sum`/`any`/`all`（protocol 默认实现 + typecheck protocol 默认方法回退机制）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar（迁移为 protocol 默认方法仍 **V3** 规划，需 `Iterator::Item` + 包装迭代器） | U2/V3 |
 | §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`/`iter_mut`（**V1 瘦指针迭代器**，2026-08：`Iter<T>`/`IterMut<T>` 裸指针 + 剩余长度，`next()` 值拷贝 + `IterMut::write` 真实写回）/`get_mut`（**V4 引用语义**，2026-08-25：`Option<&mut T>` 命中原槽可变引用 + 越界 None）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（**V4 引用语义**，`Option<&mut V>` 写回真实槽）；详见 §3.1/§3.2/§3.3 差异注记（借用迭代器（引用元素）**V1**、码点迭代器 **V2**、`get_mut` 引用语义 **V4**） | V1/V2/V4 |
 | §4.1 File | ✅ 已实现 | `File::open/create/close` + `read_to_string/read/write/write_all/flush/metadata/size`（N1 ✅）+ 自由函数 `read_file/write_file/append_file`（`Result<T, IoError>`）；目标 API `open_with`/`read(&mut [u8])`/`write(&[u8])`/完整 `Metadata` 归属 **Y1** | Y1 |
 | §4.2 标准输入输出 | ✅ 已实现 | `stdout`/`stderr` 模块（`write`/`writeln`/`flush`）+ stdin `read_to_string`/`lines` + `eprintln!`/`eprint!` 宏（N4 ✅） | — |
-| §4.3 路径与文件系统 | ✅ 已实现 | `Path::new/join/parent/file_name/extension/exists/is_file/is_dir`（N3a ✅，`fs.rl`）+ `fs::read_to_string/write/copy/remove_file/remove_dir_all/rename/create_dir/create_dir_all/read_dir`（N3 ✅） | — |
+| §4.3 路径与文件系统 | ✅ 已实现 | `Path::new/join/parent/file_name/path_extension/exists/is_file/is_dir`（N3a ✅，`fs.rl`）+ `fs::read_to_string/write/copy/remove_file/remove_dir_all/rename/create_dir/create_dir_all/read_dir`（N3 ✅） | — |
 | §4.4 NIO | ✅ 已实现 | `Interest`/`Event`/`Poller` + `set_nonblocking`/`is_nonblocking`（R1a/R1b/R2 ✅，`io/nio.rl` 基于 poll(2) 封装 + fcntl O_NONBLOCK，`Result<T, IoError>`）；epoll/kqueue 高性能后端归属 **Y2** | Y2 |
 | §4.5 sendfile | ✅ 已实现 | `sendfile` 自由函数 + `File::sendfile_to`（R3 ✅，driver 注入平台内建 `__rlyeh_sendfile`，macOS sendfile(2) 6 参签名零拷贝）；Windows `TransmitFile` 分支归属 **Y3** | Y3 |
 | §5.1 TCP | ✅ 已实现 | `SocketAddr`/`TcpListener`/`TcpStream` + `read/write/read_line/shutdown`（O1/O2 ✅，libc extern FFI，`Result<T, IoError>`）；旧自由函数保留兼容 | — |
@@ -30,11 +30,11 @@
 | §6.1 Mutex | ✅ 已实现 | `Mutex`/`RwLock` 裸 `lock/unlock/try_*` + `lock_guard()` guard 语义（作用域尾自动解锁注入）；`Condvar::wait/notify_one/notify_all` + `Barrier`（P1–P3 ✅，`sync/module.rl` pthread extern FFI）；泛型化 + `Deref` guard + `RwLock{Read,Write}Guard` 归属 **Y4** | Y4 |
 | §6.2 Channel | ✅ 已实现 | `channel()` → `ChannelPair { tx, rx }` + `Sender::send/try_send` + `Receiver::recv/try_recv/close/iter` + **`recv_async`**（P1 ✅ + S3a ✅，`Rc<Channel>` 共享；MVP 非泛型、元素 `i64`、无界；recv_async MVP 退化阻塞语义，事件驱动归属 **W5**；泛型化/bounded/`Arc` 无锁队列归属 **Y4**） | W5/Y4 |
 | §7 时间 | ✅ 已实现（X1 补齐） | `Duration`/`Instant`（libc `clock()` extern；S2a/S2b ✅ 构造器 `seconds`/`milliseconds` + 墙钟 `Instant::now/elapsed`）；**X1 ✅（2026-08-25）**补齐 `microseconds`/`nanoseconds` 构造器 + `as_secs`/`as_millis`/`as_nanos` 读方法（u64/u128 → i64 实现，溢出未检查）+ `Instant::duration_since` + 新增 `time/system.rl` `SystemTime`（`now`/`unix_epoch`/`duration_since`，driver 注入 `__rlyeh_clock_realtime` CLOCK_REALTIME）；`from_secs_f64` **U6 ✅（2026-08-25）**已实现（`as` 转换 IR 落地，`(secs * 1e6) as i64` fptosi 向零截断） | X1 ✅ / U6 ✅ |
-| §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` trait + `Formatter` 已实现**（Q3 ✅，`fmt/module.rl`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`）；目标签名 `fmt(&self, f) -> Result<(), FmtError>` + Formatter 完整化归属 **X4** | X4 |
-| §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/module.rl`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` trait（`-> Self` 未支持）归属 **U4/X3**、标准 TOML + 解析鲁棒性归属 **X2** | U4/X2/X3 |
+| §8 格式化与打印 | 🔧 部分 | **内置格式化宏已实现**（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；**`Display`/`Debug` protocol + `Formatter` 已实现**（Q3 ✅，`fmt/module.rl`，`{}` 查 `Display::fmt`、`{:?}` 查 `Debug::fmt_debug`）；目标签名 `fmt(&self, f) -> Result<(), FmtError>` + Formatter 完整化归属 **X4** | X4 |
+| §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` protocol + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/module.rl`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` protocol（`-> Self` 未支持）归属 **U4/X3**、标准 TOML + 解析鲁棒性归属 **X2** | U4/X2/X3 |
 | §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、**W1 ✅（2026-08-25）`Future::poll` 泛型化**（关联类型 `type Output` + `cx: &mut Context` 参数，`fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>`，desugar 与手写 impl 均支持）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；**W2 ✅（2026-08-25）await 控制流图展开**（if/while/for/loop/match 内 await + 嵌套 await 提取）；**W4 ✅（2026-08-25）`future::join_all<F: Future>(Vec<F>) -> Vec<F::Output>` + `timeout<F: Future> -> Result<F::Output, TimeoutError>`**（`F::Output` 关联类型投影落地，输出泛型化不再限 i64）；**W3 ✅（2026-08-25）事件驱动 executor 两步完成**——定时器唤醒：`Context` 携带 `deadline` 槽，`block_on`/`timeout` 据此 `thread::sleep` 到唤醒时刻再轮询（非忙等）+ `future::sleep` 定时器 future；fd 事件唤醒：`Context` 携带 `fd`/`interest` 槽，`block_on` `Pending` 且 `fd>0` 时构造 `Poller`（poll(2)）注册并等待就绪（非忙等）+ `future::wait_fd(fd, interest)`**；**W5 ✅（2026-08-25）`recv_async` + `get_async` + `post_async` 真异步——`Channel` socketpair 唤醒 fd + `RecvAsync` future（`try_recv` + `cx.fd` 挂起）；`GetAsync` future（connect/写同步 + 非阻塞读响应 wait_fd 挂起，POST 带 body + Content-Length），`block_on` 泛型化返回 `F::Output`**；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；**W6 🔧（2026-08-26）泛型 async fn ✅（Part 1a）**——`async fn echo<T>(x: T) -> T` 泛型参数/返回透传到 Future 结构体 `__Fut_echo<T>`/impl `impl<T> Future`（`type Output = T`）/构造器 `fn echo<T>(...) -> __Fut_echo<T>`，独立 `block_on` 多类型实例化（i64/f64/String）；泛型 async fn 作为子 future await 暂不支持（清晰报错）；跨 await 泛型变量限具体类型（泛型参数不跨 await）；async 递归 + 跨线程闭包捕获归属 W6 Part 1b/2（依赖 R1 Poller） | W6 |
 | §11 智能指针 | ✅ 已实现 | `Box<T>`（K2，含 **`Box::leak`**（T3a ✅，返回 `*mut T` 裸指针，目标 `&'static mut T` 归属 **U5/Y5**））/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3 全覆盖：`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade`，T3b ✅ 核对）/ `Gc<T>`（K4）✅ 已实现（MVP，见 §11） | U5/Y5 |
-| §12 错误处理 | ✅ 已实现（MVP 退化） | `Option`/`Result` + `expect/unwrap_or`；**`?` 运算符**（K1 ✅）；**`IoError`/`IoErrorKind`**（M1 ✅，`io/error.rl`）+ **`Error` trait**（M2a ✅：`fn message(&self) -> String`）；`From`/`Into` 泛型 trait 声明可解析、`-> Self` 返回未支持（M2b ✅，归属 **U4**）；`Into::into()` 自动转换 + `Error::source` 归属 **Y6** | U4/Y6 |
+| §12 错误处理 | ✅ 已实现（MVP 退化） | `Option`/`Result` + `expect/unwrap_or`；**`?` 运算符**（K1 ✅）；**`IoError`/`IoErrorKind`**（M1 ✅，`io/error.rl`）+ **`Error` protocol**（M2a ✅：`fn message(&self) -> String`）；`From`/`Into` 泛型 protocol 声明可解析、`-> Self` 返回未支持（M2b ✅，归属 **U4**）；`Into::into()` 自动转换 + `Error::source` 归属 **Y6** | U4/Y6 |
 
 > 状态标记：✅ 已实现　🔧 部分实现（注明差异）　📋 规划中（目标 API，MVP 未实现）
 
@@ -55,23 +55,33 @@
 
 ## 1. 标准库架构
 
-> **实现状态（2026-08-23）**：已完成**目录化模块拆分**（对齐下述目标架构的目录 + 类型独立文件
-> 形式；`pub import` 以根模块 `import` 重新导出等价实现）。实际布局为
-> `rlyeh-std/rlyeh/core.rl`（根模块：String / Vec / HashMap / HashSet / BTreeMap / VecDeque /
-> Option / Result + 全部 extern 声明 + `module` 声明 + import 重新导出，指向各类型文件完整
-> 路径）+ 子目录：
-> `time/`（Duration / Instant）、`sync/`（pthread 锁）、`io/`（module.rl 聚合 OpenMode/c_str +
-> error.rl 错误类型 + file.rl 文件对象 + console.rl 控制台）、`net/`（module.rl 聚合 socket
-> 自由函数 + byteorder.rl 字节打包 + addr.rl 地址 + tcp.rl 流与监听 + http.rl HTTP 客户端）、
-> `fs/`（module.rl 聚合 fs 函数 + path.rl 路径对象）。
+> **实现状态（2026-09-18 布局重整）**：已完成**目录化模块拆分**（对齐下述目标架构的目录 + 类型独立
+> 文件形式；`pub import` 以根 `import` 重新导出等价实现）。实际布局：
+>
+> ```
+> rlyeh-std/rlyeh/
+> ├── module.rl                   # 声明与导出：`module time;` … 子模块声明 + 根命名空间 import 重导出
+> ├── core/module.rl              # 根命名空间类型：String / Vec / Option / Result（及前移声明）
+> ├── str_ext/module.rl           # String / Chars / Lines 方法扩展            ┐
+> ├── convert/module.rl           # 数值 / JSON ←→ 字符串转换自由函数         │ 平铺单元
+> ├── collections/module.rl       # HashMap / HashSet / VecDeque / BTreeMap   │（与 core 平级，
+> ├── externs/module.rl           # libc FFI extern 声明                      ┘ 不包 module 壳）
+> ├── future/module.rl            # Poll / Future / block_on / timeout / Context
+> └── time/  sync/  io/  net/  fs/  thread/  serde/  fmt/  process/
+> ```
+>
+> 预置加载顺序（`rlyeh-driver/src/stdlib.rs` 的 `FLAT_UNITS`）：**`core` → 平铺单元（固定顺序）→
+> `module.rl`（声明与导出）**，与原单文件 `core.rl` 的行序一致（符号顺序与全名不变）。
+> 平铺单元必须**平铺**（不经 `module x;` 展开）——编译器对 `String` / `Vec` / `HashMap` 等按
+> **全名**特判，`module` 前缀会使其失配；extern 符号名亦须与 libc 一致。
 > **符号完整路径随拆分变更**：如 `io::IoError` → `io::error::IoError`、`net::SocketAddr` →
 > `net::addr::SocketAddr`、`net::TcpStream` → `net::tcp::TcpStream`、`fs::Path` → `fs::path::Path`；
-> 用户侧裸名 API 不变（core.rl import 重新导出）。下述**目标架构**（规划：按 crate 目录 + 各类型
+> 用户侧裸名 API 不变（module.rl import 重新导出）。下述**目标架构**（规划：按 crate 目录 + 各类型
 > 独立文件 + `pub import` 重导出）中 alloc/collections/fmt/serde/async 等目录为规划内容。
 
 ```
 rlyeh-std/
-├── core/           ← 最核心的类型和 trait（无依赖）
+├── core/           ← 最核心的类型和 protocol（无依赖）
 │   ├── module.rl
 │   ├── option.rl
 │   ├── result.rl
@@ -125,7 +135,7 @@ rlyeh-std/
 │   └── toml.rl
 │
 └── async/         ← 异步运行时
-    ├── future.rl
+    ├── future/module.rl
     ├── executor.rl
     └── task.rl
 ```
@@ -198,7 +208,7 @@ impl<T, E> Result<T, E> {
 ### 2.3 Iterator
 
 ```rlyeh
-trait Iterator {
+protocol Iterator {
     type Item;
     
     fn next(&mut self) -> Option<Self::Item>;
@@ -220,7 +230,7 @@ trait Iterator {
 }
 ```
 
-> **已实现（T2 ✅，MVP 退化，`core.rl` 顶部）**：`trait Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 规划（parser/typecheck 无 trait `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl Iterator for T` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 trait impl 均可）；**V3 默认方法 ✅（2026-08-26）**：`count`/`sum`/`any`/`all`（trait 默认实现，基于 `self.next()` 循环，`any`/`all` 接受 `fn(i64) -> bool` 谓词、兼容函数指针与闭包；impl 未显式实现时回退——typecheck trait 默认方法机制 `MethodSig.default_body` + `find_trait_default_impl` 回退）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（迁移到 trait 默认方法需 `Iterator::Item` 关联类型 + `Map<Self,B>` 包装迭代器，规划中）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
+> **已实现（T2 ✅，MVP 退化，`core/module.rl` 顶部）**：`protocol Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 规划（parser/typecheck 无 protocol `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl T: Iterator` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 protocol impl 均可）；**V3 默认方法 ✅（2026-08-26）**：`count`/`sum`/`any`/`all`（protocol 默认实现，基于 `self.next()` 循环，`any`/`all` 接受 `fn(i64) -> bool` 谓词、兼容函数指针与闭包；impl 未显式实现时回退——typecheck protocol 默认方法机制 `MethodSig.default_body` + `find_trait_default_impl` 回退）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（迁移到 protocol 默认方法需 `Iterator::Item` 关联类型 + `Map<Self,B>` 包装迭代器，规划中）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
 
 ---
 
@@ -274,7 +284,7 @@ impl<T> Vec<T> {
 }
 ```
 
-> **MVP 已实现（T1a ✅，`core.rl`）**：目标 API 中 `push`/`pop`/`get`/`len`/`is_empty`/`sort`/`binary_search`/`contains`/`find`/`first`/`last`/`reverse`/`swap`/`remove`/`slice` 已有 ✅。**T1a 新增**：`iter`/`iter_mut`（**2026-08 V1 瘦指针迭代器**——`Iter<T> { data: *const T, len }` / `IterMut<T> { data: *mut T, cur, len }`：data/cur 为裸指针（V1 真实 GEP 取址 `&self.data[0]` 支持），零分配零拷贝视图；`next() -> Option<T>` 值拷贝读取并推进，`IterMut::write(x)` 经 DerefSet 写回最近 next 读取的元素（真实原槽）；编译器特判构造 `Iter::new`/`IterMut::new`；接入 for（next() 检测）与 J3 适配器；约束——迭代器持有原缓冲裸指针，迭代期间不得结构性修改 Vec（扩容 realloc 悬垂）。目标 `Iter<'_, T>` 借用迭代器（引用元素 `Option<&T>`，需 U1 引用返回 + 生命周期）仍规划）、`get_mut`（**V4 ✅ 引用语义**，2026-08-25：`Option<&mut T>`——越界检查 `i >= 0 && i < self.len` 命中 `Some(&mut self.data[i])` 原槽可变引用（V1 GEP 取址复用），调用方 `match { Some(r) => *r = x }` 写回真实槽；越界/负索引 None；二次 `get_mut` 连续写回 `*r = *r + 5`）、`sort_by`（比较器 `fn(T, T) -> i64` 三态（负/零/正），目标 `Fn(&T, &T) -> Ordering` 规划；选择排序 O(n²) 非稳定）。
+> **MVP 已实现（T1a ✅，标准库预置）**：目标 API 中 `push`/`pop`/`get`/`len`/`is_empty`/`sort`/`binary_search`/`contains`/`find`/`first`/`last`/`reverse`/`swap`/`remove`/`slice` 已有 ✅。**T1a 新增**：`iter`/`iter_mut`（**2026-08 V1 瘦指针迭代器**——`Iter<T> { data: *const T, len }` / `IterMut<T> { data: *mut T, cur, len }`：data/cur 为裸指针（V1 真实 GEP 取址 `&self.data[0]` 支持），零分配零拷贝视图；`next() -> Option<T>` 值拷贝读取并推进，`IterMut::write(x)` 经 DerefSet 写回最近 next 读取的元素（真实原槽）；编译器特判构造 `Iter::new`/`IterMut::new`；接入 for（next() 检测）与 J3 适配器；约束——迭代器持有原缓冲裸指针，迭代期间不得结构性修改 Vec（扩容 realloc 悬垂）。目标 `Iter<'_, T>` 借用迭代器（引用元素 `Option<&T>`，需 U1 引用返回 + 生命周期）仍规划）、`get_mut`（**V4 ✅ 引用语义**，2026-08-25：`Option<&mut T>`——越界检查 `i >= 0 && i < self.len` 命中 `Some(&mut self.data[i])` 原槽可变引用（V1 GEP 取址复用），调用方 `match { Some(r) => *r = x }` 写回真实槽；越界/负索引 None；二次 `get_mut` 连续写回 `*r = *r + 5`）、`sort_by`（比较器 `fn(T, T) -> i64` 三态（负/零/正），目标 `Fn(&T, &T) -> Ordering` 规划；选择排序 O(n²) 非稳定）。
 
 ### 3.2 HashMap<K, V>
 
@@ -296,7 +306,7 @@ impl<K, V> HashMap<K, V> where K: Hash + Eq {
 }
 ```
 
-> **MVP 已实现（T1c ✅，`core.rl`）**：`new`/`with_capacity`/`insert`/`get`/`remove`/`contains_key`/`len`/`is_empty`/`keys`/`values`/`clear`/`cap` 已有 ✅。**T1c 新增**：`iter`（MVP 退化——返回键缓冲，与 `keys` 同构（可配 `values()` 配对），目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（**V4 ✅ 引用语义**，2026-08-25：`Option<&mut V>`——`find` 键缺失 `idx < 0` 返 None，命中 `Some(&mut self.vals[idx])` 原槽可变引用，调用方 `match { Some(r) => *r = x }` 写回真实槽（`get(2)` 读回新值 + `len()` 不变 + 他键不受影响））。
+> **MVP 已实现（T1c ✅，标准库预置）**：`new`/`with_capacity`/`insert`/`get`/`remove`/`contains_key`/`len`/`is_empty`/`keys`/`values`/`clear`/`cap` 已有 ✅。**T1c 新增**：`iter`（MVP 退化——返回键缓冲，与 `keys` 同构（可配 `values()` 配对），目标 `Iter<'_, K, V>` 键值对迭代器规划）、`get_mut`（**V4 ✅ 引用语义**，2026-08-25：`Option<&mut V>`——`find` 键缺失 `idx < 0` 返 None，命中 `Some(&mut self.vals[idx])` 原槽可变引用，调用方 `match { Some(r) => *r = x }` 写回真实槽（`get(2)` 读回新值 + `len()` 不变 + 他键不受影响））。
 >
 > **实现注记（Robin Hood 线性探测）**：内部为 7 槽结构——`keys`/`vals`/`states`（0=空 1=占用 2=墓碑）/`len`/`used`/`cap`（2 的幂，位掩码定位）/`dist`（每槽键探测距离数组）。`insert` 与 `grow` 重插均执行「探测 + 交换」（穷者让位），链上键距离非减；`find` 以 `dist[idx] < d` 提前终止（O(1) 判不存在，无需再哈希）。负载因子 `used/cap >= 7/8` 时翻倍扩容（较 1/2 表小一半、扩容总量减半；早退控住高负载探测）。键限 `i64`（Knuth 乘法散列）/`String`（typecheck 特判展开 djb2 内容哈希）。`grow` 重插必须交换式——纯线性重插会破坏距离不变量导致 `find` 早退假阴性。
 >
@@ -325,21 +335,21 @@ impl String {
 }
 ```
 
-> **MVP 已实现（T1b ✅，`core.rl`）**：`new`/`from`/`push`/`push_str`/`len`/`split`（返回 `Vec<String>`）/`replace`/`trim`/`contains`/`starts_with`/`ends_with`/`find`/`substring`/`to_upper`/`to_lower` 已有 ✅。**T1b 新增**：`chars`（MVP 字节级——逐字节 i64 列表）、`lines`（委托 `split("\n")` 返回 `Vec<String>`）、`to_uppercase`/`to_lowercase`（API 别名，ASCII 语义）。
+> **MVP 已实现（T1b ✅，标准库预置）**：`new`/`from`/`push`/`push_str`/`len`/`split`（返回 `Vec<String>`）/`replace`/`trim`/`contains`/`starts_with`/`ends_with`/`find`/`substring`/`to_upper`/`to_lower` 已有 ✅。**T1b 新增**：`chars`（MVP 字节级——逐字节 i64 列表）、`lines`（委托 `split("\n")` 返回 `Vec<String>`）、`to_uppercase`/`to_lowercase`（API 别名，ASCII 语义）。
 >
 > **V2 ✅（2026-08-26）码点/行迭代器 + `&str` 视图**：新增 `chars_iter() -> Chars`（UTF-8 码点解码——首字节定宽 1-4 + 连续字节校验，`next() -> Option<i64>` 返回**码点数值**（Rlyeh `char` 类型 codegen 仅 ASCII，用 i64 表达全 Unicode 码点）；持有 `&String` 引用 + 游标，`self.s.data[pos]` 按字节索引；实证 `"A中!"` → 65/20013/33）与 `lines_iter() -> Lines`（按 `\n`/`\r\n` 分行并剥 `\r`，`next() -> Option<String>`，尾随换行空行段对齐 split 语义；实证 `"a\nbb\r\nccc"` → 行长 1/2/3）。保留旧 `chars()->Vec<i64>`/`lines()->Vec<String>` 兼容。**V2-B `trim`/`trim_start`/`trim_end` 返回 `&str` 子区间视图**（StrFat `{data+start, len}`，零拷贝，剥离全空白）；**V2-D `&str` 参数/返回值/`String::from(&str)` 深拷贝**（StrFat 双槽 `{data, len}`）已完成。
 
 ### 3.4 HashSet<T>
 
-> **V5 ✅（2026-08-26，`core.rl`）**：开放寻址哈希集合（目标架构 `collections/hashset.rl`）。**布局 5 槽**——槽 0 = items 指针（`[T; 0]`）、槽 1 = states 指针（`[i64; 0]`，0=空 1=占用 2=墓碑）、槽 2 = len、槽 3 = used、槽 4 = cap（2 的幂）。**算法**：线性探测 + 墓碑复用（插入贪心首个墓碑）+ 负载因子 `used/cap >= 7/8` 翻倍扩容重哈希（墓碑丢弃）。键哈希 `hash_value` 内建（i64 直哈希 / String djb2 内容哈希，与 HashMap 同构）。**方法**：`new`/`with_capacity`（构造器编译器特判，cap 经 `next_pow2` 规整）/`insert`（已存在忽略）/`contains`/`remove`（墓碑标记）/`clear`/`elements -> Vec<T>`/`len`/`cap`/`is_empty`/`iter -> HashSetIter<T>`（V5c ✅，零拷贝 `Option<&T>` 引用迭代）。**V5b ✅（2026-09-02）**：集合运算（对标 Python `set`）——返回新集合 `union`/`intersection`/`difference`/`symmetric_difference`；关系判断 `is_subset`/`is_superset`/`is_proper_subset`/`is_proper_superset`/`is_disjoint`；原地变体 `union_with`/`intersect_with`/`difference_with`/`symmetric_with`；**运算符糖 `|`/`&`/`-`/`^` 经运算符重载降级为上述方法（V5d ✅，[`v5d-operator-overload`](../tasks/leaf/v5d-operator-overload.md)）——`A | B`=`union`/`A & B`=`intersection`/`A - B`=`difference`/`A ^ B`=`symmetric_difference`；`<`/`<=`/`>`/`>=`（子集/超集）经比较链 + 运算符重载降级为 `is_proper_subset`/`is_subset`/`is_proper_superset`/`is_superset`（V5d+ ✅，[`v5d1-comparison-overload`](../tasks/leaf/v5d1-comparison-overload.md)）——`A < B`=真子集 `A <= B`=子集 `A > B`=真超集 `A >= B`=超集**。**MVP 限制**：键哈希支持 i64/String（`hash_value` 内建范围）。**集合代数运算已落地（V5b ✅，见 [`v5b-set-operations`](../tasks/leaf/v5b-set-operations.md)）；只读引用迭代器 `iter` 已落地（V5c ✅，见 [`v5c-hashset-iter`](../tasks/leaf/v5c-hashset-iter.md)）；运算符糖已落地（V5d ✅，见 [`v5d-operator-overload`](../tasks/leaf/v5d-operator-overload.md)）**。
+> **V5 ✅（2026-08-26，标准库预置）**：开放寻址哈希集合（目标架构 `collections/hashset.rl`）。**布局 5 槽**——槽 0 = items 指针（`[T; 0]`）、槽 1 = states 指针（`[i64; 0]`，0=空 1=占用 2=墓碑）、槽 2 = len、槽 3 = used、槽 4 = cap（2 的幂）。**算法**：线性探测 + 墓碑复用（插入贪心首个墓碑）+ 负载因子 `used/cap >= 7/8` 翻倍扩容重哈希（墓碑丢弃）。键哈希 `hash_value` 内建（i64 直哈希 / String djb2 内容哈希，与 HashMap 同构）。**方法**：`new`/`with_capacity`（构造器编译器特判，cap 经 `next_pow2` 规整）/`insert`（已存在忽略）/`contains`/`remove`（墓碑标记）/`clear`/`elements -> Vec<T>`/`len`/`cap`/`is_empty`/`iter -> HashSetIter<T>`（V5c ✅，零拷贝 `Option<&T>` 引用迭代）。**V5b ✅（2026-09-02）**：集合运算（对标 Python `set`）——返回新集合 `union`/`intersection`/`difference`/`symmetric_difference`；关系判断 `is_subset`/`is_superset`/`is_proper_subset`/`is_proper_superset`/`is_disjoint`；原地变体 `union_with`/`intersect_with`/`difference_with`/`symmetric_with`；**运算符糖 `|`/`&`/`-`/`^` 经运算符重载降级为上述方法（V5d ✅，[`v5d-operator-overload`](../tasks/leaf/v5d-operator-overload.md)）——`A | B`=`union`/`A & B`=`intersection`/`A - B`=`difference`/`A ^ B`=`symmetric_difference`；`<`/`<=`/`>`/`>=`（子集/超集）经比较链 + 运算符重载降级为 `is_proper_subset`/`is_subset`/`is_proper_superset`/`is_superset`（V5d+ ✅，[`v5d1-comparison-overload`](../tasks/leaf/v5d1-comparison-overload.md)）——`A < B`=真子集 `A <= B`=子集 `A > B`=真超集 `A >= B`=超集**。**MVP 限制**：键哈希支持 i64/String（`hash_value` 内建范围）。**集合代数运算已落地（V5b ✅，见 [`v5b-set-operations`](../tasks/leaf/v5b-set-operations.md)）；只读引用迭代器 `iter` 已落地（V5c ✅，见 [`v5c-hashset-iter`](../tasks/leaf/v5c-hashset-iter.md)）；运算符糖已落地（V5d ✅，见 [`v5d-operator-overload`](../tasks/leaf/v5d-operator-overload.md)）**。
 
 ### 3.5 BTreeMap<K, V>
 
-> **V5 ✅（2026-08-26，`core.rl`）**：有序映射（目标架构 `collections/btree.rl`，MVP 数组实现而非真 B 树）。**布局 3 槽**——槽 0 = keys 指针（`[K; 0]`）、槽 1 = vals 指针（`[V; 0]`）、槽 2 = len。**算法**：键升序存于 keys 数组、vals 平行对齐；`find` 二分查找（命中返回槽位、未命中返回 `-pos-1` 指示插入位）；`insert` 二分定位 + 右移腾位保序（O(n) 移动）、命中覆盖值；`remove` 左移覆盖。**方法**：`new`/`with_capacity`（构造器编译器特判）/`insert`/`get -> Option<V>`/`contains_key`/`remove -> bool`/`first -> Option<K>`/`last -> Option<K>`/`keys -> Vec<K>`（有序）/`values -> Vec<V>`/`len`/`is_empty`。**MVP 限制**：限 `i64` 键（有序 `<` 比较）；`range`/借用迭代器 `iter -> Iter<'_, K, V>` 规划中。
+> **V5 ✅（2026-08-26，标准库预置）**：有序映射（目标架构 `collections/btree.rl`，MVP 数组实现而非真 B 树）。**布局 3 槽**——槽 0 = keys 指针（`[K; 0]`）、槽 1 = vals 指针（`[V; 0]`）、槽 2 = len。**算法**：键升序存于 keys 数组、vals 平行对齐；`find` 二分查找（命中返回槽位、未命中返回 `-pos-1` 指示插入位）；`insert` 二分定位 + 右移腾位保序（O(n) 移动）、命中覆盖值；`remove` 左移覆盖。**方法**：`new`/`with_capacity`（构造器编译器特判）/`insert`/`get -> Option<V>`/`contains_key`/`remove -> bool`/`first -> Option<K>`/`last -> Option<K>`/`keys -> Vec<K>`（有序）/`values -> Vec<V>`/`len`/`is_empty`。**MVP 限制**：限 `i64` 键（有序 `<` 比较）；`range`/借用迭代器 `iter -> Iter<'_, K, V>` 规划中。
 
 ### 3.6 VecDeque<T>
 
-> **V5 ✅（2026-08-26，`core.rl`）**：双端队列（目标架构 `collections/deque.rl`）。**布局 3 槽**——槽 0 = buf（`Vec<T>` 对象指针）、槽 1 = front（头索引）、槽 2 = len。**算法**：逻辑元素为 `buf[front], buf[front+1], ..., buf[front+len-1]` 连续段；`push_back` 写入逻辑尾部物理位置 `buf[front+len]`（已在物理末尾则 `push` 扩展）、`push_front` front>0 前移或整体右移腾出 `buf[0]`、`pop_front` 读 `buf[front]` 并前移头索引。**方法**：`new`/`with_capacity`（构造器编译器特判，底层 Vec 预分配）/`push_back`/`push_front`/`pop_front -> Option<T>`/`pop_back -> Option<T>`/`front -> Option<T>`/`back -> Option<T>`/`len`/`is_empty`。**MVP 限制**：非严格环形（front 偏移后 push_back 不回收头部空间，靠 push 扩展物理末尾）；`iter -> Iter<'_, T>` 借用迭代器规划中。
+> **V5 ✅（2026-08-26，标准库预置）**：双端队列（目标架构 `collections/deque.rl`）。**布局 3 槽**——槽 0 = buf（`Vec<T>` 对象指针）、槽 1 = front（头索引）、槽 2 = len。**算法**：逻辑元素为 `buf[front], buf[front+1], ..., buf[front+len-1]` 连续段；`push_back` 写入逻辑尾部物理位置 `buf[front+len]`（已在物理末尾则 `push` 扩展）、`push_front` front>0 前移或整体右移腾出 `buf[0]`、`pop_front` 读 `buf[front]` 并前移头索引。**方法**：`new`/`with_capacity`（构造器编译器特判，底层 Vec 预分配）/`push_back`/`push_front`/`pop_front -> Option<T>`/`pop_back -> Option<T>`/`front -> Option<T>`/`back -> Option<T>`/`len`/`is_empty`。**MVP 限制**：非严格环形（front 偏移后 push_back 不回收头部空间，靠 push 扩展物理末尾）；`iter -> Iter<'_, T>` 借用迭代器规划中。
 
 ---
 
@@ -446,7 +456,7 @@ impl Path {
     fn join(&self, other: &str) -> Path;
     fn parent(&self) -> Option<Path>;
     fn file_name(&self) -> Option<&str>;
-    fn extension(&self) -> Option<&str>;
+    fn path_extension(&self) -> Option<&str>;
     fn exists(&self) -> bool;
     fn is_file(&self) -> bool;
     fn is_dir(&self) -> bool;
@@ -685,7 +695,7 @@ impl UdpSocket {
 }
 ```
 
-> **Y7（2026-08）**：UDP 面向无连接数据报——`sendto`/`recvfrom` 无状态原语（extern 声明于 core.rl），sockaddr_in 构造/解析复用 `net::byteorder`（O1a 平台双布局）；`bind(0)` 内核分配端口后经 `getsockname` 读实际端口（`local_addr()`）；源地址经 recvfrom 回填 sockaddr 解析（`from`）。MVP 限制：IPv4 only、无 `connect`/`send`/`recv`（固定对端）便捷形态、无多播、无超时选项；非阻塞读写（EWOULDBLOCK 报错）随 NIO 事件驱动版规划。示例：`tests/run-pass/udp_echo.rl` 自回环 + `crates/rlyeh-driver/tests/udp_test.rs`（回显 / 双 socket 互发 / 多包按序）。
+> **Y7（2026-08）**：UDP 面向无连接数据报——`sendto`/`recvfrom` 无状态原语（extern 声明于标准库（externs/module.rl）），sockaddr_in 构造/解析复用 `net::byteorder`（O1a 平台双布局）；`bind(0)` 内核分配端口后经 `getsockname` 读实际端口（`local_addr()`）；源地址经 recvfrom 回填 sockaddr 解析（`from`）。MVP 限制：IPv4 only、无 `connect`/`send`/`recv`（固定对端）便捷形态、无多播、无超时选项；非阻塞读写（EWOULDBLOCK 报错）随 NIO 事件驱动版规划。示例：`tests/run-pass/udp_echo.rl` 自回环 + `crates/rlyeh-driver/tests/udp_test.rs`（回显 / 双 socket 互发 / 多包按序）。
 
 ---
 
@@ -709,11 +719,11 @@ struct MutexGuard<'a, T> {
     mutex: &'a Mutex<T>,
 }
 
-impl<T> Deref for MutexGuard<'_, T> {
+impl<T> MutexGuard<'_, T>: Deref {
     fn deref(&self) -> &T;
 }
 
-impl<T> DerefMut for MutexGuard<'_, T> {
+impl<T> MutexGuard<'_, T>: DerefMut {
     fn deref_mut(&mut self) -> &mut T;
 }
 // Guard 离开作用域时自动解锁
@@ -791,7 +801,7 @@ impl Instant {
 
 ## 8. 格式化与打印
 
-> **MVP 现状**：内置格式化宏已实现（I2 + N4）：`println!`/`print!`/`format!`/`dbg!`（stdout）+ `eprintln!`/`eprint!`（stderr，N4），支持 `{}`/`{:?}` 值占位、`{{`/`}}` 转义、多参数可变长度；desugar 为 String 拼接 + 内建打印。内建函数 `println(expr)` / `print(expr)` / `eprintln(expr)` / `eprint(expr)` 亦可用（0–1 参数，自动按类型输出）。`Display`/`Debug` trait 已实现（Q3 ✅，见 §8 状态表）。
+> **MVP 现状**：内置格式化宏已实现（I2 + N4）：`println!`/`print!`/`format!`/`dbg!`（stdout）+ `eprintln!`/`eprint!`（stderr，N4），支持 `{}`/`{:?}` 值占位、`{{`/`}}` 转义、多参数可变长度；desugar 为 String 拼接 + 内建打印。内建函数 `println(expr)` / `print(expr)` / `eprintln(expr)` / `eprint(expr)` 亦可用（0–1 参数，自动按类型输出）。`Display`/`Debug` protocol 已实现（Q3 ✅，见 §8 状态表）。
 
 ```rlyeh
 println("Hello, Rlyeh!");     // 字符串字面量
@@ -805,12 +815,12 @@ print(x);                    // 不换行
 以下为目标 API（规划）：
 
 ```rlyeh
-/// 格式化 trait（规划）
-trait Display {
+/// 格式化 protocol（规划）
+protocol Display {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError>;
 }
 
-trait Debug {
+protocol Debug {
     fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError>;
 }
 
@@ -824,20 +834,20 @@ dbg!(value);                        // 调试输出（带位置信息）
 let s = format!("{} + {} = {}", a, b, a + b);
 ```
 > **已实现（Q3 ✅，2026-08，§8 格式化引擎接入）**：`println!`/`print!`/`format!`/`dbg!` 宏
-> （I2）+ N4 `eprintln!`/`eprint!`（stderr）已实现；**`Display`/`Debug` trait + `Formatter` 已实现**
-> （std `fmt/module.rl`，`core.rl` `module fmt;` + `import fmt::{Display, Debug, Formatter}`）。
+> （I2）+ N4 `eprintln!`/`eprint!`（stderr）已实现；**`Display`/`Debug` protocol + `Formatter` 已实现**
+> （std `fmt/module.rl`，`module.rl` `module fmt;` + `import fmt::{Display, Debug, Formatter}`）。
 > MVP 签名降级（与上述目标 API 差异）：
-> - `trait Display { fn fmt(&self, f: &mut Formatter) -> String; }`——fmt 直接返回显示字符串
+> - `protocol Display { fn fmt(&self, f: &mut Formatter) -> String; }`——fmt 直接返回显示字符串
 >   （String 拼接模式，与 `serde::Serialize::to_json` 同构；目标 `Result<(), FmtError>` 未支持）。
-> - `trait Debug { fn fmt_debug(&self, f: &mut Formatter) -> String; }`——方法名 `fmt_debug`
->   避免与 `Display::fmt` 同名冲突（MVP 方法调用按名查找 impl，inherent 优先、trait 次之）。
+> - `protocol Debug { fn fmt_debug(&self, f: &mut Formatter) -> String; }`——方法名 `fmt_debug`
+>   避免与 `Display::fmt` 同名冲突（MVP 方法调用按名查找 impl，inherent 优先、protocol 次之）。
 > - `struct Formatter { buf: String }` + `Formatter::new()`——约定占位类型（引擎生成
 >   `{ let mut __fmt_q3 = Formatter::new(); x.fmt(&mut __fmt_q3) }` 传入，fmt 体可不使用；
 >   `&mut` 仅支持变量目标，临时值不可用）。
 > - `{}` 占位符：内建类型（i64/bool/String/&str/字符串字面量）走内建转换；自定义类型查
 >   `Display` impl（存在 `fmt` 方法）走 `x.fmt(&mut Formatter::new())`；无 impl 报 Unsupported
 >   提示 `impl Display`。`{:?}` 同构走 `Debug`（`fmt_debug`）；`dbg!` 用 Debug 格式。
-> 配套修复：模块内 trait/impl 方法签名收集阶段即 `resolve_ast_type`，import 段尚未注册——
+> 配套修复：模块内 protocol/impl 方法签名收集阶段即 `resolve_ast_type`，import 段尚未注册——
 > `resolve_full_name` 加当前模块前缀回退 + `collect_item_decls`/`collect_mod_types_inner`/
 > `check_item` 的 ModDecl 分支设置 `module_prefix`（模块内短名按 `module::Name` 定位）。
 
@@ -845,7 +855,7 @@ let s = format!("{} + {} = {}", a, b, a + b);
 
 ## 9. 序列化框架
 
-> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` trait + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/module.rl` 定义 `trait Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 trait impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` trait（`-> Self` 返回自身类型未支持，见 development-plan.md M2b）与 TOML 模块仍规划。
+> **实现状态（2026-08-25）**：🔧 部分（Q1–Q4 ✅）。`json` 模块的 `stringify` / `parse` 已实现（L2 ✅，编译器内建 desugar，见 §9.1）；**`Serialize` protocol + `#[derive(Serialize, Deserialize)]` 标记 + struct 反序列化已实现（Q1 ✅，2026-08，§9.1b）**：`serde/module.rl` 定义 `protocol Serialize { fn to_json(&self) -> String; }`（自定义类型可手写 impl 并经 `to_json()` 调用，内建类型默认 impl 为声明性——MVP 内建类型方法调用不走 protocol impl 查找，序列化经 `json::stringify` 特判）；`#[derive(...)]` 语法经 lexer `Pound` + parser 特判解析（`AstStructDecl.derive`）；`json::parse::<T>` 支持 struct（字段名匹配、顺序无关、缺失字段零值、未知字段忽略、嵌套 struct）。**泛型 API 入口 + 流式 writer/reader 已实现（Q2 ✅，2026-08，§9.2）**：`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`（typecheck 内建别名；`T: Serialize`/`T: Deserialize` protocol bound 未支持——MVP 无泛型 protocol 约束，签名降级为无 bound turbofish 形式）；`json::to_writer(w, v)` → `w.write_all(json::stringify(v))`（返回 `Result<i64, io::error::IoError>`）、`json::from_reader::<T>(r)` → `json::parse::<T>(r.read_to_string().unwrap())`（读失败经 `unwrap` 死循环 MVP 语义；首参须 `File`/`&File`/`&mut File`，TcpStream 留待流式 read_all 方法化）。`Deserialize` protocol（`-> Self` 返回自身类型未支持，见 development-plan.md M2b）与 TOML 模块仍规划。
 
 ### 9.1 JSON（L2 ✅，编译器内建）
 
@@ -858,27 +868,27 @@ module json {
 
 - `json::stringify(v)`：`i64`→十进制；`bool`→`true`/`false`；`String`/`&str`→带引号 JSON 字符串（`"` `\` 换行 制表 转义为 `\"` `\\` `\n` `\t`）；数组→`[e0,e1,...]`（静态展开）；struct→`{"f1":v1,"f2":v2}`（字段序 = 定义序，嵌套递归）；`Vec<T>`→`[e0,e1,...]`（while 循环 push_str）；`HashMap<K,V>`→`{"k":v,...}`（L2f：i64/String 键 + 值递归，键序确定性——按容量扫描 states 顺序）。
 - `json::parse::<T>(s)`：turbofish 泛型实参指定目标类型；`i64`→`string_to_int`、`bool`→字节比较、`String`→`json_unescape`（剥离首尾引号 + 还原转义）；`HashMap<K,V>`（L2g：`substring(1, len-1)` 剥离 `{}` → `split(",")` 分段 → `find(":")` 分键值 → 键经 `json_unescape`（i64 键再 `string_to_int`）+ 值递归标量解析 → `HashMap::new()`/`insert` 构建，`let __m: HashMap<K,V>` 注解定型；空 `{}` → 空 map）。**MVP 语义：直接返回 `T`**（非法输入给默认值：`0` / `false` / 空串 / 空 map），非 Result 包装。
-- 转义函数 `json_escape` / `json_unescape` 实现于 std `core.rl`。
+- 转义函数 `json_escape` / `json_unescape` 实现于 std `convert/module.rl`。
 - MVP 限制：`map![...]`/`vec![...]` 绑定后 K/V（元素）为 `Infer`，须 `let m: HashMap<i64, i64>`（`let v: Vec<i64>`）注解定型（与 `for x in v` 约束一致）；HashMap parse 键/值含逗号或冒号时 `split(",")`/`find(":")` 分段不可靠、嵌套 `HashMap` 值报 Unsupported（值限标量）；`HashMap<i64,Vec<T>>` 值序列化可用但 parse 不支持；struct parse 的嵌套 struct/Vec/HashMap 字段值含逗号时 `split(",")` 分段不可靠（与 HashMap 分支一致）、泛型 struct 不支持、空 struct 报 Unsupported（详见 §9.1b）。
 
-### 9.1b Serialize trait / derive 标记 / struct 反序列化（Q1 ✅，2026-08）
+### 9.1b Serialize protocol / derive 标记 / struct 反序列化（Q1 ✅，2026-08）
 
 ```rlyeh
-// Q1a：Serialize trait 定义（std serde/module.rl；core.rl 全局 import serde::Serialize）
-trait Serialize {
+// Q1a：Serialize protocol 定义（std serde/module.rl；module.rl 全局 import serde::Serialize）
+protocol Serialize {
     fn to_json(&self) -> String;
 }
 // 自定义类型手写 impl（impl 方法查找可用）
 struct Wrapped { v: i64 }
-impl Serialize for Wrapped {
+impl Wrapped: Serialize {
     fn to_json(&self) -> String { format!("{{\"w\":{}}}", self.v) }
 }
 let w = Wrapped { v: 7 };
 println(w.to_json());            // {"w":7}
 // 内建类型（i64/bool/String）默认 impl 为声明性文档：MVP 内建类型方法调用
-// 不走 trait impl 查找（`x.to_json()` 报 `i64::to_json not found`），序列化统一
+// 不走 protocol impl 查找（`x.to_json()` 报 `i64::to_json not found`），序列化统一
 // 走 `json::stringify` 编译器特判。
-// `Deserialize` trait 的 `-> Self` 返回自身类型未支持（typecheck undefined type
+// `Deserialize` protocol 的 `-> Self` 返回自身类型未支持（typecheck undefined type
 // `Self`），解析统一经 `json::parse::<T>` 内建（Q1a 预案退化）。
 
 // Q1b：#[derive(Serialize, Deserialize)] 标记（lexer Pound + parser 特判，AST 存储）
@@ -898,11 +908,11 @@ let q3 = json::parse::<Point>("{}");     // 缺失字段保持零值（0, 0）
 
 ```rlyeh
 // 目标 API（规划）
-trait Serialize {
+protocol Serialize {
     fn serialize(&self, serializer: &mut Serializer) -> Result<(), SerError>;
 }
 
-trait Deserialize {
+protocol Deserialize {
     fn deserialize(deserializer: &mut Deserializer) -> Result<Self, DeError>;
 }
 
@@ -917,7 +927,7 @@ module json {
 //   json::from_str::<T>(s) -> T               // ≡ json::parse::<T>(s)，无 bound、turbofish 指定
 //   json::to_writer(w: &mut File, v) -> Result<i64, io::error::IoError>  // w.write_all(json::stringify(v))
 //   json::from_reader::<T>(r: &mut File) -> T // json::parse::<T>(r.read_to_string().unwrap())
-//   MVP 注：`T: Serialize`/`T: Deserialize` bound 未支持（无泛型 trait 约束）；流式目标
+//   MVP 注：`T: Serialize`/`T: Deserialize` bound 未支持（无泛型 protocol 约束）；流式目标
 //   限 `File`（TcpStream 留待流式 read_all 方法化）；无 `JsonError`（错误经 IoError/死循环）。
 //   std 文件 io/file.rl + typecheck 内建（check_json_to_writer / check_json_from_reader）。
 
@@ -929,7 +939,7 @@ module toml {
 // 已实现（Q4 ✅，2026-08，§9.4 轻量 MVP，typecheck 内建接线，无 std 模块文件）：
 //   toml::to_string(v)  -> String   // ≡ toml::stringify(v)，无 bound、类型由实参推断
 //   toml::from_str::<T>(s) -> T     // ≡ toml::parse::<T>(s)，无 bound、turbofish 指定
-//   MVP 注：`T: Serialize`/`T: Deserialize` bound 未支持（无泛型 trait 约束）；
+//   MVP 注：`T: Serialize`/`T: Deserialize` bound 未支持（无泛型 protocol 约束）；
 //   无 `TomlError`（非 Result 包装，非法输入给默认值）；紧凑输出（TOML 语法合法）——
 //   标准 TOML 的 `key = value` 空格形式、`[section]` 行式子表、注释、多行字符串规划中。
 //   详见 §9.4。
@@ -947,7 +957,7 @@ let s = toml::to_string(c);
 // （顶层结构体 → 多行 `f1=v1\nf2=v2`；嵌套结构体字段 → 内联表 `{x=7,y=9}`；
 //   数组/Vec → `[e1,e2]`；HashMap → `{"k"=v,...}`（键带引号，限 i64/String）；
 //   标量：i64 → 十进制；bool → `true`/`false`；String → `"` + json_escape + `"`，
-//   TOML 基本转义与 JSON 一致，复用 core.rl `json_escape`/`json_unescape`）
+//   TOML 基本转义与 JSON 一致，复用 convert/module.rl `json_escape`/`json_unescape`）
 let c2 = toml::from_str::<Config>(s);          // round-trip（字段序无关、缺失零值、未知忽略）
 let v = toml::from_str::<Vec<i64>>("[1,2,3]"); // 数组剥 [ ] + split(",")，元素限标量
 let m = toml::from_str::<HashMap<String, i64>>("{\"a\"=1,\"b\"=2}");  // 内联表剥 { } + find("=")
@@ -969,7 +979,7 @@ let m = toml::from_str::<HashMap<String, i64>>("{\"a\"=1,\"b\"=2}");  // 内联�
 
 ## 10. 异步运行时
 
-> **实现状态（2026-08-25）**：🔧 部分。普通函数 `async fn` / `.await` 已支持（**S1c ✅，2026-08，§10.3 状态机 desugar**：`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，支持挂起 `Poll::Pending` 与恢复，替代 L1 同步语义；**W2 ✅ 控制流图展开——if/while/for/loop/match 子块内 await + 嵌套 await 提取**）；actor `async` 方法 + `.await` / `send` 为独立机制（§9，ask 同步往返）。**线程支持（S0 ✅，2026-08，§10.1）**：`Thread::start`/`join`/`current` 已实现。**睡眠（S2a ✅，2026-08，§10.1）**：`thread::sleep(Duration)`（usleep 绑定）。**并发收尾（S2b ✅，2026-08，§10.1）**：`join_all`（线程版）+ **墙钟**（clock_gettime MONOTONIC，`Instant::now/elapsed` 睡眠期间推进）。**异步基础（S1a/S1b/S2c ✅，2026-08，§10.2）+ W1 泛型化（2026-08-25）**：`Poll` 枚举 + `Future` trait + `block_on` 手动轮询 + `timeout` 超时轮询已实现；**W1 ✅ `Future::poll` 签名对齐规划 API——关联类型 `type Output`（U2）+ `cx: &mut Context` 参数**，`async fn` desugar 与手写 `impl Future` 均经 `&mut *cx` 透传（MVP 限制：`Context` 为占位类型无唤醒方法、`Pin` 语义退化 `&mut self`）。**W4 ✅（2026-08-25）**：泛型约束 `F: Future` 已可用（`check_generic_bounds` 裸名解析修复）；**`F::Output` 关联类型投影落地**（`Type::AssocProjection` + `resolve_ast_type` 识别 `F::Output` + 实例化求值查 trait impl 关联类型）；`future::join_all<F: Future>(Vec<F>) -> Vec<F::Output>`（并发轮询直至全部 Ready，结果经 `HashMap<i64, F::Output>` 按序收集，支持 String/bool 等任意 Output）+ `timeout<F: Future>(d, &mut F) -> Result<F::Output, TimeoutError>`（替代 `Err(-1)` 退化）+ `TimeoutError` 类型（§12）。**W3 ✅ 两步（2026-08-25）事件驱动 executor**：**① 定时器唤醒**——`Context` 升级携带 `deadline` 槽（future `Pending` 时经 `&mut *cx` 写入下次唤醒截止，0 = 未设置退回忙等）；`block_on`/`timeout` 据此 `thread::sleep` 到唤醒时刻（timeout 取「future 唤醒 / 超时截止」更早者）再轮询，进程真正休眠非忙等；`future::sleep(d)` 定时器 future（`Sleep`，`let s: future::Sleep = future::sleep(d); s.await`，直接 `future::sleep(...).await` 调用 await 规划中）。**② fd 事件唤醒**——`Context` 升级携带 `fd`/`interest` 槽（future `Pending` 时可请求监听某 fd 读/写就绪，掩码 POLLIN=1/POLLOUT=4/读写=5）；`block_on` 在 `Pending` 且 `fd > 0` 时构造 `Poller`（R1 poll(2)）注册并 `poll` 等待就绪（timeout = `deadline` 剩余 ms 或 -1 无限），进程休眠等 fd 事件；`future::wait_fd(fd, interest)`（`WaitFd` future，poll(0) 检查就绪，未就绪写 `cx.fd` 并 Pending）；`timeout` 保持定时器语义（忽略 fd 请求，向后兼容）。`sync` 并发原语（`Mutex`/`RwLock`/`Condvar`/`Barrier` P1–P3 ✅，Channel<T> 泛型化归属 Y4）/ W5 真异步 `recv_async`/`get_async`/`post_async`（2026-08-25 ✅，见 §10 状态表）均已落地。
+> **实现状态（2026-08-25）**：🔧 部分。普通函数 `async fn` / `.await` 已支持（**S1c ✅，2026-08，§10.3 状态机 desugar**：`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，支持挂起 `Poll::Pending` 与恢复，替代 L1 同步语义；**W2 ✅ 控制流图展开——if/while/for/loop/match 子块内 await + 嵌套 await 提取**）；actor `async` 方法 + `.await` / `send` 为独立机制（§9，ask 同步往返）。**线程支持（S0 ✅，2026-08，§10.1）**：`Thread::start`/`join`/`current` 已实现。**睡眠（S2a ✅，2026-08，§10.1）**：`thread::sleep(Duration)`（usleep 绑定）。**并发收尾（S2b ✅，2026-08，§10.1）**：`join_all`（线程版）+ **墙钟**（clock_gettime MONOTONIC，`Instant::now/elapsed` 睡眠期间推进）。**异步基础（S1a/S1b/S2c ✅，2026-08，§10.2）+ W1 泛型化（2026-08-25）**：`Poll` 枚举 + `Future` protocol + `block_on` 手动轮询 + `timeout` 超时轮询已实现；**W1 ✅ `Future::poll` 签名对齐规划 API——关联类型 `type Output`（U2）+ `cx: &mut Context` 参数**，`async fn` desugar 与手写 `impl Future` 均经 `&mut *cx` 透传（MVP 限制：`Context` 为占位类型无唤醒方法、`Pin` 语义退化 `&mut self`）。**W4 ✅（2026-08-25）**：泛型约束 `F: Future` 已可用（`check_generic_bounds` 裸名解析修复）；**`F::Output` 关联类型投影落地**（`Type::AssocProjection` + `resolve_ast_type` 识别 `F::Output` + 实例化求值查 protocol impl 关联类型）；`future::join_all<F: Future>(Vec<F>) -> Vec<F::Output>`（并发轮询直至全部 Ready，结果经 `HashMap<i64, F::Output>` 按序收集，支持 String/bool 等任意 Output）+ `timeout<F: Future>(d, &mut F) -> Result<F::Output, TimeoutError>`（替代 `Err(-1)` 退化）+ `TimeoutError` 类型（§12）。**W3 ✅ 两步（2026-08-25）事件驱动 executor**：**① 定时器唤醒**——`Context` 升级携带 `deadline` 槽（future `Pending` 时经 `&mut *cx` 写入下次唤醒截止，0 = 未设置退回忙等）；`block_on`/`timeout` 据此 `thread::sleep` 到唤醒时刻（timeout 取「future 唤醒 / 超时截止」更早者）再轮询，进程真正休眠非忙等；`future::sleep(d)` 定时器 future（`Sleep`，`let s: future::Sleep = future::sleep(d); s.await`，直接 `future::sleep(...).await` 调用 await 规划中）。**② fd 事件唤醒**——`Context` 升级携带 `fd`/`interest` 槽（future `Pending` 时可请求监听某 fd 读/写就绪，掩码 POLLIN=1/POLLOUT=4/读写=5）；`block_on` 在 `Pending` 且 `fd > 0` 时构造 `Poller`（R1 poll(2)）注册并 `poll` 等待就绪（timeout = `deadline` 剩余 ms 或 -1 无限），进程休眠等 fd 事件；`future::wait_fd(fd, interest)`（`WaitFd` future，poll(0) 检查就绪，未就绪写 `cx.fd` 并 Pending）；`timeout` 保持定时器语义（忽略 fd 请求，向后兼容）。`sync` 并发原语（`Mutex`/`RwLock`/`Condvar`/`Barrier` P1–P3 ✅，Channel<T> 泛型化归属 Y4）/ W5 真异步 `recv_async`/`get_async`/`post_async`（2026-08-25 ✅，见 §10 状态表）均已落地。
 
 ```rlyeh
 // S1a/S1b ✅（2026-08，§10.2）+ W1 ✅（2026-08-25）：关联类型 `type Output`（U2）与
@@ -977,7 +987,7 @@ let m = toml::from_str::<HashMap<String, i64>>("{\"a\"=1,\"b\"=2}");  // 内联�
 // （`Pin<&mut Self>` 语义 MVP 退化 `&mut self`，`Context` 无唤醒方法）；
 // `block_on` 为泛型函数 `block_on<T>(f: &mut T)`（实例化时按具体类型解析 poll，
 // 无 `F: Future` 约束宽松语义）。
-trait Future {
+protocol Future {
     type Output;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>;
 }
@@ -1086,7 +1096,7 @@ impl Builder {
 
 ### 10.2 Future / Poll / block_on / timeout（S1a/S1b/S2c，2026-08 ✅；W1 泛型化 2026-08-25 ✅）
 
-异步运行时基础件（`crates/rlyeh-std/rlyeh/future.rl`，core.rl 重导出 `Future`/`Poll`/`block_on`/`timeout`/`Context`）。
+异步运行时基础件（`crates/rlyeh-std/rlyeh/future/module.rl`，module.rl 重导出 `Future`/`Poll`/`block_on`/`timeout`/`Context`）。
 
 ```rlyeh
 // 轮询结果：Ready(值) / Pending（泛型枚举，与 Option 同构）
@@ -1098,10 +1108,10 @@ enum Poll<T> { Ready(T), Pending }
 // 忙等（向后兼容）；`_unit` 哨兵字段（空 struct 不支持）。
 struct Context { _unit: i64, deadline: i64, fd: i64, interest: i64 }
 
-// Future trait：poll 推进状态机。W1 ✅（2026-08-25）签名对齐规划 API——
+// Future protocol：poll 推进状态机。W1 ✅（2026-08-25）签名对齐规划 API——
 // 关联类型 `type Output`（U2）声明输出类型 + `cx: &mut Context` 参数；
 // `Pin<&mut Self>` 语义 MVP 退化 `&mut self`（聚合指针传递，与 M1b 的 nio 一致）。
-trait Future {
+protocol Future {
     type Output;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>;
 }
@@ -1124,7 +1134,7 @@ fn timeout<T>(duration: Duration, f: &mut T) -> Result<i64, i64>;
 
 约束：
 - W1 已消除 Output 固定限制（关联类型 `type Output` ✅）；`Pin<&mut Self>` 语义与 `Context` 唤醒器规划中；`block_on`/`timeout` 无 `F: Future` 约束检查（宽松）；dyn 不可作函数参数（H4 MVP 限制），Future 对象须经 `&mut` 传泛型。
-- 用户侧：`impl Future for MyFut { type Output = i64; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> { ... } }` + `block_on(&mut fut)`；三轮轮询示例见 `tests/run-pass/block_on.rl`（输出 `42` / `3`）；`timeout` 成功/超时示例见 `tests/run-pass/timeout.rl`（输出 `3` / `-1`）。
+- 用户侧：`impl MyFut: Future { type Output = i64; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> { ... } }` + `block_on(&mut fut)`；三轮轮询示例见 `tests/run-pass/block_on.rl`（输出 `42` / `3`）；`timeout` 成功/超时示例见 `tests/run-pass/timeout.rl`（输出 `3` / `-1`）。
 
 ### 10.3 async fn 状态机（S1c，2026-08 ✅）
 
@@ -1133,7 +1143,7 @@ fn timeout<T>(duration: Duration, f: &mut T) -> Result<i64, i64>;
 ```rlyeh
 // 顶层 async fn f 被 desugar 为三个产物（以 `async fn f(x: i64) -> i64` 为例）：
 // 1. struct __Fut_f { state: i64, x: i64, __fut_0: __Fut_g, ... }  // 参数 + 提升字段 + 子 future 槽
-// 2. impl Future for __Fut_f { fn poll(&mut self) -> Poll<i64> { ... } }  // 状态机
+// 2. impl __Fut_f: Future { fn poll(&mut self) -> Poll<i64> { ... } }  // 状态机
 // 3. fn f(x: i64) -> __Fut_f { __Fut_f { state: 0, ... } }  // 构造器（zeroing 子 future 槽）
 
 async fn g(x: i64) -> i64 { x + 1 }
@@ -1228,20 +1238,20 @@ struct Arc<T> {
 ## 12. 错误处理
 
 ```rlyeh
-/// 标准错误 trait
-trait Error {
+/// 标准错误 protocol
+protocol Error {
     fn description(&self) -> &str;
     fn cause(&self) -> Option<&dyn Error>;
     fn source(&self) -> Option<&dyn Error>;
 }
 
 /// 从其他错误类型转换
-trait From<T> {
+protocol From<T> {
     fn from(value: T) -> Self;
 }
 
 /// 自动错误转换（? 运算符使用）
-trait Into<T> {
+protocol Into<T> {
     fn into(self) -> T;
 }
 
@@ -1270,10 +1280,10 @@ enum IoErrorKind {
 
 ### A.1 标准库核心模块（对应 P009，2026-08-20 ✅）
 
-- **实现形态**：`crates/rlyeh-std/rlyeh/` 目录化模块——`core.rl` 根模块（Option/Result/String/Vec/
+- **实现形态**：`crates/rlyeh-std/rlyeh/` 目录化模块——`module.rl` 对外界面 + `core/`（Option/Result/String/Vec/
   HashMap 编译器特判类型）+ `time/`、`sync/`、`io/`、`net/`、`fs/` 子目录（`<name>/module.rl` +
   类型独立文件）；driver 加载时经模块展开 + import 重新导出合入，用户侧裸名即用。
-- **纯 Rlyeh 实现**：Option/Result 为 `core.rl` 中泛型 enum（`is_some`/`is_none`/`unwrap`/
+- **纯 Rlyeh 实现**：Option/Result 为 `core/module.rl` 中泛型 enum（`is_some`/`is_none`/`unwrap`/
   `unwrap_or`/`expect` 等）；Vec/HashMap/String 为编译器特判类型 + 目标 API 补齐（见正文 §3 差异注记）。
 - **性能验收指标**（P009 基准，全部通过）：
 

@@ -7,7 +7,9 @@ use rlyeh_typecheck::{typecheck, TypeError};
 /// 对源码执行类型检查。
 fn check(source: &str) -> Result<rlyeh_hir::HirProgram, TypeError> {
     let program = parse(source).expect("parse should succeed");
-    typecheck(&program)
+    // B-1：`typecheck` 现返回 `(HirProgram, Vec<Warning>)`（W001 冗余解引用 lint 等）；
+    // 本集成测试只关心 HIR，丢弃警告。
+    typecheck(&program).map(|(hir, _warnings)| hir)
 }
 
 /// 提取第一个含函数体的函数体（跳过注入的 extern 内建声明）。

@@ -1,6 +1,6 @@
 // W4 补全：join_all 返回 Vec<F::Output>，F::Output 投影支持非 i64 类型
 struct StrFut { s: String, n: i64 }
-impl Future for StrFut {
+impl StrFut: Future {
     type Output = String;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.n = self.n + 1;

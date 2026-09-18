@@ -3,17 +3,17 @@
 // - 形参 `&Self` 收敛为 `&P`；
 // - 返回 `Self` 聚合收敛为 `P`（按值返回；经 vtable 取址故退化为
 //   i8* 返回 ABI，函数体与声明一致——见 rlyeh-codegen llvm_ctor 4b-iv）。
-trait Combine {
+protocol Combine {
     fn combine(&self, other: &Self) -> i64;
 }
-trait Copyable {
+protocol Copyable {
     fn make(&self) -> Self;
 }
 struct P { x: i64 }
-impl Combine for P {
+impl P: Combine {
     fn combine(&self, other: &Self) -> i64 { self.x + other.x }
 }
-impl Copyable for P {
+impl P: Copyable {
     fn make(&self) -> Self { P { x: self.x } }
 }
 fn main() {

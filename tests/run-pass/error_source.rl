@@ -7,7 +7,7 @@
 // 返回引用的 codegen 悬空缺陷，见 lang-defects）。即 idiomatic 的 `source: &dyn Error`
 // 退化到具体引用 `&IoFailure`（MVP 暂不支持 `&dyn Error` 作 struct 字段）。
 
-trait Error {
+protocol Error {
     fn message(&self) -> String;
     fn source(&self) -> Option<&dyn Error>;
 }
@@ -15,7 +15,7 @@ trait Error {
 // 底层错误：无源（source = None）
 struct IoFailure { msg: String }
 
-impl Error for IoFailure {
+impl IoFailure: Error {
     fn message(&self) -> String {
         self.msg
     }
@@ -27,7 +27,7 @@ impl Error for IoFailure {
 // 包装错误：持有底层错误的引用（真实错误链载体），source() 上转该引用返回
 struct AppError { msg: String, source: &IoFailure }
 
-impl Error for AppError {
+impl AppError: Error {
     fn message(&self) -> String {
         self.msg
     }

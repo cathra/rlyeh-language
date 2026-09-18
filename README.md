@@ -87,8 +87,8 @@ fn area(s: Shape) -> f64 {
     }
 }
 
-trait Area { fn area(&self) -> f64; }
-impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
+protocol Area { fn area(&self) -> f64; }
+impl Shape: Area { fn area(&self) -> f64 { /* ... */ } }
 ```
 
 ### 宏与闭包
@@ -97,7 +97,7 @@ impl Area for Shape { fn area(&self) -> f64 { /* ... */ } }
 let v = vec![10, 20, 30];          // 集合宏 → Vec<T>
 let m = map![1 => 10, 2 => 20];    // → HashMap<K, V>
 let r = apply(|a, b| a + b, 10, 20);  // 无捕获闭包 → 函数指针（零开销）
-let d: dyn Shape = &c;             // trait 对象：vtable 多态分派
+let d: dyn Shape = &c;             // 协议对象：vtable 多态分派
 ```
 
 ### 更多已实现能力

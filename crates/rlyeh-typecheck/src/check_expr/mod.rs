@@ -19,6 +19,12 @@ use crate::types::{field_scalar_of, type_mono_key, FnSignature, ImplDef, Mutabil
 /// 供 `check_stmt`（let 绑定标注位置）与 `check_expr::call`（实参位置）共用。
 pub(crate) use call::make_slice_fat;
 
+/// PC-4：父协议一致性校验（`protocol A: B` → 实现 A 必须实现 B），供 `check_item` 调用。
+pub(crate) use generic::validate_supertraits;
+/// PC-10：trait 方法线性化（`dyn T` vtable 槽顺序）与 `dyn A → dyn B` 上转判定——
+/// 供 `check_stmt`（上转）与 `check_expr::method::builtin`（虚调用槽索引）复用。
+pub(crate) use generic::{dyn_supertrait_upshift, linearize_trait_methods};
+
 /// 查询内建函数签名；`None` 表示不是内建。
 ///
 /// - `print` / `println`：任意类型参数（`Infer` 与一切兼容）、返回 `()`
@@ -66,6 +72,41 @@ pub(super) fn make_deref_receiver(receiver: &AstExpr, span: Span) -> AstExpr {
         },
         span,
     )
+}
+
+/// B-2（P0'）：coerce 点自动解引用强制。
+///
+/// 期望类型 `expected`、实参类型 `actual`、实参 AST `expr`。当 `actual == &T`
+/// （`&mut T`）且 `expected == T` 且 `T: Copy` 时，将 `expr` 重写为 `*expr` 并重新
+/// 推断，得到类型 `T` 的 `(HIR, Type)`；否则返回 `None`，调用方维持原错误路径。
+///
+/// 复用既有 `*` 取值路径（`infer_expr_inner` 的 `UnaryOp::Deref` 分支对 `&T` /
+/// `&mut T` 直接返回内层 `T`），零新增 IR 节点语义。
+pub(super) fn try_auto_deref_coerce(
+    ctx: &mut TypeContext,
+    expected: &Type,
+    actual: &Type,
+    expr: &AstExpr,
+    span: Span,
+) -> Option<Result<(HirExpr, Type), TypeError>> {
+    let inner = match actual {
+        Type::Ref(inner, _) => inner.as_ref(),
+        _ => return None,
+    };
+    if expected != inner {
+        return None;
+    }
+    if !inner.is_copy() {
+        return None;
+    }
+    let deref_expr = AstExpr::new(
+        ExprKind::Unary {
+            op: UnaryOp::Deref,
+            operand: expr.clone(),
+        },
+        span,
+    );
+    Some(infer_expr(ctx, &deref_expr))
 }
 
 /// 推断表达式的类型并生成对应 HIR（内部实现）。
@@ -495,7 +536,7 @@ pub(crate) struct FormatSeg {
 ///   - 嵌套结构体字段 → 内联表：`{x = 1, y = 2}`（MVP 用内联表；`[section]` 行式子表规划中）
 ///   - 数组 / Vec → `[e1, e2]`；HashMap → `{"k" = v, "k2" = v2}`（键带引号，TOML 合法）
 ///   - 标量：i64 → `int_to_string`；bool → `true` / `false`；String → `"` + json_escape + `"`
-///     （TOML 基本转义与 JSON 一致，复用 core.rl `json_escape` / `json_unescape`）
+///     （TOML 基本转义与 JSON 一致，复用 标准库 `json_escape` / `json_unescape`）
 
 /// 递归 TOML 序列化 AST 构建。`top_level`：顶层结构体输出多行 `key = value`（标准 TOML
 /// 顶层键值对），嵌套字段输出内联表 `{ ... }`。

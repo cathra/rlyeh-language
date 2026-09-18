@@ -44,7 +44,7 @@ let v2 = json::from_reader::<HashMap<String, i64>>(f2);
 
 ## `#[derive(Serialize, Deserialize)]`（Q1 ✅）
 
-标注结构体后，编译器自动生成 `Serialize`/`Deserialize` 实现，免去手写 trait：
+标注结构体后，编译器自动生成 `Serialize`/`Deserialize` 实现，免去手写 protocol：
 ```rlyeh
 #[derive(Serialize, Deserialize)]
 struct Config { name: String, port: i64 }

@@ -222,11 +222,13 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             type_name,
             type_args,
             fields,
+            ..
         } => AstExpr::new(
             ExprKind::StructCtor {
                 type_name: type_name.clone(),
                 type_args: type_args.clone(),
                 fields: fields.iter().map(|(k, v)| (k.clone(), devar(v))).collect(),
+                base: None,
             },
             e.span,
         ),

@@ -117,6 +117,48 @@ impl Printer {
     }
 }
 
+/// B-4 region 参数后缀（`'a`）→ `" 'a"`（无则空串）。
+fn region_suffix(rp: &Option<String>) -> String {
+    rp.as_ref().map(|r| format!(" '{}", r)).unwrap_or_default()
+}
+
+/// 协议引用打印：`Name` 或 `Name<A, B>`。
+fn fmt_protocol_ref(name: &str, args: &[AstType]) -> String {
+    if args.is_empty() {
+        name.to_string()
+    } else {
+        let inner = args.iter().map(fmt_type).collect::<Vec<_>>().join(", ");
+        format!("{}<{}>", name, inner)
+    }
+}
+
+/// 一致性/父协议后缀（`: A, B`；无则空串）。
+fn conformance_suffix(cs: &[(String, Vec<AstType>)]) -> String {
+    if cs.is_empty() {
+        return String::new();
+    }
+    let list = cs
+        .iter()
+        .map(|(n, a)| fmt_protocol_ref(n, a))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(": {}", list)
+}
+
+/// 类型参数名列表（`T, U`）——`impl` 的 self 类型泛型实参重建。
+fn generic_names(g: &[AstTypeParam]) -> String {
+    g.iter()
+        .map(|p| p.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// 结构体字段打印（`pub name: type`）。
+fn fmt_field(f: &AstStructField) -> String {
+    let vis = if f.is_pub { "pub " } else { "" };
+    format!("{}{}: {}", vis, f.name, fmt_type(&f.type_))
+}
+
 // ==================== 程序 / 顶层项 ====================
 
 impl Printer {
@@ -196,43 +238,67 @@ impl Printer {
 
     fn print_struct_decl(&mut self, s: &AstStructDecl) {
         let mut head = format!("struct {}", s.name);
+        head.push_str(&region_suffix(&s.region_param));
         if !s.generics.is_empty() {
             head.push_str(&format!("<{}>", fmt_generics(&s.generics)));
         }
-        head.push_str(" {");
-        let fields = s
-            .fields
-            .iter()
-            .map(|f| {
-                let vis = if f.is_pub { "pub " } else { "" };
-                format!("{}{}: {}", vis, f.name, fmt_type(&f.type_))
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.line(&format!("{} {} }}", head, fields));
+        head.push_str(&conformance_suffix(&s.conformances));
+        head.push(' ');
+        // 无内联成员：保持单行 `struct X { fields }`（兼容既有输出）。
+        if s.methods.is_empty() && s.assoc_types.is_empty() {
+            let fields = s.fields.iter().map(fmt_field).collect::<Vec<_>>().join(", ");
+            self.line(&format!("{}{{ {} }}", head, fields));
+            return;
+        }
+        self.line(&format!("{}{{", head));
+        self.with_indent(|p| {
+            for f in &s.fields {
+                p.line(&format!("{},", fmt_field(f)));
+            }
+            for (tn, ty) in &s.assoc_types {
+                p.line(&format!("type {} = {};", tn, fmt_type(ty)));
+            }
+            for m in &s.methods {
+                p.print_fn_decl(m, false);
+            }
+        });
+        self.line("}");
     }
 
     fn print_enum_decl(&mut self, e: &AstEnumDecl) {
         let mut head = format!("enum {}", e.name);
+        head.push_str(&region_suffix(&e.region_param));
         if !e.generics.is_empty() {
             head.push_str(&format!("<{}>", fmt_generics(&e.generics)));
         }
+        head.push_str(&conformance_suffix(&e.conformances));
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
             for v in &e.variants {
                 p.line(&fmt_enum_variant(v));
+            }
+            for (tn, ty) in &e.assoc_types {
+                p.line(&format!("type {} = {};", tn, fmt_type(ty)));
+            }
+            for m in &e.methods {
+                p.print_fn_decl(m, false);
             }
         });
         self.line("}");
     }
 
     fn print_trait_decl(&mut self, t: &AstTraitDecl) {
-        let mut head = format!("trait {}", t.name);
+        let mut head = format!("protocol {}", t.name);
+        head.push_str(&region_suffix(&t.region_param));
         if !t.generics.is_empty() {
             head.push_str(&format!("<{}>", fmt_generics(&t.generics)));
         }
+        head.push_str(&conformance_suffix(&t.supertraits));
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
+            for ty in &t.types {
+                p.line(&format!("type {};", ty));
+            }
             for m in &t.methods {
                 p.print_fn_decl(m, false);
             }
@@ -241,17 +307,31 @@ impl Printer {
     }
 
     fn print_impl_block(&mut self, i: &AstImplBlock) {
-        let mut head = String::from("impl");
-        if !i.generics.is_empty() {
-            head.push_str(&format!("<{}>", fmt_generics(&i.generics)));
-        }
-        head.push(' ');
-        match &i.trait_name {
-            Some(t) => head.push_str(&format!("{} for {}", t, i.type_name)),
-            None => head.push_str(&i.type_name),
-        }
+        let gen = if i.generics.is_empty() {
+            String::new()
+        } else {
+            format!("<{}>", fmt_generics(&i.generics))
+        };
+        // `impl<G> Type<G>: Trait<A>` / `impl<G> Type<G>`。
+        let self_ty = if i.generics.is_empty() {
+            i.type_name.clone()
+        } else {
+            format!("{}<{}>", i.type_name, generic_names(&i.generics))
+        };
+        let head = match &i.trait_name {
+            Some(t) => format!(
+                "impl{} {}: {}",
+                gen,
+                self_ty,
+                fmt_protocol_ref(t, &i.trait_type_args)
+            ),
+            None => format!("impl{} {}", gen, self_ty),
+        };
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
+            for (tn, ty) in &i.types {
+                p.line(&format!("type {} = {};", tn, fmt_type(ty)));
+            }
             for m in &i.methods {
                 p.print_fn_decl(m, false);
             }
@@ -652,14 +732,28 @@ mod tests {
     }
 
     #[test]
+    fn new_syntax_stable() {
+        // 新语法（`protocol` / `impl Type: Protocol` / 固有 `impl Type`）格式化应幂等。
+        let once = fmt(
+            "protocol A { fn a(&self); } \
+             impl T: A { fn a(&self) {} } \
+             impl T { fn b(&self) {} }",
+        );
+        assert!(once.contains("protocol A"), "got: {once}");
+        assert!(once.contains("impl T: A"), "got: {once}");
+        assert!(once.contains("impl T {"), "got: {once}");
+        assert_eq!(fmt(&once), once, "formatting not idempotent");
+    }
+
+    #[test]
     fn roundtrip_reparse() {
         let cases = [
             "fn main() -> i64 { let x = 1; x + 2 }",
             "pub fn add(a: i64, b: i64 = 2) -> i64 { a + b }",
             "struct Point { x: i64, y: i64 }",
             "enum Shape { Circle(f64), Rect { w: f64, h: f64 } }",
-            "trait Area { fn area(&self) -> f64; }",
-            "impl Area for Shape { fn area(&self) -> f64 { 1.0 } }",
+            "protocol Area { fn area(&self) -> f64; }",
+            "impl Shape: Area { fn area(&self) -> f64 { 1.0 } }",
             "mod math { pub const PI: f64 = 3.14; }",
             "use math::PI;",
             "const MAX: i64 = 100;",

@@ -4,7 +4,7 @@
 //! （多空白组合/仅首/仅尾/无空白原样/全空白空串）、大小写 + 裁剪 + 子串
 //! 链式组合、`find`/`contains` 与大小写方法配合、拼接后处理。
 //!
-//! 实现：core.rl 纯 Rlyeh 方法（`to_upper`/`to_lower` 逐字节 push_byte 拷贝
+//! 实现：标准库纯 Rlyeh 方法（`to_upper`/`to_lower` 逐字节 push_byte 拷贝
 //! + 比较链区间判断 ±32，`trim` 正反向双扫描后 `substring` 返回新缓冲）。
 //!
 //! 需要系统 clang（与 driver_test.rs / string_slice_test.rs 相同）。
@@ -22,7 +22,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

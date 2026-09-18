@@ -6,13 +6,13 @@
 // std sync/module.rl 的 Mutex 泛型化为破坏性改动（波及 core.rl/guard/driver），
 // 本测试用独立原型验证能力，std 迁移待专项。
 
-trait Deref<T> {
+protocol Deref<T> {
     fn deref(&self) -> T;
 }
 
 struct MutexGuard<T> { p: i64, value: T }
 
-impl<T> Deref<T> for MutexGuard<T> {
+impl<T> MutexGuard<T>: Deref<T> {
     fn deref(&self) -> T {
         let g: T = self.value;
         g

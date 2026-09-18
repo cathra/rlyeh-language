@@ -187,7 +187,7 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_item(&mut self) -> Result<AstItem, ParseError> {
         // `#[derive(Serialize, Deserialize)]` attribute（阶段 Q1b）：MVP 仅支持
         // struct 声明前的 derive 标记；其它项宽松忽略（typecheck 不感知 derive）。
-        let (derive, repr_c) = self.parse_attributes()?;
+        let (derive, repr_c, memory) = self.parse_attributes()?;
         match self.current() {
             Some(Token::Fn) => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
             Some(Token::Struct) => {
@@ -197,9 +197,9 @@ impl<'src> Parser<'src> {
                 Ok(AstItem::StructDecl(Box::new(s)))
             }
             Some(Token::Enum) => Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?))),
-            Some(Token::Trait) => Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?))),
+            Some(Token::Protocol) => Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?))),
             Some(Token::Impl) => Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?))),
-            Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod()?))),
+            Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone())?))),
             Some(Token::Use) => Ok(AstItem::UseDecl(Box::new(self.parse_use(false)?))),
             Some(Token::Const) | Some(Token::Static) => {
                 Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
@@ -214,7 +214,7 @@ impl<'src> Parser<'src> {
                 match next {
                     Some(Token::Mod) => {
                         self.bump(); // 消费 pub
-                        Ok(AstItem::ModDecl(Box::new(self.parse_mod()?)))
+                        Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone())?)))
                     }
                     Some(Token::Const) | Some(Token::Static) => {
                         self.bump(); // 消费 pub
@@ -230,7 +230,7 @@ impl<'src> Parser<'src> {
                         self.bump();
                         Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?)))
                     }
-                    Some(Token::Trait) => {
+                    Some(Token::Protocol) => {
                         self.bump();
                         Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?)))
                     }
@@ -270,9 +270,10 @@ impl<'src> Parser<'src> {
     /// MVP 仅支持 struct 声明前的 `derive` 标记（`#[derive(..)]`，可多个、可空
     /// `#[derive]`）与 `#[repr(C)]`；其它 attribute 名报错。返回
     /// `(derive trait 名列表, 是否 repr(C))`。
-    fn parse_attributes(&mut self) -> Result<(Vec<String>, bool), ParseError> {
+    fn parse_attributes(&mut self) -> Result<(Vec<String>, bool, Option<String>), ParseError> {
         let mut derives = Vec::new();
         let mut repr_c = false;
+        let mut memory = None;
         while self.eat(&Token::Pound) {
             self.expect(&Token::LBracket, "'['")?;
             let attr_name = self.expect_ident()?;
@@ -299,11 +300,24 @@ impl<'src> Parser<'src> {
                     repr_c = true;
                     self.expect(&Token::RParen, "')'")?;
                 }
-                _ => return Err(self.unexpected("'#[derive(..)]' 或 '#[repr(C)]'")),
+                "memory" => {
+                    self.expect(&Token::LParen, "'('")?;
+                    let mem_arg = self.expect_ident()?;
+                    if mem_arg != "gc" {
+                        return Err(self.unexpected("'#[memory(gc)]'"));
+                    }
+                    memory = Some("gc".to_string());
+                    self.expect(&Token::RParen, "')'")?;
+                }
+                _ => {
+                    return Err(self.unexpected(
+                        "'#[derive(..)]' / '#[repr(C)]' / '#[memory(gc)]'",
+                    ))
+                }
             }
             self.expect(&Token::RBracket, "']'")?;
         }
-        Ok((derives, repr_c))
+        Ok((derives, repr_c, memory))
     }
 
     /// 解析 `macro_rules! name { (matcher) => { transcriber }; ... }`（MVP）。
@@ -434,7 +448,7 @@ impl<'src> Parser<'src> {
                 Token::Fn
                     | Token::Struct
                     | Token::Enum
-                    | Token::Trait
+                    | Token::Protocol
                     | Token::Impl
                     | Token::Mod
                     | Token::Use

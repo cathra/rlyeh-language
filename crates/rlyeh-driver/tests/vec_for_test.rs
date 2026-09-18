@@ -1,4 +1,4 @@
-//! `Vec<T>` for-in 容器迭代 + 索引访问集成测试（文件入口 API，自动注入 core.rl）。
+//! `Vec<T>` for-in 容器迭代 + 索引访问集成测试（文件入口 API，自动注入标准库）。
 //!
 //! 覆盖：`for x in v` 求和/打印、break/continue 控制流、`v[i]` 索引读写、
 //! 空 Vec 迭代 0 次、嵌套迭代、`v[i]` 步长与动态扩容后的正确性。
@@ -18,7 +18,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

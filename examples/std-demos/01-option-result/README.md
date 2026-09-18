@@ -8,14 +8,14 @@
 - `Option<T>` 枚举：`Some(v)` / `None` 构造与 `match` 解构
 - `Result<T, E>` 枚举：`Ok(v)` / `Err(e)` 构造与 `match` 解构
 - `?` 错误传播运算符：Option / Result 上下文自动解包，失败提前返回
-- `Error` trait + `IoError` / `IoErrorKind`（dyn 分派）
+- `Error` protocol + `IoError` / `IoErrorKind`（dyn 分派）
 
 ## 示例清单
 
 | 文件 | 说明 |
 |------|------|
 | `question.rl` | K1 `?` 运算符：链式解包、表达式中间嵌套 `?`、失败提前返回 |
-| `error_trait.rl` | M2 `Error` trait：`impl Error for IoError` + dyn vtable 分派 + 错误转换 |
+| `error_trait.rl` | M2 `Error` protocol：`impl IoError: Error` + dyn vtable 分派 + 错误转换 |
 | `io_result.rl` | IO 操作返回 `Result<i64, IoError>` 的错误处理模式 |
 
 ## 运行

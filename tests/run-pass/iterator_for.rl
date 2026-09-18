@@ -19,7 +19,7 @@ impl Counter {
 }
 
 // trait 迭代器：`impl NextIter for Step` 同样接入 for
-trait NextIter {
+protocol NextIter {
     fn next(&mut self) -> Option<i64>;
 }
 
@@ -28,7 +28,7 @@ struct Step {
     step: i64,
 }
 
-impl NextIter for Step {
+impl Step: NextIter {
     fn next(&mut self) -> Option<i64> {
         let v = self.cur;
         self.cur += self.step;

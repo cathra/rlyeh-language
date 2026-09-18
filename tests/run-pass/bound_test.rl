@@ -1,25 +1,25 @@
 // U3 泛型约束（trait bound）：声明 + 调用点校验（宽松：不推导）
-trait HasArea {
+protocol HasArea {
     fn area(&self) -> f64;
 }
 
-trait Named {
+protocol Named {
     fn name(&self) -> String;
 }
 
 struct Point { x: i64, y: i64 }
-impl HasArea for Point {
+impl Point: HasArea {
     fn area(&self) -> f64 { 0.0 }
 }
-impl Named for Point {
+impl Point: Named {
     fn name(&self) -> String { String::from("Point") }
 }
 
 struct Circle { r: f64 }
-impl HasArea for Circle {
+impl Circle: HasArea {
     fn area(&self) -> f64 { 3.14 * self.r * self.r }
 }
-impl Named for Circle {
+impl Circle: Named {
     fn name(&self) -> String { String::from("Circle") }
 }
 

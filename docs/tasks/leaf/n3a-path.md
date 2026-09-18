@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-`crates/rlyeh-std/rlyeh/fs.rl`：`Path::new`/`join`/`parent`/`file_name`/`extension`/`exists`/`is_file`/`is_dir`（路径拼接/父目录/文件名/扩展名 + 存在性/文件/目录判断）。
+`crates/rlyeh-std/rlyeh/fs.rl`：`Path::new`/`join`/`parent`/`file_name`/`path_extension`/`exists`/`is_file`/`is_dir`（路径拼接/父目录/文件名/扩展名 + 存在性/文件/目录判断）。
 
 ## 验证
 

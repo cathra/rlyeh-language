@@ -1,4 +1,4 @@
-//! `Vec<T>` 标准库集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `Vec<T>` 标准库集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`Vec::with_capacity` / `Vec::new` 构造、push 翻倍扩容、get/set、
 //! pop 返回 Option、泛型多类型实例化（i64/f64）、函数间别名共享。
@@ -18,7 +18,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

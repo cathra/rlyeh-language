@@ -1,4 +1,4 @@
-//! `String` 分割/重复/填充集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `String` 分割/重复/填充集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`split`（返回 `Vec<String>`：多段/不含分隔符/空 sep/连续分隔符/
 //! 尾部分隔符/空串）、`repeat`（多次/0 次/1 次）、`pad_start`/`pad_end`
@@ -19,7 +19,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

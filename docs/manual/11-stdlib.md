@@ -1,6 +1,6 @@
 # 11. 标准库参考
 
-Rlyeh 标准库采用模块化拆分（2026-08-22 落地）：`rlyeh-std/rlyeh/core.rl` 根模块 + 子模块 `time.rl` / `io.rl` / `net.rl` / `sync.rl`。**裸名即用**（`import time::Duration;` 等已在根模块重导出）。
+Rlyeh 标准库采用模块化拆分（2026-09-18 布局重整）：`rlyeh-std/rlyeh/module.rl` **声明与导出**入口（子模块声明 + 根命名空间重导出）+ `core/module.rl`（根类型）+ 与其**平级**的平铺单元 `str_ext/` / `convert/` / `collections/` / `externs/`（各为 `<name>/module.rl`）+ 子模块 `time/` / `io/` / `net/` / `sync/` 等。**裸名即用**（`import time::Duration;` 等已在声明与导出入口重导出）。
 
 各类型 / 成员 / 方法的完整说明与用例见 [标准库详述](./std/index.md)：
 

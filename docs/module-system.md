@@ -39,7 +39,7 @@
 | 可见性控制 | 🔧 | `pub` 有语法，**无模块级可见性检查**（扁平名字空间，全部可达） |
 | `import a::{b, c}` 组导入 | ✅ | 2026-09-02 实现（`parse_use` 组解析 + `register_use` 逐成员登记）；2026-09-04 支持**嵌套子组** `import a::{b::{x, y}, c}`（`AstUseMember` 递归结构 + `parse_use_group`/`register_use_group` 递归，仅叶子名入作用域） |
 | `import a::*` glob 导入 | ✅ | 2026-09-02 实现（`register_use` 枚举模块直接子项） |
-| `pub import` 再导出 | ✅ | 2026-09-02 实现（`is_pub` 登记 `prefix::local → 目标全名`，`resolve_full_name` 传递追踪链） |
+| `pub import` 再导出 | ✅ | 2026-09-02 实现（`is_pub` 登记 `prefix::local → 目标全名`，`resolve_full_name` 传递追踪链）；**2026-09-18 路径解析规则**：模块**内**的 `import` 优先按**相对本模块**解析（`import duration::Duration;` → `time::duration::Duration`，故模块内引用自身子模块无需写全路径），仅当相对目标不存在时才视为**跨模块绝对路径**（如 `module outer` 内 `import inner::secret;` 引用顶层 `inner`）；模块**外**（顶层）导入写完整路径 |
 | 外部包依赖编译 | 📋 | dagon 已能 resolve/lock，但 `rlyeh build` 未注入依赖模块路径 |
 
 **现有实现要点**（供设计对齐）：
@@ -113,7 +113,7 @@ Visibility  ::= 'pub'
 
 - **默认私有**（📋）：符号仅当前模块及其子模块可达。MVP 现状为全部可达，P2 收紧为默认私有 + `pub` 两级。
 - **仅 `pub` / 私有两档**：不支持 `pub(crate)` / `pub(super)`（扁平名字空间下无 crate / super 层级概念）。
-- 应用于：`fn` / `struct` / `enum` / `trait` / `const` / `static` / `module` / `import`（再导出）。
+- 应用于：`fn` / `struct` / `enum` / `protocol` / `const` / `static` / `module` / `import`（再导出）。
 
 ---
 
@@ -181,11 +181,11 @@ Visibility  ::= 'pub'
 1. 模块发现    递归扫描 module 声明 → 模块名空间表 + 文件路径表
 2. 依赖排序    模块依赖图拓扑排序（拒绝环）
 3. 分片编译    每模块 parse → 接口收集 → 独立缓存（对齐 incremental/hash.rs ModuleInterface）
-4. 整体检查    可见性检查 + 跨模块类型统一（trait impl 跨模块一致性）
+4. 整体检查    可见性检查 + 跨模块类型统一（protocol impl 跨模块一致性）
 5. 代码生成    与现有单文件流水线一致，符号名保持 `模块名::item` 扁平编码（代码生成零改动）
 ```
 
-- 模块接口 = 公开符号的签名集合（函数签名 / 结构体布局 / 常量值 / trait 定义）。
+- 模块接口 = 公开符号的签名集合（函数签名 / 结构体布局 / 常量值 / protocol 定义）。
 - 依赖模块变更 → 仅重新编译依赖方 + 失效接口哈希（增量编译，对齐现有 `--cache-dir`）。
 
 ### 5.3 错误报告
@@ -242,7 +242,7 @@ rlyeh build 时：
 
 - **存量代码迁移**（P0 已随 v1.1 完成）：`mod` → `module`、`use` → `import` 全局替换；目录模块文件名约定同步为 `module.rl`（std 8 个目录模块文件已重命名），`module name;` 文件解析规则（`name.rl` → `name/module.rl`）沿用。
 - 裸名相对路径语义（当前模块符号直接引用）不变。
-- 标准库目录化模块（`core.rl` + `<name>/module.rl`）与 P3 模块图兼容。
+- 标准库目录化模块（`module.rl` + `core/` + `<name>/module.rl`）与 P3 模块图兼容。
 - 类型检查符号命名（`module_name::item` 扁平编码）为代码生成契约，P1–P4 均不改动该契约。
 
 ---

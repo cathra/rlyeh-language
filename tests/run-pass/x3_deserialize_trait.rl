@@ -2,13 +2,13 @@
 // `trait Deserialize { fn from_json(s: String) -> Self; }`
 // 依赖 U4 `-> Self` 返回 + 泛型 trait 约束（T: Trait bound）。
 
-trait Deserialize {
+protocol Deserialize {
     fn from_json(s: String) -> Self;
 }
 
 struct Point { x: i64, y: i64 }
 
-impl Deserialize for Point {
+impl Point: Deserialize {
     fn from_json(s: String) -> Point {
         // 简化 JSON 解析 {"x":3,"y":4}
         let mut x: i64 = 0;

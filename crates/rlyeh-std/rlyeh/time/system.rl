@@ -1,5 +1,7 @@
-// ===== 系统时间模块（X1 ✅）：SystemTime =====
-// 底层时钟 extern 声明于根模块 core.rl 的 extern 集中区：
+// time/system.rl：`SystemTime`（绝对时刻）—— 归属子模块 `time::system`（2026-09-18 起
+// 与 duration.rl / instant.rl 并列，由 time/module.rl 的 `pub import` 重导出）。
+//
+// 底层时钟 extern 声明于 core 的 externs 单元（externs/module.rl）：
 // - `__rlyeh_clock_realtime()`：墙钟（clock_gettime CLOCK_REALTIME，微秒，
 //   X1；driver 注入 define，不支持平台返回 -1）。
 // `SystemTime` 以「距 UNIX_EPOCH 微秒」存储（1970-01-01T00:00:00Z 起算）。
@@ -29,7 +31,7 @@ impl SystemTime {
     }
     // 与更早时刻的差值（later - earlier，可为负——目标 API 返回
     // Result<Duration, TimeError> 规划中，MVP 直接差值）
-    fn duration_since(self, earlier: time::system::SystemTime) -> time::Duration {
-        time::Duration { micros: self.epoch_micros - earlier.epoch_micros }
+    fn duration_since(self, earlier: time::system::SystemTime) -> time::duration::Duration {
+        time::duration::Duration { micros: self.epoch_micros - earlier.epoch_micros }
     }
 }

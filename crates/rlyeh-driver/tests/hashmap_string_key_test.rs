@@ -1,4 +1,4 @@
-//! `HashMap<String, V>` 字符串键集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `HashMap<String, V>` 字符串键集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：字符串键 insert / get / contains_key / len、同内容不同对象键哈希一致性、
 //! 同键覆盖、remove 墓碑语义、翻倍扩容 rehash（12 键压力）、未命中键、
@@ -22,7 +22,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

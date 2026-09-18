@@ -363,12 +363,12 @@ consumer.consume(data).await;  // 所有权转移
 ```rust
 /// 消息类型必须实现 Send
 /// （因为消息在线程间传递）
-pub trait Message: Send + 'static {
+pub protocol Message: Send + 'static {
     type Reply: Send + 'static;
 }
 
 /// Actor 状态必须实现 ActorState
-pub trait ActorState: Send + 'static {
+pub protocol ActorState: Send + 'static {
     fn dispatch(&mut self, envelope: Envelope) -> Pin<Box<dyn Future<Output = _> + Send>>;
 }
 ```
@@ -385,7 +385,7 @@ pub trait ActorState: Send + 'static {
 
 ## 交付物
 
-- `actor.rs`：Actor 核心 trait 和类型
+- `actor.rs`：Actor 核心 protocol 和类型
 - `mailbox.rs`：无锁消息队列
 - `scheduler.rs`：工作窃取调度器
 - `supervisor.rs`：Supervisor 实现

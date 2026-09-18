@@ -16,9 +16,15 @@ fn tokens(source: &str) -> Vec<Token> {
 }
 
 #[test]
+fn test_protocol_keyword() {
+    // 语法仅保留 `protocol` 作为协议声明关键字（`trait` / `extension` 已从语法中移除）。
+    assert_eq!(tokens("protocol"), vec![Token::Protocol]);
+}
+
+#[test]
 fn test_all_keywords() {
     let src = "let mut const static fn return pub priv if else match for while loop break \
-               continue true false and or not struct enum trait impl type where Self region in \
+               continue true false and or not struct enum protocol impl type where Self region in \
                transfer out of unsafe actor async await spawn send recv module import as extern";
     let toks = tokens(src);
     let expected = [
@@ -45,7 +51,7 @@ fn test_all_keywords() {
         Token::Not,
         Token::Struct,
         Token::Enum,
-        Token::Trait,
+        Token::Protocol,
         Token::Impl,
         Token::Type,
         Token::Where,

@@ -5,7 +5,7 @@
 // - recv_async 真异步（W5）+ block_on
 
 struct GenOut<T> { v: T, n: i64 }
-impl<T> Future for GenOut<T> {
+impl<T> GenOut<T>: Future {
     type Output = T;
     fn poll(&mut self, cx: &mut Context) -> Poll<T> {
         self.n = self.n + 1;

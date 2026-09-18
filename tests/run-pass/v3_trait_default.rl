@@ -1,7 +1,7 @@
 // V3 trait 默认方法（2026-08-26）：
 // 1. trait 方法带 body（默认实现），impl 显式实现时覆盖默认
 // 2. impl 未实现时回退到 trait 默认实现
-trait Greeter {
+protocol Greeter {
     fn greeting(&self) -> String { String::from("hello") }
     fn loud(&self) -> String { String::from("HELLO!") }
 }
@@ -10,7 +10,7 @@ struct Foo {
     x: i64,
 }
 
-impl Greeter for Foo {
+impl Foo: Greeter {
     fn greeting(&self) -> String { String::from("foo-hi") }
     fn loud(&self) -> String { String::from("FOO!") }
 }
@@ -19,7 +19,7 @@ struct Bar {
     x: i64,
 }
 
-impl Greeter for Bar {
+impl Bar: Greeter {
     // 仅实现 greeting，loud 走 trait 默认实现
     fn greeting(&self) -> String { String::from("bar-hi") }
 }
@@ -28,7 +28,7 @@ struct Baz {
     x: i64,
 }
 
-impl Greeter for Baz {
+impl Baz: Greeter {
     // 一个方法都不实现，全部回退默认
 }
 

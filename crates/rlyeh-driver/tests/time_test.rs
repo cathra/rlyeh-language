@@ -1,5 +1,5 @@
 //! `Duration` / `Instant` 时间模块集成测试（文件入口 API，自动注入
-//! `rlyeh-std/rlyeh/core.rl`；底层时钟为 libc `clock()`，POSIX CLOCKS_PER_SEC=1e6）。
+//! `rlyeh-std/rlyeh/`；底层时钟为 libc `clock()`，POSIX CLOCKS_PER_SEC=1e6）。
 //!
 //! 覆盖：Duration 各单位换算（确定性）、Instant::now/elapsed（CPU 时钟差
 //! 恒 >= 0）、字段构造与字段访问、参与算术。
@@ -19,7 +19,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");
@@ -111,7 +111,7 @@ fn timeout_ok_returns_value() {
     let out = run(
         r#"
 struct MyFut { state: i64 }
-impl Future for MyFut {
+impl MyFut: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         self.state += 1;
@@ -140,7 +140,7 @@ fn timeout_expired_returns_err() {
     let out = run(
         r#"
 struct NeverFut { dummy: i64 }
-impl Future for NeverFut {
+impl NeverFut: Future {
     type Output = i64;
     fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
         Poll::Pending

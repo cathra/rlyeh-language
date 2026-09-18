@@ -229,13 +229,31 @@ impl <'src> Parser<'src> {
         if self.looks_like_struct_ctor() {
             self.bump();
             let mut fields = Vec::new();
+            let mut base: Option<Box<AstExpr>> = None;
             while !self.check(&Token::RBrace) {
                 if self.at_eof() {
                     return Err(self.unexpected("'}'"));
                 }
+                if self.check(&Token::Range) {
+                    // `..base` 更新语法：从 base 拷贝其余字段（多重 `..` 报错）
+                    self.bump();
+                    if base.is_some() {
+                        return Err(self.unexpected("multiple `..` in struct literal"));
+                    }
+                    let b = self.parse_expr()?;
+                    base = Some(Box::new(b));
+                    if !self.eat(&Token::Comma) {
+                        break;
+                    }
+                    continue;
+                }
                 let fname = self.expect_ident()?;
-                self.expect(&Token::Colon, "':'")?;
-                let value = self.parse_expr()?;
+                let value = if self.eat(&Token::Colon) {
+                    self.parse_expr()?
+                } else {
+                    // 字段简写 `Foo { x }` ≡ `Foo { x: x }`
+                    AstExpr::new(ExprKind::Ident(fname.clone()), span)
+                };
                 fields.push((fname, value));
                 if !self.eat(&Token::Comma) {
                     break;
@@ -248,6 +266,7 @@ impl <'src> Parser<'src> {
                     type_name: segments,
                     type_args: Vec::new(),
                     fields,
+                    base,
                 },
                 span,
             ));
@@ -268,13 +287,31 @@ impl <'src> Parser<'src> {
             self.expect(&Token::Gt, "'>'")?;
             self.bump(); // `{`
             let mut fields = Vec::new();
+            let mut base: Option<Box<AstExpr>> = None;
             while !self.check(&Token::RBrace) {
                 if self.at_eof() {
                     return Err(self.unexpected("'}'"));
                 }
+                if self.check(&Token::Range) {
+                    // `..base` 更新语法：从 base 拷贝其余字段（多重 `..` 报错）
+                    self.bump();
+                    if base.is_some() {
+                        return Err(self.unexpected("multiple `..` in struct literal"));
+                    }
+                    let b = self.parse_expr()?;
+                    base = Some(Box::new(b));
+                    if !self.eat(&Token::Comma) {
+                        break;
+                    }
+                    continue;
+                }
                 let fname = self.expect_ident()?;
-                self.expect(&Token::Colon, "':'")?;
-                let value = self.parse_expr()?;
+                let value = if self.eat(&Token::Colon) {
+                    self.parse_expr()?
+                } else {
+                    // 字段简写 `Foo { x }` ≡ `Foo { x: x }`
+                    AstExpr::new(ExprKind::Ident(fname.clone()), span)
+                };
                 fields.push((fname, value));
                 if !self.eat(&Token::Comma) {
                     break;
@@ -287,6 +324,7 @@ impl <'src> Parser<'src> {
                     type_name: segments,
                     type_args,
                     fields,
+                    base,
                 },
                 span,
             ));

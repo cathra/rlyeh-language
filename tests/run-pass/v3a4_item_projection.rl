@@ -1,6 +1,6 @@
 // V3-A4 验证打印
 struct Range { cur: i64, end: i64 }
-impl Iterator for Range {
+impl Range: Iterator {
     type Item = i64;
     fn next(&mut self) -> Option<i64> {
         if self.cur < self.end {

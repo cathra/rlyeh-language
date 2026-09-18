@@ -43,10 +43,10 @@ Rlyeh 是一门**系统级编程语言**，编译为原生机器码。设计公�
 ## 1.3 MVP 已落地核心能力
 
 - 标量 / 聚合类型、引用与借用（严格借用检查）、`ref`/`ref mut` 模式
-- `struct` / `enum`（具名变体 + 显式判别式）/ `trait` + `impl` + 泛型单态化
+- `struct` / `enum`（具名变体 + 显式判别式）/ `protocol` + `impl` + 泛型单态化
 - 类型联合 `A | B`、枚举显式判别式（`U1`–`U3`）
 - 切片引用 `&[T]` / `&mut [T]`（`S1`–`S3`）、动态切片、`as` 数值转换（`U6`）
-- 闭包（H1 函数指针 / H2 无捕获 / H3 捕获 IIFE / H5 闭包值对象）、`dyn Trait`（H4）
+- 闭包（H1 函数指针 / H2 无捕获 / H3 捕获 IIFE / H5 闭包值对象）、`dyn Protocol`（H4）
 - 分层内存（L0 所有权 → L1 区域 → L2 `Rc`/`Arc` → L3 `Gc`）
 - Actor 并发（监督 / 交叉编译 WASM，`L4`）、`async`/`.await`（S1/W1–W5）
 - 标准库：String / Vec / HashMap / Option / Result / 时间 / IO / 网络 / 同步 / 序列化（JSON+TOML）/ 迭代器
@@ -65,7 +65,7 @@ Rlyeh 是一门**系统级编程语言**，编译为原生机器码。设计公�
 | 语句与控制流 | [§5 语句与控制流](./05-statements-control-flow.md) |
 | 函数 / 闭包 / 函数指针 | [§6 函数与闭包](./06-functions-closures.md) |
 | 模块 / 导入 | [§7 模块](./07-modules.md) |
-| 泛型 / trait | [§8 泛型](./08-generics.md) |
+| 泛型 / protocol | [§8 泛型](./08-generics.md) |
 | 内存分层模型 | [§9 内存](./09-memory.md) |
 | Actor / async | [§10 并发](./10-concurrency.md) |
 | 标准库总览 | [§11 标准库](./11-stdlib.md) |

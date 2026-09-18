@@ -38,6 +38,10 @@ AstProgram {
                     "Copy",
                 ],
                 repr_c: false,
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 414,
                     end: 454,
@@ -140,6 +144,10 @@ AstProgram {
                     "Copy",
                 ],
                 repr_c: false,
+                region_param: None,
+                conformances: [],
+                methods: [],
+                assoc_types: [],
                 span: Span {
                     start: 615,
                     end: 644,
@@ -198,6 +206,7 @@ AstProgram {
                                                 },
                                             ),
                                         ],
+                                        base: None,
                                     },
                                     span: Span {
                                         start: 670,
@@ -421,6 +430,7 @@ AstProgram {
                                                 },
                                             ),
                                         ],
+                                        base: None,
                                     },
                                     span: Span {
                                         start: 890,

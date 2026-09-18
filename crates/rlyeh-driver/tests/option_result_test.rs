@@ -1,4 +1,4 @@
-//! `Option<T>` / `Result<T, E>` 补充方法集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/core.rl`）。
+//! `Option<T>` / `Result<T, E>` 补充方法集成测试（文件入口 API，自动注入 `rlyeh-std/rlyeh/`）。
 //!
 //! 覆盖：`Option::expect`（Some 返回 / String 实例化）、`Option::unwrap_or`
 //! （Some 返回自身 / None 返回默认，i64 + String 双实例化）、`Result::is_err`
@@ -24,7 +24,7 @@ fn temp_project() -> PathBuf {
     dir
 }
 
-/// 运行内联源码（自动注入 core.rl），返回程序输出。
+/// 运行内联源码（自动注入标准库），返回程序输出。
 fn run(src: &str) -> String {
     let dir = temp_project();
     let file = dir.join("main.rl");

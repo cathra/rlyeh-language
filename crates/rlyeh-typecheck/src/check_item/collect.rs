@@ -30,6 +30,10 @@ pub(crate) fn resolve_struct_fields_items(
             AstItem::StructDecl(s) => resolve_struct_fields(ctx, s, prefix)?,
             AstItem::ModDecl(m) => {
                 let new_prefix = full_name(prefix, &m.name);
+                // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
+                if m.memory.as_deref() == Some("gc") {
+                    ctx.gc_modules.insert(new_prefix.clone());
+                }
                 let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
                 resolve_struct_fields_items(ctx, &m.items, &new_prefix)?;
                 ctx.module_prefix = old_prefix;
@@ -211,6 +215,7 @@ pub(crate) fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &st
             name: t.name.clone(),
             type_params: t.generics.iter().map(|p| p.name.clone()).collect(),
             assoc_types: t.types.clone(),
+            supertraits: t.supertraits.iter().map(|(n, _)| n.clone()).collect(),
             methods,
         },
     );
@@ -332,6 +337,7 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
         trait_name,
         self_type,
         trait_type_args,
+        span: imp.span,
         type_params: imp.generics.iter().map(|p| p.name.clone()).collect(),
         bounds: imp
             .generics
@@ -355,6 +361,10 @@ pub(crate) fn collect_mod_types_inner(
     prefix: &str,
 ) -> Result<(), TypeError> {
     let new_prefix = full_name(prefix, &m.name);
+    // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
+    if m.memory.as_deref() == Some("gc") {
+        ctx.gc_modules.insert(new_prefix.clone());
+    }
     // Q3a：与 `collect_item_decls` 的 ModDecl 分支一致，模块内短名解析须感知
     // 模块前缀（`fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
     // 等——collect_impl/collect_trait 收集阶段即 resolve_ast_type，use 段未注册）。
