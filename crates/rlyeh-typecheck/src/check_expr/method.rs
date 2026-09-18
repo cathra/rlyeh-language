@@ -25,7 +25,9 @@ pub(super) fn check_static_method_call(
     // W6：闭包值跨线程捕获——`Thread::start(f, arg)`（f 为带参闭包值对象）。
     // 展开为：生成线程入口 thunk + 线程输入对象（捕获槽值 + arg），调用
     // std `thread::__start_with_input(thunk, input)`（Result 构造复用 std 语言层）。
-    if ty_name == "thread::Thread" && method == "start" {
+    // 名等价（精确或短名相同）：std 拆分后 `Thread` 注册为 `thread::handle::Thread`，
+    // 此处仍以 `thread::Thread` 查询。
+    if crate::context::names_match(ty_name, "thread::Thread") && method == "start" {
         if let Some(ret) = check_thread_start_closure(ctx, ty_name, args, span)? {
             return Ok(ret);
         }

@@ -379,15 +379,15 @@ struct GetAsync {
 
 impl GetAsync: Future {
     type Output = net::http::Response;
-    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(&mut self, cx: &mut future::poll::Context) -> future::poll::Poll<Self::Output> {
         if self.state == 0 {
             let oct = match ipv4_octets(self.host) {
                 Result::Ok(x) => x,
-                Result::Err(_) => return Poll::Ready(net::http::Response { status: 0, body: String::new() }),
+                Result::Err(_) => return future::poll::Poll::Ready(net::http::Response { status: 0, body: String::new() }),
             };
             match tcp_connect(self.port, oct.a, oct.b, oct.c, oct.d) {
                 Result::Ok(f) => self.fd = f,
-                Result::Err(_) => return Poll::Ready(net::http::Response { status: 0, body: String::new() }),
+                Result::Err(_) => return future::poll::Poll::Ready(net::http::Response { status: 0, body: String::new() }),
             };
             let _ = io::nio::set_nonblocking(self.fd, true);
             let stream = net::tcp::TcpStream { fd: self.fd, addr: net::addr::SocketAddr { ip: self.host, port: 0 } };
@@ -399,7 +399,7 @@ impl GetAsync: Future {
                 Result::Ok(s) => {
                     if s.len == 0 {
                         self.state = 2;
-                        return Poll::Ready(net::http::Response { status: net::http::parse_status(self.buf), body: net::http::extract_body(self.buf) });
+                        return future::poll::Poll::Ready(net::http::Response { status: net::http::parse_status(self.buf), body: net::http::extract_body(self.buf) });
                     }
                     self.buf = self.buf + s;
                     let sep = net::http::find_header_end(self.buf);
@@ -407,18 +407,18 @@ impl GetAsync: Future {
                         let status = net::http::parse_status(self.buf);
                         let body = net::http::extract_body(self.buf);
                         self.state = 2;
-                        return Poll::Ready(net::http::Response { status: status, body: body });
+                        return future::poll::Poll::Ready(net::http::Response { status: status, body: body });
                     }
                 }
                 Result::Err(_) => {
                     // EAGAIN / 未就绪 → 挂起等读就绪
                     cx.fd = self.fd;
                     cx.interest = 1;
-                    return Poll::Pending;
+                    return future::poll::Poll::Pending;
                 }
             }
         }
-        Poll::Pending
+        future::poll::Poll::Pending
     }
 }
 

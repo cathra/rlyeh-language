@@ -681,7 +681,7 @@ impl TypeContext {
         self.impl_defs
             .iter()
             .filter(|d| {
-                trait_names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
+                names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
                     && type_matches(d, self_type)
                     && d.methods.iter().any(|m| m.sig.name == method)
             })
@@ -693,7 +693,7 @@ impl TypeContext {
     /// 用于同名方法分属不同 trait 时（如 `Display::fmt` 与 `Debug::fmt`），
     /// 按 trait 名精确区分；`trait_name` 为解析后的完整符号名（如 `fmt::Display`）。
     ///
-    /// 匹配经 [`trait_names_match`]：先**精确**、未命中再**短名等价**——标准库按
+    /// 匹配经 [`names_match`]：先**精确**、未命中再**短名等价**——标准库按
     /// 子模块拆分后，impl 注册名可能是 `fmt::display::Display`，而调用方（如
     /// 占位符引擎）仍以 `fmt::Display` 查询。
     pub fn find_impl_for_trait_method(
@@ -712,7 +712,7 @@ impl TypeContext {
         }
         // 短名等价兜底（模块化后注册名可能是 `fmt::display::Display`）
         self.impl_defs.iter().find(|d| {
-            trait_names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
+            names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
                 && type_matches(d, self_type)
                 && d.methods.iter().any(|m| m.sig.name == method)
         })
@@ -753,7 +753,7 @@ impl TypeContext {
 /// 调用方的查询名（占位符引擎、`#[derive]` 展开仍写 `fmt::Display`）可能处于不同
 /// 层级，故提供短名兜底；精确比较在调用点优先尝试
 /// （见 [`TypeContext::find_impl_for_trait_method`]）。
-pub(crate) fn trait_names_match(registered: &str, query: &str) -> bool {
+pub(crate) fn names_match(registered: &str, query: &str) -> bool {
     if registered == query {
         return true;
     }

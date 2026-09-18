@@ -95,7 +95,11 @@ pub(super) fn check_thread_start_closure(
     }, Span::dummy()));
 
     // 4. 调用 `thread::__start_with_input(__entry, __t_in)`，返回类型取自 std 签名
-    let helper = "thread::__start_with_input".to_string();
+    // 经别名解析定位 std 实现：模块化后真实全名为 `thread::entry::__start_with_input`，
+    // 由 `thread/module.rl` 的 `pub import` 以 `thread::__start_with_input` 重导出。
+    let helper = ctx
+        .resolve_full_name("thread::__start_with_input")
+        .unwrap_or_else(|| "thread::__start_with_input".to_string());
     let ret_ty = ctx
         .fn_signatures
         .get(&helper)
@@ -236,7 +240,11 @@ pub(crate) fn check_move_closure_spawn(
         init: HirExpr::new(HirExprKind::FnPtr(thunk), Span::dummy()),
         mutable: false,
     }, Span::dummy()));
-    let helper = "thread::__start_with_input".to_string();
+    // 经别名解析定位 std 实现：模块化后真实全名为 `thread::entry::__start_with_input`，
+    // 由 `thread/module.rl` 的 `pub import` 以 `thread::__start_with_input` 重导出。
+    let helper = ctx
+        .resolve_full_name("thread::__start_with_input")
+        .unwrap_or_else(|| "thread::__start_with_input".to_string());
     let ret_ty = ctx
         .fn_signatures
         .get(&helper)

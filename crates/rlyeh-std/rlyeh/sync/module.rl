@@ -311,7 +311,7 @@ impl Barrier {
 // 注意：queue 只增（head 单调推进，无元素移除的 MVP 简化）。
 // W5（2026-08-25）：`wake_r`/`wake_w` 为 socketpair 唤醒 fd——`send`/`close`
 // 向 `wake_w` 写字节，`recv_async` 的 future 经 `wake_r` 读就绪挂起（W3
-// `wait_fd`/`Context.fd` 事件驱动，非阻塞线程），实现「挂起直到数据/close」。
+// `wait_fd`/`future::poll::Context.fd` 事件驱动，非阻塞线程），实现「挂起直到数据/close」。
 struct Channel<T> {
     m: sync::Mutex<i64>,
     cv: sync::Condvar,
@@ -347,20 +347,20 @@ struct RecvAsync<T> {
 
 impl<T> RecvAsync<T>: Future {
     type Output = Option<T>;
-    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(&mut self, cx: &mut future::poll::Context) -> future::poll::Poll<Self::Output> {
         // 消费唤醒字节（send/close 写入），避免 fd 永久就绪导致忙等
         let _ = net::recv_some(self.ch.wake_r, 64);
         // 非阻塞取消息
         let mut r = sync::Receiver<T> { ch: self.ch.clone() };
         match r.try_recv() {
-            Option::Some(v) => Poll::Ready(Option::Some(v)),
+            Option::Some(v) => future::poll::Poll::Ready(Option::Some(v)),
             Option::None => {
                 if self.ch.closed != 0 {
-                    Poll::Ready(Option::None)
+                    future::poll::Poll::Ready(Option::None)
                 } else {
                     cx.fd = self.ch.wake_r;
                     cx.interest = 1;
-                    Poll::Pending
+                    future::poll::Poll::Pending
                 }
             }
         }

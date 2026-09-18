@@ -23,13 +23,20 @@
 // 数组切片等），必须留在根命名空间。
 module time;
 module io;
+// W5：future 符号须在 net/sync **之前** import，使 net/http 与 sync 模块
+// （`impl Future` 自建 future 类型）收集阶段能经 use_aliases 解析裸名
+// Future/Poll/Context（跨模块类型，非自建；future 不依赖 net，故可前置于 net）。
+// 2026-09-18 补充：亦须**先于 `module future;`**——其子模块（executor 等）的泛型
+// bound 以裸名 `Future` 引用协议，收集该模块时依赖本别名。
+pub import future::interface::Future;
+pub import future::poll::Poll;
+pub import future::poll::Context;
+// 类型短名亦须先于 `module future;`：其子模块（sleep / wait_fd / error / executor）
+// 在签名的返回类型中以裸名引用（`-> Sleep` / `-> WaitFd` / `Result<_, TimeoutError>`）。
+pub import future::sleep::Sleep;
+pub import future::wait_fd::WaitFd;
+pub import future::error::TimeoutError;
 module future;
-// W5：future 符号在 net/sync 之前 import，使 net/http 与 sync 模块（`impl Future`
-// 自建 future 类型）收集阶段能经 use_aliases 解析裸名 Future/Poll/Context
-// （跨模块类型，非自建；future 不依赖 net，故可前置于 net）。
-pub import future::Future;
-pub import future::Poll;
-pub import future::Context;
 module net;
 module sync;
 module fs;
@@ -101,16 +108,16 @@ pub import io::nio::Poller;
 pub import io::nio::set_nonblocking;
 pub import io::nio::is_nonblocking;
 pub import io::sendfile::sendfile;
-pub import thread::Thread;
-pub import thread::Builder;   // Y8：线程栈定制构建器
-pub import thread::sleep;
-pub import thread::join_all;
-pub import future::Future;
-pub import future::Poll;
-pub import future::Context;
-pub import future::block_on;
-pub import future::timeout;
-pub import future::TimeoutError;
+pub import thread::handle::Thread;
+pub import thread::builder::Builder;   // Y8：线程栈定制构建器
+pub import thread::ops::sleep;
+pub import thread::ops::join_all;
+pub import future::interface::Future;
+pub import future::poll::Poll;
+pub import future::poll::Context;
+pub import future::executor::block_on;
+pub import future::executor::timeout;
+pub import future::error::TimeoutError;
 pub import fmt::display::Display;
 pub import fmt::debug::Debug;
 pub import fmt::formatter::Formatter;

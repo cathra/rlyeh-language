@@ -159,9 +159,13 @@ pub(super) fn resolve_trait_def_name(ctx: &TypeContext, name: &str) -> String {
 ///
 /// PC-4：`protocol A: B` 时，实现了 `A` 的类型自动满足 `B`（父协议传递闭包）。
 pub(super) fn type_implements_trait(ctx: &TypeContext, bound: &str, concrete: &Type) -> bool {
-    // 直接实现。
+    // 直接实现（trait 名按精确或短名等价比较：std 模块化后 impl 的注册名可能是
+    // `future::interface::Future`，而 bound 仍写提升到根的短路径 `Future`）。
     if ctx.impl_defs.iter().any(|imp| {
-        imp.trait_name.as_deref() == Some(bound) && impl_self_type_matches(imp, concrete)
+        imp.trait_name
+            .as_deref()
+            .is_some_and(|t| crate::context::names_match(t, bound))
+            && impl_self_type_matches(imp, concrete)
     }) {
         return true;
     }
