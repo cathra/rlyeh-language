@@ -36,13 +36,17 @@ impl<'src> Parser<'src> {
         match self.current().cloned() {
             Some(Token::BitAnd) => {
                 self.bump();
-                // 生命周期标注 `&'a T`（G4）：MVP 解析后丢弃（严格借用检查规划中）
-                if matches!(self.current(), Some(Token::Lifetime(_))) {
-                    self.bump();
-                }
+                // 生命周期标注 `&'a T`（G4）：解析并保留生命周期名，下传至
+                // `AstType::Ref` 第三字段，再经 `resolve_ast_type` 填入 `Type::Ref`
+                // 第三字段（borrowck 生命周期检查专项 T-1）。
+                let lifetime = if matches!(self.current(), Some(Token::Lifetime(_))) {
+                    Some(self.expect_lifetime()?)
+                } else {
+                    None
+                };
                 let is_mut = self.eat(&Token::Mut);
                 let inner = self.parse_primary_type()?;
-                Ok(AstType::Ref(Box::new(inner), is_mut, None))
+                Ok(AstType::Ref(Box::new(inner), is_mut, lifetime))
             }
             // 裸指针 `*const T` / `*mut T`
             Some(Token::Star) => {

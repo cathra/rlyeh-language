@@ -88,7 +88,7 @@
 | ID | 任务 | 对应 | 优先级 | 风险 |
 |----|------|------|--------|------|
 | T-0 | `AstType::Ref` + `Type::Ref` 携带 `lifetime: Option<String>`；parser 保留 `'a` | 前置 | 中 | ✅ 已落地（2026-09-19） |
-| T-1 | typecheck `resolve_ast_type` Ref 分支产出带名 `Type::Ref`，HIR `AddrOf*` 带 `lifetime` | 前置 | 中 | 中 |
+| T-1 | parser `&'a T` 保留生命周期名并经 `resolve_ast_type` 透传至 `Type::Ref` 第三字段（HIR 类型由 `Type` 派生，无需独立 `lifetime` 字段） | 前置 | 中 | ✅ 已落地（2026-09-19） |
 | T-2 | regionck 扩展 `outlives` 约束图，接入「引用存活」边 | G2 | 中 | 中 |
 | T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断 | G2/G3 | 中 | 中 |
 | T-4 | **region 推断失败诊断**（取代静默放行） | **B-5** | 中 | 中 |
@@ -143,4 +143,6 @@
 
 ### 9.5 判定
 
-T-0 已落地（2026-09-19）：约 **40** 处落点（2 定义 + 20 构造 + 18 匹配）均为「追加 `None` / 第三绑定 `_`」，借助编译器报错逐项消歧完成；parser / desugar 的接收者构造（`Self` / `Context`、`&self`）默认 `None`。已作为 B-5 首步**独立提交**，不混入其它逻辑；随后在 T-1 把解析保留的 `'a` 名经 `resolve_ast_type` 真正填入 `Type::Ref` 第三字段。
+T-0 已落地（2026-09-19）：约 **40** 处落点（2 定义 + 20 构造 + 18 匹配）均为「追加 `None` / 第三绑定 `_`」，借助编译器报错逐项消歧完成；parser / desugar 的接收者构造（`Self` / `Context`、`&self`）默认 `None`。已作为 B-5 首步**独立提交**，不混入其它逻辑。
+
+**T-1 已落地（2026-09-19）**：parser `&` 分支此前 `MVP 解析后丢弃` 生命周期名，现已通过 `expect_lifetime` 捕获 `'a` 标签并写入 `AstType::Ref` 第三字段；typecheck `resolve_ast_type` 的 Ref 分支将该字段 clone 透传至 `Type::Ref` 第三字段（`#[memory(gc)]` 模块的 `Gc<T>` 路径忽略之）。新增 parser 单测 `test_ref_lifetime_label_retained`（`&'a T` / `&T` / `&'b mut T` 三态）守护。全仓编译 + parser/typecheck 单测 + driver 全量集成套件（740+ 用例）均零回归。

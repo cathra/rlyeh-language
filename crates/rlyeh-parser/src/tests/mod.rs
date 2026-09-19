@@ -536,6 +536,43 @@ fn test_peek_token_interface() {
     assert!(p.check(&Token::IntLiteral(1)));
 }
 
+/// T-1 回归：解析 `&'a T` 必须保留生命周期名（此前 MVP 阶段直接丢弃）。
+#[test]
+fn test_ref_lifetime_label_retained() {
+    // &'a T：携带 'a，不可变
+    let mut p = Parser::new("&'a i64").expect("lex");
+    let ty = p.parse_type().expect("parse");
+    match &ty {
+        AstType::Ref(_, is_mut, lifetime) => {
+            assert!(!is_mut);
+            assert_eq!(lifetime, &Some("a".to_string()));
+        }
+        _ => panic!("expected AstType::Ref for &'a i64"),
+    }
+
+    // &T：省略生命周期名仍为 None
+    let mut p2 = Parser::new("&i64").expect("lex");
+    let ty2 = p2.parse_type().expect("parse");
+    match &ty2 {
+        AstType::Ref(_, is_mut2, lifetime2) => {
+            assert!(!is_mut2);
+            assert_eq!(lifetime2, &None);
+        }
+        _ => panic!("expected AstType::Ref for &i64"),
+    }
+
+    // &'b mut T：同时携带可变标记与生命周期名 'b
+    let mut p3 = Parser::new("&'b mut i64").expect("lex");
+    let ty3 = p3.parse_type().expect("parse");
+    match &ty3 {
+        AstType::Ref(_, is_mut3, lifetime3) => {
+            assert!(*is_mut3);
+            assert_eq!(lifetime3, &Some("b".to_string()));
+        }
+        _ => panic!("expected AstType::Ref for &'b mut i64"),
+    }
+}
+
 
 mod region;
 mod control;

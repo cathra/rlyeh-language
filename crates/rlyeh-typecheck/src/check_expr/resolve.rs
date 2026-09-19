@@ -119,10 +119,11 @@ pub(crate) fn resolve_ast_type(
                 Ok(Type::Named(full, resolved))
             }
         }
-        AstType::Ref(inner, is_mut, _) => {
+        AstType::Ref(inner, is_mut, lifetime) => {
             let inner = resolve_ast_type(ctx, inner, span)?;
             // B-6（P3）：`#[memory(gc)]` 模块内引用默认映射为 `Gc<T>`（L3），
             // 指针图 / 树结构免写 `&`/`&mut`（`next: &Node` ≡ `next: Gc<Node>`）。
+            // 该路径下生命周期名无意义，直接忽略。
             if ctx.in_gc_module() {
                 return Ok(Type::Named("Gc".to_string(), vec![inner]));
             }
@@ -131,7 +132,9 @@ pub(crate) fn resolve_ast_type(
             } else {
                 Mutability::Immutable
             };
-            Ok(Type::Ref(Box::new(inner), m, None))
+            // T-1：透传解析保留的生命周期名（如 `&'a T` 的 `'a`）；`None` 表示省略，
+            // 走默认 region 推断。
+            Ok(Type::Ref(Box::new(inner), m, lifetime.clone()))
         }
         AstType::RawPtr(inner, is_mut) => {
             let inner = resolve_ast_type(ctx, inner, span)?;
