@@ -361,6 +361,8 @@ pub(crate) fn collect_mod_types_inner(
     prefix: &str,
 ) -> Result<(), TypeError> {
     let new_prefix = full_name(prefix, &m.name);
+    // 登记已声明模块路径（供 `resolve_import_path` 消歧，与 `collect_item_decls` 一致）
+    ctx.modules.insert(new_prefix.clone());
     // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
     if m.memory.as_deref() == Some("gc") {
         ctx.gc_modules.insert(new_prefix.clone());
@@ -369,6 +371,13 @@ pub(crate) fn collect_mod_types_inner(
     // 模块前缀（`fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
     // 等——collect_impl/collect_trait 收集阶段即 resolve_ast_type，use 段未注册）。
     let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
+    // 先注册本模块全部 use 导入别名，再收集类型 / 子模块——避免子模块声明
+    // 先于 `pub import` 时别名未注册导致全限定引用退化为别名串。
+    for inner in &m.items {
+        if let AstItem::UseDecl(u) = inner {
+            register_use(ctx, u, &new_prefix)?;
+        }
+    }
     for inner in &m.items {
         match inner {
             AstItem::StructDecl(s) => collect_struct(ctx, s, &new_prefix)?,
@@ -376,7 +385,6 @@ pub(crate) fn collect_mod_types_inner(
             AstItem::TraitDecl(t) => collect_trait(ctx, t, &new_prefix)?,
             AstItem::ImplBlock(imp) => collect_impl(ctx, imp, &new_prefix)?,
             AstItem::ModDecl(inner_mod) => collect_mod_types_inner(ctx, inner_mod, &new_prefix)?,
-            AstItem::UseDecl(u) => register_use(ctx, u, prefix)?,
             _ => {}
         }
     }

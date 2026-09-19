@@ -1,7 +1,7 @@
 // Y4c：有界通道 bounded_channel(capacity)——容量限制 + 满则 send 阻塞（condvar 挂起）
 // 单线程功能验证：try_send 满返回 false、recv FIFO、腾出空间后恢复 send
 fn main() {
-    let mut pair = sync::bounded_channel::<i64>(2);
+    let mut pair = bounded_channel::<i64>(2);
     let mut tx = pair.tx;
     let mut rx = pair.rx;
     // 容量 2：发送 2 个不阻塞

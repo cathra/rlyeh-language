@@ -144,6 +144,9 @@ fn collect_item_decls(
         AstItem::ActorDecl(a) => collect_actor(ctx, a, prefix)?,
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
+            // 登记已声明模块路径（供 `resolve_import_path` 区分相对子模块导入与
+            // 跨模块绝对路径导入；在声明即登记，不依赖符号收集时机）。
+            ctx.modules.insert(new_prefix.clone());
             // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
             if m.memory.as_deref() == Some("gc") {
                 ctx.gc_modules.insert(new_prefix.clone());
@@ -298,19 +301,23 @@ fn register_use(
 /// 把导入路径归一为**完整符号名**（`use_aliases` 的目标）。
 ///
 /// - `prefix` 为空（顶层）：路径原样即完整名（如 `time::duration::Duration`）；
-/// - `prefix` 非空（模块内）：**优先按相对本模块**解析——`import duration::Duration;`
-///   归一为 `time::duration::Duration`，即模块内无需写绝对路径；仅当相对目标**确实
-///   不存在**时，才视为引用外部模块的绝对路径（如 `module outer` 内
-///   `import inner::secret;` 引用顶层 `inner`）。已写明绝对路径（首段与本模块同名）
-///   时原样保留。
+/// - `prefix` 非空（模块内）：
+///   - 若路径首段是 `prefix` 的**已声明子模块**（见 `TypeContext::modules`），按相对
+///     本模块解析——`import base::OpenMode;` 归一为 `io::base::OpenMode`；
+///   - 否则视为引用**外部 / 顶层模块**的绝对路径（如 `module pkg` 内
+///     `import helper::bump;`，`helper` 是顶层模块，`pkg::helper` 不存在）→ `helper::bump`。
+///   - 已写明绝对路径（首段与本模块同名）时原样保留。
 ///
-/// 结论：模块内引用**自身子模块**写相对路径，引用**外部模块**写完整路径。
+/// 相对目标是否存在**不依赖符号收集时机**——仅依据模块声明（`modules` 在 `module X;`
+/// 即登记），故 `io::base::OpenMode` 在 `OpenMode` 枚举收集前即可正确归一，避免
+/// 别名链 `OpenMode → base::OpenMode` 指向不存在符号（io 模块拆分回归）。
 fn resolve_import_path(ctx: &TypeContext, prefix: &str, path: &str) -> String {
     if prefix.is_empty() || path == prefix || path.starts_with(&format!("{prefix}::")) {
         return path.to_string();
     }
     let rel = format!("{prefix}::{path}");
-    if ctx.resolve_full_name(&rel).is_some() {
+    let first_seg = path.split("::").next().unwrap_or(path);
+    if ctx.modules.contains(&format!("{prefix}::{first_seg}")) {
         rel
     } else {
         path.to_string()

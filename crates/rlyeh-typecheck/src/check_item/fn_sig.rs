@@ -20,7 +20,16 @@ pub fn collect_fn_signatures(
     })?;
     let program = &program;
     let mut ctx = TypeContext::new();
-    // 先收集结构体 / 枚举 / trait / impl / use 导入别名（签名可能引用这些类型）
+    // 先注册全部 use 导入别名，再收集结构体 / 枚举 / trait / impl / 模块。
+    // 关键：若某 `module X;` 声明排在 `pub import X::Y;` 之前，子模块收集时别名
+    // 尚未注册，其内 `sync::Mutex` 类全限定引用会退化为未规范化的别名串
+    // （sync 模块拆分回归：Mutex::new 返回类型存成别名 `sync::Mutex` 而非
+    // `sync::mutex::Mutex`，导致与字段类型 `sync::mutex::Mutex` 不匹配）。
+    for item in &program.items {
+        if let AstItem::UseDecl(u) = item {
+            register_use(&mut ctx, u, "")?;
+        }
+    }
     for item in &program.items {
         match item {
             AstItem::StructDecl(s) => collect_struct(&mut ctx, s, "")?,
@@ -28,7 +37,6 @@ pub fn collect_fn_signatures(
             AstItem::TraitDecl(t) => collect_trait(&mut ctx, t, "")?,
             AstItem::ImplBlock(imp) => collect_impl(&mut ctx, imp, "")?,
             AstItem::ModDecl(m) => collect_mod_types(&mut ctx, m)?,
-            AstItem::UseDecl(u) => register_use(&mut ctx, u, "")?,
             _ => {}
         }
     }

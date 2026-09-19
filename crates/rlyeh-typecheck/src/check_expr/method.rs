@@ -314,6 +314,12 @@ pub(super) fn check_method_call(
     if matches!(self_ty, Type::Str) && matches!(&recv_ty, Type::Ref(_, _)) {
         self_ty = Type::Named("String".to_string(), vec![]);
     }
+    // 规范化接收者类型名（别名 → 规范符号名）：标准库子模块拆分后，接收者类型
+    // 常经 `pub import` 以别名出现（如 `sync::RwLockWriteGuard`），而 impl 的
+    // `self_type` 注册为规范名（`sync::rwlock::RwLockWriteGuard`）。不规范化则
+    // 下方 `unify(cand.self_type, self_ty)` 无法绑定泛型 `T`，方法体 / 返回类型
+    // 中的 `T` 会泄漏为未定义类型。
+    self_ty = ctx.canonical_type(&self_ty);
     // J3 迭代器适配器：map / filter / fold / collect / take / skip
     // （数组或自定义迭代器 receiver → 内建 desugar，优先于通用方法解析）
     if let Some(res) = try_check_adapter(ctx, receiver, &self_ty, method, args, span)? {

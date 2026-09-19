@@ -112,6 +112,10 @@ pub struct TypeContext {
     /// B-6：标注 `#[memory(gc)]` 的模块前缀集合（含嵌套继承），供引用→`Gc<T>`
     /// 默认映射判定（见 `in_gc_module`）。
     pub gc_modules: std::collections::HashSet<String>,
+    /// 已声明的模块路径集合（`"io"` / `"io::base"` 等），供 `resolve_import_path`
+    /// 区分相对子模块导入与跨模块绝对路径导入（见 `register_use`）。在 `module X;`
+    /// 声明即登记，不依赖符号是否已被收集，从而解耦注册时机。
+    pub modules: std::collections::HashSet<String>,
     /// 当前作用域的泛型参数名（如 `["T"]`）
     pub type_params: Vec<String>,
     /// 当前泛型替换表（泛型参数名 → 具体类型，实例化 body 检查时有效）
@@ -525,38 +529,46 @@ impl TypeContext {
                 return Ok(Type::Named(full, Vec::new()));
             }
         }
-        // 模块化兜底（2026-09-18）：标准库按子模块拆分后，跨模块引用可能仍写拆分前的
-        // 短路径（如 `fmt::FmtError` 实际注册为 `fmt::error::FmtError`），而签名收集
-        // 阶段早于模块内 `pub import` 的别名生效。此处在**唯一**后缀匹配时接受该名，
-        // 避免为每个子模块强绑别名注册时机。
-        if name.contains("::") {
-            let suffix = format!("::{}", name.rsplit("::").next().unwrap_or_default());
-            let mut hit: Option<String> = None;
-            let mut ambiguous = false;
-            for k in self.structs.keys().chain(self.enum_defs.keys()) {
-                if k.ends_with(&suffix) {
-                    if hit.is_some() {
-                        ambiguous = true;
-                        break;
-                    }
-                    hit = Some(k.clone());
-                }
+        // 模块化兜底：参见 `resolve_named_type_suffix`。
+        if let Some(k) = self.resolve_named_type_suffix(name) {
+            if self.enum_defs.contains_key(&k) && self.is_scalar_enum(&k) {
+                return Ok(Type::ScalarEnum(k));
             }
-            if !ambiguous {
-                if let Some(k) = hit {
-                    if self.enum_defs.contains_key(&k) {
-                        if self.is_scalar_enum(&k) {
-                            return Ok(Type::ScalarEnum(k));
-                        }
-                    }
-                    return Ok(Type::Named(k, Vec::new()));
-                }
-            }
+            return Ok(Type::Named(k, Vec::new()));
         }
         Err(TypeError::UndefinedType {
             name: name.to_string(),
             span,
         })
+    }
+
+    /// 模块化后缀兜底（2026-09-18）：标准库按子模块拆分后，跨模块引用可能仍写拆分前的
+    /// 短路径（如 `fmt::FmtError` 实际注册为 `fmt::error::FmtError`），而签名收集阶段
+    /// 早于模块内 `pub import` 的别名生效。此处在**唯一**后缀匹配时接受该名，返回规范类型
+    /// 的全名，避免为每个子模块强绑别名注册时机。歧义（多个同名）返回 None。
+    pub(crate) fn resolve_named_type_suffix(&self, name: &str) -> Option<String> {
+        if !name.contains("::") {
+            return None;
+        }
+        let suffix = format!("::{}", name.rsplit("::").next().unwrap_or_default());
+        if suffix == "::" {
+            return None;
+        }
+        let mut hit: Option<String> = None;
+        let mut ambiguous = false;
+        for k in self.structs.keys().chain(self.enum_defs.keys()) {
+            if k.ends_with(&suffix) {
+                if hit.is_some() {
+                    ambiguous = true;
+                    break;
+                }
+                hit = Some(k.clone());
+            }
+        }
+        if ambiguous {
+            return None;
+        }
+        hit
     }
 
     /// 记录一个枚举定义。
@@ -632,7 +644,7 @@ impl TypeContext {
     pub fn find_impl(&self, self_type: &Type) -> Option<&ImplDef> {
         self.impl_defs
             .iter()
-            .find(|d| d.trait_name.is_none() && type_matches(d, self_type))
+            .find(|d| d.trait_name.is_none() && type_matches(d, &self_type))
     }
 
     /// 在 trait impl 中按目标类型查找方法所属的 impl 块。
@@ -640,14 +652,39 @@ impl TypeContext {
     pub fn find_trait_impl(&self, self_type: &Type) -> Option<&ImplDef> {
         self.impl_defs
             .iter()
-            .find(|d| d.trait_name.is_some() && type_matches(d, self_type))
+            .find(|d| d.trait_name.is_some() && type_matches(d, &self_type))
     }
 
     /// 按目标类型查找含指定方法的 impl 块（inherent 优先，trait 次之）。
+    /// 把类型名规范化：经别名链 + 后缀兜底（见 `resolve_named_type_suffix`）映射到
+    /// 规范符号名。用于 impl / 方法查找时统一查询类型与注册 impl 的 `self_type`
+    /// （标准库按子模块拆分后，查询方常持别名 `sync::Mutex`，而 impl 注册为
+    /// `sync::mutex::Mutex`；不规范化则 `type_matches` 直比失配）。
+    pub(crate) fn canonical_type(&self, t: &Type) -> Type {
+        match t {
+            Type::Named(name, args) => {
+                let c = self
+                    .resolve_full_name(name)
+                    .or_else(|| self.resolve_named_type_suffix(name))
+                    .unwrap_or_else(|| name.clone());
+                Type::Named(c, args.clone())
+            }
+            Type::ScalarEnum(name) => {
+                let c = self
+                    .resolve_full_name(name)
+                    .or_else(|| self.resolve_named_type_suffix(name))
+                    .unwrap_or_else(|| name.clone());
+                Type::ScalarEnum(c)
+            }
+            _ => t.clone(),
+        }
+    }
+
     pub fn find_impl_for_method(&self, self_type: &Type, method: &str) -> Option<&ImplDef> {
+        let self_type = self.canonical_type(self_type);
         self.impl_defs
             .iter()
-            .find(|d| type_matches(d, self_type) && d.methods.iter().any(|m| m.sig.name == method))
+            .find(|d| type_matches(d, &self_type) && d.methods.iter().any(|m| m.sig.name == method))
     }
 
     /// A2（SH-P1-1，2026-09-02）：按目标类型 + 方法名查找**全部**匹配的 impl
@@ -655,10 +692,11 @@ impl TypeContext {
     /// impl**（如 `impl Wrap<i64> for W` 与 `impl Wrap<bool> for W`），解析点
     /// 需按 trait 类型实参 / 实参类型选取正确的 impl，而非首匹配。
     pub fn find_impl_candidates(&self, self_type: &Type, method: &str) -> Vec<ImplDef> {
+        let self_type = self.canonical_type(self_type);
         let mut inherent = Vec::new();
         let mut trait_impls = Vec::new();
         for d in &self.impl_defs {
-            if type_matches(d, self_type) && d.methods.iter().any(|m| m.sig.name == method) {
+            if type_matches(d, &self_type) && d.methods.iter().any(|m| m.sig.name == method) {
                 if d.trait_name.is_none() {
                     inherent.push(d.clone());
                 } else {
@@ -678,11 +716,12 @@ impl TypeContext {
         trait_name: &str,
         method: &str,
     ) -> Vec<ImplDef> {
+        let self_type = self.canonical_type(self_type);
         self.impl_defs
             .iter()
             .filter(|d| {
                 names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
-                    && type_matches(d, self_type)
+                    && type_matches(d, &self_type)
                     && d.methods.iter().any(|m| m.sig.name == method)
             })
             .cloned()
@@ -702,10 +741,11 @@ impl TypeContext {
         trait_name: &str,
         method: &str,
     ) -> Option<&ImplDef> {
+        let self_type = self.canonical_type(self_type);
         // 精确匹配优先（避免同名 trait 串味）
         if let Some(d) = self.impl_defs.iter().find(|d| {
             d.trait_name.as_deref() == Some(trait_name)
-                && type_matches(d, self_type)
+                && type_matches(d, &self_type)
                 && d.methods.iter().any(|m| m.sig.name == method)
         }) {
             return Some(d);
@@ -713,7 +753,7 @@ impl TypeContext {
         // 短名等价兜底（模块化后注册名可能是 `fmt::display::Display`）
         self.impl_defs.iter().find(|d| {
             names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
-                && type_matches(d, self_type)
+                && type_matches(d, &self_type)
                 && d.methods.iter().any(|m| m.sig.name == method)
         })
     }
@@ -724,7 +764,7 @@ impl TypeContext {
     /// （trait 默认 body）由 `check_method_call` 的 `trait_default_method` 构造。
     pub fn find_trait_default_impl(&self, self_type: &Type, method: &str) -> Option<&ImplDef> {
         self.impl_defs.iter().find(|d| {
-            if !type_matches(d, self_type) {
+            if !type_matches(d, &self_type) {
                 return false;
             }
             let Some(tname) = d.trait_name.as_deref() else {

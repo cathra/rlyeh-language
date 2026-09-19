@@ -110,6 +110,7 @@ pub(crate) fn resolve_ast_type(
                 // 裸名不做别名展开会产生 `Poll` vs `future::Poll` 的错配）。
                 let full = ctx
                     .resolve_full_name(name)
+                    .or_else(|| ctx.resolve_named_type_suffix(name))
                     .unwrap_or_else(|| name.to_string());
                 let mut resolved = Vec::with_capacity(args.len());
                 for a in args {
