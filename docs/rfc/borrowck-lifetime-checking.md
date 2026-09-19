@@ -93,7 +93,7 @@
 | T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断（region 边界维度：区内局部被引用、region 退出后引用仍存活 / 区尾引用逃逸到区外变量） | G2/G3 | 中 | ✅ 已落地（2026-09-19） |
 | T-4 | **region 推断失败诊断**（取代静默放行） | **B-5** | 中 | ✅ 已收口（2026-09-19）：多 region 歧义被 Rlyeh 生命周期省略覆盖，局部逃逸由 T-2/T-3 `DanglingReference` 兜底，无新增诊断（见 §9.7 方案 A） |
 | T-5 | run-pass / compile-fail 测试：`lifetime_region_valid`（新增）/ `dangling_region_err`（已由 T-3 `dangling-region-final`/`dangling-region-assign` 覆盖）/ `region_inference_err`（随 T-4 方案 A 取消） | G3/B-5 | 低 | ✅ 已落地（2026-09-19） |
-| T-6（可选） | **块级借用语义**：borrowck 活跃期改为块级区间 | **B-7** | 高 | 高 |
+| T-6（可选） | **块级借用语义**：borrowck 活跃期改为块级区间 | **B-7** | 高 | ⚠️ 已原型评估（2026-09-19）：纯块级模型误报 + 与 T-3 不兼容，维持独立后续阶段（见 §9.9） |
 
 建议首轮切片：**T-0 → T-1 → T-2 → T-3 → T-4 → T-5**（B-5 收口）；**T-6（B-7）独立评估**。
 
@@ -184,3 +184,11 @@ T-5 编写 `lifetime_region_valid.rl` 时暴露：**borrowck 的 `uses: HashMap<
 - **性质**：**既有缺陷，非 T-3 引入**。T-3 的 region 边界扫描是首个在「跨 region 比较 `last_use` 与 `boundary`」处暴露该缺陷，但根因在 `uses` 的按名索引模型。
 - **规避**：T-5 测试改用互不相同的变量名（`x1/r1`、`z2/rz2`、`a3/r3` 等）以不触发该缺陷；合法代码亦可如此规避。
 - **修复（2026-09-19，已落地）**：`BorrowChecker` 新增 `defs: HashMap<String, Vec<usize>>`（预扫描记录各次 `let` 定义位置），并新增 `last_use_for(var, born)`——仅取「`>= born` 且 `< 下一次同名重定义`」区间内 `uses[var]` 的最大值，应用于 `register_borrow` / `copy_borrow` 计算 `Borrow.last_use`。无遮蔽时 `next_def = ∞`，等价于原 `uses[var].last()`（**零行为变化**）；遮蔽时各绑定实例活跃期互不干扰，`last_use` 不再被后续同名绑定的使用位置污染。新增 run-pass `lifetime_region_shadow.rl`（复用同名引用变量跨 region）锁定该修复。全量套件（740+ 用例）零回归。
+
+## 9.9 T-6（B-7 块级借用）评估（2026-09-19，原型验证后维持独立后续阶段）
+
+按 §4.4/§6 将 T-6 列为「独立后续阶段、高风险」，2026-09-19 以**隔离原型**验证其可行性（仅将 `active_borrows` 的冲突判定由 NLL 近似 `born <= pos <= last_use` 改为块级区间 `born <= pos < block_ends[block_id]`，T-3 的 region 边界扫描保持 `last_use` 不动），结论：
+
+- **假阳性回归（违背专项目标「不误报」）**：`run-pass/borrow_pass.rl` 17 行借用、19 行对该变量赋值——NLL 下借用已于赋值前结束（合法），块级模型使借用活跃至块尾 → 误报 `cannot assign to y because it is borrowed`。即 RFC §4.4 所述「少数细粒度 NLL 模式需手动包 `{}`」的代价，但此处是既有合法 run-pass 用例，强制迁移会改动既有代码语义预期。
+- **与 T-3 不兼容（结构性）**：T-3 依赖「引用在 region 内创建、却在区外被使用」即 `last_use > boundary`。纯块级模型下，region 内创建的引用 `block_end == boundary`，`block_end > boundary` 恒为假 → T-3 通用扫描对 `dangling-region-*.rl` 失活。若要点对点迁移，需以「引用变量逃逸出 region 块作用域」重推 T-3，属独立重构。
+- **结论**：维持 RFC §4.4 判定——T-6（B-7）不在本专项首轮切片，列为独立后续阶段。后续若启动，须先重推 T-3 使其与块级模型协同，并将既有 run-pass 的细粒度 NLL 模式按文档迁移为显式块作用域；启动前建议先以本原型分支复测回归面。
