@@ -116,6 +116,8 @@
   39/39 通过。已知限制：仅 `let` 位置支持 `mut`，`match` / `if let` / `while let`
   不支持（语义上绑定不可变）；结构体字段仅支持 `Point { mut x }` 前缀形式。
 
+- **严格借用检查专项：引用生命周期 / Region 有效性（borrowck 生命周期检查，2026-09-19）**：编译器前端补齐引用生命周期与 region 有效性的借用检查能力，落地于 `rlyeh-borrowck` crate。① **T-0/T-1 生命周期名贯通**——`Type::Ref` 携带可选生命周期名，从 parser 经类型检查贯通至 HIR（`&'a T` 不再解析即丢弃）；② **T-2 引用存活传播**——引用存活边经拷贝（`let s = r` / `s = r` / 块值 `let s = { ..; r }`）传播，闭合别名逃逸缺口；③ **T-3 region 边界悬垂检测**——`region 'r { .. }` 内创建的引用在 region 退出（区内局部批量释放）后仍存活 / 逃逸到区外变量 → `DanglingReference`；④ **T-4/T-5 收口与良构测试**——region 推断失败诊断收敛到既有 `elision`+`DanglingReference`（不新增诊断），新增 region 借用良构 run-pass 测试；⑤ **§9.8 同名遮蔽误报修复**——`uses` 按名索引在同名遮蔽时被后续绑定使用位置污染 `last_use`，致 T-3 误报 `DanglingReference`；改为绑定实例级 `last_use_for(var, born)`（仅取 `[born, 下一次同名重定义)` 区间内使用位置），无遮蔽时等价于原逻辑（零行为变化）；⑥ **T-6 块级借用语义（独立阶段）**——冲突检测的借用活跃期由 NLL 近似（`born..last_use`）改为块级区间（`born..block_ends[block_id]`，活跃到最近块 / region 边界），规则可人工推演；T-3 region 边界悬垂扫描保持 `last_use` 不动（region 逃逸是跨作用域属性，块级下 `block_end == boundary` 会使扫描失效），二者并存各司其职。验收：`tests/run-pass/lifetime_region_shadow.rl`（同名引用变量复用跨 region，锁定 §9.8 修复）+ `tests/run-pass/borrow_pass.rl`（块级借用，第 2 节按 RFC 预期包显式 `{}` 迁移）+ `tests/compile-fail/dangling-region-final.rl` / `dangling-region-assign.rl`（T-3 region 边界悬垂）；全量 740+ 用例零回归，`cargo clippy --workspace` 0 警告。设计文档见 `docs/rfc/borrowck-lifetime-checking.md`（§10 收口纪要、§11 T-6 实现纪要）。
+
 ## [0.1.0] 补充记录（2026-08-23 开发迭代，随 v0.1.0 首发）
 
 ### 新增
