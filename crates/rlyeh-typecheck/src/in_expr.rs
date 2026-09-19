@@ -279,7 +279,7 @@ pub(crate) fn check_in_container_expression(
 
     // 解析容器：剥离一层引用（&[T] / &[T; N]），匹配数组 / 切片 / Vec
     let inner = match &c_ty {
-        Type::Ref(inner, _) => &**inner,
+        Type::Ref(inner, _, _) => &**inner,
         other => other,
     };
     let (elem_ty, is_array, array_len, is_str) = match inner {

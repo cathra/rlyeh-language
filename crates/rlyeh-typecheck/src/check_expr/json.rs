@@ -852,7 +852,7 @@ pub(crate) fn check_json_to_writer(
     let (_w_hir, w_ty) = infer_expr(ctx, &args[0])?;
     let inner = match &w_ty {
         Type::Named(n, _) => Some(n),
-        Type::Ref(t, _) => match &**t {
+        Type::Ref(t, _, _) => match &**t {
             Type::Named(n, _) => Some(n),
             _ => None,
         },
@@ -911,7 +911,7 @@ pub(crate) fn check_json_from_reader(
     let (_r_hir, r_ty) = infer_expr(ctx, &args[0])?;
     let inner = match &r_ty {
         Type::Named(n, _) => Some(n),
-        Type::Ref(t, _) => match &**t {
+        Type::Ref(t, _, _) => match &**t {
             Type::Named(n, _) => Some(n),
             _ => None,
         },

@@ -243,7 +243,7 @@ fn collect_trait_methods(
 pub(crate) fn dyn_supertrait_upshift(ctx: &TypeContext, at: &Type, ty: &Type) -> Option<Type> {
     let (target_t, src_t) = match (at, ty) {
         (Type::Dyn(a), Type::Dyn(b)) => (a, b),
-        (Type::Ref(a, _), Type::Ref(b, _)) => match (&**a, &**b) {
+        (Type::Ref(a, _, _), Type::Ref(b, _, _)) => match (&**a, &**b) {
             (Type::Dyn(x), Type::Dyn(y)) => (x, y),
             _ => return None,
         },
@@ -584,8 +584,8 @@ pub(super) fn unify(
             }
             Ok(())
         }
-        Type::Ref(inner, _) => {
-            if let Type::Ref(ainner, _) = arg {
+        Type::Ref(inner, _, _) => {
+            if let Type::Ref(ainner, _, _) = arg {
                 unify(inner, ainner, subst)?;
             }
             Ok(())
@@ -638,7 +638,7 @@ pub(super) fn contains_infer(ty: &Type) -> bool {
     match ty {
         Type::Infer => true,
         Type::Named(_, ps) => ps.iter().any(contains_infer),
-        Type::Ref(inner, _) => contains_infer(inner),
+        Type::Ref(inner, _, _) => contains_infer(inner),
         Type::Tuple(ts) => ts.iter().any(contains_infer),
         Type::Array(inner, _) => contains_infer(inner),
         _ => false,
@@ -652,7 +652,7 @@ pub(super) fn contains_generic_named(ty: &Type, names: &[String]) -> bool {
     match ty {
         Type::Generic(n) => names.contains(n),
         Type::Named(_, ps) => ps.iter().any(|p| contains_generic_named(p, names)),
-        Type::Ref(inner, _) => contains_generic_named(inner, names),
+        Type::Ref(inner, _, _) => contains_generic_named(inner, names),
         Type::RawPtr(inner, _) => contains_generic_named(inner, names),
         Type::Fn(sig) => {
             sig.params.iter().any(|p| contains_generic_named(p, names))

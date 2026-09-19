@@ -153,7 +153,7 @@ fn is_string_ast(ty: &AstType) -> bool {
 // ---------- Clone ----------
 
 fn clone_field_expr(field: &str, ty: &AstType, span: Span) -> AstExpr {
-    if is_scalar_ast(ty) || matches!(ty, AstType::Ref(_, _)) {
+    if is_scalar_ast(ty) || matches!(ty, AstType::Ref(_, _, _)) {
         // 标量 / 引用直接拷贝（无需 .clone()）
         self_field(field, span)
     } else {
@@ -181,7 +181,7 @@ fn build_clone_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         generics: s.generics.clone(),
         params: vec![AstParam {
             name: "self".to_string(),
-            type_: AstType::Ref(Box::new(st.clone()), false),
+            type_: AstType::Ref(Box::new(st.clone()), false, None),
             default: None,
             is_mut: false,
             span,
@@ -273,14 +273,14 @@ fn build_partialeq_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplB
         params: vec![
             AstParam {
                 name: "self".to_string(),
-                type_: AstType::Ref(Box::new(st.clone()), false),
+                type_: AstType::Ref(Box::new(st.clone()), false, None),
                 default: None,
                 is_mut: false,
                 span,
             },
             AstParam {
                 name: "other".to_string(),
-                type_: AstType::Ref(Box::new(st.clone()), false),
+                type_: AstType::Ref(Box::new(st.clone()), false, None),
                 default: None,
                 is_mut: false,
                 span,
@@ -383,7 +383,7 @@ fn build_debug_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         params: vec![
             AstParam {
                 name: "self".to_string(),
-                type_: AstType::Ref(Box::new(st.clone()), false),
+                type_: AstType::Ref(Box::new(st.clone()), false, None),
                 default: None,
                 is_mut: false,
                 span,
@@ -392,8 +392,7 @@ fn build_debug_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
                 name: "f".to_string(),
                 type_: AstType::Ref(
                     Box::new(AstType::Path("fmt::Formatter".to_string(), vec![])),
-                    true,
-                ),
+                    true, None),
                 default: None,
                 is_mut: false,
                 span,

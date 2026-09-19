@@ -97,7 +97,7 @@ pub(crate) fn infer_expr_tail(
                             check_method_call(ctx, operand, "deref_mut", &[], None, span, 0)?;
                         let (v_hir, v_ty) = infer_expr(ctx, value)?;
                         let inner = match &dm_ty {
-                            Type::Ref(inner, _) => (**inner).clone(),
+                            Type::Ref(inner, _, _) => (**inner).clone(),
                             _ => dm_ty.clone(),
                         };
                         if !inner.compatible_with(&v_ty) {

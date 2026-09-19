@@ -358,7 +358,7 @@ pub(crate) fn check_any_downcast_ref(
     let else_block = make_option_block(ctx, slots, by_value, 0, None);
     let ret_ty = Type::Named(
         "Option".to_string(),
-        vec![Type::Ref(Box::new(target), Mutability::Immutable)],
+        vec![Type::Ref(Box::new(target), Mutability::Immutable, None)],
     );
     Ok((
         HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
@@ -522,7 +522,7 @@ pub(crate) fn type_mentions_self(ty: &Type) -> bool {
         // `Self::Item` 关联类型占位（trait 声明收集时无 impl 上下文，
         // 退化为 `Generic("Self::Item")`）同样视为 `Self` 提及。
         Type::Generic(n) => n == "Self" || n.starts_with("Self::"),
-        Type::Ref(t, _) | Type::RawPtr(t, _) | Type::Array(t, _) => type_mentions_self(t),
+        Type::Ref(t, _, _) | Type::RawPtr(t, _) | Type::Array(t, _) => type_mentions_self(t),
         Type::Named(_, ps) | Type::Tuple(ps) => ps.iter().any(type_mentions_self),
         _ => false,
     }

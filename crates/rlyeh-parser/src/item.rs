@@ -131,7 +131,7 @@ impl<'src> Parser<'src> {
         match ty {
             AstType::Path(n, _) => n.clone(),
             AstType::Dyn(n) => n.clone(),
-            AstType::Ref(inner, _) | AstType::RawPtr(inner, _) | AstType::Array(inner, _) => {
+            AstType::Ref(inner, _, _) | AstType::RawPtr(inner, _) | AstType::Array(inner, _) => {
                 Self::ast_type_bound_name(inner)
             }
             AstType::Tuple(ts) => ts
@@ -226,8 +226,7 @@ impl<'src> Parser<'src> {
                     name: self_name,
                     type_: AstType::Ref(
                         Box::new(AstType::Path("Self".to_string(), Vec::new())),
-                        is_mut,
-                    ),
+                        is_mut, None),
                     default: None,
                     is_mut: false,
                     span: self.span_until_current(start),

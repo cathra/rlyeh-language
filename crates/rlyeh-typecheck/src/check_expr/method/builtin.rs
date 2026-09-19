@@ -37,10 +37,10 @@ pub(super) fn try_builtin_method_call(
     // 避免落入 impl 查找报「无此方法」。布局与 StrFat 同为 `{data, len}`：
     // 槽 0 = data 指针、槽 1 = 长度。
     if args.is_empty()
-        && matches!(&recv_ty, Type::Ref(inner, _) if matches!(&**inner, Type::Slice(_)))
+        && matches!(&recv_ty, Type::Ref(inner, _, _) if matches!(&**inner, Type::Slice(_)))
     {
         let elem_ty = match &recv_ty {
-            Type::Ref(inner, _) => match &**inner {
+            Type::Ref(inner, _, _) => match &**inner {
                 Type::Slice(e) => (**e).clone(),
                 _ => unreachable!("已由守卫确认接收者为切片引用"),
             },
@@ -154,7 +154,7 @@ pub(super) fn try_builtin_method_call(
     // 而 `[u8; N]` 数组非紧凑（每元素 8 字节），不宜作为字节切片来源。
     if (method == "as_slice" || method == "as_mut_slice") && args.is_empty() {
         let vec_ty = match &recv_ty {
-            Type::Ref(inner, _) => &**inner,
+            Type::Ref(inner, _, _) => &**inner,
             other => other,
         };
         if let Type::Named(n, targs) = vec_ty {
@@ -202,7 +202,7 @@ pub(super) fn try_builtin_method_call(
                         stmts,
                         final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
                     })), Span::dummy()),
-                    Type::Ref(Box::new(Type::Slice(Box::new(elem_sub))), m),
+                    Type::Ref(Box::new(Type::Slice(Box::new(elem_sub))), m, None),
                 ));
             }
         }
@@ -314,7 +314,7 @@ pub(super) fn try_builtin_method_call(
     // `Ref(Dyn)`，胖指针布局与 `dyn Trait` 相同：槽 0=data 指针、槽 1=vtable）。
     let dyn_trait_name = match &recv_ty {
         Type::Dyn(t) => Some(t.clone()),
-        Type::Ref(inner, _) => match &**inner {
+        Type::Ref(inner, _, _) => match &**inner {
             Type::Dyn(t) => Some(t.clone()),
             _ => None,
         },

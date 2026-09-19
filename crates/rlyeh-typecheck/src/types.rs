@@ -64,8 +64,9 @@ pub enum Type {
     Never,
     /// 未推断类型
     Infer,
-    /// 引用类型
-    Ref(Box<Type>, Mutability),
+    /// 引用类型；第三字段为可选生命周期名（`None` = 省略，走默认 region 推断），
+    /// 由 borrowck 生命周期检查专项（T-0）引入。
+    Ref(Box<Type>, Mutability, Option<String>),
     /// 裸指针类型（`*const T` / `*mut T`）
     RawPtr(Box<Type>, bool),
     /// trait 对象类型（`dyn Trait`）：数据指针 + vtable 指针的胖指针，占 2 槽
@@ -222,7 +223,7 @@ impl Type {
                 }
                 // 引用类型：内层兼容且可变性可接受
                 // （`&mut T` 可传给 `&T`——宽松规则，严格互斥检查留给 borrowck）
-                (Type::Ref(a, ma), Type::Ref(b, mb)) => {
+                (Type::Ref(a, ma, _), Type::Ref(b, mb, _)) => {
                     // `&str` ↔ `&String`：同一只读借用视图（G2，MVP 中 &str 是
                     // String 对象的借用），内层类型可互视
                     let inner_ok = a.compatible_with(b)
@@ -241,8 +242,8 @@ impl Type {
                         )
                 }
                 // `&str` 视图与 String 值互用（G2：比较 `r == s`、`s == r`）
-                (Type::Ref(a, _), Type::Named(n, _)) => matches!(**a, Type::Str) && n == "String",
-                (Type::Named(n, _), Type::Ref(a, _)) => matches!(**a, Type::Str) && n == "String",
+                (Type::Ref(a, _, _), Type::Named(n, _)) => matches!(**a, Type::Str) && n == "String",
+                (Type::Named(n, _), Type::Ref(a, _, _)) => matches!(**a, Type::Str) && n == "String",
                 // 裸指针（G3）：`*mut T` 可降级为 `*const T`；反向不可
                 (Type::RawPtr(a, ma), Type::RawPtr(b, mb)) => {
                     (*mb || !*ma) && a.compatible_with(b)
@@ -251,8 +252,8 @@ impl Type {
                 // `&T`/`&mut T` 与 `*const T`/`*mut T` 内层兼容即可互传——FFI 场景
                 // （`let p: *const T = &x;`、`fn f(p: *const T)` 传 `&x`），
                 // codegen 布局同为 i8* 槽，双向转换零成本
-                (Type::RawPtr(a, _), Type::Ref(b, _))
-                | (Type::Ref(a, _), Type::RawPtr(b, _)) => a.compatible_with(b),
+                (Type::RawPtr(a, _), Type::Ref(b, _, _))
+                | (Type::Ref(a, _, _), Type::RawPtr(b, _)) => a.compatible_with(b),
                 // 函数类型：参数逐个兼容且返回类型兼容
                 (Type::Fn(a), Type::Fn(b)) => {
                     a.params.len() == b.params.len()
@@ -318,7 +319,7 @@ impl fmt::Display for Type {
             Type::Unit => write!(f, "()"),
             Type::Never => write!(f, "!"),
             Type::Infer => write!(f, "_"),
-            Type::Ref(t, m) => match m {
+            Type::Ref(t, m, _) => match m {
                 Mutability::Immutable => write!(f, "&{t}"),
                 Mutability::Mutable => write!(f, "&mut {t}"),
             },
@@ -511,9 +512,9 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         Type::Char => FieldScalar::Char,
         Type::Str => FieldScalar::Str,
         // &str：data 指针 + 长度双槽胖指针（V2 子区间视图，对齐 Rust fat pointer）
-        Type::Ref(inner, _) if matches!(&**inner, Type::Str) => FieldScalar::StrFat,
+        Type::Ref(inner, _, _) if matches!(&**inner, Type::Str) => FieldScalar::StrFat,
         // &[T] / &mut [T]：切片胖指针（data 指针 + 长度双槽，与 StrFat 同布局）
-        Type::Ref(inner, _) if matches!(&**inner, Type::Slice(_)) => FieldScalar::SliceFat,
+        Type::Ref(inner, _, _) if matches!(&**inner, Type::Slice(_)) => FieldScalar::SliceFat,
         // U3 核心项（2026-08-30）：受限标量枚举紧凑为单标量存储，值即 tag。
         Type::ScalarEnum(_) => FieldScalar::Int,
         // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象 / 闭包值均以指针形式存储；函数指针为指针
@@ -686,7 +687,7 @@ pub fn type_mono_key(ty: &Type) -> String {
                 format!("{name}_{inner}")
             }
         }
-        Type::Ref(t, m) => format!(
+        Type::Ref(t, m, _) => format!(
             "ref{}_{}",
             if *m == Mutability::Mutable { "mut" } else { "imm" },
             type_mono_key(t)

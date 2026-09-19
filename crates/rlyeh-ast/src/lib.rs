@@ -919,8 +919,9 @@ pub struct MatchArm {
 pub enum AstType {
     /// 路径类型（`u32` / `Result<Response, Error>`）
     Path(String, Vec<AstType>),
-    /// 引用类型（`&T` / `&mut T`）
-    Ref(Box<AstType>, bool),
+    /// 引用类型（`&T` / `&mut T`）；第三字段为可选生命周期名（`None` = 省略，
+    /// 走默认 region 推断），由 borrowck 生命周期检查专项（T-0）引入。
+    Ref(Box<AstType>, bool, Option<String>),
     /// 裸指针类型（`*const T` / `*mut T`）
     RawPtr(Box<AstType>, bool),
     /// trait 对象类型（`dyn Trait`：数据指针 + vtable 胖指针）

@@ -82,7 +82,7 @@ fn lower_tuple_destructure(
     let ts = match base_ty {
         Type::Tuple(ts) => Some(ts.clone()),
         // 引用到元组：剥一层引用后按元组解构（`let (a, b) = &t;`）
-        Type::Ref(inner, _) => match &**inner {
+        Type::Ref(inner, _, _) => match &**inner {
             Type::Tuple(ts) => Some(ts.clone()),
             _ => None,
         },
@@ -283,7 +283,7 @@ fn lower_struct_destructure(
     let struct_name = match base_ty {
         Type::Named(n, _) => n.clone(),
         // 引用到结构体：剥一层引用后按结构体解构（`let Point { x } = &p;`）
-        Type::Ref(inner, _) => match &**inner {
+        Type::Ref(inner, _, _) => match &**inner {
             Type::Named(n, _) => n.clone(),
             _ => {
                 return Err(TypeError::ExpectedStruct {
@@ -831,7 +831,7 @@ pub(crate) fn check_stmt_inner(
                     // H4 `dyn Trait` 转换：注解为 `dyn Trait`、init 为 `&T`
                     // （T 实现了该 trait）时，把 init 转成 trait 对象胖指针，
                     // 并同步绑定类型，使后续 `at.compatible_with(&ty)` 一致。
-                    if let (Type::Dyn(trait_name), Type::Ref(inner, _)) = (&at, &ty) {
+                    if let (Type::Dyn(trait_name), Type::Ref(inner, _, _)) = (&at, &ty) {
                         let inner_ty = (**inner).clone();
                         h_init = coerce_to_dyn(ctx, h_init, inner, trait_name, span)?;
                         ty = at.clone();
@@ -845,7 +845,7 @@ pub(crate) fn check_stmt_inner(
                     // init 为 `&T`（T 实现该 trait）时，把 `&T` 引用上转为胖指针引用
                     // `&dyn Trait`（data 指向引用目标、vtable 指向 T 的实现）。
                     // 与 H4 值上转型同构，仅注解为 `Ref(Dyn)`；胖指针布局相同（2 槽）。
-                    else if let (Type::Ref(inner_at, _), Type::Ref(inner_init, _)) = (&at, &ty) {
+                    else if let (Type::Ref(inner_at, _, _), Type::Ref(inner_init, _, _)) = (&at, &ty) {
                         if let Type::Dyn(trait_name) = &**inner_at {
                             if let Type::Named(_, _) = &**inner_init {
                                 let concrete = (**inner_init).clone();
@@ -878,7 +878,7 @@ pub(crate) fn check_stmt_inner(
                     // S2 unsize coercion：let s: &[T] = &arr; —— &[T; N] 经 unsize
                     // 降级为切片胖指针 {data, len}（len = 编译期数组长度），与
                     // check_expr::call 实参位置同构；仅当元素类型兼容时转换。
-                    if let (Type::Ref(ia, _), Type::Ref(ib, _)) = (&ty, &at) {
+                    if let (Type::Ref(ia, _, _), Type::Ref(ib, _, _)) = (&ty, &at) {
                         if let (Type::Array(_, n), Type::Slice(_)) = (&**ia, &**ib) {
                             if ty.compatible_with(&at) {
                                 h_init = make_slice_fat(ctx, h_init, *n as i128);
@@ -962,7 +962,7 @@ pub(crate) fn check_stmt_inner(
                         } else {
                             Mutability::Immutable
                         };
-                        let bind_ty = Type::Ref(Box::new(ty.clone()), mutability);
+                        let bind_ty = Type::Ref(Box::new(ty.clone()), mutability, None);
                         let stored = ctx.insert_variable(name.clone(), bind_ty);
                         // 记录初始化表达式，供 `String::from(s)` 追踪字面量绑定
                         ctx.insert_local_init(stored.clone(), h_init.clone());
@@ -998,7 +998,7 @@ pub(crate) fn check_stmt_inner(
                     let ts = match &ty {
                         Type::Tuple(ts) => Some(ts.clone()),
                         // 引用到元组：剥一层引用后按元组解构（`let (a, b) = &t;`）
-                        Type::Ref(inner, _) => match &**inner {
+                        Type::Ref(inner, _, _) => match &**inner {
                             Type::Tuple(ts) => Some(ts.clone()),
                             _ => None,
                         },

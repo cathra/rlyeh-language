@@ -120,7 +120,7 @@ pub(crate) fn fmt_type(t: &AstType) -> String {
                 )
             }
         }
-        AstType::Ref(inner, mut_) => {
+        AstType::Ref(inner, mut_, _) => {
             let m = if *mut_ { "&mut " } else { "&" };
             format!("{}{}", m, fmt_type(inner))
         }
@@ -177,7 +177,7 @@ pub(crate) fn fmt_param(p: &AstParam) -> String {
             AstType::Path(name, args) if name == "Self" && args.is_empty() => {
                 return "self".to_string();
             }
-            AstType::Ref(inner, is_mut) if matches!(inner.as_ref(), AstType::Path(n, a) if n == "Self" && a.is_empty()) => {
+            AstType::Ref(inner, is_mut, _) if matches!(inner.as_ref(), AstType::Path(n, a) if n == "Self" && a.is_empty()) => {
                 return if *is_mut {
                     "&mut self".to_string()
                 } else {

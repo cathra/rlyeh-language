@@ -219,7 +219,7 @@ pub(super) fn check_method_call(
                 stmts,
                 final_expr: Some(HirExpr::new(HirExprKind::Variable(sf), Span::dummy())),
             })), Span::dummy()),
-            Type::Ref(Box::new(Type::Str), Mutability::Immutable),
+            Type::Ref(Box::new(Type::Str), Mutability::Immutable, None),
         ));
     }
     // `String::as_str_range(start, end)` → `&str` 子区间视图（V2 零拷贝）：
@@ -305,13 +305,13 @@ pub(super) fn check_method_call(
                 stmts,
                 final_expr: Some(HirExpr::new(HirExprKind::Variable(sf), Span::dummy())),
             })), Span::dummy()),
-            Type::Ref(Box::new(Type::Str), Mutability::Immutable),
+            Type::Ref(Box::new(Type::Str), Mutability::Immutable, None),
         ));
     }
     let mut self_ty = peel_refs_and_heap(&recv_ty);
     // `&str` 接收者：方法按 String impl 解析（MVP 中 `&str` 是 String 对象的
     // 只读借用视图，String 的方法视图（len / substring / push_str 等）均可用）
-    if matches!(self_ty, Type::Str) && matches!(&recv_ty, Type::Ref(_, _)) {
+    if matches!(self_ty, Type::Str) && matches!(&recv_ty, Type::Ref(_, _, _)) {
         self_ty = Type::Named("String".to_string(), vec![]);
     }
     // 规范化接收者类型名（别名 → 规范符号名）：标准库子模块拆分后，接收者类型

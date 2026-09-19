@@ -543,8 +543,8 @@ fn fmt_generics(generics: &[AstTypeParam]) -> String {
 fn fmt_param(p: &AstParam) -> String {
     if p.name == "self" && p.default.is_none() {
         return match &p.type_ {
-            AstType::Ref(inner, true) if is_self_type(inner) => "&mut self".to_string(),
-            AstType::Ref(inner, false) if is_self_type(inner) => "&self".to_string(),
+            AstType::Ref(inner, true, _) if is_self_type(inner) => "&mut self".to_string(),
+            AstType::Ref(inner, false, _) if is_self_type(inner) => "&self".to_string(),
             _ if is_self_type(&p.type_) => "self".to_string(),
             _ => format!("self: {}", fmt_type(&p.type_)),
         };
@@ -578,7 +578,7 @@ pub fn fmt_type(t: &AstType) -> String {
                 )
             }
         }
-        AstType::Ref(inner, mut_) => {
+        AstType::Ref(inner, mut_, _) => {
             let base = fmt_type(inner);
             if *mut_ {
                 format!("&mut {base}")

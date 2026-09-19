@@ -90,7 +90,7 @@ pub(super) fn try_auto_deref_coerce(
     span: Span,
 ) -> Option<Result<(HirExpr, Type), TypeError>> {
     let inner = match actual {
-        Type::Ref(inner, _) => inner.as_ref(),
+        Type::Ref(inner, _, _) => inner.as_ref(),
         _ => return None,
     };
     if expected != inner {
@@ -377,7 +377,7 @@ pub(crate) fn infer_expr_inner(
                 }
                 UnaryOp::Deref => {
                     let inner = match &o_ty {
-                        Type::Ref(inner, _) | Type::RawPtr(inner, _) => (**inner).clone(),
+                        Type::Ref(inner, _, _) | Type::RawPtr(inner, _) => (**inner).clone(),
                         _ => match heap_wrapper_inner(&o_ty) {
                             Some(t) => t,
                             None => {
@@ -449,7 +449,7 @@ pub(crate) fn infer_expr_inner(
                         });
                     }
                     // 引用再取引用（`&&T`）待扩展
-                    if matches!(o_ty, Type::Ref(_, _)) {
+                    if matches!(o_ty, Type::Ref(_, _, _)) {
                         return Err(TypeError::Unsupported {
                             what: "MVP 阶段不支持对引用再取引用（`&&T`）".to_string(),
                             span,
@@ -467,7 +467,7 @@ pub(crate) fn infer_expr_inner(
                             is_mut,
                             pointee,
                         }, Span::dummy()),
-                        Type::Ref(Box::new(o_ty), m),
+                        Type::Ref(Box::new(o_ty), m, None),
                     ))
                 }
             }

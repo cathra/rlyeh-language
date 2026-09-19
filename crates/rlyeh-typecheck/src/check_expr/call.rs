@@ -401,7 +401,7 @@ pub(super) fn check_call(
             // **不得剥层成瘦指针 `Str`**——否则子区间视图的 len 信息丢失，
             // codegen 走 `Str` 打印（到 NUL 读到全串）而非 `StrFat` 打印
             // （`%.*s` 长度限定，仅打印子区间）。`&str` 本就是 by-value 双槽值。
-            if let Type::Ref(inner, _) = &ty {
+            if let Type::Ref(inner, _, _) = &ty {
                 if !matches!(&**inner, Type::Str) {
                     hir = HirExpr::new(HirExprKind::Deref{
                         expr: Box::new(hir),
@@ -678,7 +678,7 @@ pub(super) fn check_call(
                 index: 0,
                 ty: FieldScalar::Ptr,
             }, Span::dummy());
-            return Ok((ptr, Type::Ref(Box::new(inner), Mutability::Mutable)));
+            return Ok((ptr, Type::Ref(Box::new(inner), Mutability::Mutable, None)));
         }
         // `Weak` 升级特判：`Weak::upgrade(w)`（K3 弱引用升级为强引用）
         if ty_full == "Weak" && method == "upgrade" {
@@ -850,7 +850,7 @@ pub(super) fn check_call(
         // S2 unsize coercion：`&[T; N]` 实参传给 `&[T]` / `&mut [T]` 形参时构造
         // 切片胖指针 `{data, len}`（len 为编译期数组长度，data 为数组首元素指针）
         let mut hir = hir;
-        if let (Type::Ref(ia, _), Type::Ref(ib, _)) = (&ty, param_ty) {
+        if let (Type::Ref(ia, _, _), Type::Ref(ib, _, _)) = (&ty, param_ty) {
             if let (Type::Array(_, n), Type::Slice(_)) = (&**ia, &**ib) {
                 hir = make_slice_fat(ctx, hir, *n as i128);
             }

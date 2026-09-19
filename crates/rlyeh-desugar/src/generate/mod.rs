@@ -185,7 +185,7 @@ pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
                 // （Ref(Path("Self"), true)），typecheck 对 `Self` 路径按 impl 目标
                 // 类型解析接收者，显式 `__Fut_X` 路径会导致接收者字段访问/类型
                 // 解析不一致。
-                type_: AstType::Ref(Box::new(AstType::Path("Self".to_string(), Vec::new())), true),
+                type_: AstType::Ref(Box::new(AstType::Path("Self".to_string(), Vec::new())), true, None),
                 default: None,
                 is_mut: false,
                 span,
@@ -194,7 +194,7 @@ pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
             // `Context` 占位类型（std future.rl），保留参数位、body 不使用。
             AstParam {
                 name: "cx".to_string(),
-                type_: AstType::Ref(Box::new(AstType::Path("Context".to_string(), Vec::new())), true),
+                type_: AstType::Ref(Box::new(AstType::Path("Context".to_string(), Vec::new())), true, None),
                 default: None,
                 is_mut: false,
                 span,

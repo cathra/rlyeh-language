@@ -186,10 +186,10 @@ pub(super) fn check_slice(
     let is_vec = matches!(&b_ty, Type::Named(n, _) if n == "Vec");
     let is_arr = matches!(&b_ty, Type::Array(_, _));
     let is_str_view =
-        matches!(&b_ty, Type::Ref(inner, _) if matches!(**inner, Type::Str));
+        matches!(&b_ty, Type::Ref(inner, _, _) if matches!(**inner, Type::Str));
     // S2：切片胖指针 `&[T]` / `&mut [T]` 亦支持再切片（零拷贝子区间视图）
     let is_slice_view =
-        matches!(&b_ty, Type::Ref(inner, _) if matches!(**inner, Type::Slice(_)));
+        matches!(&b_ty, Type::Ref(inner, _, _) if matches!(**inner, Type::Slice(_)));
     if !comparison::is_string_type(ctx, &b_ty)
         && !is_str_view
         && !is_slice_view
@@ -252,7 +252,7 @@ pub(super) fn check_slice(
     //   `{ data + lo * sizeof(T), clamp(hi) - lo }`，边界 clamp 到 `[0, len]`。
     // 展开为 Block：先绑定 base/len/start/end 四个临时（避免 clamp 条件中
     // 重复求值含副作用的边界表达式），再 clamp、算 data 偏移、构造胖指针。
-    if let Type::Ref(inner, _) = &b_ty {
+    if let Type::Ref(inner, _, _) = &b_ty {
         if let Type::Slice(elem_box) = &**inner {
             let elem_sub = substitute(elem_box, &ctx.generic_subst);
             let elem_scalar = field_scalar_of(&elem_sub);
@@ -383,8 +383,7 @@ pub(super) fn check_slice(
                 })), Span::dummy()),
                 Type::Ref(
                     Box::new(Type::Slice(Box::new(elem_sub))),
-                    Mutability::Immutable,
-                ),
+                    Mutability::Immutable, None),
             ));
         }
     }

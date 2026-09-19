@@ -815,7 +815,7 @@ pub(crate) fn type_matches(imp: &ImplDef, concrete: &Type) -> bool {
     };
     match concrete {
         Type::Named(cname, _) => name == cname,
-        Type::Ref(inner, _) => type_matches(imp, inner),
+        Type::Ref(inner, _, _) => type_matches(imp, inner),
         _ => false,
     }
 }

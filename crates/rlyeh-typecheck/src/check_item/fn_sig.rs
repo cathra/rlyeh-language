@@ -189,7 +189,7 @@ pub(crate) fn check_fn_body_with_self(
         // P4c（2026-08-28）：`&dyn Trait` 作函数返回值——尾表达式为 `&T`
         // （T 实现该 trait）时上转为胖指针引用 `&dyn Trait`（Y6 `source() -> &dyn Error` 前提）。
         let mut upshifted = false;
-        if let (Type::Ref(inner_ret, _), Type::Ref(inner_body, _)) = (&return_type, &body_ty) {
+        if let (Type::Ref(inner_ret, _, _), Type::Ref(inner_body, _, _)) = (&return_type, &body_ty) {
             if let Type::Dyn(trait_name) = &**inner_ret {
                 if let Type::Named(..) = &**inner_body {
                     if let Some(fe) = hir_body.final_expr.take() {

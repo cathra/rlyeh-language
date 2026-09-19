@@ -159,7 +159,7 @@ pub(super) fn replace_type_self(ty: &Type, concrete: &Type) -> Type {
             name.clone(),
             args.iter().map(|a| replace_type_self(a, concrete)).collect(),
         ),
-        Ref(inner, m) => Ref(Box::new(replace_type_self(inner, concrete)), *m),
+        Ref(inner, m, _) => Ref(Box::new(replace_type_self(inner, concrete)), *m, None),
         RawPtr(inner, m) => RawPtr(Box::new(replace_type_self(inner, concrete)), *m),
         Tuple(items) => Tuple(items.iter().map(|i| replace_type_self(i, concrete)).collect()),
         Array(inner, size) => Array(Box::new(replace_type_self(inner, concrete)), *size),

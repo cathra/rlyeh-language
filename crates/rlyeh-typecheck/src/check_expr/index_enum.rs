@@ -74,7 +74,7 @@ pub(super) fn check_index_inner(
         });
     }
     // `&str`（String 对象的只读借用）：索引前先取槽 0 的 data 指针（同 String 对象）
-    if let Type::Ref(inner, _) = &b_ty {
+    if let Type::Ref(inner, _, _) = &b_ty {
         if matches!(**inner, Type::Str) {
             return Ok((
                 HirExpr::new(HirExprKind::Index{
@@ -917,7 +917,7 @@ pub(super) fn check_pattern(
             let ts = match pat_ty {
                 Type::Tuple(ts) => Some(ts.clone()),
                 // 引用到元组：剥一层引用后按元组解构（`match &t { (a, b) => .. }`）
-                Type::Ref(inner, _) => match &**inner {
+                Type::Ref(inner, _, _) => match &**inner {
                     Type::Tuple(ts) => Some(ts.clone()),
                     _ => None,
                 },
@@ -1009,7 +1009,7 @@ pub(super) fn check_pattern(
             let struct_name = match pat_ty {
                 Type::Named(n, _) => n.clone(),
                 // 引用到结构体：剥一层引用后按结构体解构
-                Type::Ref(inner, _) => match &**inner {
+                Type::Ref(inner, _, _) => match &**inner {
                     Type::Named(n, _) => n.clone(),
                     _ => {
                         return Err(TypeError::ExpectedStruct {
@@ -1193,7 +1193,7 @@ pub(super) fn check_pattern(
             // 若经递归（Ident 分支内部 insert 值类型）后仅靠 bound_tys 引用化，
             // 类型表仍为 `i64`，臂内 `*r` 解引用报「发现 i64」。
             if let AstPattern::Ident(name) = &**inner {
-                let bind_ty = Type::Ref(Box::new(pat_ty.clone()), mutability);
+                let bind_ty = Type::Ref(Box::new(pat_ty.clone()), mutability, None);
                 let slot = ctx.insert_variable(name.clone(), bind_ty.clone());
                 return Ok((
                     None,
@@ -1214,7 +1214,7 @@ pub(super) fn check_pattern(
                 check_pattern(ctx, inner, pat_ty, scrutinee, span)?;
             let bound_tys = bound_tys
                 .into_iter()
-                .map(|(n, t)| (n, Type::Ref(Box::new(t), mutability)))
+                .map(|(n, t)| (n, Type::Ref(Box::new(t), mutability, None)))
                 .collect();
             let binds = binds
                 .into_iter()

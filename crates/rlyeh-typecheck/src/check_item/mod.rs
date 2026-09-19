@@ -191,7 +191,7 @@ pub(crate) fn type_to_extern_name(ty: &Type) -> String {
         Type::Bool => "bool".into(),
         Type::Char => "char".into(),
         Type::Unit => "()".into(),
-        Type::Ref(inner, _) => format!("&{inner}"),
+        Type::Ref(inner, _, _) => format!("&{inner}"),
         t => t.to_string(),
     }
 }

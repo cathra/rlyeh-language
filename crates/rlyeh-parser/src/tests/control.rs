@@ -61,7 +61,7 @@ pub async fn fetch(url: &str, timeout: Duration = Duration::seconds(30)) -> Resu
     assert_eq!(f.name, "fetch");
     assert_eq!(f.params.len(), 2);
     // url: &str
-    let AstType::Ref(inner, false) = &f.params[0].type_ else {
+    let AstType::Ref(inner, false, _) = &f.params[0].type_ else {
         panic!("expected ref type");
     };
     assert!(matches!(**inner, AstType::Path(ref n, _) if n == "str"));

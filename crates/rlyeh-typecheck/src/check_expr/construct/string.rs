@@ -52,7 +52,7 @@ pub(crate) fn check_string_from(
     // 运行期读 data/len 槽 → 独立 alloc_bytes(len+1) 数据缓冲 + 独立 3 槽 String 对象。
     // 注意：数据缓冲与 String 对象必须**两个独立分配**——若共用 base，copy_bytes 写入的
     // 字符串字节会被随后的 FieldSet 对象头（前 24 字节）覆盖，破坏数据（V2-D 修复）。
-    if let Type::Ref(inner, _) = &s_ty {
+    if let Type::Ref(inner, _, _) = &s_ty {
         if matches!(**inner, Type::Str) {
             let len_tmp = ctx.fresh_temp();
             let data_src = ctx.fresh_temp();

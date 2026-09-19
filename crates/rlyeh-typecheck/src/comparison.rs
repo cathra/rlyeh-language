@@ -309,7 +309,7 @@ pub(crate) fn is_string_type(ctx: &TypeContext, ty: &Type) -> bool {
 /// MVP 中 `&str` 是 String 对象的只读借用（瘦指针），其内容操作
 /// （比较 / 方法 / 索引 / 切片）与 String 一致。
 pub(crate) fn is_str_view(ty: &Type) -> bool {
-    matches!(ty, Type::Ref(inner, _) if matches!(**inner, Type::Str))
+    matches!(ty, Type::Ref(inner, _, _) if matches!(**inner, Type::Str))
 }
 
 /// 是否为 `str` 值（字符串字面量 / 绑定字面量的变量；非 `&str` 引用）。

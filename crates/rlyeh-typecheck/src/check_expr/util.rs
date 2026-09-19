@@ -469,7 +469,7 @@ pub(crate) fn substitute(ty: &Type, subst: &HashMap<String, Type>) -> Type {
             n.clone(),
             ps.iter().map(|p| substitute(p, subst)).collect(),
         ),
-        Type::Ref(inner, m) => Type::Ref(Box::new(substitute(inner, subst)), *m),
+        Type::Ref(inner, m, _) => Type::Ref(Box::new(substitute(inner, subst)), *m, None),
         Type::RawPtr(inner, m) => Type::RawPtr(Box::new(substitute(inner, subst)), *m),
         Type::Tuple(ts) => Type::Tuple(ts.iter().map(|t| substitute(t, subst)).collect()),
         Type::Array(inner, n) => Type::Array(Box::new(substitute(inner, subst)), *n),
@@ -499,7 +499,7 @@ pub(crate) fn type_to_ast(ty: &Type) -> rlyeh_ast::AstType {
         Type::Named(n, args) => {
             AstType::Path(n.clone(), args.iter().map(type_to_ast).collect())
         }
-        Type::Ref(inner, m) => AstType::Ref(Box::new(type_to_ast(inner)), matches!(m, Mutable)),
+        Type::Ref(inner, m, _) => AstType::Ref(Box::new(type_to_ast(inner)), matches!(m, Mutable), None),
         Type::RawPtr(inner, m) => AstType::RawPtr(Box::new(type_to_ast(inner)), *m),
         Type::Tuple(ts) => AstType::Tuple(ts.iter().map(type_to_ast).collect()),
         Type::Array(inner, _) => AstType::Array(Box::new(type_to_ast(inner)), None),
@@ -534,7 +534,7 @@ pub(crate) fn type_to_ast(ty: &Type) -> rlyeh_ast::AstType {
 
 pub(super) fn peel_ref(ty: &Type) -> Type {
     match ty {
-        Type::Ref(inner, _) => (**inner).clone(),
+        Type::Ref(inner, _, _) => (**inner).clone(),
         _ => ty.clone(),
     }
 }
@@ -554,7 +554,7 @@ pub(super) fn peel_refs_and_heap(ty: &Type) -> Type {
     let mut t = ty.clone();
     loop {
         let next = match &t {
-            Type::Ref(inner, _) => (**inner).clone(),
+            Type::Ref(inner, _, _) => (**inner).clone(),
             _ => match heap_wrapper_inner(&t) {
                 Some(inner) => inner,
                 None => return t,

@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | Draft（规划中；本文档为 borrow-simplification.md §7.5 将 B-5/B-7 移交而来的承载专项） |
+| 状态 | Draft（规划中；T-0 已落地 2026-09-19；本文档为 borrow-simplification.md §7.5 将 B-5/B-7 移交而来的承载专项） |
 | 日期 | 2026-09-19 |
 | 范围 | 编译器前端：解析器（生命周期名贯通）→ 类型检查（Ref 携带 region 名）→ 借用检查 / region 检查（引用有效性求解与诊断）。**不改变** L0 安全语义（别名 XOR 可变、引用有效性）。 |
 | 关联文档 | [borrow-simplification.md](./borrow-simplification.md)（B-5/B-7 移交来源）、[P012_L0借用检查器实现](../design/prompts/P012_L0借用检查器实现.md)、[g4-lifetime.md](../tasks/leaf/g4-lifetime.md)（现状：生命周期名解析后丢弃）、[04_所有权与借用检查器.md](../design/04_所有权与借用检查器.md)（已归档设计稿）、[semantics.md](../semantics.md)、[memory-model.md](../memory-model.md) |
@@ -87,7 +87,7 @@
 
 | ID | 任务 | 对应 | 优先级 | 风险 |
 |----|------|------|--------|------|
-| T-0 | `AstType::Ref` + `Type::Ref` 携带 `lifetime: Option<String>`；parser 保留 `'a` | 前置 | 中 | 中（跨 4 crate 构造点同步） |
+| T-0 | `AstType::Ref` + `Type::Ref` 携带 `lifetime: Option<String>`；parser 保留 `'a` | 前置 | 中 | ✅ 已落地（2026-09-19） |
 | T-1 | typecheck `resolve_ast_type` Ref 分支产出带名 `Type::Ref`，HIR `AddrOf*` 带 `lifetime` | 前置 | 中 | 中 |
 | T-2 | regionck 扩展 `outlives` 约束图，接入「引用存活」边 | G2 | 中 | 中 |
 | T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断 | G2/G3 | 中 | 中 |
@@ -139,8 +139,8 @@
 
 在 `rlyeh-hir` / `rlyeh-mir` / `rlyeh-codegen` / `rlyeh-lir` / `rlyeh-llvm*` / `rlyeh-driver` / `rlyeh-borrowck` / `rlyeh-regionck` 中检索 `Type::Ref` 命中 **0**。
 
-**结论**：`Type` 枚举的「二参 → 三参」改造爆炸半径**仅限 `rlyeh-typecheck` + `rlyeh-parser` + `rlyeh-desugar` 三角**（含 parser 测试）；HIR / MIR / codegen 使用独立类型表示，无需改动。这把 T-0 风险从「全编译器」降为「前端三 crate 机械改参」。
+**结论**：`Type` 枚举的「二参 → 三参」改造爆炸半径覆盖 `rlyeh-typecheck` + `rlyeh-parser` + `rlyeh-desugar` + `tools/rlyeh-doc` + `tools/rlyeh-fmt`（含 parser 测试与文档/格式化工具）；HIR / MIR / codegen / LIR / LLVM 后端 / driver / borrowck / regionck 中 `Type::Ref` 命中 **0**，使用独立类型表示，无需改动。这把 T-0 风险从「全编译器」降为「前端三 crate + 两工具」机械改参（实际落地 84 + 5 处，于 2026-09-19 完成）。
 
 ### 9.5 判定
 
-T-0 机械可行：约 **40** 处落点（2 定义 + 20 构造 + 18 匹配）均为「追加 `None` / 第三绑定 `_`」，可借编译器报错逐项消歧；parser / desugar 的接收者构造（`Self` / `Context`、`&self`）默认 `None` 即可。建议作为 B-5 首步**独立提交**，不混入其它逻辑，随后在 T-1 把解析保留的 `'a` 名经 `resolve_ast_type` 真正填入 `Type::Ref` 第三字段。
+T-0 已落地（2026-09-19）：约 **40** 处落点（2 定义 + 20 构造 + 18 匹配）均为「追加 `None` / 第三绑定 `_`」，借助编译器报错逐项消歧完成；parser / desugar 的接收者构造（`Self` / `Context`、`&self`）默认 `None`。已作为 B-5 首步**独立提交**，不混入其它逻辑；随后在 T-1 把解析保留的 `'a` 名经 `resolve_ast_type` 真正填入 `Type::Ref` 第三字段。

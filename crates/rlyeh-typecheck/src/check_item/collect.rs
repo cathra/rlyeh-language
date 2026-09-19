@@ -288,13 +288,13 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
                 // `&self` / `&mut self` / `self` 统一按聚合指针传递：
                 // 引用形式记 Ref，值形式记 self 类型本身（MIR 层均为指针）
                 let ty = match &p.type_ {
-                    rlyeh_ast::AstType::Ref(_, is_mut) => {
+                    rlyeh_ast::AstType::Ref(_, is_mut, _) => {
                         let m = if *is_mut {
                             Mutability::Mutable
                         } else {
                             Mutability::Immutable
                         };
-                        Type::Ref(Box::new(self_type.clone()), m)
+                        Type::Ref(Box::new(self_type.clone()), m, None)
                     }
                     _ => self_type.clone(),
                 };

@@ -42,7 +42,7 @@ impl<'src> Parser<'src> {
                 }
                 let is_mut = self.eat(&Token::Mut);
                 let inner = self.parse_primary_type()?;
-                Ok(AstType::Ref(Box::new(inner), is_mut))
+                Ok(AstType::Ref(Box::new(inner), is_mut, None))
             }
             // 裸指针 `*const T` / `*mut T`
             Some(Token::Star) => {

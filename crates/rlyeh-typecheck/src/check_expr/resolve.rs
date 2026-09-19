@@ -119,7 +119,7 @@ pub(crate) fn resolve_ast_type(
                 Ok(Type::Named(full, resolved))
             }
         }
-        AstType::Ref(inner, is_mut) => {
+        AstType::Ref(inner, is_mut, _) => {
             let inner = resolve_ast_type(ctx, inner, span)?;
             // B-6（P3）：`#[memory(gc)]` 模块内引用默认映射为 `Gc<T>`（L3），
             // 指针图 / 树结构免写 `&`/`&mut`（`next: &Node` ≡ `next: Gc<Node>`）。
@@ -131,7 +131,7 @@ pub(crate) fn resolve_ast_type(
             } else {
                 Mutability::Immutable
             };
-            Ok(Type::Ref(Box::new(inner), m))
+            Ok(Type::Ref(Box::new(inner), m, None))
         }
         AstType::RawPtr(inner, is_mut) => {
             let inner = resolve_ast_type(ctx, inner, span)?;
@@ -253,7 +253,7 @@ fn union_overlap_reason(a: &Type, b: &Type) -> Option<String> {
         return Some("数值类型互通（宽度 / 平台相关重叠）".to_string());
     }
     // 引用可变性重叠：`&T | &mut T`（`&mut T` 可降级为 `&T`，判别有歧义）
-    if let (Type::Ref(ia, _), Type::Ref(ib, _)) = (a, b) {
+    if let (Type::Ref(ia, _, _), Type::Ref(ib, _, _)) = (a, b) {
         if ia == ib {
             return Some("引用可变性重叠（`&T` 与 `&mut T`）".to_string());
         }
