@@ -90,7 +90,7 @@
 | T-0 | `AstType::Ref` + `Type::Ref` 携带 `lifetime: Option<String>`；parser 保留 `'a` | 前置 | 中 | ✅ 已落地（2026-09-19） |
 | T-1 | parser `&'a T` 保留生命周期名并经 `resolve_ast_type` 透传至 `Type::Ref` 第三字段（HIR 类型由 `Type` 派生，无需独立 `lifetime` 字段） | 前置 | 中 | ✅ 已落地（2026-09-19） |
 | T-2 | regionck 扩展 `outlives` 约束图，接入「引用存活」边（落地于 borrowck：引用存活边经拷贝 / 块值传播闭合别名逃逸缺口） | G2 | 中 | ✅ 已落地（2026-09-19） |
-| T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断 | G2/G3 | 中 | 中 |
+| T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断（region 边界维度：区内局部被引用、region 退出后引用仍存活 / 区尾引用逃逸到区外变量） | G2/G3 | 中 | ✅ 已落地（2026-09-19） |
 | T-4 | **region 推断失败诊断**（取代静默放行） | **B-5** | 中 | 中 |
 | T-5 | run-pass / compile-fail 测试：`lifetime_region_valid` / `dangling_region_err` / `region_inference_err` | G3/B-5 | 低 | 低 |
 | T-6（可选） | **块级借用语义**：borrowck 活跃期改为块级区间 | **B-7** | 高 | 高 |
@@ -148,3 +148,12 @@ T-0 已落地（2026-09-19）：约 **40** 处落点（2 定义 + 20 构造 + 18
 **T-1 已落地（2026-09-19）**：parser `&` 分支此前 `MVP 解析后丢弃` 生命周期名，现已通过 `expect_lifetime` 捕获 `'a` 标签并写入 `AstType::Ref` 第三字段；typecheck `resolve_ast_type` 的 Ref 分支将该字段 clone 透传至 `Type::Ref` 第三字段（`#[memory(gc)]` 模块的 `Gc<T>` 路径忽略之）。新增 parser 单测 `test_ref_lifetime_label_retained`（`&'a T` / `&T` / `&'b mut T` 三态）守护。全仓编译 + parser/typecheck 单测 + driver 全量集成套件（740+ 用例）均零回归。
 
 **T-2 已落地（2026-09-19）**：引用存活边经拷贝 / 块值传播，闭合别名逃逸缺口。原 `check_dangling_return` 仅覆盖 `return` 与函数体块尾值，对 `let s = r;` / `s = r` / `let s = { ...; r }` 这类「引用经变量拷贝逃逸」的路径静默放行。本轮在 `crates/rlyeh-borrowck/src/checker.rs` 新增 `ref_source_var`（抽取初始化 / 赋值表达式最终求值的引用变量，含块尾值）与 `copy_borrow`（为拷贝目标登记同源借用，使引用存活边随别名传播）；并修复 `is_escaping_root` 的时序缺陷——原实现在查错时刻重算被引用变量是否逃逸，但内层作用域已出栈会误判为否，故改为在借用创建时刻快照 `escapes` 标志存于 `Borrow` 结构，查错时直接采用快照。新增 compile-fail 用例 `dangling-ref-alias.rl` 守护；driver 全量集成套件（740+ 用例）零回归。注：RFC 原规划 T-2 落点为 regionck `outlives` 约束图；因 DanglingReference 诊断实际栖身 borrowck（且 regionck 当前不追踪引用），本轮在 borrowck 内等价落地「引用存活」边，未改动 regionck 既有 `transfer` / `in 'r` 语义（与 §3 非目标一致）。
+
+**T-3 已落地（2026-09-19）**：引用 region 良构性检查的 region 边界维度。此前悬垂检查仅覆盖「引用逃逸出**函数帧**」（`return` / 函数体块尾值 / 引用别名，T-2）；T-3 新增「引用指向 `region 'r {}` 内创建的值、region 退出时批量释放后该引用仍存活」的 `DanglingReference` 诊断。落点 `crates/rlyeh-borrowck/src/checker.rs`：
+- 新增 `region_local_stack: Vec<Vec<String>>`（与词法 `scopes` 平行），在 `check_stmt` 的 `let` 落点将区内声明的局部名登记为「region 局部」（参数 / 全局 / region 外绑定不入册）；`recent_region_locals` 暂存 region 退出时的局部名供 `let r = region 'r { &x }` 落点复用。
+- region 退出扫描：遍历借用，凡「生于区内（`start < born <= boundary`）、指向 region 局部、且 `last_use > boundary`（活到区外）」者报 `DanglingReference`；覆盖 `r = &x`（区内赋值到区外变量）等路径。
+- `check_stmt` 分流 `let r = region 'r { &x }`：区尾引用指向 region 局部即直接报悬垂（值已逃逸出 region），不重复登记具名借用以免后续 `return r` 叠加报错。
+- `check_expr` 的 `Assign` 臂对 `r = &x` 直接为 `r` 登记以 `x` 为源的具名借用，使 region 边界扫描能捕获引用随 `r` 逃逸的路径。
+新增 compile-fail 用例 `dangling-region-final.rl` / `dangling-region-assign.rl` 守护；driver 全量集成套件（740+ 用例）零回归。
+
+**已知限制（T-3，与 T-2 别名限制同构）**：`let r = region 'r { s }`（`s` 为持有区内部 `&x` 的引用变量）这类「region 块尾值是引用变量别名」的路径，因 `ref_source_var` 仅处理 `Block`/`UnsafeBlock` 的块尾变量、不处理 `Region` 块尾别名，本轮未捕获（需将 `Region` 纳入 `ref_source_var` 的块尾值抽取，留待后续）。其余「区尾直接 `&x`」与「区内 `r = &x` 赋值逃逸」两类均已覆盖。

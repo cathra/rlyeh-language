@@ -82,6 +82,11 @@ struct Borrow {
 ///   （`String::as_str()`）无法在 HIR 上追踪（HIR 无类型标注），暂不检查
 ///   字段内引用悬垂；MVP 悬垂检查覆盖 `return`、函数体块尾值与**引用别名**
 ///   （`let s = r;` / `s = r` / `let s = { ...; r }` 拷贝传播，T-2）三个出口。
+/// - **region 边界悬垂（T-3）**：引用指向 `region 'r {}` 内创建的值，区域在块尾
+///   批量释放后该引用仍被使用（或作为区域块尾值逃逸到区外变量）→ `DanglingReference`。
+///   由 `region_local_stack` 记录区内局部变量，在 region 退出时扫描「生于区内、
+///   指向 region 局部、却活到区外」的引用；`let r = region 'r { &x }` 在
+///   `check_stmt` 落点单独处理区尾引用逃逸。
 ///
 /// HIR 子节点（表达式 / 语句 / 块）现已携带源 `Span`；错误坐标取自查错节点
 /// 自身的 `span`（表达式 / 语句 / 块级粒度，合并源码坐标），经 `render`
@@ -117,6 +122,13 @@ pub struct BorrowChecker {
     /// `check_stmt` / `check_block` 在入口处设为被查节点自身的 `span`，取代此前
     /// 函数级 `HirItem.span` 的粗粒度坐标，使报错定位到具体节点。
     cur_span: Span,
+    /// region 局部变量栈（与词法 `scopes` 平行）：每个 region 层级一份，记录
+    /// 在该 region 内声明、将随 region 批量释放而失效的局部变量名（T-3，供
+    /// region 边界悬垂判定；不包含参数 / 全局 / region 外的绑定）。
+    region_local_stack: Vec<Vec<String>>,
+    /// region 退出时暂存的局部变量名（供 `let r = region 'r { &x }` 这类
+    /// 「区尾引用逃逸到区外变量」在 `check_stmt` 落点处复用，T-3）。
+    recent_region_locals: Option<Vec<String>>,
 }
 
 impl BorrowChecker {
@@ -136,6 +148,8 @@ impl BorrowChecker {
                 line: 0,
                 col: 0,
             },
+            region_local_stack: Vec::new(),
+            recent_region_locals: None,
         }
     }
 
@@ -157,6 +171,8 @@ impl BorrowChecker {
                         .collect();
                     self.borrows.clear();
                     self.uses.clear();
+                    self.region_local_stack.clear();
+                    self.recent_region_locals = None;
                     self.scopes.push(Scope::default());
                     for param in &f.params {
                         self.insert(
@@ -516,6 +532,51 @@ impl BorrowChecker {
                 // 借用创建特判：`let r = &x;` / `let r = &mut x;` ——
                 // 具名借用（引用变量 = r），借用活跃到 r 最后一次使用。
                 // 先检查借用（shadowing 时 init 引用的是旧绑定），再注册绑定。
+                // T-3：`let r = region 'r { &x }` —— region 块尾值是引用，逃逸出
+                // region（其指向值在 region 退出时批量释放）→ 悬垂。在此处分流：
+                // 递归检查 region 体（消费 recent_region_locals），再以区外变量 `r`
+                // 之名登记同源借用并据「referent 是否 region 局部」判定悬垂。
+                if let HirExprKind::Region { body, .. } = &(init).kind {
+                    if let Some(final_expr) = &body.final_expr {
+                        if let HirExprKind::Ref { expr, is_mut, .. } = &final_expr.kind {
+                            if let Some(src) = ref_root(expr) {
+                                self.check_expr(init);
+                                let _boundary = self.pos;
+                                let mut dangling = false;
+                                if let Some(locals) = self.recent_region_locals.take() {
+                                    // 区尾引用指向 region 局部：无论外部是否使用，该引用
+                                    // 值已逃逸出 region（其指向值在 region 退出时释放）→ 悬垂。
+                                    if locals.iter().any(|n| n == &src) {
+                                        dangling = true;
+                                    }
+                                }
+                                if dangling {
+                                    // 区尾引用已逃逸出 region：直接报错，不再登记
+                                    // 具名借用（避免后续 `return r` 二次捕获叠加报错）。
+                                    self.errors.push(BorrowError::dangling_reference(
+                                        &src,
+                                        self.cur_span,
+                                    ));
+                                } else {
+                                    // 以区外变量 `r` 之名登记同源借用：其 `escapes`
+                                    // 据 referent 是否逃逸帧判定，故后续若 `r` 被
+                                    // return 仍可经由 check_dangling_return 二次捕获。
+                                    self.register_borrow(Some(name), &src, *is_mut, *is_mut);
+                                }
+                                if name != "_" {
+                                    self.insert(
+                                        name.clone(),
+                                        Binding {
+                                            mutable: *mutable,
+                                            transferred: false,
+                                        },
+                                    );
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
                 if let HirExprKind::Ref { expr, is_mut, .. } = &(init).kind {
                     match &(expr.as_ref()).kind {
                         HirExprKind::Variable(src) => {
@@ -549,6 +610,11 @@ impl BorrowChecker {
                             transferred: false,
                         },
                     );
+                    // T-3：若处于某个 region 内，该绑定随 region 批量释放，
+                    // 登记为 region 局部，供 region 边界悬垂判定。
+                    if let Some(top) = self.region_local_stack.last_mut() {
+                        top.push(name.clone());
+                    }
                 }
             }
             HirStmtKind::Expr(e) | HirStmtKind::Semi(e) => self.check_expr(e),
@@ -593,6 +659,21 @@ impl BorrowChecker {
                         self.errors.push(BorrowError::use_after_transfer(target, self.cur_span));
                     } else if !b.mutable {
                         self.errors.push(BorrowError::assign_to_immutable(target, self.cur_span));
+                    }
+                }
+                // T-3：`r = &x`（区内赋值到区外引用变量）直接为 `r` 登记以 `x`
+                // 为源的具名借用，使 region 边界悬垂扫描能捕获「引用随 `r` 逃逸出
+                // region」的路径（与 `let r = &x` 同构，仅目标为既有变量）。
+                if let HirExprKind::Ref { expr, is_mut, .. } = &(value).kind {
+                    match &(expr.as_ref()).kind {
+                        HirExprKind::Variable(src) => {
+                            self.register_borrow(Some(target), src, *is_mut, true);
+                        }
+                        _ => {
+                            if let Some(src) = ref_root(expr) {
+                                self.register_borrow(Some(target), &src, *is_mut, false);
+                            }
+                        }
                     }
                 }
                 self.check_expr(value);
@@ -685,8 +766,25 @@ impl BorrowChecker {
             }
             HirExprKind::Region { body, .. } => {
                 self.scopes.push(Scope::default());
+                self.region_local_stack.push(Vec::new());
+                let start = self.pos;
                 self.check_block(body, true);
+                let boundary = self.pos;
+                let locals = self.region_local_stack.pop().unwrap();
                 self.scopes.pop();
+                // T-3：region 边界悬垂扫描——生于区内、指向 region 局部、却活到
+                // 区外的引用（`r = &x` 在区内赋值到区外变量等路径；区尾引用逃逸
+                // 由 `let r = region 'r { &x }` 在 check_stmt 落点单独处理）。
+                for b in &self.borrows {
+                    if b.born > start
+                        && b.born <= boundary
+                        && b.last_use > boundary
+                        && locals.iter().any(|n| n == &b.source)
+                    {
+                        self.errors.push(BorrowError::dangling_reference(&b.source, b.span));
+                    }
+                }
+                self.recent_region_locals = Some(locals);
             }
             HirExprKind::InRegion { expr, .. } => self.check_expr(expr),
             HirExprKind::Transfer { expr, .. } => {
