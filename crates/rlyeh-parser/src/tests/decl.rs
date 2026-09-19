@@ -34,7 +34,7 @@ fn test_enum_decl() {
 #[test]
 fn test_protocol_and_impl() {
     let program = parse_ok(
-        "protocol Shape { fn area(&self) -> f64; } impl Shape for Point { fn area(&self) -> f64 { 0.0 } }",
+        "protocol Shape { fn area(&self) -> f64; } impl Point: Shape { fn area(&self) -> f64 { 0.0 } }",
     );
     let AstItem::TraitDecl(t) = &program.items[0] else {
         panic!();
@@ -236,11 +236,11 @@ fn test_struct_inline_inherent_method() {
 
 #[test]
 fn test_impl_new_syntax_conformance() {
-    // PC-8：`impl T: P` 归一为 trait impl；`impl T` 为固有；旧语序 `impl P for T` 仍兼容。
+    // PC-8：`impl T: P` 归一为 trait impl；`impl T` 为固有。
+    // 旧语序 `impl P for T` 已按 PC-12 移除，故仅校验新语序两条路径。
     let program = parse_ok(
         "impl Sq: Area { fn area(&self) -> i64 { 0 } } \
-         impl Sq { fn new() -> Sq { Sq { s: 0 } } } \
-         impl Area for Sq { fn area(&self) -> i64 { 0 } }",
+         impl Sq { fn new() -> Sq { Sq { s: 0 } } }",
     );
     let AstItem::ImplBlock(c) = &program.items[0] else {
         panic!("expected impl");
@@ -253,12 +253,6 @@ fn test_impl_new_syntax_conformance() {
     };
     assert_eq!(inherent.trait_name, None);
     assert_eq!(inherent.type_name, "Sq");
-
-    let AstItem::ImplBlock(legacy) = &program.items[2] else {
-        panic!("expected legacy impl");
-    };
-    assert_eq!(legacy.trait_name.as_deref(), Some("Area"));
-    assert_eq!(legacy.type_name, "Sq");
 }
 
 #[test]
