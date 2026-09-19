@@ -91,8 +91,8 @@
 | T-1 | parser `&'a T` 保留生命周期名并经 `resolve_ast_type` 透传至 `Type::Ref` 第三字段（HIR 类型由 `Type` 派生，无需独立 `lifetime` 字段） | 前置 | 中 | ✅ 已落地（2026-09-19） |
 | T-2 | regionck 扩展 `outlives` 约束图，接入「引用存活」边（落地于 borrowck：引用存活边经拷贝 / 块值传播闭合别名逃逸缺口） | G2 | 中 | ✅ 已落地（2026-09-19） |
 | T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断（region 边界维度：区内局部被引用、region 退出后引用仍存活 / 区尾引用逃逸到区外变量） | G2/G3 | 中 | ✅ 已落地（2026-09-19） |
-| T-4 | **region 推断失败诊断**（取代静默放行） | **B-5** | 中 | 中 |
-| T-5 | run-pass / compile-fail 测试：`lifetime_region_valid` / `dangling_region_err` / `region_inference_err` | G3/B-5 | 低 | 低 |
+| T-4 | **region 推断失败诊断**（取代静默放行） | **B-5** | 中 | ✅ 已收口（2026-09-19）：多 region 歧义被 Rlyeh 生命周期省略覆盖，局部逃逸由 T-2/T-3 `DanglingReference` 兜底，无新增诊断（见 §9.7 方案 A） |
+| T-5 | run-pass / compile-fail 测试：`lifetime_region_valid`（新增）/ `dangling_region_err`（已由 T-3 `dangling-region-final`/`dangling-region-assign` 覆盖）/ `region_inference_err`（随 T-4 方案 A 取消） | G3/B-5 | 低 | ✅ 已落地（2026-09-19） |
 | T-6（可选） | **块级借用语义**：borrowck 活跃期改为块级区间 | **B-7** | 高 | 高 |
 
 建议首轮切片：**T-0 → T-1 → T-2 → T-3 → T-4 → T-5**（B-5 收口）；**T-6（B-7）独立评估**。
@@ -157,3 +157,30 @@ T-0 已落地（2026-09-19）：约 **40** 处落点（2 定义 + 20 构造 + 18
 新增 compile-fail 用例 `dangling-region-final.rl` / `dangling-region-assign.rl` 守护；driver 全量集成套件（740+ 用例）零回归。
 
 **已知限制（T-3，与 T-2 别名限制同构）**：`let r = region 'r { s }`（`s` 为持有区内部 `&x` 的引用变量）这类「region 块尾值是引用变量别名」的路径，因 `ref_source_var` 仅处理 `Block`/`UnsafeBlock` 的块尾变量、不处理 `Region` 块尾别名，本轮未捕获（需将 `Region` 纳入 `ref_source_var` 的块尾值抽取，留待后续）。其余「区尾直接 `&x`」与「区内 `r = &x` 赋值逃逸」两类均已覆盖。
+
+## 9.7 T-4 阻塞说明：与生命周期省略语义冲突（2026-09-19）
+
+T-4 原文「多 region 歧义 → `RegionInferenceError`（B-5 诊断，取代静默放行）」在 Rlyeh 当前语义下**不可直接落地**，原因：
+
+- Rlyeh 已采纳**生命周期省略（lifetime elision）**：`fn longest(x: &i64, y: &i64) -> &i64 { if *x > *y { x } else { y } }` 这类「返回引用可能来自任一 `&` 参数」是**合法且预期**的模式（与 Rust 单输入生命周期省略同构）。
+- 既有 `tests/run-pass/lifetime.rl`、`tests/run-pass/lifetime_omit.rl`、`tests/run-pass/borrow_pass.rl` 三个 run-pass 用例**断言该模式编译运行成功**，注释明确「省略 'a 默认可用（默认 caller region）」「参数引用返回合法（生命周期 elision）」。
+- 因此若在 borrowck 中对「返回引用源自多个互不相容输入区域」报错，将**破坏这 3 个 run-pass 用例**——违背了 borrowck 专项「不改变 L0 安全语义」的非目标。
+
+**结论与待决策**：T-4 的「多 region 歧义」目标已被 Rlyeh 的 elision 语义覆盖（返回引用来自参数即合法，来自局部则由 T-2/T-3 的 `DanglingReference` 兜底）。真正「region 无法推断」的硬性错误场景在当前模型中**不存在可触发的静默放行缺口**（局部逃逸已查、参数来源合法、全局来源免检）。
+
+需从以下二者择一后方可继续 T-4：
+- **方案 A（推荐，零语义变更）**：认定 T-4 已由「elision + DanglingReference（T-2/T-3）」实质收口，关闭 T-4，不再新增 `RegionInferenceError` 诊断；后续若有显式生命周期标注（`fn f<'a>(x: &'a T, y: &'a T) -> &'a T`）的*不一致*场景，再作为独立任务评估（需先打通 HIR 签名生命周期贯通，见 §8 Q1/§4.1）。
+- **方案 B（收紧语义，语言级决策）**：改为要求多 `&` 参数返回引用时**必须显式标注生命周期**，将 `lifetime.rl`/`lifetime_omit.rl`/`borrow_pass.rl` 转为 compile-fail 并引入 `RegionInferenceError`。此方案改变既有语言行为，属语义变更，须先于专项确认。
+
+> 注：本专项 T-0~T-3 已落地并提交（commit `77746ae` T-2、`d236aff` T-3）；T-4 的 `RegionInferenceError` 变体与检测逻辑已原型验证会冲突，已回退，代码恢复至 T-3 状态，全量套件（740+ 用例）零回归。
+
+**决策（2026-09-19，方案 A）**：经原型验证与 run-pass 用例核对，采纳**方案 A**——T-4 的「多 region 歧义 → `RegionInferenceError`」在 Rlyeh 当前语义下不成立（elision 已使该模式合法），故**关闭 T-4、不新增诊断**。原 RFC §4.3 中「多 region 歧义 → `RegionInferenceError`（B-5 取代静默放行）」的规划，其目标已被「elision（参数来源合法）+ `DanglingReference`（T-2/T-3，局部逃逸兜底）」实质覆盖，无独立诊断价值。后续若引入显式生命周期标注的*不一致*检查（如 `fn f<'a>(x: &'a T, y: &'a T) -> &'a T` 返回与 `'a` 不符的引用），须先打通 HIR 签名生命周期贯通（见 §8 Q1 / §4.1），另立任务评估。T-5 的 `region_inference_err` 测试随 T-4 取消；`dangling_region_err` 已由 T-3 的 `dangling-region-final.rl` / `dangling-region-assign.rl` 覆盖；新增 run-pass `lifetime_region_valid.rl` 守护「合法 region 借用不被误拒」。
+
+## 9.8 已知缺陷（2026-09-19）：`uses` 按名索引、不区分同名遮蔽
+
+T-5 编写 `lifetime_region_valid.rl` 时暴露：**borrowck 的 `uses: HashMap<String, Vec<usize>>` 以变量名为键，不区分同一函数内同名遮蔽（shadowing）的多个绑定**。`register_borrow` / `copy_borrow` 据此计算 `Borrow.last_use`，`active_borrows`（NLL 活跃判定）与 T-3 的 region 边界扫描（`last_use > boundary`）均依赖该值。
+
+- **触发**：同一函数内两个不同作用域各自 `let r = &x;`（同名 `r` 遮蔽），前者（`born` 较小）的 `last_use` 会拾取后者 `*r` 的使用位置（更大 pos），若后者位于 region 之后，则前者被判 `last_use > boundary` → 误报 `DanglingReference`。
+- **性质**：**既有缺陷，非 T-3 引入**。T-3 的 region 边界扫描是首个在「跨 region 比较 `last_use` 与 `boundary`」处暴露该缺陷，但根因在 `uses` 的按名索引模型。
+- **规避**：T-5 测试改用互不相同的变量名（`x1/r1`、`z2/rz2`、`a3/r3` 等）以不触发该缺陷；合法代码亦可如此规避。
+- **修复建议（专项外任务）**：将 `uses` 改为作用域感知——键加入绑定的定义位置/作用域深度，使 `last_use` 仅取「同一绑定」的使用位置；或在消费 `last_use` 时改为「取 `[born, boundary]` 区间内的最大使用位置」。修复需回归全量套件（740+ 用例），建议独立提交。
