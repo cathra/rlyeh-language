@@ -113,3 +113,34 @@
 2. regionck 现有求解器能否直接承载 `outlives` 图，还是需新增轻量求解通道？
 3. B-7 块级模型与 §4.2 region 约束模型的协同边界（块 ≈ region 是否 1:1）？
 4. 默认 caller region 与显式 `'r` 混用时的约束优先级与诊断措辞？
+
+---
+
+## 9. T-0 影响面清点（2026-09-19）
+
+为落地 T-0（`AstType::Ref` / `Type::Ref` 携带 `lifetime`），先清点全仓改造落点，作为 B-5 动手前的必要前置。
+
+### 9.1 枚举定义（2 处，改造起点）
+
+- `crates/rlyeh-ast/src/lib.rs:923`：`AstType::Ref(Box<AstType>, bool)` → 加第三字段 `Option<String>`（或独立 `Lifetime` 类型）。
+- `crates/rlyeh-typecheck/src/types.rs:68`：`Type::Ref(Box<Type>, Mutability)` → 加第三字段 `Option<String>`。
+
+### 9.2 构造点（需补第三实参，默认 `None`）
+
+- `Type::Ref(Box::new(..), m)` 约 **12** 处：`check_item/collect.rs`、`check_stmt.rs`、`check_expr/{resolve,builtin,method,index_enum,call,mod,misc}.rs`、`util.rs`（`substitute` / `type_to_ast` 递归重构，保持原 `m`）。
+- `AstType::Ref(Box::new(..), is_mut)` 约 **8** 处：`rlyeh-desugar/src/generate/mod.rs`（2：`Self` / `Context` 接收者）、`rlyeh-parser/src/ty.rs`（1：解析入口）、`check_item/derive.rs`（4：derive 生成）、`check_expr/util.rs`（1：`type_to_ast` 递归）。
+
+### 9.3 匹配点（需补第三绑定 `_`）
+
+- `Type::Ref(inner, _)` / `(a, ma)` 等模式约 **16** 处，分布于 typecheck 各 `check_*` 模块（`types.rs` / `comparison.rs` / `fn_sig.rs` / `mod.rs` / `collect.rs` / `derive.rs` / `check_stmt.rs` / `builtin.rs` / `thread.rs` / `method.rs` / `resolve.rs` / `generic.rs` / `util.rs` / `index_enum.rs` / `call.rs` / `mod.rs` / `json.rs` / `misc.rs` / `ctrl.rs` / `field.rs` / `in_expr.rs` 等）。
+- `AstType::Ref(inner, _)` 模式 **3** 处：`rlyeh-parser/src/item.rs`、`tests/control.rs`、`tests/parser_test.rs`。
+
+### 9.4 下游零引用（关键，正面回答 §8 Q1）
+
+在 `rlyeh-hir` / `rlyeh-mir` / `rlyeh-codegen` / `rlyeh-lir` / `rlyeh-llvm*` / `rlyeh-driver` / `rlyeh-borrowck` / `rlyeh-regionck` 中检索 `Type::Ref` 命中 **0**。
+
+**结论**：`Type` 枚举的「二参 → 三参」改造爆炸半径**仅限 `rlyeh-typecheck` + `rlyeh-parser` + `rlyeh-desugar` 三角**（含 parser 测试）；HIR / MIR / codegen 使用独立类型表示，无需改动。这把 T-0 风险从「全编译器」降为「前端三 crate 机械改参」。
+
+### 9.5 判定
+
+T-0 机械可行：约 **40** 处落点（2 定义 + 20 构造 + 18 匹配）均为「追加 `None` / 第三绑定 `_`」，可借编译器报错逐项消歧；parser / desugar 的接收者构造（`Self` / `Context`、`&self`）默认 `None` 即可。建议作为 B-5 首步**独立提交**，不混入其它逻辑，随后在 T-1 把解析保留的 `'a` 名经 `resolve_ast_type` 真正填入 `Type::Ref` 第三字段。
