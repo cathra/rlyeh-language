@@ -321,7 +321,7 @@ borrowck，属「严格借用检查」专项，本轮不引入新诊断以保证
 
 **收口判定**：首轮切片（`B-0 → B-1 → B-2 → B-6 → P1(B-3/B-4/B-5 部分)`）已全部落地并核实；本 RFC 状态由 `Draft` 更新为「首轮切片完成」。
 
-**移交**：B-5（补 region 推断诊断）与 B-7（P2 块级借用）显式移交至「严格借用检查专项」——B-5 需 `AstType::Ref` 携带生命名并下传 borrowck/regionck（本 RFC 已确认现为 no-op、零回归）；B-7 需重写 borrowck 生命周期求解为块级区间，高风险，按原 RFC 建议作独立后续阶段评估。
+**移交**：B-5（补 region 推断诊断）与 B-7（P2 块级借用）显式移交至「严格借用检查专项」——承载设计见 [`docs/rfc/borrowck-lifetime-checking.md`](./borrowck-lifetime-checking.md)。B-5 需 `AstType::Ref` 携带生命名并下传 borrowck/regionck（本 RFC 已确认现为 no-op、零回归）；B-7 需重写 borrowck 生命周期求解为块级区间，高风险，按原 RFC 建议作独立后续阶段评估。
 
 ---
 
