@@ -93,7 +93,7 @@
 | T-3 | 引用 region 良构性检查 + **DanglingReference** 诊断（region 边界维度：区内局部被引用、region 退出后引用仍存活 / 区尾引用逃逸到区外变量） | G2/G3 | 中 | ✅ 已落地（2026-09-19） |
 | T-4 | **region 推断失败诊断**（取代静默放行） | **B-5** | 中 | ✅ 已收口（2026-09-19）：多 region 歧义被 Rlyeh 生命周期省略覆盖，局部逃逸由 T-2/T-3 `DanglingReference` 兜底，无新增诊断（见 §9.7 方案 A） |
 | T-5 | run-pass / compile-fail 测试：`lifetime_region_valid`（新增）/ `dangling_region_err`（已由 T-3 `dangling-region-final`/`dangling-region-assign` 覆盖）/ `region_inference_err`（随 T-4 方案 A 取消） | G3/B-5 | 低 | ✅ 已落地（2026-09-19） |
-| T-6（可选） | **块级借用语义**：borrowck 活跃期改为块级区间 | **B-7** | 高 | ⚠️ 已原型评估（2026-09-19）：纯块级模型误报 + 与 T-3 不兼容，维持独立后续阶段（见 §9.9） |
+| T-6（可选） | **块级借用语义**：borrowck 冲突检测活跃期改为块级区间 | **B-7** | 高 | ✅ 独立阶段已落地（2026-09-19）：仅冲突检测块级化、T-3 保持 `last_use`、borrow_pass.rl 迁移，全量零回归（见 §9.9/§11） |
 
 建议首轮切片：**T-0 → T-1 → T-2 → T-3 → T-4 → T-5**（B-5 收口）；**T-6（B-7）独立评估**。
 
@@ -192,6 +192,7 @@ T-5 编写 `lifetime_region_valid.rl` 时暴露：**borrowck 的 `uses: HashMap<
 - **假阳性回归（违背专项目标「不误报」）**：`run-pass/borrow_pass.rl` 17 行借用、19 行对该变量赋值——NLL 下借用已于赋值前结束（合法），块级模型使借用活跃至块尾 → 误报 `cannot assign to y because it is borrowed`。即 RFC §4.4 所述「少数细粒度 NLL 模式需手动包 `{}`」的代价，但此处是既有合法 run-pass 用例，强制迁移会改动既有代码语义预期。
 - **与 T-3 不兼容（结构性）**：T-3 依赖「引用在 region 内创建、却在区外被使用」即 `last_use > boundary`。纯块级模型下，region 内创建的引用 `block_end == boundary`，`block_end > boundary` 恒为假 → T-3 通用扫描对 `dangling-region-*.rl` 失活。若要点对点迁移，需以「引用变量逃逸出 region 块作用域」重推 T-3，属独立重构。
 - **结论**：维持 RFC §4.4 判定——T-6（B-7）不在本专项首轮切片，列为独立后续阶段。后续若启动，须先重推 T-3 使其与块级模型协同，并将既有 run-pass 的细粒度 NLL 模式按文档迁移为显式块作用域；启动前建议先以本原型分支复测回归面。
+- **落地（2026-09-19，独立阶段）**：首轮收口后启动。设计决策：**仅**将 `active_borrows`（冲突检测）改为块级区间；**T-3 的 region 边界悬垂扫描保持 `last_use` 不动**——region 逃逸是跨作用域属性，块级下 region 内借用的 `block_end == boundary` 会使扫描失效，故 T-3 与块级冲突检测并存、各司其职。回归面仅 `run-pass/borrow_pass.rl` 第 2 节（同块内"借用结束后写原变量"的细粒度 NLL 模式），已按 RFC §4.4 预期包显式 `{}` 迁移；全量 740+ 用例零回归。详见 §11。
 
 ## 10. 收口纪要（首轮，2026-09-19）
 
@@ -227,4 +228,27 @@ T-5 编写 `lifetime_region_valid.rl` 时暴露：**borrowck 的 `uses: HashMap<
 
 - `cargo test -p rlyeh-driver --test suite_test`：740+ 用例全绿。
 - `cargo clippy --workspace --all-targets`：0 警告（专项内无新增 lint）。
+
+## 11. T-6 独立阶段实现纪要（2026-09-19）
+
+首轮收口（§10）后启动 T-6 独立阶段，目标：将 borrowck 冲突检测的借用活跃期由 NLL 近似改为块级区间，换取规则可人工推演、报错指向明确。
+
+### 11.1 设计决策
+
+- **仅块级化冲突检测**：`active_borrows` 的活跃期由 `born <= pos <= last_use` 改为 `born <= pos < block_ends[block_id]`（`block_id` 为当前最近块/region 的序号，`block_ends` 记录其块尾语句序）。新增 `block_stack` / `block_ends` / `block_seq` 追踪块边界，在 `check_block` 进入/退出时压栈、记录块尾并弹栈；`Borrow` 增加 `block_id` 字段。
+- **T-3 region 边界悬垂扫描保持 `last_use` 不动**：region 逃逸是跨作用域属性（引用变量逃逸出 region 块），无法用单一块边界表达——块级下 region 内借用的 `block_end == boundary`，会使 `block_end > boundary` 恒为假、扫描失效。故 T-3 继续以「`born` 在区内 且 `last_use > boundary`」判定逃逸，与块级冲突检测并存不冲突。
+- **更保守、零漏报**：块级模型使借用活跃到块尾，比 NLL 更长 → 仅可能新增误报（过度保守），不会漏报真实冲突；与专项「不漏报」目标一致，「不误报」由 §9.8 的绑定实例级 `last_use` 保障（二者作用于不同维度：冲突检测 vs 悬垂判定）。
+
+### 11.2 迁移
+
+- 唯一回归：`run-pass/borrow_pass.rl` 第 2 节（同块内"借用结束后写原变量"的细粒度 NLL 模式）。按 RFC §4.4 预期，以显式 `{}` 包裹借用+使用，使借用随块结束释放——输出语义（`5` / `7`）不变，符合块级模型语义。
+
+### 11.3 验证
+
+- `cargo test -p rlyeh-driver --test suite_test`：740+ 用例零回归（含 `dangling-region-final.rl` / `dangling-region-assign.rl` 仍绿）。
+- `cargo clippy --workspace --all-targets`：0 警告。
+
+### 11.4 提交
+
+- `checker.rs` 块级冲突检测（8 处改动）+ `borrow_pass.rl` 迁移 + 本纪要（RFC §6/§9.9/§11）。
 

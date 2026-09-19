@@ -56,6 +56,9 @@ struct Borrow {
     /// 源为局部/按值参数时 `true`（悬垂风险），源为引用参数/全局时为 `false`。
     /// 在创建时刻求值，避免后续源绑定出作用域后 `is_escaping_root` 误判为否。
     escapes: bool,
+    /// 块级区间模型（T-6）：本借用所属块的序号；活跃期 = `[born, block_ends[block_id])`
+    /// （活跃到最近块/region 边界，取代 NLL 近似 `last_use`）。
+    block_id: usize,
 }
 
 /// 借用检查器。
@@ -113,6 +116,10 @@ pub struct BorrowChecker {
     /// 变量名 → 其各次 `let` 定义处的全局语句序（预扫描收集，供同名遮蔽时按绑定实例
     /// 裁剪 `last_use`，修复「uses 按名索引不区分遮蔽」缺陷，RFC §9.8）。
     defs: HashMap<String, Vec<usize>>,
+    /// 块级区间模型（T-6）：块序号 → 块尾语句序；栈顶为当前最近块。
+    block_ends: HashMap<usize, usize>,
+    block_stack: Vec<usize>,
+    block_seq: usize,
     /// 当前全局语句序（函数内单调递增；预扫描与检查遍历共用）。
     pos: usize,
     /// 当前函数参数名（悬垂判定：借参数不悬垂）。
@@ -143,6 +150,9 @@ impl BorrowChecker {
             borrows: Vec::new(),
             uses: HashMap::new(),
             defs: HashMap::new(),
+            block_ends: HashMap::new(),
+            block_stack: Vec::new(),
+            block_seq: 0,
             pos: 0,
             param_names: Vec::new(),
             ref_param_names: Vec::new(),
@@ -176,6 +186,9 @@ impl BorrowChecker {
                     self.borrows.clear();
                     self.uses.clear();
                     self.defs.clear();
+                    self.block_stack.clear();
+                    self.block_ends.clear();
+                    self.block_seq = 0;
                     self.region_local_stack.clear();
                     self.recent_region_locals = None;
                     self.scopes.push(Scope::default());
@@ -237,12 +250,13 @@ impl BorrowChecker {
         }
     }
 
-    /// 变量名在当前语句序上的活跃借用（`born <= pos <= last_use`）。
+    /// 变量名在当前语句序上的活跃借用（T-6 块级区间：`born <= pos < block_ends[block_id]`）。
     fn active_borrows(&self, source: &str) -> Vec<&Borrow> {
         self.borrows
             .iter()
             .filter(|b| {
-                b.source == source && b.born <= self.pos && self.pos <= b.last_use
+                let end = self.block_ends.get(&b.block_id).copied().unwrap_or(usize::MAX);
+                b.source == source && b.born <= self.pos && self.pos < end
             })
             .collect()
     }
@@ -321,6 +335,7 @@ impl BorrowChecker {
             last_use,
             span: self.cur_span,
             escapes: self.is_escaping_root(source),
+            block_id: *self.block_stack.last().unwrap_or(&0),
         });
     }
 
@@ -366,6 +381,7 @@ impl BorrowChecker {
             last_use,
             span: self.cur_span,
             escapes,
+            block_id: *self.block_stack.last().unwrap_or(&0),
         });
     }
 
@@ -525,6 +541,9 @@ impl BorrowChecker {
     /// （借用活跃期在边界处略延后），不造成漏报。
     fn check_block(&mut self, block: &HirBlock, allow_transfer_pass: bool) {
         self.cur_span = block.span;
+        self.block_seq += 1;
+        let block_id = self.block_seq;
+        self.block_stack.push(block_id);
         for stmt in &block.stmts {
             self.pos += 1;
             self.check_stmt(stmt);
@@ -536,12 +555,16 @@ impl BorrowChecker {
             if allow_transfer_pass {
                 if let HirExprKind::Variable(name) = &(expr).kind {
                     if self.is_transferred(name) {
+                        self.block_ends.insert(block_id, self.pos);
+                        self.block_stack.pop();
                         return;
                     }
                 }
             }
             self.check_expr(expr);
         }
+        self.block_ends.insert(block_id, self.pos);
+        self.block_stack.pop();
     }
 
     fn check_stmt(&mut self, stmt: &HirStmt) {
