@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | Draft（B-1、B-2、B-4、B-6 已落地；B-3 省略默认可用、B-5 诊断留待严格借用检查专项） |
+| 状态 | 首轮切片完成（B-0~B-6 已落地并核实生效；B-5 实质 no-op、B-7 P2 移交严格借用检查专项） |
 | 日期 | 2026-09-18 |
 | 范围 | 语言前端（语法 / 类型检查 / 借用检查），不涉及底层安全模型变更 |
 | 关联文档 | [docs/design/04_所有权与借用检查器.md](../design/04_所有权与借用检查器.md)（已归档）、[docs/memory-model.md](../memory-model.md)（L0/L1 层）、[docs/semantics.md](../semantics.md)、[CODEBUDDY.md](../../CODEBUDDY.md) §3.1 / §3.4、[docs/tasks/leaf/sh-p1-4-deref.md](../tasks/leaf/sh-p1-4-deref.md)（M2 自动解引用） |
@@ -305,6 +305,23 @@ borrowck，属「严格借用检查」专项，本轮不引入新诊断以保证
 - 附带修复：B-1 将 `typecheck` 返回签名改为 `(HirProgram, Vec<Warning>)` 后，
   `crates/rlyeh-typecheck/tests/{typecheck_test,module_test}.rs` 的 `check` 辅助函数
   未同步，导致这两个测试目标无法编译。已就地 `.map(|(hir, _warnings)| hir)` 修复。
+
+### 7.5 B-0~B-6 核实纪要与收口（2026-09-19）
+
+首轮切片完成后于 2026-09-19 逐条核对 B-0~B-6 的代码落点与测试，**确认实现真实生效**（非仅文档声明；因与 std 重组同批入库于 `9cd7328`，git log 无独立 borrow 提交，故需显式核实）：
+
+- typecheck 9 个单测全绿（含 B-1 `W001`、B-2 `auto_deref_coerce_*`、B-6 `gc_module_*`）；
+- parser 73 个单测全绿（含 B-4 `region_param` 解析 `test_region_param_*`）；
+- 端到端 `tests/run-pass/lifetime_omit.rl`（输出 `10/20/20`）、`gc_module_attr.rl`、`borrow_pass.rl` 均 `exit 0`，parse→typecheck→codegen→run 全链路通过。
+
+**核实中发现的 3 处陈旧测试**（非实现缺陷，属测试与已演进文法脱节），已修复并提交：
+
+- `c4b3997`：B-4 解析单测 `test_region_param_suffix` 用错已移除的 `trait` 关键字（语法现为 `protocol`），导致该用例自编写起即失败；改为 `protocol T 'c` 后通过。
+- `8de7278`：`test_protocol_and_impl` 与 `test_impl_new_syntax_conformance` 使用已按 PC-12 移除的旧语序 `impl P for T`，而 `parse_impl` 仅支持 `impl T: P` / `impl T`；已对齐到新语序。
+
+**收口判定**：首轮切片（`B-0 → B-1 → B-2 → B-6 → P1(B-3/B-4/B-5 部分)`）已全部落地并核实；本 RFC 状态由 `Draft` 更新为「首轮切片完成」。
+
+**移交**：B-5（补 region 推断诊断）与 B-7（P2 块级借用）显式移交至「严格借用检查专项」——B-5 需 `AstType::Ref` 携带生命名并下传 borrowck/regionck（本 RFC 已确认现为 no-op、零回归）；B-7 需重写 borrowck 生命周期求解为块级区间，高风险，按原 RFC 建议作独立后续阶段评估。
 
 ---
 
