@@ -183,4 +183,4 @@ T-5 编写 `lifetime_region_valid.rl` 时暴露：**borrowck 的 `uses: HashMap<
 - **触发**：同一函数内两个不同作用域各自 `let r = &x;`（同名 `r` 遮蔽），前者（`born` 较小）的 `last_use` 会拾取后者 `*r` 的使用位置（更大 pos），若后者位于 region 之后，则前者被判 `last_use > boundary` → 误报 `DanglingReference`。
 - **性质**：**既有缺陷，非 T-3 引入**。T-3 的 region 边界扫描是首个在「跨 region 比较 `last_use` 与 `boundary`」处暴露该缺陷，但根因在 `uses` 的按名索引模型。
 - **规避**：T-5 测试改用互不相同的变量名（`x1/r1`、`z2/rz2`、`a3/r3` 等）以不触发该缺陷；合法代码亦可如此规避。
-- **修复建议（专项外任务）**：将 `uses` 改为作用域感知——键加入绑定的定义位置/作用域深度，使 `last_use` 仅取「同一绑定」的使用位置；或在消费 `last_use` 时改为「取 `[born, boundary]` 区间内的最大使用位置」。修复需回归全量套件（740+ 用例），建议独立提交。
+- **修复（2026-09-19，已落地）**：`BorrowChecker` 新增 `defs: HashMap<String, Vec<usize>>`（预扫描记录各次 `let` 定义位置），并新增 `last_use_for(var, born)`——仅取「`>= born` 且 `< 下一次同名重定义`」区间内 `uses[var]` 的最大值，应用于 `register_borrow` / `copy_borrow` 计算 `Borrow.last_use`。无遮蔽时 `next_def = ∞`，等价于原 `uses[var].last()`（**零行为变化**）；遮蔽时各绑定实例活跃期互不干扰，`last_use` 不再被后续同名绑定的使用位置污染。新增 run-pass `lifetime_region_shadow.rl`（复用同名引用变量跨 region）锁定该修复。全量套件（740+ 用例）零回归。

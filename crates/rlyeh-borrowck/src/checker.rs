@@ -110,6 +110,9 @@ pub struct BorrowChecker {
     borrows: Vec<Borrow>,
     /// 引用变量名 → 使用处全局语句序（预扫描收集，供 NLL 末次使用判定）。
     uses: HashMap<String, Vec<usize>>,
+    /// 变量名 → 其各次 `let` 定义处的全局语句序（预扫描收集，供同名遮蔽时按绑定实例
+    /// 裁剪 `last_use`，修复「uses 按名索引不区分遮蔽」缺陷，RFC §9.8）。
+    defs: HashMap<String, Vec<usize>>,
     /// 当前全局语句序（函数内单调递增；预扫描与检查遍历共用）。
     pos: usize,
     /// 当前函数参数名（悬垂判定：借参数不悬垂）。
@@ -139,6 +142,7 @@ impl BorrowChecker {
             errors: Vec::new(),
             borrows: Vec::new(),
             uses: HashMap::new(),
+            defs: HashMap::new(),
             pos: 0,
             param_names: Vec::new(),
             ref_param_names: Vec::new(),
@@ -171,6 +175,7 @@ impl BorrowChecker {
                         .collect();
                     self.borrows.clear();
                     self.uses.clear();
+                    self.defs.clear();
                     self.region_local_stack.clear();
                     self.recent_region_locals = None;
                     self.scopes.push(Scope::default());
@@ -306,7 +311,7 @@ impl BorrowChecker {
             BorrowKind::Shared
         };
         let last_use = var
-            .and_then(|v| self.uses.get(v).and_then(|u| u.last()).copied())
+            .map(|v| self.last_use_for(v, self.pos))
             .unwrap_or(self.pos);
         self.borrows.push(Borrow {
             source: source.to_string(),
@@ -352,12 +357,7 @@ impl BorrowChecker {
         else {
             return;
         };
-        let last_use = self
-            .uses
-            .get(to)
-            .and_then(|u| u.last())
-            .copied()
-            .unwrap_or(self.pos);
+        let last_use = self.last_use_for(to, self.pos);
         self.borrows.push(Borrow {
             source,
             var: Some(to.to_string()),
@@ -367,6 +367,29 @@ impl BorrowChecker {
             span: self.cur_span,
             escapes,
         });
+    }
+
+    /// 计算「具名引用变量 `var` 的某次绑定（定义于 `born`）」的有效末次使用位置。
+    ///
+    /// 修复 RFC §9.8 缺陷：原实现直接取 `uses[var].last()`（按名索引），在**同名遮蔽**
+    /// 时会被后续绑定的使用位置污染，导致 `last_use` 越过 region 边界误报 `DanglingReference`。
+    /// 此处仅取「`>= born` 且 `< 下一次同名重定义`」区间内的使用位置最大值，使每个绑定实例
+    /// 的活跃期互不干扰。无遮蔽时 `next_def = ∞`，等价于原 `uses[var].last()`（零行为变化）。
+    fn last_use_for(&self, var: &str, born: usize) -> usize {
+        let next_def = self
+            .defs
+            .get(var)
+            .and_then(|ds| ds.iter().filter(|&&d| d > born).min().copied())
+            .unwrap_or(usize::MAX);
+        self.uses
+            .get(var)
+            .and_then(|us| {
+                us.iter()
+                    .filter(|&&u| u >= born && u < next_def)
+                    .max()
+                    .copied()
+            })
+            .unwrap_or(born)
     }
 
     /// 引用根变量 `root` 指向的存储是否「逃出当前函数帧即悬垂」。
@@ -876,7 +899,10 @@ impl BorrowChecker {
 
     fn collect_stmt_uses(&mut self, stmt: &HirStmt) {
         match &stmt.kind {
-            HirStmtKind::Let { init, .. } => self.collect_expr_uses(init),
+            HirStmtKind::Let { name, init, .. } => {
+                self.defs.entry(name.clone()).or_default().push(self.pos);
+                self.collect_expr_uses(init);
+            }
             HirStmtKind::Expr(e) | HirStmtKind::Semi(e) => self.collect_expr_uses(e),
         }
     }
