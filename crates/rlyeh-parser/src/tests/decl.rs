@@ -100,7 +100,7 @@ fn test_region_param_suffix() {
     let program = parse_ok(
         "struct Wrapper 'a { inner: &'a i64 } \
          enum E 'b { V(&'b i64), W } \
-         trait T 'c { fn get(&self) -> &'c i64; }",
+         protocol T 'c { fn get(&self) -> &'c i64; }",
     );
     let AstItem::StructDecl(s) = &program.items[0] else {
         panic!("expected struct");
