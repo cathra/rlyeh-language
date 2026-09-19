@@ -52,6 +52,10 @@ struct Borrow {
     last_use: usize,
     /// 创建处源码位置（SH-P2-6 L2 相关位置标注：冲突时回指此处）。
     span: Span,
+    /// 引用是否逃逸（创建时据 `is_escaping_root(source)` 快照，T-2）：
+    /// 源为局部/按值参数时 `true`（悬垂风险），源为引用参数/全局时为 `false`。
+    /// 在创建时刻求值，避免后续源绑定出作用域后 `is_escaping_root` 误判为否。
+    escapes: bool,
 }
 
 /// 借用检查器。
@@ -76,7 +80,8 @@ struct Borrow {
 ///   对原变量的写入/再借用均允许；
 /// - **引用经聚合字段传播**（`Wrapper { inner: &a }`）与**方法返回引用**
 ///   （`String::as_str()`）无法在 HIR 上追踪（HIR 无类型标注），暂不检查
-///   字段内引用悬垂；MVP 悬垂检查覆盖 `return` 与函数体块尾值两个出口。
+///   字段内引用悬垂；MVP 悬垂检查覆盖 `return`、函数体块尾值与**引用别名**
+///   （`let s = r;` / `s = r` / `let s = { ...; r }` 拷贝传播，T-2）三个出口。
 ///
 /// HIR 子节点（表达式 / 语句 / 块）现已携带源 `Span`；错误坐标取自查错节点
 /// 自身的 `span`（表达式 / 语句 / 块级粒度，合并源码坐标），经 `render`
@@ -294,6 +299,57 @@ impl BorrowChecker {
             born: self.pos,
             last_use,
             span: self.cur_span,
+            escapes: self.is_escaping_root(source),
+        });
+    }
+
+    /// 从初始化 / 赋值表达式抽取「最终求值为的引用变量名」：
+    /// - `Variable(v)` → `Some(v)`（直接引用变量拷贝）；
+    /// - `Block` / `UnsafeBlock` 且块尾值为 `Variable(v)` → `Some(v)`（块值引用传播，T-2）；
+    /// - 其它 → `None`。
+    fn ref_source_var(&self, expr: &HirExpr) -> Option<String> {
+        match &expr.kind {
+            HirExprKind::Variable(v) => Some(v.clone()),
+            HirExprKind::Block(b) | HirExprKind::UnsafeBlock(b) => {
+                if let Some(fe) = &b.final_expr {
+                    if let HirExprKind::Variable(v) = &fe.kind {
+                        return Some(v.clone());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// 引用变量拷贝（`let b = a;` / `b = a;` / `let b = { ...; a }` 且 `a` 为引用变量）：
+    /// 为 `to` 登记一条与 `from` 同源的借用，使引用存活边经拷贝传播，闭合别名逃逸缺口（T-2）。
+    ///
+    /// 若 `from` 非引用变量（无任何以其为 `var` 的借用记录），则无操作——普通值拷贝不影响借用图。
+    fn copy_borrow(&mut self, to: &str, from: &str) {
+        let Some((source, kind, escapes)) = self
+            .borrows
+            .iter()
+            .filter(|b| b.var.as_deref() == Some(from))
+            .max_by_key(|b| b.born)
+            .map(|b| (b.source.clone(), b.kind, b.escapes))
+        else {
+            return;
+        };
+        let last_use = self
+            .uses
+            .get(to)
+            .and_then(|u| u.last())
+            .copied()
+            .unwrap_or(self.pos);
+        self.borrows.push(Borrow {
+            source,
+            var: Some(to.to_string()),
+            kind,
+            born: self.pos,
+            last_use,
+            span: self.cur_span,
+            escapes,
         });
     }
 
@@ -320,7 +376,7 @@ impl BorrowChecker {
         match &expr.kind {
             HirExprKind::Variable(v) => {
                 for b in &self.borrows {
-                    if b.var.as_deref() == Some(v) && self.is_escaping_root(&b.source) {
+                    if b.var.as_deref() == Some(v) && b.escapes {
                         self.errors.push(BorrowError::dangling_reference(v, self.cur_span));
                         return;
                     }
@@ -479,6 +535,11 @@ impl BorrowChecker {
                     }
                 } else {
                     self.check_expr(init);
+                    // 引用变量拷贝传播（T-2）：`let b = a;` / `let b = { ...; a }`
+                    // 且 `a` 为引用变量时，为 `b` 登记与 `a` 同源的借用，闭合别名逃逸缺口。
+                    if let Some(from) = self.ref_source_var(init) {
+                        self.copy_borrow(name, &from);
+                    }
                 }
                 if name != "_" {
                     self.insert(
@@ -535,6 +596,11 @@ impl BorrowChecker {
                     }
                 }
                 self.check_expr(value);
+                // 引用变量拷贝传播（T-2）：`b = a;` 且 `a` 为引用变量时，
+                // `b` 继承 `a` 的借用源，闭合别名逃逸缺口。
+                if let Some(from) = self.ref_source_var(value) {
+                    self.copy_borrow(target, &from);
+                }
             }
             HirExprKind::Binary(_, l, r) => {
                 self.check_expr(l);
