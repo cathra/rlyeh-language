@@ -435,6 +435,12 @@ pub(crate) fn collect_mod_types_inner(
     prefix: &str,
 ) -> Result<(), TypeError> {
     let new_prefix = full_name(prefix, &m.name);
+    // 先预注册整棵模块树名（含嵌套子模块，见 `register_module_tree`），使后续 use 导入
+    // 解析时 `ctx.modules` 已含全部子模块路径。否则当 `pub import poll::Context` 写在
+    // `module poll;` 之前时（future/module.rl），`resolve_import_path` 因 `future::poll`
+    // 尚未登记而退化为 `poll::Context`，导致别名链 `Context → poll::Context` 指向不存在
+    // 的符号（block_on/Future 等解析失败的根因）。
+    register_module_tree(ctx, m, prefix);
     // 登记已声明模块路径（供 `resolve_import_path` 消歧，与 `collect_item_decls` 一致）
     ctx.modules.insert(new_prefix.clone());
     // A：`pub module` 前缀登记到对外公共面（供 P2 可见性判定；本阶段仅记录、不强制）
@@ -480,13 +486,39 @@ pub(crate) fn collect_mod_fn_sigs(
     for inner in &m.items {
         match inner {
             AstItem::FnDecl(f) => {
-                let sig = fn_signature(ctx, f, f.span)?;
                 let full = full_name(prefix, &f.name);
-                // 登记进主 ctx，使模块内跨函数调用（如 `io::file::open` 调 `io::base::c_str`）
-                // 能在 check_item 阶段经 `lookup_fn_signature` 解析（M0：补齐模块函数签名登记）。
-                ctx.insert_fn_signature(full.clone(), sig.clone());
-                if f.is_extern {
-                    ctx.extern_fns.insert(full.clone());
+                let sig = fn_signature(ctx, f, f.span)?;
+                if !f.generics.is_empty() {
+                    // 模块内泛型函数注册为模板（与顶层 collect_fn_sigs_pass 一致）：
+                    // 调用点经 check_generic_call 按实参实例化。若仅登记为普通签名，
+                    // 参数中的泛型（如 `&mut F`）会被固化为自由 `Type::Generic`，
+                    // 调用点 `fn_templates` 查不到 → 走普通路径报 `expects '&mut F'`
+                    // （典型：future::executor::block_on<F: Future>）。
+                    ctx.fn_templates.insert(
+                        full.clone(),
+                        FnTemplate {
+                            name: f.name.clone(),
+                            type_params: f.generics.iter().map(|p| p.name.clone()).collect(),
+                            bounds: f
+                                .generics
+                                .iter()
+                                .filter(|p| !p.bounds.is_empty())
+                                .map(|p| (p.name.clone(), p.bounds.clone()))
+                                .collect(),
+                            sig: sig.clone(),
+                            ast: (**f).clone(),
+                        },
+                    );
+                } else {
+                    // 登记进主 ctx，使模块内跨函数调用（如 `io::file::open` 调 `io::base::c_str`）
+                    // 能在 check_item 阶段经 `lookup_fn_signature` 解析（M0：补齐模块函数签名登记）。
+                    ctx.insert_fn_signature(full.clone(), sig.clone());
+                    if f.is_extern {
+                        ctx.extern_fns.insert(full.clone());
+                    }
+                    if f.is_pub {
+                        ctx.pub_symbols.insert(full.clone());
+                    }
                 }
                 sigs.push((full, sig));
             }

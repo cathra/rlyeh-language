@@ -258,16 +258,13 @@ fn collect_item_decls(
         AstItem::TypeAlias(_) => {}
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
-            // 登记已声明模块路径（供 `resolve_import_path` 区分相对子模块导入与
-            // 跨模块绝对路径导入；在声明即登记，不依赖符号收集时机）。
-            ctx.modules.insert(new_prefix.clone());
-            if m.is_pub {
-                ctx.pub_module_prefixes.insert(new_prefix.clone());
-            }
-            // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
-            if m.memory.as_deref() == Some("gc") {
-                ctx.gc_modules.insert(new_prefix.clone());
-            }
+            // 先预注册整棵模块树名（含嵌套子模块，见 `register_module_tree`），使后续
+            // use 导入解析时 `ctx.modules` 已包含全部子模块路径。否则当 `pub import
+            // poll::Context` 书写在 `module poll;` 声明之前时（如 `future/module.rl`），
+            // 解析 use 别名时 `future::poll` 尚未登记，`resolve_import_path` 会退化为
+            // `poll::Context`，导致别名链 `Context → poll::Context` 指向不存在的符号
+            // （future 模块 `block_on<F>` / `Context` 解析失败的根因）。
+            register_module_tree(ctx, m, prefix);
             // Q3a 修复：模块内符号（struct/protocol/impl）的短名解析须感知模块前缀。
             // 模块内 protocol/impl 方法签名在收集阶段即 resolve_ast_type（如
             // `fmt/module.rl` 的 `protocol Display { fn fmt(&self, f: &mut Formatter) }`），
@@ -293,6 +290,27 @@ fn collect_item_decls(
         _ => {}
     }
     Ok(())
+}
+
+/// 预注册模块树的所有模块名（仅登记 `modules` / `pub_module_prefixes` / `gc_modules`，
+/// 不收集内部类型 / 函数签名）。在收集模块体前调用，确保 `ctx.modules` 已包含全部
+/// 子模块路径，使随后解析的 `pub import poll::Context` 等相对子模块导入能经
+/// `resolve_import_path` 正确前缀化为 `future::poll::Context`，而非退化为 `poll::Context`
+/// （模块名注册时机问题导致别名链断链的根因，见 `collect_item_decls` 的 `ModDecl` 分支）。
+fn register_module_tree(ctx: &mut TypeContext, m: &AstModDecl, prefix: &str) {
+    let new_prefix = full_name(prefix, &m.name);
+    ctx.modules.insert(new_prefix.clone());
+    if m.is_pub {
+        ctx.pub_module_prefixes.insert(new_prefix.clone());
+    }
+    if m.memory.as_deref() == Some("gc") {
+        ctx.gc_modules.insert(new_prefix.clone());
+    }
+    for inner in &m.items {
+        if let AstItem::ModDecl(im) = inner {
+            register_module_tree(ctx, im, &new_prefix);
+        }
+    }
 }
 
 /// 将 typecheck 类型序列化为 extern 签名类型名（LIR 侧解析为 `LirType`）。
