@@ -33,7 +33,7 @@
 >
 > 本文件保留计划主体（§2/§3/§3b/§3c 阶段详情）与状态标识；详细实现流水见任务树 / git 历史。
 
-**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 进行中、W 全部完成、X 全部完成（X1–X4 ✅）、Y 部分完成（Y7/Y8/Y5 ✅；Y1/Y3 🔧；Y2/Y6 ✅；Y4 🔧（#6 std Mutex 泛型化 + #8 Channel<T> 泛型化已完成，Y4b-3/4 等后续），已拆分与风险评估，见下方）。
+**状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 全部完成、W 全部完成、X 全部完成（X1–X4 ✅）、**Y 全部完成（Y1–Y8 均 ✅）**——各任务行已附实现日期与回归用例数；Y1（切片实参受语言限制，以 MVP 字节缓冲 API 收口）、Y3（Windows sendfile 分支）按规划以降级项收口，非遗留缺口。
 
 > **Y 阶段风险评估与拆分（2026-08-28）**：Y4/Y6 探测到语言级缺陷（泛型 struct 字面量构造实例化失败、`&dyn Error` 构造失败、泛型 trait 实参路径不支持 + where 子句缺失），已登记至专项 [`lang-defects.md`](../tasks/leaf/lang-defects.md)；Y4 拆分 Y4a/Y4b/Y4c、Y6 拆分 Y6a/Y6b、Y2 拆分 Y2a/Y2b；Y1 挂 U1 切片、Y5 依赖 U5、Y3 sendfile Windows 不可验证（待专项）。
 > **推进记录（2026-08-28）**：Y6a + Y6b + Y2a + Y4a + Y4b-1 + Y4b-2 + Y2b（kqueue 等待验证）+ Y5（Box::leak 目标签名）已完成，**166 用例全绿**。Y 阶段语言级能力已覆盖（泛型构造推断 / Deref 分派 / 泛型静态方法推断 / kqueue FFI / Box::leak 引用）。剩余待专项（lang-defects #6/#8）：std Mutex 泛型化迁移、Channel<T> 泛型化（复合字段推断 + 无 turbofish）。Y1（U1 切片）、Y3（Windows）、Y4b-3/4 后续。

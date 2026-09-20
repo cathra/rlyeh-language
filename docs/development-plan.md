@@ -71,7 +71,7 @@
 | **V** | 集合与迭代器完整化 | 借用迭代器、String 码点迭代器、Iterator 默认方法+适配器、get_mut、新集合 | ✅ 已完成（V1/V2/V3/V4/V5 全部完成；V3 数组/`Vec` 适配器因数组非命名类型保留内建 desugar，记为已知语言限制） | [`V.md`](stages/V.md) |
 | **W** | 异步运行时完整化 | Future 泛型化、await 状态机、事件驱动 executor、join_all/timeout、recv_async、async 泛型/递归 | ✅ W1–W6 全部完成 | [`W.md`](stages/W.md) |
 | **X** | 序列化/格式化/时间完整化 | 时间 API、标准 TOML、Deserialize trait、Formatter 完整化 | ✅ 全部完成（X1/X2/X3/X4 全部完成，2026-08-30） | [`X.md`](stages/X.md) |
-| **Y** | IO/网络/并发/智能指针收尾 | File API、NIO 后端、HTTP 复用、锁/Channel 泛型化、Box::leak、Error::source、UDP、stack_size | 🔧 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分） | [`Y.md`](stages/Y.md) |
+| **Y** | IO/网络/并发/智能指针收尾 | File API、NIO 后端、HTTP 复用、锁/Channel 泛型化、Box::leak、Error::source、UDP、stack_size | ✅ 全部完成（Y1–Y8 ✅；Y1 切片实参、Y3 Windows sendfile 分支按规划降级收口） | [`Y.md`](stages/Y.md) |
 
 > **总览说明**：阶段 A–L 为编译器与工具链 + 能力补齐（§3 阶段详情，G–L 依赖：G 无、H 依赖 G、I 弱依赖、J 依赖 H、K 依赖 G、L 依赖 I/G）；阶段 M–T 为标准库深度完善（§6.3b 阶段详情，推荐路线见下方）；阶段 U–Z 为目标 API 对齐与编译器能力补齐（§6.3c，推荐路线见 §6.3c.1）。
 >
