@@ -362,7 +362,17 @@ pub(crate) fn toml_parse_ast(
                 )
             };
             // 键解析：i64 → `string_to_int(json_unescape(kpart))`；String → `json_unescape(kpart)`
-            let k_unescaped = mk_ident_call("json_unescape".to_string(), vec![kpart_id.clone()], span);
+            // X4（2026-09-21）：`__kpart` 经 `.trim()` 得 `&str`（StrFat 视图）。若直接传入
+            // `json_unescape`（其形参经全程序 `param_types` 推断可能为 owned `String`），
+            // 实参 16B / 形参 24B 错配会读到越界 `cap`，在多反序列化并存时污染先前局部
+            //（表现为先前 String 字段变随机字节）。统一经 `String::from(...)` 转 owned `String`，
+            // 与 json 反序列化（`json_unescape(String::from(...))`）保持一致。
+            let k_owned = mk_path_call(
+                vec!["String".to_string(), "from".to_string()],
+                vec![kpart_id.clone()],
+                span,
+            );
+            let k_unescaped = mk_ident_call("json_unescape".to_string(), vec![k_owned], span);
             let key_parse = if key_is_i64 {
                 mk_ident_call("string_to_int".to_string(), vec![k_unescaped], span)
             } else {
@@ -405,20 +415,29 @@ pub(crate) fn toml_parse_ast(
                             AstStmt::Let {
                                 pattern: AstPattern::Ident(vpart_name),
                                 type_anno: None,
+                                // X4（2026-09-21）：值段须 trim 剥离 `key = value` 的 `=` 后空格。
+                                // 此前仅 trim 键段（X2 修复），值段保留了 `= ` 之后的空格
+                                //（如 ` 9` / ` "z"`），导致 `string_to_int(" 9")` 首字符为空白
+                                // 提前停止返回 0、`json_unescape(" \"z\"")` 首字符非引号而不剥引号。
+                                // 与 struct 分支（同文件 `__val` 的 substring 后 `.trim()`）保持一致。
                                 init: mcall(
-                                    part_id.clone(),
-                                    "substring",
-                                    vec![
-                                        AstExpr::new(
-                                            ExprKind::Binary {
-                                                op: BinaryOp::Add,
-                                                left: c_id.clone(),
-                                                right: AstExpr::new(ExprKind::IntLiteral(1), span),
-                                            },
-                                            span,
-                                        ),
-                                        mcall(part_id.clone(), "len", Vec::new()),
-                                    ],
+                                    mcall(
+                                        part_id.clone(),
+                                        "substring",
+                                        vec![
+                                            AstExpr::new(
+                                                ExprKind::Binary {
+                                                    op: BinaryOp::Add,
+                                                    left: c_id.clone(),
+                                                    right: AstExpr::new(ExprKind::IntLiteral(1), span),
+                                                },
+                                                span,
+                                            ),
+                                            mcall(part_id.clone(), "len", Vec::new()),
+                                        ],
+                                    ),
+                                    "trim",
+                                    Vec::new(),
                                 ),
                                 mutable: false,
                             },
@@ -934,10 +953,18 @@ pub(crate) fn toml_parse_ast(
                         AstStmt::Let {
                             pattern: AstPattern::Ident(cur_sec_name),
                             type_anno: None,
-                            init: mk_path_call(
-                                vec!["String".to_string(), "new".to_string()],
+                            // X3（2026-09-21）：`__cur_sec` 记录当前 section，语义上是 `string`
+                            //（`{ptr,len}`）：既用 `len()==0` 判顶层、又与字符串字面量比较、
+                            // 还被 `= __part.substring(..).trim()`（返回 `string`）赋值。
+                            // 此前用 `String::new()` 初始化，其返回 `String` 聚合结构/箱指针，
+                            // 与 `string` 混用时赋值只拷贝首字段、`len` 未初始化，导致
+                            // `len()==0` 闸门误判、顶层字段永不赋值。改用
+                            // `String::from("").trim()`：`.trim()` 返回真正的 `string` 值，
+                            // 与 `__cur_sec` 推断类型一致（不加类型标注，避免 `String` 聚合误导）。
+                            init: mcall(
+                                string_from_lit_ast(String::new(), span),
+                                "trim",
                                 Vec::new(),
-                                span,
                             ),
                             mutable: true,
                         },

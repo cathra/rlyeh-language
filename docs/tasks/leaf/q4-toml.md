@@ -26,3 +26,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-08-26 | 由阶段 M–T 执行记录细化为独立叶子文档 |
+| 2026-09-21 | 修复反序列化三项缺陷（struct 顶层字段永不赋值 / HashMap 键解析越界写内存污染 / HashMap 值段未 trim）+ `toml::to_string` HashMap String 键加引号；新增 `toml_io.out` 期望文件，`toml_io.rl` 输出匹配通过 |

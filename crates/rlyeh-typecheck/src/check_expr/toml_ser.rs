@@ -321,7 +321,7 @@ pub(crate) fn toml_serialize_ast_path(
         //      __o.push_str(<键>); __o.push_str(" = "); __o.push_str(<值>);
         //    }
         //    __o.push_str("}"); __o }`
-        // 键：i64 → `"` + int_to_string(k) + `"`；String → json_escape(k)（自带引号）。
+        // 键：i64 → `"` + int_to_string(k) + `"`；String → `"` + json_escape(k) + `"`。
         // 值：递归 `toml_serialize_ast`（top_level=false）。须置于 struct 分支之前（同 json）。
         Type::Named(n, args) if n == "HashMap" && args.len() == 2 => {
             let k_ty = substitute(&args[0], &ctx.generic_subst);
@@ -370,7 +370,17 @@ pub(crate) fn toml_serialize_ast_path(
                     span,
                 )
             } else {
-                mk_ident_call("json_escape".to_string(), vec![k_id.clone()], span)
+                // X4（2026-09-21）：String 键须显式加引号。`json_escape` 仅做转义、
+                // 不自带引号（此前注释「自带引号」有误），故须与 i64 分支一致地
+                // `"` + json_escape(k) + `"`，产出合法内联表键 `{"k" = v}`。
+                fold_add(
+                    vec![
+                        string_from_lit_ast("\"".to_string(), span),
+                        mk_ident_call("json_escape".to_string(), vec![k_id.clone()], span),
+                        string_from_lit_ast("\"".to_string(), span),
+                    ],
+                    span,
+                )
             };
             let val_ser = toml_serialize_ast_path(ctx, &v_ty, &v_id, span, false, sec_path)?;
             // `if __first > 0 { __first = 0 } else { __o.push_str(",") }`
