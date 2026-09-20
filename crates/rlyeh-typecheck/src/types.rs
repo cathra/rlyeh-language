@@ -286,6 +286,14 @@ impl Type {
                 | (Type::U32, Type::ScalarEnum(_))
                 | (Type::U64, Type::ScalarEnum(_))
                 | (Type::USize, Type::ScalarEnum(_)) => true,
+                // 命名类型 ↔ 原始变体互通（`Named("i64")` ↔ `Type::I64`）：
+                // parser 把原始类型名解析为 `Named`，与内建原始变体须等价，否则
+                // `impl i64: Trait` 的 self_type 与注解 / 字面量解析出的原始变体无法兼容。
+                (Type::Named(n, _), p) | (p, Type::Named(n, _))
+                    if primitive_name(p).is_some() =>
+                {
+                    primitive_name(p) == Some(n.as_str())
+                }
                 _ => self == other,
             }
     }
@@ -294,6 +302,31 @@ impl Type {
 /// 是否为 `String` 命名类型（`&str` ↔ `&String` 互视规则用）。
 fn is_named_string(t: &Type) -> bool {
     matches!(t, Type::Named(n, _) if n == "String")
+}
+
+/// 原始类型变体 → 其规范类型名（`Named("i64")` ↔ `Type::I64` 互兼容用）。
+fn primitive_name(t: &Type) -> Option<&'static str> {
+    match t {
+        Type::I8 => Some("i8"),
+        Type::I16 => Some("i16"),
+        Type::I32 => Some("i32"),
+        Type::I64 => Some("i64"),
+        Type::I128 => Some("i128"),
+        Type::ISize => Some("isize"),
+        Type::U8 => Some("u8"),
+        Type::U16 => Some("u16"),
+        Type::U32 => Some("u32"),
+        Type::U64 => Some("u64"),
+        Type::U128 => Some("u128"),
+        Type::USize => Some("usize"),
+        Type::F32 => Some("f32"),
+        Type::F64 => Some("f64"),
+        Type::Bool => Some("bool"),
+        Type::Char => Some("char"),
+        Type::Str => Some("string"),
+        Type::Unit => Some("()"),
+        _ => None,
+    }
 }
 
 impl fmt::Display for Type {

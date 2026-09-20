@@ -16,7 +16,7 @@
 | SH-P2-5 | 分阶段自举 + 差分测试基础设施 | 0.2.0-K | 引导器 + 测试 harness | [leaf](./leaf/sh-p2-5-staged-bootstrap.md) | 🟢 0.2.0 PoC(CD) |
 | SH-P2-6 | 诊断信息质量对齐 | 0.2.0-L | typecheck / check 诊断 | [leaf](./leaf/sh-p2-6-diagnostics.md) | 🟢 完成（L0 harness 诊断维度 + 探针基线；L1 typecheck/borrowck/regionck 用户态 span 对齐 + 语句级坐标；L2 结构化诊断 TC/BC/RC0xx + help + 相关 span 标注） |
 | SH-P2-7 | driver 自举（增量编译 / 线程 / 缓存） | 0.2.0-M/K | rlyeh-driver | [leaf](./leaf/sh-p2-7-driver.md) | ⏳ 规划中 |
-| SH-P2-8 | `mem::swap` / `mem::replace` 内建 | 0.2.0-U | typecheck / borrowck / desugar / regionck | [leaf](./leaf/sh-p2-8-mem-swap.md) | 🟢 完成（M1 `mem::swap` 三次 memcpy 交换；M2 `mem::replace` desugar 复用 mem::swap 统一处理标量/聚合；M3 `mem::take` 依赖 Default trait 暂缓） |
+| SH-P2-8 | `mem::swap` / `mem::replace` 内建 | 0.2.0-U | typecheck / borrowck / desugar / regionck | [leaf](./leaf/sh-p2-8-mem-swap.md) | 🟢 完成（M1 `mem::swap` 三次 memcpy 交换；M2 `mem::replace` desugar 复用 mem::swap 统一处理标量/聚合；M3 `mem::take` desugar 复用 mem::swap + 打通 `Default` 协议 `Self` 上下文推断，run-pass + compile-fail 已固化） |
 | SH-P2-9 | `const` / `static` 全局项（编译期常量 + 全局符号） | 0.2.0-V | typecheck / codegen / 运行时 FFI | [leaf](./leaf/sh-p2-9-const-static.md) | 🟢 完成（M1 const 折叠 / M2 static·static mut data 段符号 + unsafe 门禁 TC016a/b/c / M3 `&GLOBAL`→`&'static T` 取址） |
 | SH-P2-10 | `panic!` / `assert!` / `unreachable!` / `todo!` 宏 | 0.2.0-W | macro / typecheck / std | [leaf](./leaf/sh-p2-10-assert-macros.md) | ⏳ 规划中 |
 | SH-P2-11 | 结构体 `..` 更新 + 字段简写 | 0.2.0-X | parser / typecheck / codegen | [leaf](./leaf/sh-p2-11-struct-update.md) | 🟢 完成（L1 字段简写须显式首字段在前 / L2 `..base` 拷贝；run-pass 验证） |

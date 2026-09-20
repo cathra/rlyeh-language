@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use rlyeh_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, CompareOp, ExprKind, RegionStrategy, UnaryOp};
+use rlyeh_ast::{AssignOp, AstBlock, AstExpr, AstPattern, AstStmt, AstType, BinaryOp, CaptureMode, CompareOp, ExprKind, RegionStrategy, SpannedAstType, UnaryOp};
 use rlyeh_hir::{
     FieldScalar, HirAssignOp, HirBinaryOp, HirBlock, HirExpr, HirFnDecl, HirItem, HirItemKind,
     HirParam, HirRegionOptions, HirRegionStrategy, HirStmt, HirUnaryOp, ReprConv, HirExprKind, HirStmtKind};

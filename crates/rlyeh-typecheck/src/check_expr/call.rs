@@ -481,6 +481,75 @@ pub(super) fn check_call(
         return infer_expr(ctx, &block);
     }
 
+    // U（SH-P2-8 M3）：`mem::take(&mut a)` 内建——等价于 `mem::replace(a, Default::default())`：
+    // desugar 为 `{ let _tmp: T = Default::default(); mem::swap(&mut a, &mut _tmp); _tmp }`。
+    // `_tmp` 显式标注 T，使 `Default::default()` 经 `let` 期望类型下传拿到 T（self_target），
+    // 复用 mem::swap 统一处理标量 / 聚合；返回旧值、原位留默认。
+    if name == "mem::take" {
+        if args.len() != 1 {
+            return Err(TypeError::Unsupported {
+                what: "mem::take 需要恰好 1 个参数 (&mut a)".to_string(),
+                span,
+            });
+        }
+        let (_, ta) = infer_expr(ctx, &args[0])?;
+        let t = match &ta {
+            Type::Ref(a, crate::types::Mutability::Mutable, _) => a,
+            _ => {
+                return Err(TypeError::Unsupported {
+                    what: format!("mem::take 要求第一个参数为 &mut T（得到 `{}`）", ta),
+                    span,
+                });
+            }
+        };
+        let tmp = ctx.fresh_temp();
+        let default_init = AstExpr::new(
+            ExprKind::Call {
+                callee: AstExpr::new(
+                    ExprKind::Path(vec!["Default".to_string(), "default".to_string()]),
+                    Span::dummy(),
+                ),
+                args: vec![],
+                type_args: vec![],
+            },
+            Span::dummy(),
+        );
+        let anno = SpannedAstType {
+            ty: super::iterator::ty_to_ast(t),
+            span: Span::dummy(),
+        };
+        let let_stmt = AstStmt::Let {
+            pattern: AstPattern::Ident(tmp.clone()),
+            type_anno: Some(anno),
+            init: default_init,
+            mutable: true,
+        };
+        let swap_arg1 = AstExpr::new(
+            ExprKind::Unary {
+                op: UnaryOp::AddrOfMut,
+                operand: AstExpr::new(ExprKind::Ident(tmp.clone()), Span::dummy()),
+            },
+            Span::dummy(),
+        );
+        let swap_call = AstExpr::new(
+            ExprKind::Call {
+                callee: AstExpr::new(ExprKind::Ident("mem::swap".to_string()), Span::dummy()),
+                args: vec![args[0].clone(), swap_arg1],
+                type_args: vec![],
+            },
+            Span::dummy(),
+        );
+        let block = AstExpr::new(
+            ExprKind::Block(AstBlock {
+                stmts: vec![let_stmt, AstStmt::Expr(swap_call)],
+                final_expr: Some(AstExpr::new(ExprKind::Ident(tmp), Span::dummy())),
+                span: Span::dummy(),
+            }),
+            Span::dummy(),
+        );
+        return infer_expr(ctx, &block);
+    }
+
     // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
     // 按签名检查参数、返回签名类型
     if let Some((params, ret)) = builtin_signature(&name) {
@@ -848,7 +917,10 @@ pub(super) fn check_call(
                     .iter()
                     .map(|t| resolve_ast_type(ctx, t, span))
                     .collect::<Result<Vec<_>, _>>()?;
-                return check_trait_static_call(ctx, &trait_key, method, args, &resolved_args, None, span);
+                // U-M3：把 `let x: T = Trait::f()` 的 `T` 作为 `Self` 候选，使协议静态方法
+                // 的返回类型可按上下文期望对齐（默认 `None` 退化为从 impl 自推断）。
+                let self_target = ctx.expected_type.clone();
+                return check_trait_static_call(ctx, &trait_key, method, args, &resolved_args, self_target, span);
             }
         }
     }

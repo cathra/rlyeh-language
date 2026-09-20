@@ -180,6 +180,10 @@ pub struct TypeContext {
     /// 当前 impl 的目标类型（U4：方法签名/body 中 `Self` 解析为它；
     /// trait 上下文未设置时 `Self` 退化为占位 `Generic("Self")`）
     pub self_type: Option<Type>,
+    /// 当前 `let`/`return` 等上下文期望的类型（U-M3：下传到 trait 关联函数调用，
+    /// 作为协议静态方法 `Self` 的候选 `self_target`，使其可按 `let x: T = Trait::f()`
+    /// 的 `T` 对齐返回类型；无期望时保持 `None`，退化为从 impl 自推断）。
+    pub expected_type: Option<Type>,
     /// 遮蔽槽名计数器（生成 `name$N` 唯一槽名）
     pub shadow_seq: usize,
     /// 临时变量名计数器
@@ -978,13 +982,66 @@ pub(crate) fn type_matches(imp: &ImplDef, concrete: &Type) -> bool {
     if matches!(&imp.self_type, Type::Generic(_)) {
         return true;
     }
-    let Type::Named(name, _) = &imp.self_type else {
-        return false;
-    };
-    match concrete {
-        Type::Named(cname, _) => name == cname,
-        Type::Ref(inner, _, _) => type_matches(imp, inner),
-        _ => false,
+    // U-M3：按「类型名键」做等价比较——既保留 `Named` 泛型 impl 的精确匹配
+    // （名 + 类型实参递归），又使原始类型 impl（如 `impl i64: Default` 的
+    // self_type=`Named("i64")` 与注解 / 字面量解析出的 `Type::I64`）互通。
+    same_type(&imp.self_type, concrete)
+}
+
+/// 类型名键：命名类型取类型名，原始类型取规范名（如 `I64`→`"i64"`）。
+/// 用于 `type_matches` 的等价比较，使 `Named("i64")` 与 `Type::I64` 互通。
+fn type_name_key(t: &Type) -> Option<String> {
+    match t {
+        Type::Named(n, _) => Some(n.clone()),
+        Type::I8 => Some("i8".into()),
+        Type::I16 => Some("i16".into()),
+        Type::I32 => Some("i32".into()),
+        Type::I64 => Some("i64".into()),
+        Type::I128 => Some("i128".into()),
+        Type::ISize => Some("isize".into()),
+        Type::U8 => Some("u8".into()),
+        Type::U16 => Some("u16".into()),
+        Type::U32 => Some("u32".into()),
+        Type::U64 => Some("u64".into()),
+        Type::U128 => Some("u128".into()),
+        Type::USize => Some("usize".into()),
+        Type::F32 => Some("f32".into()),
+        Type::F64 => Some("f64".into()),
+        Type::Bool => Some("bool".into()),
+        Type::Char => Some("char".into()),
+        Type::Str => Some("string".into()),
+        Type::Unit => Some("()".into()),
+        _ => None,
+    }
+}
+
+/// 两个类型在 `type_matches` 意义上等价：解 Ref 层后，命名类型按名 + 类型实参递归
+/// 比较；原始类型按规范名与同名 `Named` 互通；其余（元组 / 数组 / 函数等）无名称键，不等。
+fn strip_ref<'a>(t: &'a Type) -> &'a Type {
+    match t {
+        Type::Ref(x, _, _) => &**x,
+        o => o,
+    }
+}
+
+fn same_type(a: &Type, b: &Type) -> bool {
+    // 泛型参数作通配（如 `impl Vec<T>` 的 `Vec<T>` 匹配具体 `Vec<String>`，T 在调用点统一）
+    if matches!(a, Type::Generic(_)) || matches!(b, Type::Generic(_)) {
+        return true;
+    }
+    let a = strip_ref(a);
+    let b = strip_ref(b);
+    match (a, b) {
+        // 命名类型按名匹配（兼容旧行为：`impl<T> MyMutex<T>` 依名字匹配 `MyMutex`，
+        // 类型实参在调用点统一；实参精确比较会破坏泛型 impl 匹配，故仅比名）。
+        (Type::Named(n1, _), Type::Named(n2, _)) => n1 == n2,
+        // 命名类型 ↔ 原始变体 / 原始变体 ↔ 原始变体：按规范名键互通
+        // （`impl i64: Trait` 的 self_type=`Named("i64")` 与注解 / 字面量解析出的 `Type::I64`）。
+        _ => {
+            let k1 = type_name_key(a);
+            let k2 = type_name_key(b);
+            k1.is_some() && k1 == k2
+        }
     }
 }
 

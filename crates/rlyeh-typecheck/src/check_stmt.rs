@@ -820,7 +820,14 @@ pub(crate) fn check_stmt_inner(
                         check_deferred_closure_binding(ctx, init, span)?
                     }
                 } else {
-                    infer_expr(ctx, init)?
+                    let prev_expected = ctx.expected_type.take();
+                    if let Some(anno) = type_anno {
+                        let at = resolve_ast_type(ctx, &anno.ty, span)?;
+                        ctx.expected_type = Some(at);
+                    }
+                    let res = infer_expr(ctx, init);
+                    ctx.expected_type = prev_expected;
+                    res?
                 };
 
             // 类型标注一致性检查；标注存在时以标注类型作为绑定类型，
