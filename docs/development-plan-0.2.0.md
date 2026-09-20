@@ -54,7 +54,7 @@
 | **0.2.0-V** | `const` / `static` 全局项 | P2-9 | [SH-P2-9](tasks/leaf/sh-p2-9-const-static.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：运行时 FFI 全局状态 |
 | **0.2.0-W** | `panic!`/`assert!`/`unreachable!`/`todo!` 宏 | P2-10 | [SH-P2-10](tasks/leaf/sh-p2-10-assert-macros.md) | 🟡 低 | ✅ 完成（L1 运行时 panic：desugar 为内置 `panic` 调用，codegen 经 `dprintf` 输出到 stderr 后 `abort()`；L3 never 类型待办） | **复审补遗**：编译器内部断言 |
 | **0.2.0-X** | 结构体 `..` 更新 + 字段简写 | P2-11 | [SH-P2-11](tasks/leaf/sh-p2-11-struct-update.md) | 🟡 低 | ⏳ 规划 | **复审补遗**：AST 构造样板消减 |
-| **0.2.0-Y** | `Send`/`Sync` 自动 trait（放宽/标记） | P3-1 | [SH-P3-1](tasks/leaf/sh-p3-1-send-sync.md) | 🟠 中 | 🔧 M1/M2/M3 已落地（告警式） | **复审补遗**：并发安全基线（告警式）；`Thread::start` 边界 W002 告警 + `is_send_sync` 内建谓词 |
+| **0.2.0-Y** | `Send`/`Sync` 自动 trait（放宽/标记） | P3-1 | [SH-P3-1](tasks/leaf/sh-p3-1-send-sync.md) | 🟠 中 | ✅ 完成（告警式并发安全基线 + L1 回归） | **复审补遗**：并发安全基线（告警式）；`Thread::start` 边界 W002 告警 + `is_send_sync` 内建谓词 + run-pass `send_sync_thread.rl` 回归 |
 
 **推荐路线（依赖驱动）**：A/B/C（语言组织）→ E/F/G/H（运行时表达力地基）→ D/I（FFI/arena）→ J（链接桥）→ K（bootstrap+差分）→ L（诊断）→ M（PoC 串联）。
 **优先级**：A1/A2 > B1/B2 > E（unsafe 地基）> C1–C3 > F/G > H > D > I > J > K > L > M。
