@@ -102,11 +102,11 @@ impl<'src> Parser<'src> {
                 continue;
             }
             let n = self.expect_ident()?;
-            // 约束 `T: Bound1 [+ Bound2]`（U3；MVP 支持简单 trait 路径 ident）
+            // 约束 `T: Bound1 [+ Bound2]`（U3；支持模块路径 trait 名，如 `T: m::Trait`）
             let mut bounds = Vec::new();
             if self.eat(&Token::Colon) {
                 loop {
-                    let b = self.expect_ident()?;
+                    let b = self.parse_qualified_name()?;
                     bounds.push(b);
                     if !self.eat(&Token::Plus) {
                         break;
@@ -260,11 +260,30 @@ impl<'src> Parser<'src> {
         Ok(params)
     }
 
-    /// 声明点一致性列表（PC-1）：`Ident GenArgs? (',' Ident GenArgs?)*`（前导 `:` 由调用方消费）。
+    /// 解析可能含模块路径限定的名称（`A::B::C`）。词法上 `::` 为连续两个 `Colon`。
+    /// 使跨模块协议引用（如 `impl T: m::P`、`struct C: m::Trait`、`fn f<T: m::Trait>()`）
+    /// 可正确解析（此前仅接受单标识符，模块路径语法无法表达，见 import-improvement-plan
+    /// 已知限制 #2）。
+    fn parse_qualified_name(&mut self) -> Result<String, ParseError> {
+        let mut name = self.expect_ident()?;
+        // 连续两个 `Colon` 即路径分隔符 `::`
+        while self.check(&Token::Colon)
+            && self.peek_n(1).is_some_and(|t| t.token == Token::Colon)
+        {
+            self.bump(); // 第一个 Colon
+            self.bump(); // 第二个 Colon
+            name.push_str("::");
+            name.push_str(&self.expect_ident()?);
+        }
+        Ok(name)
+    }
+
+    /// 声明点一致性列表（PC-1）：`QualifiedName GenArgs? (',' QualifiedName GenArgs?)*`
+    /// （前导 `:` 由调用方消费）。`QualifiedName` 支持模块路径（如 `m::P`）。
     fn parse_conformance_list(&mut self) -> Result<Vec<(String, Vec<AstType>)>, ParseError> {
         let mut list = Vec::new();
         loop {
-            let name = self.expect_ident()?;
+            let name = self.parse_qualified_name()?;
             let mut args = Vec::new();
             if self.check(&Token::Lt) {
                 self.bump();

@@ -242,6 +242,41 @@ fn test_multi_conformance_list() {
 }
 
 #[test]
+fn test_conformance_list_qualified_name() {
+    // 已知限制 #2 闭合：声明点一致性列表支持模块路径限定的协议名（如 `mod::Trait`）。
+    let program = parse_ok("struct Sq: a::Area, other::Named<i64> { s: i64 }");
+    let AstItem::StructDecl(s) = &program.items[0] else {
+        panic!("expected struct");
+    };
+    assert_eq!(s.conformances.len(), 2);
+    assert_eq!(s.conformances[0].0, "a::Area");
+    assert!(s.conformances[0].1.is_empty());
+    assert_eq!(s.conformances[1].0, "other::Named");
+    assert_eq!(s.conformances[1].1.len(), 1);
+}
+
+#[test]
+fn test_impl_conformance_qualified_name() {
+    // 已知限制 #2 闭合：`impl T: mod::Trait` 首协议名保留模块路径。
+    let program = parse_ok("impl Sq: m::Area { fn area(&self) -> i64 { 0 } }");
+    let AstItem::ImplBlock(i) = &program.items[0] else {
+        panic!("expected impl");
+    };
+    assert_eq!(i.trait_name.as_deref(), Some("m::Area"));
+}
+
+#[test]
+fn test_generic_param_bound_qualified_name() {
+    // 已知限制 #2 闭合：泛型参数 bound 支持模块路径（`fn f<T: m::Trait>()`）。
+    let program = parse_ok("fn f<T: m::Trait>(x: T) -> i64 { 0 }");
+    let AstItem::FnDecl(f) = &program.items[0] else {
+        panic!("expected fn");
+    };
+    assert_eq!(f.generics.len(), 1);
+    assert_eq!(f.generics[0].bounds, vec!["m::Trait".to_string()]);
+}
+
+#[test]
 fn test_struct_inline_inherent_method() {
     // PC-1：无协议的内联方法（desugar 归一为固有 impl）。
     let program = parse_ok("struct Pt { x: i64, fn norm2(&self) -> i64 { 0 } }");

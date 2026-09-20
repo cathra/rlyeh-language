@@ -142,7 +142,7 @@
 
 **已知限制（架构特性，非本次 `pub` 扩展缺陷）**
 1. ~~actor `X::new()` spawn 路径不接入可见性~~ **已闭合（2026-09-20）**：`check_expr/call.rs` 的 actor 构造分支（`Counter::new()`/`new_supervised`）在生成 `rlyeh_actor_spawn` 前已调用 `check_visibility(&actor_full)`，私有 actor 跨模块 spawn 在 `--visibility=error` 下正确报 `TC033`。回归用例：`tests/compile-fail/private-actor-spawn.rl`（拒绝）、`tests/compile-pass/visibility-pub-actor-spawn.rl`（pub 放行）。actor 的**类型名**引用（如 `fn f(a: m::Act)`）亦受校验（见 `private-actor-type.rl`）。
-2. **protocol 跨模块约束引用语法受限**：`impl T: m::P` 的 `parse_conformance_list` 仅接受单标识符，不支持模块路径，故 protocol 的跨模块约束引用当前语法无法表达；protocol 的**类型名**引用走 `resolve_named_type` 已受校验。
+2. ~~protocol 跨模块约束引用语法受限~~ **已闭合（2026-09-20）**：`parse_conformance_list` 与泛型参数 bound 现经新增 `parse_qualified_name` 解析 `::` 限定名，故 `impl T: m::P` / `struct C: m::P` / `protocol A: m::P` / `fn f<T: m::P>()` 均已支持跨模块协议引用；下游 `resolve_trait_key` / `names_match` 原已能解析 `::` 限定 trait 名，无改动。回归用例：`tests/run-pass/protocol_cross_module.rl`（输出 7）、`tests/compile-pass/protocol-cross-module.rl`，及 parser 单测 `test_conformance_list_qualified_name` / `test_impl_conformance_qualified_name` / `test_generic_param_bound_qualified_name`。
 
 ## 6. 依赖与批次
 
