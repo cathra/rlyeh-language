@@ -31,7 +31,7 @@ impl Shape: Area { fn area(&self) -> f64 { /* ... */ } }
 ```
 
 - `protocol`：定义一组方法签名（类似 C++ 纯虚类 / Java interface）。
-- `impl Type: Protocol`：为某个类型实现该 protocol（早期写法 `impl Trait for Type` 已从语法中移除）。
+- `impl Type: Protocol`：为某个类型实现该 protocol（早期写法 `impl Protocol for Type` 已从语法中移除）。
 - 泛型 impl 单态化后 `Self` 替换为具体类型（`Wrapper<i64>::new(v) -> Self` → `Wrapper<i64>`）。
 
 ### 泛型 protocol 约束（bound）

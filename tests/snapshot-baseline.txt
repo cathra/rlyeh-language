@@ -37,11 +37,11 @@ tests/run-pass/closure.rl
 tests/run-pass/closure_value.rl
 tests/run-pass/closure_fn_return.rl
 
-# 泛型 / trait
+# 泛型 / protocol
 tests/run-pass/generic_impl_multi.rl
 tests/run-pass/generic_where_clause.rl
 tests/run-pass/method_generic.rl
-tests/run-pass/dyn_trait.rl
+tests/run-pass/dyn_protocol.rl
 tests/run-pass/borrow_pass.rl
 tests/run-pass/lifetime.rl
 tests/run-pass/ref_pattern.rl

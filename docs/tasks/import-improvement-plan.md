@@ -91,7 +91,7 @@
 ### 设计
 - **可见性表**（新增于 `Context`）：`pub_symbols: HashSet<String>`（全名 `m::item`，`is_pub` 项收集阶段登记）。
 - **访问判定**（在 `resolve_full_name` / `resolve_callable` / `resolve_ast_type` / `resolve_named_type` 解析完成后）：若调用方模块前缀 `caller` 与定义方前缀 `def` 满足 `caller == def || caller.starts_with(&format!("{def}::"))`（即同模块或 `def` 的后代）则放行；否则要求 `def::item ∈ pub_symbols`，否则报 `PrivateItem`。
-- **`is_pub` 落地情况**：`AstFnDecl` / `AstModDecl` 及 `import` 此前已有 `is_pub`；本次（2026-09-20）补齐 `AstStructDecl` / `AstEnumDecl` / `AstTraitDecl`（关键字 `protocol`，`trait` 已从语法移除）/ `AstActorDecl` 的 `is_pub` 字段，parser 在 `pub` 分支置 `true`、构造器默认 `false`（含 desugar 生成的 Future 结构体），收集阶段按前缀 `full_name(prefix, name)` 登记进 `pub_symbols`。
+- **`is_pub` 落地情况**：`AstFnDecl` / `AstModDecl` 及 `import` 此前已有 `is_pub`；本次（2026-09-20）补齐 `AstStructDecl` / `AstEnumDecl` / `AstProtocolDecl`（关键字 `protocol`，`protocol` 已从语法移除）/ `AstActorDecl` 的 `is_pub` 字段，parser 在 `pub` 分支置 `true`、构造器默认 `false`（含 desugar 生成的 Future 结构体），收集阶段按前缀 `full_name(prefix, name)` 登记进 `pub_symbols`。
 
 ### 风险与迁移策略（关键）
 文档 B4 明确指出：std 全线依赖「跨模块全部可达」，启用可见性校验需为 std 全部跨模块引用补齐 `pub`，风险高、易引发大范围回归。
@@ -139,11 +139,11 @@
 
 ### 实施状态（2026-09-20）：`pub` 覆盖 struct / enum / protocol / actor
 
-工作流 A（`pub module`）与工作流 C 的 `--visibility` 开关、可见性表、检查器均已落地；本日补齐工作流 A 选择的「**`pub` 标注扩展到 struct / enum / protocol / actor**」（用户确认：trait 关键字已改名为 `protocol`，对应 AST 仍为 `AstTraitDecl`）。
+工作流 A（`pub module`）与工作流 C 的 `--visibility` 开关、可见性表、检查器均已落地；本日补齐工作流 A 选择的「**`pub` 标注扩展到 struct / enum / protocol / actor**」（用户确认：protocol 关键字已改名为 `protocol`，对应 AST 仍为 `AstProtocolDecl`）。
 
 **改动落点**
-- `crates/rlyeh-ast/src/lib.rs`：`AstStructDecl` / `AstEnumDecl` / `AstTraitDecl` / `AstActorDecl` 新增 `pub is_pub: bool`。
-- `crates/rlyeh-parser/src/item.rs`（`parse_struct`/`parse_enum`/`parse_trait`/`parse_actor` 构造器默认 `false`）、`actor.rs`、`crates/rlyeh-desugar/src/generate/mod.rs`（生成的 Future 结构体默认 `false`）。
+- `crates/rlyeh-ast/src/lib.rs`：`AstStructDecl` / `AstEnumDecl` / `AstProtocolDecl` / `AstActorDecl` 新增 `pub is_pub: bool`。
+- `crates/rlyeh-parser/src/item.rs`（`parse_struct`/`parse_enum`/`parse_protocol`/`parse_actor` 构造器默认 `false`）、`actor.rs`、`crates/rlyeh-desugar/src/generate/mod.rs`（生成的 Future 结构体默认 `false`）。
 - `crates/rlyeh-parser/src/parser.rs`：`parse_item` 的 `Some(Token::Struct|Enum|Protocol|Actor)` 分支在消费 `pub` 后置 `is_pub = true`。
 - `crates/rlyeh-typecheck/src/check_item/mod.rs`：`collect_declarations` 对各声明分支，当 `is_pub` 为真时把 `full_name(prefix, name)` 登记进 `pub_symbols`（枚举额外登记全部变体 `Enum::Variant` 全名，继承 Rust 语义）。
 - 可见性接线：`crates/rlyeh-typecheck/src/check_expr/construct.rs`（struct 字面量 + 枚举变体结构式构造）、`call.rs`（actor `X::new()`/`new_supervised` 分支）补充 `check_visibility`；类型名解析（`context.rs:resolve_named_type` 约 653 行）与函数/路径解析（`call.rs`/`mod.rs`）本已复用 `pub_symbols` 通用判定。
@@ -156,7 +156,7 @@
 
 **已知限制（架构特性，非本次 `pub` 扩展缺陷）**
 1. ~~actor `X::new()` spawn 路径不接入可见性~~ **已闭合（2026-09-20）**：`check_expr/call.rs` 的 actor 构造分支（`Counter::new()`/`new_supervised`）在生成 `rlyeh_actor_spawn` 前已调用 `check_visibility(&actor_full)`，私有 actor 跨模块 spawn 在 `--visibility=error` 下正确报 `TC033`。回归用例：`tests/compile-fail/private-actor-spawn.rl`（拒绝）、`tests/compile-pass/visibility-pub-actor-spawn.rl`（pub 放行）。actor 的**类型名**引用（如 `fn f(a: m::Act)`）亦受校验（见 `private-actor-type.rl`）。
-2. ~~protocol 跨模块约束引用语法受限~~ **已闭合（2026-09-20）**：`parse_conformance_list` 与泛型参数 bound 现经新增 `parse_qualified_name` 解析 `::` 限定名，故 `impl T: m::P` / `struct C: m::P` / `protocol A: m::P` / `fn f<T: m::P>()` 均已支持跨模块协议引用；下游 `resolve_trait_key` / `names_match` 原已能解析 `::` 限定 trait 名，无改动。回归用例：`tests/run-pass/protocol_cross_module.rl`（输出 7）、`tests/compile-pass/protocol-cross-module.rl`，及 parser 单测 `test_conformance_list_qualified_name` / `test_impl_conformance_qualified_name` / `test_generic_param_bound_qualified_name`。
+2. ~~protocol 跨模块约束引用语法受限~~ **已闭合（2026-09-20）**：`parse_conformance_list` 与泛型参数 bound 现经新增 `parse_qualified_name` 解析 `::` 限定名，故 `impl T: m::P` / `struct C: m::P` / `protocol A: m::P` / `fn f<T: m::P>()` 均已支持跨模块协议引用；下游 `resolve_protocol_key` / `names_match` 原已能解析 `::` 限定 protocol 名，无改动。回归用例：`tests/run-pass/protocol_cross_module.rl`（输出 7）、`tests/compile-pass/protocol-cross-module.rl`，及 parser 单测 `test_conformance_list_qualified_name` / `test_impl_conformance_qualified_name` / `test_generic_param_bound_qualified_name`。
 
 ## 6. 依赖与批次
 
@@ -210,4 +210,4 @@ A (pub module, 低) ──→ B (诊断, 低) ──→ C (可见性, 高, 需 -
 | 日期 | 变更 |
 |------|------|
 | 2026-09-19 | 根据用户确认（4 项都要）起草策划稿：A `pub module` / B 诊断 / C 可见性 / D dagon 包集成，含落点、语义决策、灰度策略、验收与待评审点 |
-| 2026-09-20 | A 扩展：`pub` 标注覆盖 struct/enum/protocol/actor（trait→protocol，AST 仍为 `AstTraitDecl`）；parser 分发 + 收集登记 `pub_symbols` + struct 字面量/枚举变体/actor 构造函数可见性接线；CLI 验证通过，记录 spawn 与 protocol 约束两处架构限制 |
+| 2026-09-20 | A 扩展：`pub` 标注覆盖 struct/enum/protocol/actor（protocol→protocol，AST 仍为 `AstProtocolDecl`）；parser 分发 + 收集登记 `pub_symbols` + struct 字面量/枚举变体/actor 构造函数可见性接线；CLI 验证通过，记录 spawn 与 protocol 约束两处架构限制 |

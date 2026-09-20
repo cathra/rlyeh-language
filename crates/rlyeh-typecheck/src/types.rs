@@ -69,7 +69,7 @@ pub enum Type {
     Ref(Box<Type>, Mutability, Option<String>),
     /// 裸指针类型（`*const T` / `*mut T`）
     RawPtr(Box<Type>, bool),
-    /// trait 对象类型（`dyn Trait`）：数据指针 + vtable 指针的胖指针，占 2 槽
+    /// protocol 对象类型（`dyn Protocol`）：数据指针 + vtable 指针的胖指针，占 2 槽
     Dyn(String),
     /// 数组类型
     Array(Box<Type>, usize),
@@ -83,7 +83,7 @@ pub enum Type {
     Union(Vec<Type>),
     /// 元组类型
     Tuple(Vec<Type>),
-    /// 具名类型（结构体 / 枚举 / trait 等）
+    /// 具名类型（结构体 / 枚举 / protocol 等）
     Named(String, Vec<Type>),
     /// 受限标量枚举（U3 核心项，2026-08-30）：全单元变体、无泛型参数的枚举，
     /// 紧凑为单标量存储，值即 tag（与 `Named` 区分以便 `field_scalar_of` 等无
@@ -115,8 +115,8 @@ pub enum Type {
     /// 关联类型投影（`F::Output`，W4 补全）：`base` 为被投影的基础类型
     /// （实例化前为 `Generic("F")`，实例化后为具体类型），`assoc` 为关联类型名。
     ///
-    /// 仅出现在泛型函数签名/body 中 `F: Trait` 约束下的 `F::Assoc` 引用；
-    /// 实例化时 base 替换为具体类型后按该类型实现的 trait 求值其关联类型。
+    /// 仅出现在泛型函数签名/body 中 `F: Protocol` 约束下的 `F::Assoc` 引用；
+    /// 实例化时 base 替换为具体类型后按该类型实现的 protocol 求值其关联类型。
     AssocProjection {
         /// 被投影的基础类型（`F::Output` 中的 `F`）
         base: Box<Type>,
@@ -288,7 +288,7 @@ impl Type {
                 | (Type::USize, Type::ScalarEnum(_)) => true,
                 // 命名类型 ↔ 原始变体互通（`Named("i64")` ↔ `Type::I64`）：
                 // parser 把原始类型名解析为 `Named`，与内建原始变体须等价，否则
-                // `impl i64: Trait` 的 self_type 与注解 / 字面量解析出的原始变体无法兼容。
+                // `impl i64: Protocol` 的 self_type 与注解 / 字面量解析出的原始变体无法兼容。
                 (Type::Named(n, _), p) | (p, Type::Named(n, _))
                     if primitive_name(p).is_some() =>
                 {
@@ -481,23 +481,23 @@ pub struct MethodSig {
     pub params: Vec<Type>,
     /// 返回类型
     pub return_type: Type,
-    /// trait 方法的默认实现 body（V3，2026-08-26：仅 trait 方法带 body 时填充；
-    /// 抽象方法 / impl 方法为 `None`）。`impl Trait for X` 未实现该方法时，
-    /// 方法调用回退到该默认实现（见 `check_method_call` 的 trait 默认方法回退）。
+    /// protocol 方法的默认实现 body（V3，2026-08-26：仅 protocol 方法带 body 时填充；
+    /// 抽象方法 / impl 方法为 `None`）。`impl Protocol for X` 未实现该方法时，
+    /// 方法调用回退到该默认实现（见 `check_method_call` 的 protocol 默认方法回退）。
     pub default_body: Option<rlyeh_ast::AstFnDecl>,
 }
 
-/// trait 定义。
+/// protocol 定义。
 #[derive(Debug, Clone, PartialEq)]
-pub struct TraitDef {
-    /// trait 名
+pub struct ProtocolDef {
+    /// protocol 名
     pub name: String,
     /// 泛型参数名
     pub type_params: Vec<String>,
     /// 关联类型声明名（`type Item;`，U2）
     pub assoc_types: Vec<String>,
-    /// 父协议（supertrait）名列表（PC-4：`protocol A: B` 的 `B`；裸名，使用时解析）。
-    pub supertraits: Vec<String>,
+    /// 父协议（superprotocol）名列表（PC-4：`protocol A: B` 的 `B`；裸名，使用时解析）。
+    pub superprotocols: Vec<String>,
     /// 抽象方法签名
     pub methods: Vec<MethodSig>,
 }
@@ -511,22 +511,22 @@ pub struct ImplMethod {
     pub body: Option<rlyeh_ast::AstFnDecl>,
 }
 
-/// impl 块定义（inherent 或 trait impl）。
+/// impl 块定义（inherent 或 protocol impl）。
 #[derive(Debug, Clone)]
 pub struct ImplDef {
-/// 若为 trait impl，则为 trait 名；否则为 `None`（inherent impl）
-pub trait_name: Option<String>,
+/// 若为 protocol impl，则为 protocol 名；否则为 `None`（inherent impl）
+pub protocol_name: Option<String>,
 /// impl 目标类型（如 `Named("Vec", [Generic("T")])`）
 pub self_type: Type,
-/// trait 泛型实参（`impl Trait<Args> for Type` 中的 `Args`，对应 trait 声明的
+/// protocol 泛型实参（`impl Protocol<Args> for Type` 中的 `Args`，对应 protocol 声明的
 /// 泛型参数顺序；如 `impl From<IoErrorKind> for IoError` 为 `[IoErrorKind]`）。
 /// P6c（2026-08-29）：此前丢失，导致关联方法泛型参数无法绑定。
-pub trait_type_args: Vec<Type>,
+pub protocol_type_args: Vec<Type>,
 /// 源码位置（PC-4：父协议缺失校验定位用）
 pub span: Span,
 /// 泛型参数名
     pub type_params: Vec<String>,
-    /// 泛型参数 → 约束 trait 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并）。
+    /// 泛型参数 → 约束 protocol 名列表（U3：头部 `<T: B>` 与 `where T: B` 合并）。
     /// A4（SH-P1-1，2026-09-02）：impl 方法调用点实例化前经
     /// `check_generic_bounds` 强制校验（此前仅记录不校验）。
     pub bounds: HashMap<String, Vec<String>>,
@@ -550,7 +550,7 @@ pub fn field_scalar_of(ty: &Type) -> rlyeh_hir::FieldScalar {
         Type::Ref(inner, _, _) if matches!(&**inner, Type::Slice(_)) => FieldScalar::SliceFat,
         // U3 核心项（2026-08-30）：受限标量枚举紧凑为单标量存储，值即 tag。
         Type::ScalarEnum(_) => FieldScalar::Int,
-        // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / trait 对象 / 闭包值均以指针形式存储；函数指针为指针
+        // 聚合类型 / 引用 / 裸指针 / 数组 / 元组 / protocol 对象 / 闭包值均以指针形式存储；函数指针为指针
         Type::Ref(..)
         | Type::RawPtr(..)
         | Type::Array(..)
@@ -711,7 +711,7 @@ fn is_send_sync_depth(ty: &Type, ctx: &TypeContext, depth: u32) -> bool {
         Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 | Type::F32
         | Type::I64 | Type::U64 | Type::U128 | Type::USize | Type::F64 | Type::Bool
         | Type::Char | Type::Str | Type::Unit | Type::Never | Type::Fn(_) => true,
-        // 裸指针 / 引用 / trait 对象：默认非线程安全（保守告警；引用由 'static 检查拦截）
+        // 裸指针 / 引用 / protocol 对象：默认非线程安全（保守告警；引用由 'static 检查拦截）
         Type::RawPtr(..) | Type::Ref(..) | Type::Dyn(_) => false,
         // 聚合：所有元素满足
         Type::Array(e, _) | Type::Slice(e) => is_send_sync_depth(e, ctx, depth + 1),
@@ -799,7 +799,7 @@ fn c_field_repr(
         },
         other => Err(TypeError::Unsupported {
             what: format!(
-                "repr(C) 结构体字段 `{other}` 为不支持的聚合类型（枚举 / 联合 / 数组 / 字符串视图 / dyn Trait / 元组 / 切片）"
+                "repr(C) 结构体字段 `{other}` 为不支持的聚合类型（枚举 / 联合 / 数组 / 字符串视图 / dyn Protocol / 元组 / 切片）"
             ),
             span,
         }),

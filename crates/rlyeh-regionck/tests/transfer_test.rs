@@ -124,7 +124,7 @@ fn test_defensive_error_variants_display() {
             related: vec![],
         },
         RegionError::UnsizedTransfer {
-            detail: "dyn Trait has no statically known size".into(),
+            detail: "dyn Protocol has no statically known size".into(),
             line: 0,
             col: 0,
             related: vec![],
@@ -139,6 +139,6 @@ fn test_defensive_error_variants_display() {
     );
     assert_eq!(
         errs[1].to_string(),
-        "cannot transfer an unsized value: dyn Trait has no statically known size"
+        "cannot transfer an unsized value: dyn Protocol has no statically known size"
     );
 }

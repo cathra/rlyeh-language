@@ -1,25 +1,25 @@
-# SH-P0-3 `dyn Trait` 含 `Self` 方法 + `Any` 类型擦除
+# SH-P0-3 `dyn Protocol` 含 `Self` 方法 + `Any` 类型擦除
 
 > **级别**：P0（阻塞全栈自举） · **风险**：🔴 高 · **状态**：✅ 已完成（单元验证） · **归属**：0.2.0-G
 > **索引**：[`../self-hosting-p0.md`](../self-hosting-p0.md) · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.7
 
 ## 目标
-支持 `dyn Trait` **调用含 `Self` 签名的方法**，并提供 `std::any::Any` 式的**类型擦除 / `downcast`**，使 actor 消息协议（异构消息信封）可用 Rlyeh 表达。
+支持 `dyn Protocol` **调用含 `Self` 签名的方法**，并提供 `std::any::Any` 式的**类型擦除 / `downcast`**，使 actor 消息协议（异构消息信封）可用 Rlyeh 表达。
 
 ## 技术细节
-- 当前 Rlyeh 0.1.0：「`dyn Trait` 约束：trait 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用」（见 `CODEBUDDY.md` §3.8 H4）。且**无类型擦除**机制。
+- 当前 Rlyeh 0.1.0：「`dyn Protocol` 约束：protocol 与 impl 均须非泛型；方法签名含 `Self`（关联返回类型 / 参数）不支持经 dyn 调用」（见 `CODEBUDDY.md` §3.8 H4）。且**无类型擦除**机制。
 - 受影响 Rust 代码（事实依据）：
-  - `rlyeh-actor-runtime/src/actor.rs:79` `pub trait ActorState: Any + Send + Sync + 'static`
+  - `rlyeh-actor-runtime/src/actor.rs:79` `pub protocol ActorState: Any + Send + Sync + 'static`
   - `rlyeh-actor-runtime/src/runtime.rs:31` `Arc<Mutex<Option<Box<dyn ActorState>>>>`、`:87` `Box<dyn Any + Send>`
   - `rlyeh-actor-runtime/src/envelope.rs:21,23` `Box<dyn Any + Send>` + `Sender<Box<dyn Any + Send>>`
-  - 编译器内部已把 `dyn Trait` 建模为「数据指针 + vtable 胖指针 2 槽」（`rlyeh-typecheck/src/types.rs:66`）。
+  - 编译器内部已把 `dyn Protocol` 建模为「数据指针 + vtable 胖指针 2 槽」（`rlyeh-typecheck/src/types.rs:66`）。
 - 需设计：vtable 中 `Self` 方法的签名擦除/恢复、`Any` 类型标识存储与 `downcast` 安全检查。
 
 ## 受影响组件
-`rlyeh-actor-runtime`（actor 状态 trait / 消息信封 / 类型擦除分发）。
+`rlyeh-actor-runtime`（actor 状态 protocol / 消息信封 / 类型擦除分发）。
 
 ## 验证
-- 单元：Rlyeh 侧经 `dyn Trait` 调用含 `Self` 返回的方法；`Any` 装箱 + `downcast` 往返成功。
+- 单元：Rlyeh 侧经 `dyn Protocol` 调用含 `Self` 返回的方法；`Any` 装箱 + `downcast` 往返成功。
 - 对拍：等价于 actor 消息 `handle_message(&mut self, ...)` 分发。
 
 ## 状态
@@ -27,7 +27,7 @@
 
 ## 实现纪要（2026-09-01 完成）
 
-### G-M1：`dyn Trait` 调含 `Self` 签名的方法
+### G-M1：`dyn Protocol` 调含 `Self` 签名的方法
 - 落点：`rlyeh-typecheck/src/check_expr/method.rs::devirtualize_dyn_call`。
 - 原状：`Self` 提及（`type_mentions_self`）直接 `Ok(None)` 回退，随后 vtable 分支
   （`method.rs:779`）再以 object-unsafe 拒绝 → 含 `Self` 的方法**两条路径均不可用**。
@@ -35,14 +35,14 @@
   `replace_type_self` 把签名中的 `Self` 替换为具体类型，再检查实参、推导返回类型。
   `fn combine(&self, other: &Self) -> i64` 经 `dyn Combine`（绑定源 `P`）
   收敛为 `fn combine(&self, other: &P) -> i64`，静态分派到具体 impl 方法。
-- 语义边界：**真正擦除**具体类型的 `dyn Trait`（如作函数参数传入）仍由 vtable 分支
+- 语义边界：**真正擦除**具体类型的 `dyn Protocol`（如作函数参数传入）仍由 vtable 分支
   拒绝含 `Self` 的方法——与 Rust object safety 一致（`Self` 签名在完全擦除后
   无法在调用点确定）。
 
 ### G-M2：`Any` 类型标识存储
-- 落点：`rlyeh-typecheck/src/check_expr/misc.rs`（`type_id_of` / `is_any_trait` /
-  `coerce_to_any`）、`resolve.rs`（`dyn Any` 免 trait 声明）。
-- `dyn Any` 为编译器内置的类型擦除标签：`&T → dyn Any` 不查 trait 声明、不建方法表，
+- 落点：`rlyeh-typecheck/src/check_expr/misc.rs`（`type_id_of` / `is_any_protocol` /
+  `coerce_to_any`）、`resolve.rs`（`dyn Any` 免 protocol 声明）。
+- `dyn Any` 为编译器内置的类型擦除标签：`&T → dyn Any` 不查 protocol 声明、不建方法表，
   vtable 仅 3 元槽，**槽 0 存具体类型的 type_id**（`type_id_of` = 类型规范字符串的
   FNV-1a 64 位散列，编译期确定、全程序稳定）。
 - `any_type_id(x: dyn Any) -> i64` 读 vtable 槽 0。
@@ -62,7 +62,7 @@
 - `tests/run-pass/agg_return_plain.rl`（普通函数按值返回聚合，回归对照）
 
 ### 附带修复：按值返回 `Self` 聚合经 dyn 调用（codegen）
-- 原缺陷：`fn make(&self) -> Self` 经 `dyn Trait` 调用报
+- 原缺陷：`fn make(&self) -> Self` 经 `dyn Protocol` 调用报
   `value doesn't match function result type 'ptr'`——声明 `i8*` 而函数体
   `ret {i64,i64}`。
 - 根因：`rlyeh-codegen/src/llvm/llvm_ctor.rs` 的「标量聚合按值返回」优化中，
@@ -79,7 +79,7 @@
   与普通函数（如 `make_pair`）的 `{i64,i64}` 寄存器返回不同。
 
 ### 已知限制
-- `Box<dyn Any + Send>` / 多 trait 约束（`+ Send`、auto trait）未实现——
+- `Box<dyn Any + Send>` / 多 protocol 约束（`+ Send`、auto protocol）未实现——
   actor 信封完整形态仍待 0.3.0 运行时重写。
 
 ## 变更记录

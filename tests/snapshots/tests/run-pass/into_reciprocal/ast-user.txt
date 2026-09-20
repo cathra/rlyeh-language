@@ -112,7 +112,7 @@ AstProgram {
                                                     },
                                                     method: "message",
                                                     args: [],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 390,
@@ -207,7 +207,7 @@ AstProgram {
                                                     },
                                                     method: "message",
                                                     args: [],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 503,
@@ -307,7 +307,7 @@ AstProgram {
                                                     },
                                                     method: "message",
                                                     args: [],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 637,

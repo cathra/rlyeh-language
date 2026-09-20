@@ -1,10 +1,10 @@
 # V3-A3：std — `Iterator::Item` 落地 + 各 impl 具体化
 
 > **所属任务**：[V3 Iterator 关联类型 + 适配器迁移](../v3-iterator-adapters.md)（由 V3-A 细分子任务）
-> **状态**：✅ 已完成（`Iterator` trait 引入 `type Item` + `next -> Option<Self::Item>` + 各 impl 补 type Item，2026-08-27）
+> **状态**：✅ 已完成（`Iterator` protocol 引入 `type Item` + `next -> Option<Self::Item>` + 各 impl 补 type Item，2026-08-27）
 > **风险**：中（涉及多个 impl 与全量回归）
 > **依赖**：V3-A1、V3-A2
-> **权威来源**：`core.rl`（`Iterator` trait 545 + 各 `impl Iterator`）、`std-lib.md` §2.3
+> **权威来源**：`core.rl`（`Iterator` protocol 545 + 各 `impl Iterator`）、`std-lib.md` §2.3
 
 ## 目标
 
@@ -12,11 +12,11 @@
 
 ## 背景
 
-当前 `trait Iterator { fn next(&mut self) -> Option<i64>; }` 元素固定 i64。迁移后需各 impl 显式声明关联类型。
+当前 `protocol Iterator { fn next(&mut self) -> Option<i64>; }` 元素固定 i64。迁移后需各 impl 显式声明关联类型。
 
 ## 改动范围
 
-- **std `Iterator` trait**：`type Item;` + `fn next(&mut self) -> Option<Self::Item>`。
+- **std `Iterator` protocol**：`type Item;` + `fn next(&mut self) -> Option<Self::Item>`。
 - **各 `impl Iterator`**（Vec/数组/Range/Chars/Lines/自定义等）：补 `type Item = i64;` 或对应元素类型。
 - **默认方法**（count/sum/any/all，V3-B 已有）改用 `Self::Item` 泛化（元素类型非 i64 时 sum/比较逻辑适配）。
 

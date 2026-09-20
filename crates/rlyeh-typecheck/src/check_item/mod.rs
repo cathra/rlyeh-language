@@ -1,9 +1,9 @@
 //! 顶层项检查（函数签名收集 + 函数体 / const 检查 + 模块 / use 支持
-//! + enum / trait / impl 收集）。
+//! + enum / protocol / impl 收集）。
 
 use rlyeh_ast::{
     AstActorDecl, AstEnumDecl, AstFnDecl, AstImplBlock, AstItem, AstModDecl, AstProgram,
-    AstStructDecl, AstTraitDecl, AstUseDecl, AstUseMember,
+    AstStructDecl, AstProtocolDecl, AstUseDecl, AstUseMember,
 };
 use rlyeh_hir::{
     FieldScalar, HirBinaryOp, HirBlock, HirConstDecl, HirExpr, HirExprKind, HirFnDecl, HirItem,
@@ -21,13 +21,13 @@ use crate::{ConstValue, GlobalDecl};
 use crate::Warning;
 use crate::types::{
     field_scalar_of, EnumDef, FnSignature, ImplDef, ImplMethod, MethodSig, Mutability, StructDef,
-    TraitDef, Type, VariantDef,
+    ProtocolDef, Type, VariantDef,
 };
 
 /// 类型检查完整程序。
 ///
 /// 两遍流程：
-/// 1. 收集结构体 / 枚举 / trait / impl 定义、类型别名与所有函数签名
+/// 1. 收集结构体 / 枚举 / protocol / impl 定义、类型别名与所有函数签名
 ///    （支持函数间互调），并注册 `import` 导入别名；
 /// 2. 检查函数体与 const 初始值，生成 HIR（模块项以 `mod::item` 扁平化命名）。
 ///
@@ -52,7 +52,7 @@ pub fn typecheck_with_region_hints(
     ctx.visibility = visibility;
     collect_declarations(&mut ctx, program)?;
     // PC-4：父协议一致性校验（`protocol A: B` → 实现 A 的类型必须同时实现 B）。
-    crate::check_expr::validate_supertraits(&ctx)?;
+    crate::check_expr::validate_superprotocols(&ctx)?;
     // 第二遍：所有 struct 名注册后解析字段（支持自引用/前向引用递归类型）。
     resolve_all_struct_fields(&mut ctx, program)?;
 
@@ -208,8 +208,8 @@ fn collect_item_decls(
                 }
             }
         }
-        AstItem::TraitDecl(t) => {
-            collect_trait(ctx, t, prefix)?;
+        AstItem::ProtocolDecl(t) => {
+            collect_protocol(ctx, t, prefix)?;
             if t.is_pub {
                 ctx.pub_symbols.insert(full_name(prefix, &t.name));
             }
@@ -233,9 +233,9 @@ fn collect_item_decls(
             if m.memory.as_deref() == Some("gc") {
                 ctx.gc_modules.insert(new_prefix.clone());
             }
-            // Q3a 修复：模块内符号（struct/trait/impl）的短名解析须感知模块前缀。
-            // 模块内 trait/impl 方法签名在收集阶段即 resolve_ast_type（如
-            // `fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`），
+            // Q3a 修复：模块内符号（struct/protocol/impl）的短名解析须感知模块前缀。
+            // 模块内 protocol/impl 方法签名在收集阶段即 resolve_ast_type（如
+            // `fmt/module.rl` 的 `protocol Display { fn fmt(&self, f: &mut Formatter) }`），
             // 此时文件后部的 use 段尚未注册 use_aliases，须按 `mod::Name` 前缀回退。
             let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {
@@ -508,7 +508,7 @@ fn import_target_known(ctx: &TypeContext, full: &str) -> bool {
         || ctx.enum_defs.contains_key(full)
         || ctx.constants.contains_key(full)
         || ctx.actors.contains_key(full)
-        || ctx.trait_defs.contains_key(full)
+        || ctx.protocol_defs.contains_key(full)
         || ctx.modules.contains(full)
     {
         return true;
@@ -625,7 +625,7 @@ pub(crate) fn check_item(
         // actor：展开为状态初始化函数 + 方法函数 + dispatch handle + runtime extern 声明
         AstItem::ActorDecl(a) => expand_actor(ctx, a, prefix, out)?,
         // use 导入在收集阶段（第一遍）已注册；其余项 MVP 阶段不生成 HIR
-        AstItem::UseDecl(_) | AstItem::StructDecl(_) | AstItem::TraitDecl(_)
+        AstItem::UseDecl(_) | AstItem::StructDecl(_) | AstItem::ProtocolDecl(_)
         | AstItem::ImplBlock(_) | AstItem::EnumDecl(_)
         | AstItem::MacroDecl(_) | AstItem::Statement(_) => {}
     }
@@ -670,16 +670,16 @@ pub(crate) fn check_item(
 
 /// 收集枚举定义（变体 + 字段类型 + 对象槽数布局）。
 
-/// 收集 trait 定义（抽象方法签名）。
+/// 收集 protocol 定义（抽象方法签名）。
 
-/// 收集 impl 块（inherent 或 trait impl），方法保存原始 AST 供调用点实例化。
+/// 收集 impl 块（inherent 或 protocol impl），方法保存原始 AST 供调用点实例化。
 
 /// 仅收集函数签名（不检查函数体），供增量编译提取模块接口。
 ///
 /// 递归处理嵌套模块（符号名带 `mod::` 前缀）。输出按函数名排序，
 /// 保证接口哈希稳定。
 
-/// 递归收集模块内的类型声明（结构体 / 枚举 / trait / impl）。
+/// 递归收集模块内的类型声明（结构体 / 枚举 / protocol / impl）。
 ///
 /// 模块前缀与 `collect_item_decls` 一致地**逐级累积**（`io::error::IoErrorKind`），
 /// 否则 `impl` 方法签名在收集时经 `resolve_ast_type` 解析 `mod::Type` 引用会

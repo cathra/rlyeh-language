@@ -2,7 +2,7 @@
 //! （由 method.rs 的 `check_method_call` 拆分而来，保持语义等价）
 //!
 //! 覆盖：切片胖指针 `len`/`first`/`last`、`Vec` 切片视图、`&str` → String 升级、
-//! `push_str(字面量)` 快速路径、`Rc`/`Arc`/`Weak` 引用计数、`dyn Trait` 虚调用。
+//! `push_str(字面量)` 快速路径、`Rc`/`Arc`/`Weak` 引用计数、`dyn Protocol` 虚调用。
 //! 这些分支必须早于常规 impl 分派——切片在 标准库无对应 impl（无法为 `[T]`
 //! 写 impl），引用计数需要原始对象，虚调用走 vtable 而非静态分派。
 
@@ -84,6 +84,7 @@ pub(super) fn try_builtin_method_call(
                         index: Box::new(idx),
                         elem: field_scalar_of(&elem_ty),
                         is_str: is_byte,
+                        len: None,
                     }, Span::dummy()),
                     elem_ty,
                 ));
@@ -302,7 +303,7 @@ pub(super) fn try_builtin_method_call(
         let (h, t) = r?;
         return Ok(BuiltinOutcome::Handled(h, t));
     }
-    // H4 `dyn Trait` 接收者：方法经 vtable 间接调用（类型擦除后的多态分派）。
+    // H4 `dyn Protocol` 接收者：方法经 vtable 间接调用（类型擦除后的多态分派）。
     // 布局：2 槽胖指针（槽 0 = 数据指针，槽 1 = vtable 指针）。
     // desugar 为：
     //   let __obj = <recv>;                       // 胖指针对象（1 指针槽）
@@ -310,9 +311,9 @@ pub(super) fn try_builtin_method_call(
     //   let __vtp  = FieldGet(__obj, 1, Ptr);     // vtable 指针
     //   let __m    = Index(__vtp, 3+idx, Ptr);    // vtable[3+idx] 方法函数指针
     //   final: CallIndirect { callee: __m, args: [__data, ...实参], param_names, ret_name }
-    // P4（2026-08-28）：`&dyn Trait` 接收者同样走 vtable 虚调用（receiver 为
-    // `Ref(Dyn)`，胖指针布局与 `dyn Trait` 相同：槽 0=data 指针、槽 1=vtable）。
-    let dyn_trait_name = match &recv_ty {
+    // P4（2026-08-28）：`&dyn Protocol` 接收者同样走 vtable 虚调用（receiver 为
+    // `Ref(Dyn)`，胖指针布局与 `dyn Protocol` 相同：槽 0=data 指针、槽 1=vtable）。
+    let dyn_protocol_name = match &recv_ty {
         Type::Dyn(t) => Some(t.clone()),
         Type::Ref(inner, _, _) => match &**inner {
             Type::Dyn(t) => Some(t.clone()),
@@ -320,8 +321,8 @@ pub(super) fn try_builtin_method_call(
         },
         _ => None,
     };
-    if let Some(trait_name) = dyn_trait_name.as_ref() {
-        let trait_name = trait_name.clone();
+    if let Some(protocol_name) = dyn_protocol_name.as_ref() {
+        let protocol_name = protocol_name.clone();
         // H4 去虚拟化：接收者为 dyn 局部变量且绑定源具体类型已知时，静态分派到
         // 具体类型方法（vtable 调用在循环中受间接调用屏障阻止优化，静态调用
         // 可被 LLVM 内联 / 常量折叠；dyn 变量被重新赋值时映射已失效回退 vtable）
@@ -329,7 +330,7 @@ pub(super) fn try_builtin_method_call(
             if let Some(devirt) = devirtualize_dyn_call(
                 ctx,
                 var,
-                trait_name.as_str(),
+                protocol_name.as_str(),
                 method,
                 recv_hir.clone(),
                 args,
@@ -340,39 +341,39 @@ pub(super) fn try_builtin_method_call(
             }
         }
         // 校验协议存在（未定义时报 UndefinedType，保持既有行为）。
-        let _trait_def = ctx
-            .trait_defs
-            .get(&trait_name)
+        let _protocol_def = ctx
+            .protocol_defs
+            .get(&protocol_name)
             .cloned()
             .ok_or_else(|| TypeError::UndefinedType {
-                name: trait_name.clone(),
+                name: protocol_name.clone(),
                 span,
             })?;
-        // PC-10：方法槽索引按**线性化顺序**（supertrait 方法在前）查找——与
+        // PC-10：方法槽索引按**线性化顺序**（superprotocol 方法在前）查找——与
         // `coerce_to_dyn` 的 vtable 填充顺序一致；因此 `dyn 子协议` 接收者也可调用
         // 父协议方法（其槽位在 vtable 前部）。
-        let lin = crate::check_expr::linearize_trait_methods(ctx, &trait_name);
+        let lin = crate::check_expr::linearize_protocol_methods(ctx, &protocol_name);
         let idx = lin
             .iter()
             .position(|(_, m)| m.name == method)
             .ok_or_else(|| TypeError::FunctionNotFound {
-                name: format!("dyn {trait_name}::{method}"),
+                name: format!("dyn {protocol_name}::{method}"),
                 span,
             })?;
         let sig = lin[idx].1.clone();
-        // MVP 限制：trait 方法签名含 `Self`（关联返回类型 / 参数）时无法确定
+        // MVP 限制：protocol 方法签名含 `Self`（关联返回类型 / 参数）时无法确定
         // 具体类型，不支持经 dyn 调用
         if sig.params.iter().skip(1).any(type_mentions_self) || type_mentions_self(&sig.return_type) {
             return Err(TypeError::Unsupported {
                 what: format!(
-                    "`dyn {trait_name}::{method}`：签名含 `Self` 的方法（关联类型 MVP 不支持 trait 对象调用）"
+                    "`dyn {protocol_name}::{method}`：签名含 `Self` 的方法（关联类型 MVP 不支持 protocol 对象调用）"
                 ),
                 span,
             });
         }
         if args.len() + 1 != sig.params.len() {
             return Err(TypeError::UnexpectedArgumentCount {
-                name: format!("dyn {trait_name}::{method}"),
+                name: format!("dyn {protocol_name}::{method}"),
                 expected: sig.params.len() - 1,
                 found: args.len(),
                 span,
@@ -384,11 +385,11 @@ pub(super) fn try_builtin_method_call(
         for (i, a) in args.iter().enumerate() {
             let (h, t) = infer_expr(ctx, a)?;
             let pty = substitute(&sig.params[i + 1], &HashMap::new());
-            // Str 值实参 → 非 Str 形参自动升级（`dyn Trait` 方法 String 形参）
+            // Str 值实参 → 非 Str 形参自动升级（`dyn Protocol` 方法 String 形参）
             let (h, t) = upgrade_str_arg(ctx, h, t, &pty, a)?;
             if !t.compatible_with(&pty) {
                 return Err(TypeError::ArgumentTypeMismatch {
-                    name: format!("dyn {trait_name}::{method}"),
+                    name: format!("dyn {protocol_name}::{method}"),
                     index: i + 1,
                     expected: pty.to_string(),
                     found: t.to_string(),
@@ -435,6 +436,7 @@ pub(super) fn try_builtin_method_call(
                     index: Box::new(HirExpr::new(HirExprKind::IntLiteral((3 + idx) as i128), Span::dummy())),
                     elem: FieldScalar::Ptr,
                     is_str: false,
+                    len: None,
                 }, Span::dummy()),
                 mutable: false,
             }, Span::dummy()),

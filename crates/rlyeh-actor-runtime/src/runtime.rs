@@ -487,7 +487,7 @@ impl ActorRef {
             }
         };
         // 仅对 Rlyeh 生成的 CallbackActor 启用快速路径（自定义 ActorState 一律
-        // 回退慢路径）。利用 supertrait upcasting：`&mut dyn ActorState` →
+        // 回退慢路径）。利用 superprotocol upcasting：`&mut dyn ActorState` →
         // `&mut dyn Any`（rustc >= 1.86）。
         let mut state_opt = state_guard.as_mut(); // &mut Option<Box<dyn ActorState>>
         let cb = match state_opt.as_mut().and_then(|s| {

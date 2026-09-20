@@ -13,7 +13,7 @@ use crate::{Warning, WarningKind};
 /// B-1（借用简化 RFC）：检测「对引用显式 `*` 解引用后紧接成员访问」的冗余写法
 /// `(*r).field` / `(*r).method()` / `(*r)[i]`。引用会自动解引用，提示去掉 `*`。
 ///
-/// 仅当操作数类型为 `&T` / `&mut T` 时告警；裸指针（`*p`）与自定义 `Deref` trait
+/// 仅当操作数类型为 `&T` / `&mut T` 时告警；裸指针（`*p`）与自定义 `Deref` protocol
 /// 解引用仍需 `*`——前者是 `Type::RawPtr`，后者操作数本身不是引用。
 fn warn_redundant_deref(ctx: &mut TypeContext, recv: &AstExpr, _span: Span) {
     if let ExprKind::Unary {
@@ -207,6 +207,7 @@ pub(crate) fn infer_expr_tail(
                     index,
                     elem,
                     is_str,
+                    len: _,
                 } => {
                     if !matches!(op, AssignOp::Assign) {
                         return Err(TypeError::Unsupported {
@@ -222,6 +223,7 @@ pub(crate) fn infer_expr_tail(
                             value: Box::new(v_hir),
                             elem,
                             is_str,
+                            len: None,
                         }, Span::dummy()),
                         Type::Unit,
                     ));
@@ -441,10 +443,10 @@ pub(crate) fn infer_expr_tail(
             receiver,
             method,
             args,
-            trait_hint,
+            protocol_hint,
         } => {
             warn_redundant_deref(ctx, receiver, span);
-            check_method_call(ctx, receiver, method, args, trait_hint.as_deref(), span, 0)
+            check_method_call(ctx, receiver, method, args, protocol_hint.as_deref(), span, 0)
         }
         ExprKind::StructCtor {
             type_name,

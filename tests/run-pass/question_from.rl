@@ -1,4 +1,4 @@
-// P6c：`?` 运算符错误类型自动 From 转换 + trait 关联函数调用（From::from）。
+// P6c：`?` 运算符错误类型自动 From 转换 + protocol 关联函数调用（From::from）。
 // inner 返回 `Result<i64, IoErrorKind>`，`?` 经 `From::<IoErrorKind>::from`
 // 自动转换为外层 `Result<i64, IoError>` 的错误类型（语义对齐 Rust `E: Into<F>`）。
 
@@ -18,7 +18,7 @@ fn main() {
         Result::Err(e) => println(e.message()),
     }
 
-    // 2. 手动 trait 关联函数调用 From::from（IoErrorKind → IoError）
+    // 2. 手动 protocol 关联函数调用 From::from（IoErrorKind → IoError）
     let e = From::from(io::error::IoErrorKind::PermissionDenied);
     println(e.message());
 }

@@ -31,7 +31,7 @@ pub(crate) fn check_for_iterator(
             receiver: AstExpr::new(ExprKind::Ident(it_name.clone()), span),
             method: "next".to_string(),
             args: vec![],
-            trait_hint: None,
+            protocol_hint: None,
         },
         span,
     );
@@ -172,9 +172,9 @@ pub(crate) fn try_check_adapter(
     span: Span,
 ) -> Result<Option<(HirExpr, Type)>, TypeError> {
     // V3-D1/D2（2026-08-27）：filter/take/skip/collect/map/fold 迁移为
-    // Iterator trait 默认方法（惰性），内建 eager desugar 仅对数组 / `Vec`
-    // （不实现 Iterator trait，无法走默认方法）保留。
-    // 自定义迭代器（实现 Iterator/next）走通用 trait 方法解析（惰性）。
+    // Iterator protocol 默认方法（惰性），内建 eager desugar 仅对数组 / `Vec`
+    // （不实现 Iterator protocol，无法走默认方法）保留。
+    // 自定义迭代器（实现 Iterator/next）走通用 protocol 方法解析（惰性）。
     if matches!(method, "map" | "filter" | "fold" | "collect" | "take" | "skip") {
         // 数组 / `Vec<T>`：保留内建 eager desugar（返回 Vec 兼容）；否则走默认方法
         let is_array_vec = matches!(peel_refs_and_heap(self_ty), Type::Array(_, _))
@@ -391,7 +391,7 @@ pub(super) fn check_iterator_adapter(
                 receiver: mk_ident(out),
                 method: "push".to_string(),
                 args: vec![mk_ident(val)],
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )
@@ -544,7 +544,7 @@ pub(super) fn check_iterator_adapter(
                 receiver: mk_ident(&it_name),
                 method: "next".to_string(),
                 args: vec![],
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         );

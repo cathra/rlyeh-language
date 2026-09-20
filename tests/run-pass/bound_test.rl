@@ -1,4 +1,4 @@
-// U3 泛型约束（trait bound）：声明 + 调用点校验（宽松：不推导）
+// U3 泛型约束（protocol bound）：声明 + 调用点校验（宽松：不推导）
 protocol HasArea {
     fn area(&self) -> f64;
 }

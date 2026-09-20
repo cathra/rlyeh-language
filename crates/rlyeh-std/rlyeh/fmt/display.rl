@@ -2,7 +2,7 @@
 //
 // 归属子模块 `fmt::display`。对外 `fmt::Display` 由 fmt/module.rl 的
 // `pub import fmt::display::Display;` 保持（`println!` 等占位符引擎按
-// `fmt::Display` / `fmt::Debug` trait 名区分选择 impl，见 check_expr/util.rs）。
+// `fmt::Display` / `fmt::Debug` protocol 名区分选择 impl，见 check_expr/util.rs）。
 //
 // X4：`fmt` 返回 `Result<(), FmtError>`（写缓冲 + 错误返回）。
 

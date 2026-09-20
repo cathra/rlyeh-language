@@ -1,4 +1,4 @@
-// V2：Chars/Lines 实现 Iterator trait——for 循环接入迭代器框架
+// V2：Chars/Lines 实现 Iterator protocol——for 循环接入迭代器框架
 //（目标签名 chars() -> Chars / lines() -> Lines 的基础；现有 chars()/lines()
 // 返回 Vec 保留兼容，迭代器版为 chars_iter()/lines_iter()）。
 

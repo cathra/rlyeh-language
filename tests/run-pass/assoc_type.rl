@@ -1,5 +1,5 @@
-// U2 trait 关联类型（assoc type）：
-// `trait T { type Item; ... }` 声明 + `impl T for X { type Item = Concrete; }`
+// U2 protocol 关联类型（assoc type）：
+// `protocol T { type Item; ... }` 声明 + `impl T for X { type Item = Concrete; }`
 // 定义；impl 方法签名中 `Self::Item` 在收集期替换为具体类型。
 protocol Container {
     type Item;

@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-`struct IoError { kind, message: String }` + 构造器/`kind()`/`message()` 访问器（正式 `Display` trait 随 Q3，MVP 先用 `message()`）。
+`struct IoError { kind, message: String }` + 构造器/`kind()`/`message()` 访问器（正式 `Display` protocol 随 Q3，MVP 先用 `message()`）。
 
 ## 验证
 

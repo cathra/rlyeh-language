@@ -1,4 +1,4 @@
-// U4 `-> Self` 返回：trait 方法 / static 方法 / inherent 方法签名返回 Self
+// U4 `-> Self` 返回：protocol 方法 / static 方法 / inherent 方法签名返回 Self
 protocol Clone {
     fn clone(&self) -> Self;
 }
@@ -31,7 +31,7 @@ impl Point {
 
 fn main() {
     let p = Point { x: 3, y: 4 };
-    let c = p.clone();        // trait 方法返回 Self → Point
+    let c = p.clone();        // protocol 方法返回 Self → Point
     println(c.x + c.y);       // 7
     let d = p.doubled();      // inherent 方法返回 Self
     println(d.x + d.y);       // 14

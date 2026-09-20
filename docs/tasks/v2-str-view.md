@@ -19,7 +19,7 @@
 | **V2-D** | [`v2-d-params.md`](./leaf/v2-d-params.md) | V2-A | 中 | ✅ 已完成（参数/返回值 borrowck/深拷贝，2026-08-26） |
 | **V2-E** | [`v2-e-api-align.md`](./leaf/v2-e-api-align.md) | V2-B | 低 | ✅ 已完成（API 对齐评估 + 兼容保留，2026-08-26） |
 
-**进度小结**：V2-A/B/C/D/E ✅ 全部完成（StrFat 语义/trim/打印/参数/API 对齐）；`chars_iter`/`lines_iter` 迭代器已可用。**2026-08-27 推进**：`Chars`/`Lines` 已实现 `Iterator` trait（`type Item = i64` 码点 / `String` 行），`for c in s.chars_iter()` / `for l in t.lines_iter()` 经 V3 迭代器框架接入（`v2_chars_lines_iter.rl`）。**2026-08-29 完成（完整 V2）**：`char` 类型由 8 位 ASCII-only 拓宽至 32 位 Unicode 码点（codegen `LirType::Char` i8→i32）；`chars()`/`lines()` 目标签名升级——现直接返回 `Chars`/`Lines` 迭代器（原 `chars_iter`/`lines_iter` 保留为等价别名），`Chars::next() -> Option<char>`（此前因 char 仅 ASCII 退回 `Option<i64>`，现用 `char` 表达全部 Unicode 码点）；`tokenize` 等按索引访问 `Vec` 的调用点改写为顺序迭代；std 内 `Chain`/`Enumerate`/`Filter`/`Take`/`Skip` 等 V3 适配器包装迭代器的 `Item` 类型由误置的 `char` 还原为 `i64`（其设计输入为 i64，与 char 迭代器无关）。全量测试 177 用例通过。
+**进度小结**：V2-A/B/C/D/E ✅ 全部完成（StrFat 语义/trim/打印/参数/API 对齐）；`chars_iter`/`lines_iter` 迭代器已可用。**2026-08-27 推进**：`Chars`/`Lines` 已实现 `Iterator` protocol（`type Item = i64` 码点 / `String` 行），`for c in s.chars_iter()` / `for l in t.lines_iter()` 经 V3 迭代器框架接入（`v2_chars_lines_iter.rl`）。**2026-08-29 完成（完整 V2）**：`char` 类型由 8 位 ASCII-only 拓宽至 32 位 Unicode 码点（codegen `LirType::Char` i8→i32）；`chars()`/`lines()` 目标签名升级——现直接返回 `Chars`/`Lines` 迭代器（原 `chars_iter`/`lines_iter` 保留为等价别名），`Chars::next() -> Option<char>`（此前因 char 仅 ASCII 退回 `Option<i64>`，现用 `char` 表达全部 Unicode 码点）；`tokenize` 等按索引访问 `Vec` 的调用点改写为顺序迭代；std 内 `Chain`/`Enumerate`/`Filter`/`Take`/`Skip` 等 V3 适配器包装迭代器的 `Item` 类型由误置的 `char` 还原为 `i64`（其设计输入为 i64，与 char 迭代器无关）。全量测试 177 用例通过。
 
 ---
 

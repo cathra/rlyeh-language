@@ -1,4 +1,4 @@
-# U3 泛型 trait 约束（bound / where）
+# U3 泛型 protocol 约束（bound / where）
 
 > **所属阶段**：阶段 U
 > **状态**：✅ 已完成
@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-AST 新增 `AstTypeParam { name, bounds }`（fn/struct/enum/trait/impl 五处泛型升级）+ parser `parse_generics`/`parse_where_clause`；typecheck `FnTemplate.bounds`/`ImplDef.bounds` 记录 + `check_generic_bounds` 调用点宽松校验（单态化实参确定后查 `impl Trait for Concrete`）+ `GenericBoundMismatch` 错误；泛型函数体内 `t.area()` 经单态化替换自然解析；fmt/doc `fmt_generics`。
+AST 新增 `AstTypeParam { name, bounds }`（fn/struct/enum/protocol/impl 五处泛型升级）+ parser `parse_generics`/`parse_where_clause`；typecheck `FnTemplate.bounds`/`ImplDef.bounds` 记录 + `check_generic_bounds` 调用点宽松校验（单态化实参确定后查 `impl Protocol for Concrete`）+ `GenericBoundMismatch` 错误；泛型函数体内 `t.area()` 经单态化替换自然解析；fmt/doc `fmt_generics`。
 
 ## 验证
 

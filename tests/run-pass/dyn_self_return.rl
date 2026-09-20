@@ -1,4 +1,4 @@
-// G-M1：经 `dyn Trait` 调用含 `Self` 签名的方法。
+// G-M1：经 `dyn Protocol` 调用含 `Self` 签名的方法。
 // devirtualize 时把签名中的 `Self` 替换为 dyn 绑定源的具体类型：
 // - 形参 `&Self` 收敛为 `&P`；
 // - 返回 `Self` 聚合收敛为 `P`（按值返回；经 vtable 取址故退化为

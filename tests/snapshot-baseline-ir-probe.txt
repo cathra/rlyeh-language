@@ -24,7 +24,7 @@ tests/run-pass/arith.rl
 # 按值拷贝 / clone（直接覆盖 by_value_locals 修复点）
 tests/run-pass/copy_clone.rl
 
-# 泛型 trait / impl
+# 泛型 protocol / impl
 tests/run-pass/generic_impl_where_arg.rl
 
 # 枚举判别 / 分派

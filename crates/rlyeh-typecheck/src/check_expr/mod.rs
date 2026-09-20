@@ -20,10 +20,10 @@ use crate::types::{field_scalar_of, type_mono_key, FnSignature, ImplDef, Mutabil
 pub(crate) use call::make_slice_fat;
 
 /// PC-4：父协议一致性校验（`protocol A: B` → 实现 A 必须实现 B），供 `check_item` 调用。
-pub(crate) use generic::validate_supertraits;
-/// PC-10：trait 方法线性化（`dyn T` vtable 槽顺序）与 `dyn A → dyn B` 上转判定——
+pub(crate) use generic::validate_superprotocols;
+/// PC-10：protocol 方法线性化（`dyn T` vtable 槽顺序）与 `dyn A → dyn B` 上转判定——
 /// 供 `check_stmt`（上转）与 `check_expr::method::builtin`（虚调用槽索引）复用。
-pub(crate) use generic::{dyn_supertrait_upshift, linearize_trait_methods};
+pub(crate) use generic::{dyn_superprotocol_upshift, linearize_protocol_methods};
 
 /// 查询内建函数签名；`None` 表示不是内建。
 ///
@@ -33,11 +33,11 @@ pub(crate) use generic::{dyn_supertrait_upshift, linearize_trait_methods};
 ///
 /// 与 `rlyeh-lir::lower::BUILTIN_FUNCTIONS`、`rlyeh-codegen` 保持一致。
 
-/// H4 `dyn Trait` 转换：把具体类型的数据指针转成 trait 对象胖指针。
+/// H4 `dyn Protocol` 转换：把具体类型的数据指针转成 protocol 对象胖指针。
 ///
 /// 生成 HIR 块（vtable 运行时构造 + 2 槽胖指针）：
 /// ```text
-/// let __vt = Alloc(3 + N);              // N = trait 方法数；槽 0-2 为 drop/size/align（MVP = 0）
+/// let __vt = Alloc(3 + N);              // N = protocol 方法数；槽 0-2 为 drop/size/align（MVP = 0）
 /// FieldSet(__vt, 0, 0); FieldSet(__vt, 1, 0); FieldSet(__vt, 2, 0);
 /// let __m0 = FnPtr("Circle::area");   FieldSet(__vt, 3, __m0);
 /// let __m1 = FnPtr("Circle::describe"); FieldSet(__vt, 4, __m1);
@@ -48,17 +48,17 @@ pub(crate) use generic::{dyn_supertrait_upshift, linearize_trait_methods};
 ///
 /// 后续 `dyn_obj.method(args)` 经 `check_method_call` 的 `Type::Dyn` 分支
 /// 从 vtable 槽 `3 + 方法索引` 读函数指针并间接调用。
-/// MVP 限制：trait 与 impl 均须非泛型；转换源为具体类型（非泛型参数）。
+/// MVP 限制：protocol 与 impl 均须非泛型；转换源为具体类型（非泛型参数）。
 
-/// H4 辅助：类型是否引用了 `Self`。trait 方法签名含关联类型（`Self`）时，
-/// trait 对象调用无法确定具体类型，MVP 报 Unsupported。
+/// H4 辅助：类型是否引用了 `Self`。protocol 方法签名含关联类型（`Self`）时，
+/// protocol 对象调用无法确定具体类型，MVP 报 Unsupported。
 
 // SH-P1-4（M2，2026-09-04）：自动解引用强制辅助。
 /// 自动解引用最大递归深度（对齐 Rust 强制链的有界展开）。
 pub(super) const MAX_DEREF_DEPTH: usize = 16;
 
 /// 构造自动解引用回退的接收者表达式 `recv.deref()`，用于字段 / 方法 / 索引
-/// 解析失败时递归重试（限深度，避免无限）。`deref` 既可是 `Deref` trait 方法
+/// 解析失败时递归重试（限深度，避免无限）。`deref` 既可是 `Deref` protocol 方法
 /// （`-> &Target`，聚合 Target 在 HIR 即对象指针，无需再剥 `*`），也可是内建
 /// 智能指针 `deref`（`-> T` 值，见 sync/module.rl）。返回 `&Target` 引用后，
 /// 下游方法 / 字段解析经 `peel_refs_and_heap` 透明按 `Target` 处理（零新增 IR 节点）。
@@ -68,7 +68,7 @@ pub(super) fn make_deref_receiver(receiver: &AstExpr, span: Span) -> AstExpr {
             receiver: receiver.clone(),
             method: "deref".to_string(),
             args: vec![],
-            trait_hint: None,
+            protocol_hint: None,
         },
         span,
     )
@@ -370,7 +370,7 @@ pub(crate) fn infer_expr_inner(
                     // V5d（2026-09-02）：运算符重载回退——内建路径失败且为可重载
                     // 二元运算符时，降级为 `left.<method>(right)` 方法调用
                     //（复用既有 method-call 全链路，codegen 无需改动）。重载成功则
-                    // 采用；重载失败（无对应 trait impl 等）则维持内建错误，保留既有
+                    // 采用；重载失败（无对应 protocol impl 等）则维持内建错误，保留既有
                     // 诊断、不破坏存量行为。
                     if let Some(method) = overload_method(*op) {
                         let args = [right.clone()];
@@ -409,7 +409,7 @@ pub(crate) fn infer_expr_inner(
                         _ => match heap_wrapper_inner(&o_ty) {
                             Some(t) => t,
                             None => {
-                                // Y4b-1（2026-08-28）：自定义 `Deref` trait 解引用——
+                                // Y4b-1（2026-08-28）：自定义 `Deref` protocol 解引用——
                                 // o_ty 实现了 `deref` 方法时，`*x` 生成 `x.deref()` 调用
                                 // （返回 `deref()` 的目标类型）；否则维持内建类型限制报错。
                                 if ctx.find_impl_for_method(&o_ty, "deref").is_some() {
@@ -420,7 +420,7 @@ pub(crate) fn infer_expr_inner(
                                 }
                                 return Err(TypeError::Unsupported {
                                     what: format!(
-                                        "解引用 `*` 仅支持引用类型 `&T`、裸指针 `*const T`/`*mut T`、堆装箱 `Box<T>`/`Rc<T>`/`Arc<T>`/`Gc<T>` 或实现 `Deref<T>` trait 的类型，发现 `{o_ty}`"
+                                        "解引用 `*` 仅支持引用类型 `&T`、裸指针 `*const T`/`*mut T`、堆装箱 `Box<T>`/`Rc<T>`/`Arc<T>`/`Gc<T>` 或实现 `Deref<T>` protocol 的类型，发现 `{o_ty}`"
                                     ),
                                     span,
                                 })
@@ -579,7 +579,7 @@ pub(crate) struct FormatSeg {
 // ===========================================================================
 
 /// Q4 `toml.to_string(v)` / `toml.stringify(v)` → TOML 文本（编译器内建，AST 层 desugar，
-/// 零新增 IR 节点）。MVP 无泛型 trait 约束（`T: Serialize` bound 不支持），签名退化为
+/// 零新增 IR 节点）。MVP 无泛型 protocol 约束（`T: Serialize` bound 不支持），签名退化为
 /// 无 bound 形式：类型由实参推断。
 ///
 /// 支持类型：`i64` / `bool` / `String` / `&str` / 数组 `[T; N]` / `Vec<T>` / 结构体（嵌套
@@ -711,7 +711,7 @@ pub(crate) use util::substitute;
 // block/misc 对外 API
 pub(crate) use block::{check_block, check_block_inner};
 pub(crate) use misc::{builtin_signature, coerce_to_dyn, type_mentions_self,
-    is_any_trait, check_any_type_id, check_any_downcast_ref};
+    is_any_protocol, check_any_type_id, check_any_downcast_ref};
 // 宏/序列化辅助被兄弟子模块调用，显式 re-export 供 `use super::*` 可见
 pub(crate) use macro_ser::{check_macro_call, parse_format_string, string_from_lit_ast,
     mk_ident_call, mk_path_call, bin_add, fold_add};

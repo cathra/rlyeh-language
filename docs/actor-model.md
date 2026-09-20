@@ -8,7 +8,7 @@
 > AllForOne/RestartForOne）、方法调用 `.await`（ask 往返）、`send`（fire-and-forget）、返回 -1 触发
 > 崩溃协议（无监督停止 / 监督重启）。内置格式化宏 `println!`/`format!` 等已实现（I2 ✅，`!` 为 `not`
 > 运算符）；`sync::Channel` 已实现（P1 ✅，`recv_async` S3a ✅）。**未实现（规划）**：`supervisor {}` 块、
-> `ActorRef<T>`、`panic!` 宏、`dyn Trait` actor 字段、`ExitSignal` 监控 API。可运行示例见 [`guide/09-actors.md`](./guide/09-actors.md) §9。
+> `ActorRef<T>`、`panic!` 宏、`dyn Protocol` actor 字段、`ExitSignal` 监控 API。可运行示例见 [`guide/09-actors.md`](./guide/09-actors.md) §9。
 
 ## 相关文档
 
@@ -500,7 +500,7 @@ supervisor {
 1. **句柄共享**：`ActorRef` 从持有 mailbox 改为持有 `Arc<ActorHandle>`（含 `id`、`Arc<Mutex<Option<Box<dyn ActorState>>>>`
    的 state、`Arc<ArrayQueue<Envelope>>` mailbox、`running` CAS 标志、runtime 弱引用）。
 2. **`try_fast_ask`**：`ask_blocking` 先尝试快速路径——`running.swap(true)` CAS 抢占（与 Worker 同一互斥域）→
-   邮箱 `is_empty` 检查 → state `try_lock` → `CallbackActor` 经 **supertrait upcasting**（`&mut dyn ActorState`
+   邮箱 `is_empty` 检查 → state `try_lock` → `CallbackActor` 经 **superprotocol upcasting**（`&mut dyn ActorState`
    → `&mut dyn Any`）直接 downcast → 调 Rlyeh handler（`extern "C"`，消息槽 u64 传递），全程零调度 / 零通道。
 3. **`FastPathOutcome` 枚举**（`Handled(Box<dyn Any>)` / `Fallback(Box<dyn Any>)`）：解决"消息提前消费"问题——
    所有回退路径原样归还消息，慢路径（`Envelope::with_reply` + 回复 channel）行为与原先完全一致。

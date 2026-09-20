@@ -1,4 +1,4 @@
-# V3-D1：`map`/`filter` trait 默认方法 + 绑定包装迭代器
+# V3-D1：`map`/`filter` protocol 默认方法 + 绑定包装迭代器
 
 > **所属任务**：[V3 Iterator 关联类型 + 适配器迁移](../v3-iterator-adapters.md)（由 V3-D 细分子任务）
 > **状态**：🔧 部分完成（filter/take/skip/collect ✅；map/fold 见 V3-D2）
@@ -8,16 +8,16 @@
 
 ## 目标
 
-`map`/`filter` 从 typecheck 内建 desugar 迁移为 `Iterator` trait 默认方法，返回 V3-C 的 `Map`/`Filter` 包装迭代器。
+`map`/`filter` 从 typecheck 内建 desugar 迁移为 `Iterator` protocol 默认方法，返回 V3-C 的 `Map`/`Filter` 包装迭代器。
 
 ## 背景
 
-迁移后 `v.map(|x| x*10)` 走 trait 默认方法 + `Map` 包装迭代器（V3-C 已定义），不再收集到 Vec。
+迁移后 `v.map(|x| x*10)` 走 protocol 默认方法 + `Map` 包装迭代器（V3-C 已定义），不再收集到 Vec。
 
 ## 改动范围
 
-- **std**：`Iterator` trait 增 `fn map<B>(self, f: fn(Self::Item) -> B) -> Map<Self, B>` / `fn filter(self, p: fn(Self::Item) -> bool) -> Filter<Self, P>` 默认方法（绑定 V3-C 结构体 + `next()`）。
-- **typecheck**：`try_check_adapter` 对 `map`/`filter` 优先走通用 trait 方法解析（`find_impl_for_method` / trait 默认方法回退）。
+- **std**：`Iterator` protocol 增 `fn map<B>(self, f: fn(Self::Item) -> B) -> Map<Self, B>` / `fn filter(self, p: fn(Self::Item) -> bool) -> Filter<Self, P>` 默认方法（绑定 V3-C 结构体 + `next()`）。
+- **typecheck**：`try_check_adapter` 对 `map`/`filter` 优先走通用 protocol 方法解析（`find_impl_for_method` / protocol 默认方法回退）。
 - **测试**：`v.map(...).collect()` / `v.iter().filter(pred).take(3)` 链式保持输出一致。
 
 ## 实施情况（部分完成，2026-08-27）
@@ -29,8 +29,8 @@
 
 ### filter/take/skip/collect 迁移（已完成）
 
-- **std `Iterator` trait 默认方法**：`filter(self, pred) -> Filter<Self>`、`take(self, n) -> Take<Self>`、`skip(self, n) -> Skip<Self>`、`collect(self) -> Vec<i64>`——消耗 self 返回 V3-C 包装迭代器（惰性）。
-- **typecheck `try_check_adapter`**：filter/take/skip/collect 对**自定义迭代器**（实现 Iterator/next）走通用 trait 方法解析（惰性）；数组/`Vec<T>`（不实现 Iterator）保留内建 eager desugar（返回 Vec 兼容）。
+- **std `Iterator` protocol 默认方法**：`filter(self, pred) -> Filter<Self>`、`take(self, n) -> Take<Self>`、`skip(self, n) -> Skip<Self>`、`collect(self) -> Vec<i64>`——消耗 self 返回 V3-C 包装迭代器（惰性）。
+- **typecheck `try_check_adapter`**：filter/take/skip/collect 对**自定义迭代器**（实现 Iterator/next）走通用 protocol 方法解析（惰性）；数组/`Vec<T>`（不实现 Iterator）保留内建 eager desugar（返回 Vec 兼容）。
 - **测试**：`adapters.rl` 自定义迭代器用例改 `.collect()`；新增 `v3d1_lazy_adapters.rl`（filter/take/skip/链式/collect）。
 - map/fold 仍走内建（V3-D2 迁移）。
 

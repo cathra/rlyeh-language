@@ -13,7 +13,7 @@
 | Y3 | **HTTP 连接复用 + sendfile 平台补全**：`HttpClient` 连接池（keep-alive：`Connection: keep-alive` + 复用空闲连接，替代每请求新建 + close）；sendfile Windows `TransmitFile` 分支（§4.5「非 Unix 返回 Unsupported」消除） | ✅ 已完成（降级：Windows sendfile 分支保留） | [`y3-http-keepalive.md`](../tasks/leaf/y3-http-keepalive.md) |
 | Y4 | **锁 guard 完整 + Channel 泛型化**：`Mutex<T>`/`RwLock<T>` 泛型化（目标签名 `lock(&self) -> MutexGuard<T>`，替代裸 `lock/unlock` + `lock_guard()` 命名特判——方法名对齐目标 API）；`RwLockWriteGuard`/`RwLockReadGuard`（P2b 规划）；`Deref`/`DerefMut` 语义（`*guard` 解引用访问数据，替代 MVP 独立访问器）；`Channel<T>` 泛型化（元素不再限 i64）、`bounded_channel(capacity)` 有界队列（send 满阻塞）、`SendError<T>`/`RecvError`/`TryRecvError` 错误类型（替代 `Option` 退化）、`Arc<LockFreeQueue>`（跨线程 Sender/Receiver，依赖 U3） | 🔧 部分完成（Y4a 泛型构造 + Y4b-1 Deref 分派 + Y4b-2 泛型静态方法推断 ✅，2026-08-28；std Mutex 泛型化（lang-defects #6，Y4b-2/P5，2026-08-29）✅ + Channel<T> 泛型化（lang-defects #8，Y4c/P7c，2026-08-29）✅，173 用例全绿；**Y4b-3 `RwLock<T>` 泛型化 + 读/写守卫 Deref ✅（2026-08-30）**；**Y4b-4 guard DerefMut ✅（2026-08-30）**；**有界队列 ✅（2026-08-30）**；**错误类型 SendError/RecvError/TryRecvError ✅（2026-08-30）**；**Arc<LockFreeQueue> ✅（2026-08-30，类型层；跨线程移动受 Thread::start 无参限制）**） | [`y4-lock-guard-channel.md`](../tasks/leaf/y4-lock-guard-channel.md) |
 | Y5 | **`Box::leak` 目标签名**：`fn leak(self) -> &'static mut T`（依赖 U5 AddrOf 任意目标，替代 `*mut T` 裸指针退化）；`'static` 宽松丢弃（G4 现状） | ✅ 已完成（返回 `&'static mut T`，2026-08-28，166 用例全绿） | [`y5-box-leak-signature.md`](../tasks/leaf/y5-box-leak-signature.md) |
-| Y6 | **错误体系完整化**：`trait Error { fn message(&self) -> String; fn source(&self) -> Option<&dyn Error>; }`（补 `source` 链，M2a 现状仅 message）；`Into::into()` 自动转换 + `?` 运算符的 From 自动转换（2026-08-29 P6c / P6c-1/2 均已落地——`?` 在 `E: Into<F>` 时自动转，`Into::<U>::into(x)` 经 blanket 语义改写 `From::from(x)`） | ✅ 已完成（Y6a `source()` 非 dyn 退化 + Y6b `From`/`Into` std 层 ✅，2026-08-28，161 用例全绿；`?` From 自动转换 ✅（2026-08-29）+ `Into::into` blanket ✅（2026-08-29）；P7d-1 `source()` 升级为 `Option<&dyn Error>` 真实错误链 ✅（2026-08-29，Y6c）） | [`y6-error-source.md`](../tasks/leaf/y6-error-source.md) |
+| Y6 | **错误体系完整化**：`protocol Error { fn message(&self) -> String; fn source(&self) -> Option<&dyn Error>; }`（补 `source` 链，M2a 现状仅 message）；`Into::into()` 自动转换 + `?` 运算符的 From 自动转换（2026-08-29 P6c / P6c-1/2 均已落地——`?` 在 `E: Into<F>` 时自动转，`Into::<U>::into(x)` 经 blanket 语义改写 `From::from(x)`） | ✅ 已完成（Y6a `source()` 非 dyn 退化 + Y6b `From`/`Into` std 层 ✅，2026-08-28，161 用例全绿；`?` From 自动转换 ✅（2026-08-29）+ `Into::into` blanket ✅（2026-08-29）；P7d-1 `source()` 升级为 `Option<&dyn Error>` 真实错误链 ✅（2026-08-29，Y6c）） | [`y6-error-source.md`](../tasks/leaf/y6-error-source.md) |
 | Y7 | **UDP**：`net/udp.rl`（§1 目标架构目录）——`UdpSocket::bind`/`send_to`/`recv_from`/`local_addr`（libc `socket(AF_INET, SOCK_DGRAM)` + `sendto`/`recvfrom`，平台 sockaddr_in 双布局复用 O1a，WASI 短路） | ✅ 已完成 | [`y7-udp.md`](../tasks/leaf/y7-udp.md) |
 | Y8 | **`thread::Builder::stack_size`**：`Builder::new()/stack_size(bytes)/spawn(f)`——`pthread_attr_setstacksize`（S0e 规划项，替代 attr=NULL 默认栈：Linux 8MB/macOS 512KB 的定制手段） | ✅ 已完成 | [`y8-thread-stack.md`](../tasks/leaf/y8-thread-stack.md) |
 
@@ -35,7 +35,7 @@
 
 **状态摘要**：阶段 G–L 全部完成、阶段 M–T 全部完成、U 全部完成、V 全部完成、W 全部完成、X 全部完成（X1–X4 ✅）、**Y 全部完成（Y1–Y8 均 ✅）**——各任务行已附实现日期与回归用例数；Y1（切片实参受语言限制，以 MVP 字节缓冲 API 收口）、Y3（Windows sendfile 分支）按规划以降级项收口，非遗留缺口。
 
-> **Y 阶段风险评估与拆分（2026-08-28）**：Y4/Y6 探测到语言级缺陷（泛型 struct 字面量构造实例化失败、`&dyn Error` 构造失败、泛型 trait 实参路径不支持 + where 子句缺失），已登记至专项 [`lang-defects.md`](../tasks/leaf/lang-defects.md)；Y4 拆分 Y4a/Y4b/Y4c、Y6 拆分 Y6a/Y6b、Y2 拆分 Y2a/Y2b；Y1 挂 U1 切片、Y5 依赖 U5、Y3 sendfile Windows 不可验证（待专项）。
+> **Y 阶段风险评估与拆分（2026-08-28）**：Y4/Y6 探测到语言级缺陷（泛型 struct 字面量构造实例化失败、`&dyn Error` 构造失败、泛型 protocol 实参路径不支持 + where 子句缺失），已登记至专项 [`lang-defects.md`](../tasks/leaf/lang-defects.md)；Y4 拆分 Y4a/Y4b/Y4c、Y6 拆分 Y6a/Y6b、Y2 拆分 Y2a/Y2b；Y1 挂 U1 切片、Y5 依赖 U5、Y3 sendfile Windows 不可验证（待专项）。
 > **推进记录（2026-08-28）**：Y6a + Y6b + Y2a + Y4a + Y4b-1 + Y4b-2 + Y2b（kqueue 等待验证）+ Y5（Box::leak 目标签名）已完成，**166 用例全绿**。Y 阶段语言级能力已覆盖（泛型构造推断 / Deref 分派 / 泛型静态方法推断 / kqueue FFI / Box::leak 引用）。剩余待专项（lang-defects #6/#8）：std Mutex 泛型化迁移、Channel<T> 泛型化（复合字段推断 + 无 turbofish）。Y1（U1 切片）、Y3（Windows）、Y4b-3/4 后续。
 > **推进记录（2026-08-29）**：lang-defects #6（std Mutex 泛型化，Y4b-2/P5）与 #8（Channel<T> 泛型化，Y4c/P7c）标记已完成（代码早已落地，本轮补 `tests/run-pass/mutex_value.rl` 验证 + 文档收尾）；173 用例全绿。Y4 剩余 Y4b-3/4（RwLock/DerefMut）、有界队列、错误类型、Arc<LockFreeQueue> 待办。
 
@@ -51,7 +51,7 @@
 
 ---
 
-- [x] **T 阶段：集合与迭代器收尾**（2026-08-24）：T1a Vec / T1b String / T1c HashMap API 补齐 + T2 `Iterator` trait（元素固定 i64）+ T3a `Box::leak`（裸指针退化）/ T3b Rc/Arc/Weak 核对。各任务执行情况与技术细节见任务树 [`stage-m-t.md`](../tasks/stage-m-t.md) T 阶段叶子文档（`t1a`–`t3b`）。
+- [x] **T 阶段：集合与迭代器收尾**（2026-08-24）：T1a Vec / T1b String / T1c HashMap API 补齐 + T2 `Iterator` protocol（元素固定 i64）+ T3a `Box::leak`（裸指针退化）/ T3b Rc/Arc/Weak 核对。各任务执行情况与技术细节见任务树 [`stage-m-t.md`](../tasks/stage-m-t.md) T 阶段叶子文档（`t1a`–`t3b`）。
 
 > **维护者**：Rlyeh Language Team
 > **最后更新**：2026-08-25

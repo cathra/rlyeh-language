@@ -12,9 +12,9 @@
 | 阶段 | 主题 | 关键交付 | 依赖 | 状态 |
 |------|------|---------|------|------|
 | **G** | 引用与借用（L0 完整化） | `&T`/`&mut T`、`*` 解引用、`str` 切片、裸指针、生命周期 `'a` | 无（地基） | G1–G4 ✅（G4 为语法接受 MVP，borrowck 生命周期检查规划中） |
-| **H** | 一等函数 | `fn(A) -> B` 函数类型、闭包（捕获 + `move`）、`dyn Trait` | G（引用捕获） | H1–H5 ✅（H3 IIFE MVP；H4 dyn Trait MVP；H5 闭包值对象 MVP） |
+| **H** | 一等函数 | `fn(A) -> B` 函数类型、闭包（捕获 + `move`）、`dyn Protocol` | G（引用捕获） | H1–H5 ✅（H3 IIFE MVP；H4 dyn Protocol MVP；H5 闭包值对象 MVP） |
 | **I** | 宏系统与格式化 | `macro_rules!` 声明式宏、`Display`/`Debug`、`println!`/`format!` | 弱（可与 G/H 并行） | ✅ 已完成 |
-| **J** | 迭代器与集合协议 | 数组迭代、`Iterator` trait、`map`/`filter`/`fold`/`collect` | H（适配器闭包） | J1–J3 ✅ |
+| **J** | 迭代器与集合协议 | 数组迭代、`Iterator` protocol、`map`/`filter`/`fold`/`collect` | H（适配器闭包） | J1–J3 ✅ |
 | **K** | 错误传播与所有权层级 | `?` 运算符、`Box<T>`、`Rc<T>`/`Arc<T>`、`Gc<T>` | G（指针操作） | K1–K4 ✅ |
 | **L** | 生态模块与平台收尾 | `async fn`/`await`、`serde`、region `strategy (bump)`、WASI net / Actor 交叉编译 | I（serde 宏）、G 等 | L1–L4 ✅ |
 
@@ -49,7 +49,7 @@
 | H1 函数类型与函数指针 | [`h1-fn-pointer.md`](leaf/h1-fn-pointer.md) | ✅ 已完成 |
 | H2 无捕获闭包 | [`h2-closure.md`](leaf/h2-closure.md) | ✅ 已完成 |
 | H3 捕获闭包（IIFE MVP） | [`h3-capture-closure.md`](leaf/h3-capture-closure.md) | ✅ 已完成 |
-| H4 `dyn Trait` trait 对象 | [`h4-dyn-trait.md`](leaf/h4-dyn-trait.md) | ✅ 已完成 |
+| H4 `dyn Protocol` protocol 对象 | [`h4-dyn-protocol.md`](leaf/h4-dyn-protocol.md) | ✅ 已完成 |
 | H5 闭包值对象 | [`h5-closure-value.md`](leaf/h5-closure-value.md) | ✅ 已完成 |
 
 ### I — 宏系统与格式化

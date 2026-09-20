@@ -1,20 +1,20 @@
-// SH-P1-1 A2（2026-09-02）：泛型 trait 多 impl 选择的两处限制修复。
+// SH-P1-1 A2（2026-09-02）：泛型 protocol 多 impl 选择的两处限制修复。
 //
 // 此前（见 leaf 文档「已知限制」）：
-//   ① 同一 self_type 上同一泛型 trait 的多个 impl（如 `impl Wrap<i64> for W` 与
-//      `impl Wrap<bool> for W`）按首匹配选取，无法按 trait 类型实参 / 实参类型区分
+//   ① 同一 self_type 上同一泛型 protocol 的多个 impl（如 `impl Wrap<i64> for W` 与
+//      `impl Wrap<bool> for W`）按首匹配选取，无法按 protocol 类型实参 / 实参类型区分
 //      —— `w.wrap(true)` 会选中 `Wrap<i64>` 并误报类型不匹配。
-//   ② impl 的泛型参数只能由接收者类型 unify 推导，trait 类型实参不参与绑定 ——
+//   ② impl 的泛型参数只能由接收者类型 unify 推导，protocol 类型实参不参与绑定 ——
 //      `impl<T> Wrap<T> for W`（`W` 非泛型）报 `undefined type T`。
 //
-// 修复（check_method_call 重构）：收集全部候选 impl，按「代入 trait 类型实参后的
+// 修复（check_method_call 重构）：收集全部候选 impl，按「代入 protocol 类型实参后的
 // 方法签名与实参类型兼容」选取首个匹配者；impl / 方法级泛型参数由对应实参反推。
 
 protocol Wrap<T> {
     fn wrap(&self, v: T) -> T;
 }
 
-// 限制①：同一 self_type 上同一泛型 trait 的多 impl，按 trait 类型实参 / 实参选取
+// 限制①：同一 self_type 上同一泛型 protocol 的多 impl，按 protocol 类型实参 / 实参选取
 struct W1 { base: i64 }
 
 impl W1: Wrap<i64> {

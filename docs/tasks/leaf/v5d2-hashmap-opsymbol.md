@@ -6,7 +6,7 @@
 
 ## 背景
 
-V5d 交付通用 `BinaryOp` 运算符重载（`BitOr`/`BitAnd`/`Sub`/`BitXor` 等 trait + `core.rl` 实现），并落地 `HashSet<T>` 的 `| & - ^` 集合代数糖（降级到 V5b 关系方法）。V5d+ 进一步补齐比较链 `<`/`<=`/`>`/`>=`（子集/超集）。
+V5d 交付通用 `BinaryOp` 运算符重载（`BitOr`/`BitAnd`/`Sub`/`BitXor` 等 protocol + `core.rl` 实现），并落地 `HashSet<T>` 的 `| & - ^` 集合代数糖（降级到 V5b 关系方法）。V5d+ 进一步补齐比较链 `<`/`<=`/`>`/`>=`（子集/超集）。
 
 本项将同样的运算符糖扩展到 **`HashMap<K, V>` 的按键集合**——`|`/`&`/`-`/`^` 作用于键集合（value 视为键的附带数据），对标 Python `dict` 合并语义。
 

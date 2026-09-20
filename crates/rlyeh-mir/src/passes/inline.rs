@@ -174,12 +174,14 @@ fn inline_stmt(
             index,
             ty,
             is_str,
+            len,
         } => Some(MirStmt::IndexGet {
             target: map_local(target, subst, counter),
             base: map_local(base, subst, counter),
             index: map_local(index, subst, counter),
             ty: *ty,
             is_str: *is_str,
+            len: len.as_ref().map(|l| map_local(l, subst, counter)),
         }),
         MirStmt::IndexSet {
             base,
@@ -187,12 +189,14 @@ fn inline_stmt(
             value,
             ty,
             is_str,
+            len,
         } => Some(MirStmt::IndexSet {
             base: map_local(base, subst, counter),
             index: map_local(index, subst, counter),
             value: map_local(value, subst, counter),
             ty: *ty,
             is_str: *is_str,
+            len: len.as_ref().map(|l| map_local(l, subst, counter)),
         }),
         // 引用指令：参数/局部变量按 subst 重命名后保留。
         // 实参 `&x` 的 AddrOf 指令在调用点已生成，内联副本直接复用其临时值。

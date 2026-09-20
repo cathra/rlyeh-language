@@ -1,6 +1,6 @@
-// V3 Iterator trait 默认方法（2026-08-26）：
+// V3 Iterator protocol 默认方法（2026-08-26）：
 // 自定义迭代器实现 std `impl Iterator`（next -> Option<i64>），count/sum/any/all
-// 走 trait 默认实现（impl 未显式实现时回退）。
+// 走 protocol 默认实现（impl 未显式实现时回退）。
 
 fn is_even(x: i64) -> bool {
     x % 2 == 0

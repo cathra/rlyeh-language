@@ -44,27 +44,27 @@ pub(crate) fn type_id_of(ty: &Type) -> i64 {
     h as i64
 }
 
-/// `dyn Any` 的类型擦除标签（编译器内置，不依赖 trait 声明）。
-pub(crate) fn is_any_trait(name: &str) -> bool {
+/// `dyn Any` 的类型擦除标签（编译器内置，不依赖 protocol 声明）。
+pub(crate) fn is_any_protocol(name: &str) -> bool {
     name == "Any" || name.ends_with("::Any")
 }
 
-/// Q-M1（SH-P0-8）：析构 trait 标签（编译器内置，不依赖 trait 声明）。
+/// Q-M1（SH-P0-8）：析构 protocol 标签（编译器内置，不依赖 protocol 声明）。
 ///
-/// 与 `Any` 同构——`impl Drop for T` 无论 `trait Drop` 是否显式声明都生效，
-/// 避免因「trait 未声明」阻断析构注册。`Drop` 的解析名可能带模块前缀
+/// 与 `Any` 同构——`impl Drop for T` 无论 `protocol Drop` 是否显式声明都生效，
+/// 避免因「protocol 未声明」阻断析构注册。`Drop` 的解析名可能带模块前缀
 /// （`collect.rs` 的路径解析），故两种形式都要匹配。
-pub(crate) fn is_drop_trait(name: &str) -> bool {
+pub(crate) fn is_drop_protocol(name: &str) -> bool {
     name == "Drop" || name.ends_with("::Drop")
 }
 
 /// Q-M1（SH-P0-8）：类型 `ty` 是否实现了 `Drop`（存在 `impl Drop for ty`）。
 ///
-/// 仅按 trait 名 + 目标类型匹配，不要求 `drop` 方法已单态化——具体方法解析
+/// 仅按 protocol 名 + 目标类型匹配，不要求 `drop` 方法已单态化——具体方法解析
 /// 交由 `check_method_call` 在块尾插入 `x.drop()` 时完成。
 pub(crate) fn has_drop_impl(ctx: &TypeContext, ty: &Type) -> bool {
     ctx.impl_defs.iter().any(|d| {
-        d.trait_name.as_deref().is_some_and(is_drop_trait)
+        d.protocol_name.as_deref().is_some_and(is_drop_protocol)
             && crate::context::type_matches(d, ty)
     })
 }
@@ -77,7 +77,7 @@ pub(crate) fn has_drop_impl(ctx: &TypeContext, ty: &Type) -> bool {
 /// - 仅类型存在 `impl Drop for T` 的变量；**无 Drop 实现的类型完全不受影响**
 ///   （当前 std 无任何 Drop 实现，故本机制对存量代码零影响）；
 /// - 析构调用经 `check_stmt` 走常规方法解析（`x.drop()`），故 `&mut self`
-///   借用、泛型单态化、trait 分派等全部复用既有路径，零新增 IR。
+///   借用、泛型单态化、protocol 分派等全部复用既有路径，零新增 IR。
 ///
 /// 已知限制（MVP）：不跟踪 move——被 `return` 移出或转移给其他值的变量仍会被
 /// 析构；函数**形参**在外层 fn 作用域，不在本层，故不析构。
@@ -123,7 +123,7 @@ fn build_drop_glue(
                 receiver: base.clone(),
                 method: "drop".to_string(),
                 args: Vec::new(),
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         );
@@ -159,7 +159,7 @@ fn build_drop_glue(
 
 /// `&T → dyn Any` 强制转换（G-M2）。
 ///
-/// 与通用 `dyn Trait` 的区别：不查 trait 声明、不填充方法表——vtable 仅保留
+/// 与通用 `dyn Protocol` 的区别：不查 protocol 声明、不填充方法表——vtable 仅保留
 /// 3 元槽，其中**槽 0 存具体类型的 type_id**，供 `any_type_id` /
 /// `any_downcast_ref` 读取比对（槽 1/2 为 size/align，MVP 置 0）。
 fn coerce_to_any(
@@ -236,7 +236,7 @@ fn read_any_type_id(any: HirExpr) -> HirExpr {
 /// 断言实参为 `dyn Any`（G-M3 安全检查的类型前提）。
 fn ensure_dyn_any(ty: &Type, who: &str, span: Span) -> Result<(), TypeError> {
     if let Type::Dyn(n) = ty {
-        if is_any_trait(n) {
+        if is_any_protocol(n) {
             return Ok(());
         }
     }
@@ -385,48 +385,48 @@ pub(crate) fn coerce_to_dyn(
     ctx: &mut TypeContext,
     data_ptr: HirExpr,
     concrete: &Type,
-    trait_name: &str,
+    protocol_name: &str,
     span: Span,
 ) -> Result<HirExpr, TypeError> {
-    // G-M2（SH-P0-3）：`dyn Any` 类型擦除——内置 trait，不查 trait 声明，
+    // G-M2（SH-P0-3）：`dyn Any` 类型擦除——内置 protocol，不查 protocol 声明，
     // vtable 槽 0 存具体类型标识（type_id），无方法表。
-    if is_any_trait(trait_name) {
+    if is_any_protocol(protocol_name) {
         return coerce_to_any(ctx, data_ptr, concrete);
     }
-    let trait_def = ctx.trait_defs.get(trait_name).cloned().ok_or_else(|| {
+    let protocol_def = ctx.protocol_defs.get(protocol_name).cloned().ok_or_else(|| {
         TypeError::UndefinedType {
-            name: trait_name.to_string(),
+            name: protocol_name.to_string(),
             span,
         }
     })?;
-    if !trait_def.type_params.is_empty() {
+    if !protocol_def.type_params.is_empty() {
         return Err(TypeError::Unsupported {
-            what: format!("`dyn {trait_name}`：泛型 trait 实例化（trait 对象泛型参数规划中）"),
+            what: format!("`dyn {protocol_name}`：泛型 protocol 实例化（protocol 对象泛型参数规划中）"),
             span,
         });
     }
-    // 找 `impl Trait for 具体类型`（MVP：trait/impl 均非泛型，直接按 self_type 精确匹配）
+    // 找 `impl Protocol for 具体类型`（MVP：protocol/impl 均非泛型，直接按 self_type 精确匹配）
     let impl_def = ctx
         .impl_defs
         .iter()
-        .find(|d| d.trait_name.as_deref() == Some(trait_name) && d.self_type == *concrete)
+        .find(|d| d.protocol_name.as_deref() == Some(protocol_name) && d.self_type == *concrete)
         .cloned()
         .ok_or_else(|| TypeError::Unsupported {
             what: format!(
-                "类型 `{concrete}` 未实现 trait `{trait_name}`，无法转换为 `dyn {trait_name}`"
+                "类型 `{concrete}` 未实现 protocol `{protocol_name}`，无法转换为 `dyn {protocol_name}`"
             ),
             span,
         })?;
     if !impl_def.type_params.is_empty() {
         return Err(TypeError::Unsupported {
-            what: format!("`dyn {trait_name}`：泛型 impl（`impl<T> {trait_name} for ...`）规划中"),
+            what: format!("`dyn {protocol_name}`：泛型 impl（`impl<T> {protocol_name} for ...`）规划中"),
             span,
         });
     }
-    // PC-10：vtable 方法槽按「supertrait 方法在前」线性化填充——保证 `protocol A: B` 时
+    // PC-10：vtable 方法槽按「superprotocol 方法在前」线性化填充——保证 `protocol A: B` 时
     // `dyn A` 的 vtable **前缀**与 `dyn B` 一致，从而使 `dyn A → dyn B` 上转零开销复用。
-    let trait_full = resolve_trait_def_name(ctx, trait_name);
-    let methods = linearize_trait_methods(ctx, &trait_full);
+    let protocol_full = resolve_protocol_def_name(ctx, protocol_name);
+    let methods = linearize_protocol_methods(ctx, &protocol_full);
     let n = methods.len();
     let mut stmts = Vec::new();
     // 1) vtable 数组：3 元槽（drop/size/align，MVP = 0）+ N 方法槽
@@ -451,18 +451,18 @@ pub(crate) fn coerce_to_dyn(
     // 2) 方法表：按线性化顺序填充；方法可声明于父协议，此时从其父协议 impl 取实现。
     let subst = HashMap::new();
     for (i, (owner, m)) in methods.iter().enumerate() {
-        let owner_impl = if *owner == trait_full {
+        let owner_impl = if *owner == protocol_full {
             impl_def.clone()
         } else {
             ctx.impl_defs
                 .iter()
                 .find(|d| {
-                    d.trait_name.as_deref() == Some(owner.as_str()) && d.self_type == *concrete
+                    d.protocol_name.as_deref() == Some(owner.as_str()) && d.self_type == *concrete
                 })
                 .cloned()
                 .ok_or_else(|| TypeError::Unsupported {
                     what: format!(
-                        "类型 `{concrete}` 未实现父协议 `{owner}`，无法构造 `dyn {trait_name}` 的 vtable"
+                        "类型 `{concrete}` 未实现父协议 `{owner}`，无法构造 `dyn {protocol_name}` 的 vtable"
                     ),
                     span,
                 })?
@@ -523,7 +523,7 @@ pub(crate) fn coerce_to_dyn(
 
 pub(crate) fn type_mentions_self(ty: &Type) -> bool {
     match ty {
-        // `Self::Item` 关联类型占位（trait 声明收集时无 impl 上下文，
+        // `Self::Item` 关联类型占位（protocol 声明收集时无 impl 上下文，
         // 退化为 `Generic("Self::Item")`）同样视为 `Self` 提及。
         Type::Generic(n) => n == "Self" || n.starts_with("Self::"),
         Type::Ref(t, _, _) | Type::RawPtr(t, _) | Type::Array(t, _) => type_mentions_self(t),

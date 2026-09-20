@@ -1,10 +1,10 @@
-//! 顶层项解析：函数、结构体、枚举、trait、impl、模块、use、const。
+//! 顶层项解析：函数、结构体、枚举、protocol、impl、模块、use、const。
 
 use crate::error::ParseError;
 use crate::parser::Parser;
 use rlyeh_ast::{
     AstConstDecl, AstEnumDecl, AstEnumVariant, AstFnDecl, AstImplBlock, AstModDecl, AstParam,
-    AstStructDecl, AstStructField, AstTraitDecl, AstType, AstTypeParam, AstUseDecl, AstUseMember,
+    AstStructDecl, AstStructField, AstProtocolDecl, AstType, AstTypeParam, AstUseDecl, AstUseMember,
 };
 use rlyeh_lexer::Token;
 
@@ -52,7 +52,7 @@ impl<'src> Parser<'src> {
         let body = if self.check(&Token::LBrace) {
             Some(self.parse_block()?)
         } else {
-            // trait 抽象方法：`fn foo(...);`
+            // protocol 抽象方法：`fn foo(...);`
             self.expect(&Token::Semicolon, "';' or '{'")?;
             None
         };
@@ -102,7 +102,7 @@ impl<'src> Parser<'src> {
                 continue;
             }
             let n = self.expect_ident()?;
-            // 约束 `T: Bound1 [+ Bound2]`（U3；支持模块路径 trait 名，如 `T: m::Trait`）
+            // 约束 `T: Bound1 [+ Bound2]`（U3；支持模块路径 protocol 名，如 `T: m::Protocol`）
             let mut bounds = Vec::new();
             if self.eat(&Token::Colon) {
                 loop {
@@ -163,8 +163,8 @@ impl<'src> Parser<'src> {
             let mut bounds = Vec::new();
             loop {
                 // P6b（2026-08-29）：bound 走完整类型解析——支持 `::` 路径
-                // （`T: io::some::Trait`）与带泛型实参的 trait（`U: From<T>`）。
-                // MVP：bound 记录 trait 路径名（泛型实参不参与约束校验，P6c 待专项）。
+                // （`T: io::some::Protocol`）与带泛型实参的 protocol（`U: From<T>`）。
+                // MVP：bound 记录 protocol 路径名（泛型实参不参与约束校验，P6c 待专项）。
                 let ty = self.parse_type()?;
                 let b = match &ty {
                     AstType::Path(n, _) => n.clone(),
@@ -261,7 +261,7 @@ impl<'src> Parser<'src> {
     }
 
     /// 解析可能含模块路径限定的名称（`A::B::C`）。词法上 `::` 为连续两个 `Colon`。
-    /// 使跨模块协议引用（如 `impl T: m::P`、`struct C: m::Trait`、`fn f<T: m::Trait>()`）
+    /// 使跨模块协议引用（如 `impl T: m::P`、`struct C: m::Protocol`、`fn f<T: m::Protocol>()`）
     /// 可正确解析（此前仅接受单标识符，模块路径语法无法表达，见 import-improvement-plan
     /// 已知限制 #2）。
     fn parse_qualified_name(&mut self) -> Result<String, ParseError> {
@@ -500,20 +500,20 @@ impl<'src> Parser<'src> {
         })
     }
 
-    /// Trait 声明（抽象方法无函数体）
-    pub(crate) fn parse_trait(&mut self) -> Result<AstTraitDecl, ParseError> {
-        // 协议声明关键字为 `protocol`（`trait` 已从语法中彻底移除）。
+    /// Protocol 声明（抽象方法无函数体）
+    pub(crate) fn parse_protocol(&mut self) -> Result<AstProtocolDecl, ParseError> {
+        // 协议声明关键字为 `protocol`（`protocol` 已从语法中彻底移除）。
         let start = self.expect(&Token::Protocol, "'protocol'")?.span;
         let name = self.expect_ident()?;
-        // B-4：可选 region 参数后缀 `trait T 'a { ... }`。
+        // B-4：可选 region 参数后缀 `protocol T 'a { ... }`。
         let region_param = if matches!(self.current(), Some(Token::Lifetime(_))) {
             Some(self.expect_lifetime()?)
         } else {
             None
         };
         let generics = self.parse_generics()?;
-        // PC-4：父协议（supertrait）列表 `protocol A: B, C { .. }`。
-        let supertraits = if self.eat(&Token::Colon) {
+        // PC-4：父协议（superprotocol）列表 `protocol A: B, C { .. }`。
+        let superprotocols = if self.eat(&Token::Colon) {
             self.parse_conformance_list()?
         } else {
             Vec::new()
@@ -542,12 +542,12 @@ impl<'src> Parser<'src> {
             methods.push(self.parse_fn()?);
         }
         let end = self.expect(&Token::RBrace, "'}'")?.span;
-        Ok(AstTraitDecl {
+        Ok(AstProtocolDecl {
             name,
             is_pub: false,
             region_param,
             generics,
-            supertraits,
+            superprotocols,
             types,
             methods,
             span: self.merge_span(start, end),
@@ -558,7 +558,7 @@ impl<'src> Parser<'src> {
     ///
     /// **唯一语序**：`impl [<G>] Type [<...>] (: ProtocolList)? WhereClause? { .. }`
     /// ——`impl T: P`（协议一致性，可多协议）/ `impl T`（固有实现）。
-    /// 旧 Rust 语序 `impl Trait for Type` 已移除（PC-12）。
+    /// 旧 Rust 语序 `impl Protocol for Type` 已移除（PC-12）。
     pub(crate) fn parse_impl(&mut self) -> Result<AstImplBlock, ParseError> {
         let start = self.expect(&Token::Impl, "'impl'")?.span;
         let mut generics = self.parse_generics()?;
@@ -568,16 +568,16 @@ impl<'src> Parser<'src> {
         self.skip_type_generic_args()?;
         // P6c（2026-08-29）：协议泛型实参收集（如 `impl T: From<IoErrorKind>` 的
         // `IoErrorKind`），此前消费后丢弃导致协议关联方法泛型无法绑定。
-        let mut trait_type_args: Vec<AstType> = Vec::new();
-        let mut extra_traits: Vec<(String, Vec<AstType>)> = Vec::new();
-        let (trait_name, type_name) = if self.eat(&Token::Colon) {
+        let mut protocol_type_args: Vec<AstType> = Vec::new();
+        let mut extra_protocols: Vec<(String, Vec<AstType>)> = Vec::new();
+        let (protocol_name, type_name) = if self.eat(&Token::Colon) {
             // PC-9：`impl T: A, B`——协议一致性列表（可多协议，协议可带泛型实参如
-            // `impl T: From<i64>`）。首个协议写入 `trait_name`，其余记录到
-            // `extra_traits`，由 desugar 按协议成员名裁决拆分为多个 impl 块。
+            // `impl T: From<i64>`）。首个协议写入 `protocol_name`，其余记录到
+            // `extra_protocols`，由 desugar 按协议成员名裁决拆分为多个 impl 块。
             let mut list = self.parse_conformance_list()?;
             let (proto, args) = list.remove(0);
-            trait_type_args = args;
-            extra_traits = list;
+            protocol_type_args = args;
+            extra_protocols = list;
             (Some(proto), first)
         } else {
             (None, first)
@@ -605,11 +605,11 @@ impl<'src> Parser<'src> {
         }
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstImplBlock {
-            trait_name,
+            protocol_name,
             type_name,
             generics,
-            trait_type_args,
-            extra_traits,
+            protocol_type_args,
+            extra_protocols,
             types,
             methods,
             span: self.merge_span(start, end),

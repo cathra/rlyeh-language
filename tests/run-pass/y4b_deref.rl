@@ -1,4 +1,4 @@
-// Y4b-1：* 解引用支持自定义 Deref<T> trait（typecheck UnaryOp::Deref 分派）
+// Y4b-1：* 解引用支持自定义 Deref<T> protocol（typecheck UnaryOp::Deref 分派）
 // `MutexGuard<T>` 实现 Deref<T>，`*guard` 生成 `guard.deref()` 返回 T。
 // 此前 `*g` 仅支持内建类型（&T/裸指针/Box/Rc/Arc/Gc）——报 unsupported syntax。
 

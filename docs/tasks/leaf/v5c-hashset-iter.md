@@ -13,7 +13,7 @@
 - 新增 `HashSetIter<T>` 结构体（裸指针视图，与 `HashMapIter` 同式）：`states: *const i64` / `items: *const T` / `idx: i64` / `cap: i64`。
 - `HashSetIter::next(&mut self) -> Option<&T>`：线性扫描跳过 `states != 1` 的空/墓碑槽，命中返回 `&self.items[idx]`（指向原 items 真实槽，零拷贝），耗尽返回 `None`。
 - `HashSet::iter(&self) -> HashSetIter<T>`：取 `&self.states[0]` / `&self.items[0]` 裸指针构造迭代器（复用 `HashMap::iter_pairs` 同式取址）。
-- 接入 `for` 循环（inherent `next` 检测，无需 `Iterator` trait——`type Item = &T` 引用类型对适配器框架不友好，与 `IterRef`/`HashMapIter` 一致）。
+- 接入 `for` 循环（inherent `next` 检测，无需 `Iterator` protocol——`type Item = &T` 引用类型对适配器框架不友好，与 `IterRef`/`HashMapIter` 一致）。
 - 约束：迭代期间不得对集合做结构性修改（insert/remove/grow 重哈希使裸指针悬垂），与既有借用迭代器一致。
 
 ## 验收

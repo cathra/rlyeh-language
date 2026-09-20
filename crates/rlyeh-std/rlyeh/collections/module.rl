@@ -427,7 +427,7 @@ impl<T> VecDeque<T> {
 // （states/keys/vals）+ 游标 + 容量；`next()` 跳过 states != 1 的空/墓碑槽，返回
 // `KVRef`（两裸指针指向原 keys/vals 真实槽）。等价 Rust `(&K, &V)` 引用语义，但用
 // 结构体承载（Rlyeh 元组运行时未就绪）。接入 for 循环（inherent next 检测，无需
-// Iterator trait——`type Item = KVRef<K,V>` 对适配器框架不友好，for 循环仅需
+// Iterator protocol——`type Item = KVRef<K,V>` 对适配器框架不友好，for 循环仅需
 // inherent next）。
 struct HashMapIter<K, V> {
     states: *const i64,
@@ -462,7 +462,7 @@ impl<K, V> HashMapIter<K, V> {
 // `iter() -> HashSetIter<T>`，`next()` 返回 `Option<&T>`（指向原 items 真实槽，
 // 零拷贝）。遍历跳过空/墓碑槽（states != 1）。复用 HashMapIter 同式裸指针视图；
 // 迭代期间不得对 HashSet 做结构性修改（insert/remove/grow 触发重哈希会使指针悬垂）。
-// 接入 for 循环（inherent next 检测，无需 Iterator trait——`type Item = &T` 引用
+// 接入 for 循环（inherent next 检测，无需 Iterator protocol——`type Item = &T` 引用
 // 类型对适配器框架不友好，for 循环仅需 inherent next）。
 struct HashSetIter<T> {
     states: *const i64,

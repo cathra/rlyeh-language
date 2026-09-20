@@ -1,4 +1,4 @@
-//! Actor 抽象：状态 trait、运行上下文与状态机。
+//! Actor 抽象：状态 protocol、运行上下文与状态机。
 
 use std::any::Any;
 use std::fmt;

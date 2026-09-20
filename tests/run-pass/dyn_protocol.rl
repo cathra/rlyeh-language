@@ -1,4 +1,4 @@
-// H4 `dyn Trait` trait 对象（MVP）：数据指针 + vtable 胖指针
+// H4 `dyn Protocol` protocol 对象（MVP）：数据指针 + vtable 胖指针
 protocol Shape {
     fn area(&self) -> f64;
     fn sides(&self) -> i64;
@@ -30,7 +30,7 @@ impl Rect: Shape {
 }
 
 fn main() {
-    // `&T` → `dyn Trait` 强制转换：构造 vtable + 2 槽胖指针
+    // `&T` → `dyn Protocol` 强制转换：构造 vtable + 2 槽胖指针
     let c = Circle { radius: 2.0 };
     let r = Rect { w: 3.0, h: 4.0 };
     let d1: dyn Shape = &c;

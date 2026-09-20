@@ -1,6 +1,6 @@
 // 基准: dyn_dispatch —— 2000 万次接口方法多态分派
 // 与 dyn_dispatch.rl 逻辑严格一致。输出 = 70000000
-// 实现: Go interface（itab 间接调用），与 Rlyeh dyn Trait 胖指针 + vtable 分派对称
+// 实现: Go interface（itab 间接调用），与 Rlyeh dyn Protocol 胖指针 + vtable 分派对称
 package main
 
 import "fmt"

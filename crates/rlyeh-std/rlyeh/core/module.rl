@@ -128,11 +128,11 @@ impl<T, E> Result<T, E> {
     }
 }
 
-// SH-P1-2（0.2.0-C）：derive 宏所依赖的 trait 声明。
+// SH-P1-2（0.2.0-C）：derive 宏所依赖的 protocol 声明。
 //
 // 编译器在 `#[derive(Clone/PartialEq)]` 处自动合成对应 `impl`（见
 // `rlyeh-typecheck` 的 derive 展开）；用户亦可直接手写
-// `impl Clone / PartialEq for T`。`Debug` trait 已在 `fmt` 模块声明
+// `impl Clone / PartialEq for T`。`Debug` protocol 已在 `fmt` 模块声明
 // （`fmt::Debug`，供 `dbg!` / `{:?}` 引擎接入）。
 protocol Clone {
     fn clone(&self) -> Self;
@@ -147,7 +147,7 @@ protocol PartialOrd {
     fn ge(&self, other: &Self) -> bool;
 }
 
-// SH-P1-5（0.2.0-S，2026-09-04）：`Copy` 标记 trait（无方法）。值语义标记：
+// SH-P1-5（0.2.0-S，2026-09-04）：`Copy` 标记 protocol（无方法）。值语义标记：
 // 标记为 Copy 的类型在赋值 / 传参时按位拷贝。Rlyeh 默认聚合即按值拷贝（无 move
 // 语义），故 `Copy` 主要作为泛型约束 `T: Copy` 与 `#[derive(Copy)]` 的标记，与
 // Rust `Copy` 语义对齐。`#[derive(Copy)]` 由 typecheck 展开为 `impl Copy for T {}`
@@ -156,9 +156,9 @@ protocol Copy {
 }
 
 // SH-P1-4（0.2.0-R，2026-09-04 起步）：`Deref` / `DerefMut` 用户类型自动解引用
-// 强制所需的核心 trait 声明（关联类型 `Target` + `deref` / `deref_mut`）。具体
+// 强制所需的核心 protocol 声明（关联类型 `Target` + `deref` / `deref_mut`）。具体
 // 自动解引用强制（字段/方法/索引访问失败时插入 `*(x.deref())` 递归，限深度）见
-// `rlyeh-typecheck` 解析回退（M2）；此处先落地 trait + 关联类型（M1）。
+// `rlyeh-typecheck` 解析回退（M2）；此处先落地 protocol + 关联类型（M1）。
 protocol Deref {
     type Target;
     fn deref(&self) -> &Self::Target;
@@ -556,9 +556,9 @@ impl<T> Iter<T> {
     }
 }
 
-// V3-D2（2026-08-27）：Iter<T> 实现 Iterator trait（type Item = T），使其
+// V3-D2（2026-08-27）：Iter<T> 实现 Iterator protocol（type Item = T），使其
 // 能调用迁移后的惰性适配器默认方法（map/filter/take 等）。inherent next
-// 优先于 trait next（方法解析），trait next 供 Iterator 语义/默认方法使用。
+// 优先于 protocol next（方法解析），protocol next 供 Iterator 语义/默认方法使用。
 impl<T> Iter<T>: Iterator {
     type Item = T;
     fn next(&mut self) -> Option<T> {
@@ -602,7 +602,7 @@ impl<T> IterMut<T> {
     }
 }
 
-// V3-D2（2026-08-27）：IterMut<T> 实现 Iterator trait（type Item = T）。
+// V3-D2（2026-08-27）：IterMut<T> 实现 Iterator protocol（type Item = T）。
 impl<T> IterMut<T>: Iterator {
     type Item = T;
     fn next(&mut self) -> Option<T> {
@@ -620,7 +620,7 @@ impl<T> IterMut<T>: Iterator {
 // V1：只读引用迭代器——`IterRef<T>` 零分配引用视图（next() 返回 `Option<&T>`）。
 // 与 Iter<T> 同布局（*const T + 剩余长度），但 next 返回元素引用而非值拷贝，
 // 支持零拷贝读取与写回原缓冲。接入 for 循环（inherent next 检测，无需 Iterator
-// trait——`type Item = &T` 引用类型对适配器框架不友好，for 循环仅需 inherent next）。
+// protocol——`type Item = &T` 引用类型对适配器框架不友好，for 循环仅需 inherent next）。
 struct IterRef<T> {
     data: *const T,
     len: i64,
@@ -645,10 +645,10 @@ impl<T> IterRef<T> {
     }
 }
 
-// T2：Iterator trait（V3-A3，2026-08-27：引入 `type Item` 关联类型替代固定 i64，
+// T2：Iterator protocol（V3-A3，2026-08-27：引入 `type Item` 关联类型替代固定 i64，
 // `next` 返回 `Option<Self::Item>`）。自定义迭代器经
 // `impl Iterator for T { type Item = i64; fn next(&mut self) -> Option<i64> }`
-// 接入 for 循环（check_for_iterator 检测 next() 方法，inherent 或 trait impl 均可）。
+// 接入 for 循环（check_for_iterator 检测 next() 方法，inherent 或 protocol impl 均可）。
 // 泛型元素迭代器（如 StdinLines 返回 Option<String>）仍走方法式接入。
 protocol Iterator {
     // 元素类型（V3-A3）：impl 提供 `type Item = <具体类型>`
@@ -657,7 +657,7 @@ protocol Iterator {
     fn next(&mut self) -> Option<Self::Item>;
 
     // ===== V3 默认方法：基于 next() 的实现，impl 未显式实现时回退
-    // （typecheck trait 默认方法机制）。MVP 默认方法仍按 i64 元素实现
+    // （typecheck protocol 默认方法机制）。MVP 默认方法仍按 i64 元素实现
     // （count/sum 数值累加、any/all 谓词），元素 i64 时与 `Self::Item` 一致。=====
 
     // 迭代器元素个数（耗尽剩余元素）
@@ -714,7 +714,7 @@ protocol Iterator {
 
     // V3-B 默认方法（2026-08-27）：find / fold（MVP 元素 i64，基于 next() 实现）。
     // `chain`/`enumerate` 需要消耗 `self` 泛型包装（`Chain<Self, U>`/`Enumerate<Self>`），
-    // 待 trait 默认方法支持消耗式 `self` 后补（见 v3-b 叶子）。
+    // 待 protocol 默认方法支持消耗式 `self` 后补（见 v3-b 叶子）。
 
     // 返回首个满足谓词的元素（未找到返回 -1；MVP 元素 i64 简化）
     fn find(&mut self, pred: fn(i64) -> bool) -> i64 {
@@ -794,8 +794,8 @@ protocol Iterator {
     }
 }
 
-// ===== V5d 运算符重载 traits（2026-09-02） =====
-// 对标 P009 设计稿：每个可重载二元运算符对应一个 trait + `type Output` 关联类型
+// ===== V5d 运算符重载 protocols（2026-09-02） =====
+// 对标 P009 设计稿：每个可重载二元运算符对应一个 protocol + `type Output` 关联类型
 // + `fn <op>(self, other: Self) -> Self::Output`。`a OP b` 由 typecheck 在内建
 // 路径失败后降级为 `a.<op>(b)` 方法调用（复用既有 method-call 全链路，codegen
 // 无需改动）。仅 BinaryOp 运算符可重载（逻辑 &&/|| 短路、比较链 < > 等走独立

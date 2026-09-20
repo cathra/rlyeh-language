@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-① Str 值升级：`check_method_call` 对 `Type::Str` 值接收者升级（s.len()/substring/contains 可用）、`+` 拼接纳入 Str 值、比较纳入 Str 值；关键根因修复：`check_fn_body_with_self` 未隔离 `ctx.local_inits` 致同名变量 init 覆盖，补 `saved_inits` take/恢复。② 实参升级：提取 `upgrade_str_arg` helper，接入 check_call/check_indirect_call/check_static_method_call/check_method_call/check_trait_object_call/check_generic_call 6 处。
+① Str 值升级：`check_method_call` 对 `Type::Str` 值接收者升级（s.len()/substring/contains 可用）、`+` 拼接纳入 Str 值、比较纳入 Str 值；关键根因修复：`check_fn_body_with_self` 未隔离 `ctx.local_inits` 致同名变量 init 覆盖，补 `saved_inits` take/恢复。② 实参升级：提取 `upgrade_str_arg` helper，接入 check_call/check_indirect_call/check_static_method_call/check_method_call/check_protocol_object_call/check_generic_call 6 处。
 
 ## 验证
 

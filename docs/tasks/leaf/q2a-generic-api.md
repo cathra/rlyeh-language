@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`；`T: Serialize`/`T: Deserialize` trait bound 未支持——MVP 无泛型 trait 约束，签名退化为无 bound turbofish 形式。
+`json::to_string(v)` ≡ `json::stringify(v)`、`json::from_str::<T>(s)` ≡ `json::parse::<T>(s)`；`T: Serialize`/`T: Deserialize` protocol bound 未支持——MVP 无泛型 protocol 约束，签名退化为无 bound turbofish 形式。
 
 ## 验证
 

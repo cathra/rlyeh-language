@@ -5,7 +5,7 @@ use rlyeh_hir::{HirExprKind, HirStmtKind};
 use rlyeh_lexer::Span;
 use super::*;
 
-// 跨线程闭包检查、`dyn Trait` 去虚拟化、接收者内建方法特判已按簇下沉到子模块
+// 跨线程闭包检查、`dyn Protocol` 去虚拟化、接收者内建方法特判已按簇下沉到子模块
 // （文件大小约束：单个文件 ≤1000 行）。
 mod builtin;
 mod dyn_call;
@@ -133,7 +133,7 @@ pub(super) fn check_method_call(
     receiver: &AstExpr,
     method: &str,
     args: &[AstExpr],
-    trait_hint: Option<&str>,
+    protocol_hint: Option<&str>,
     span: Span,
     depth: usize,
 ) -> Result<(HirExpr, Type), TypeError> {
@@ -142,7 +142,7 @@ pub(super) fn check_method_call(
     let method = method.strip_prefix("r#").unwrap_or(method);
     let (mut recv_hir, mut recv_ty) = infer_expr(ctx, receiver)?;
     // 接收者内建方法特判（切片 / Vec 切片视图 / `&str` 升级 / `push_str` 字面量 /
-    // 引用计数 / `dyn Trait` 虚调用）——**必须早于常规 impl 分派**。
+    // 引用计数 / `dyn Protocol` 虚调用）——**必须早于常规 impl 分派**。
     // 实现见 `method/builtin`（文件大小约束：单个文件 ≤1000 行）。
     match builtin::try_builtin_method_call(ctx, recv_hir, recv_ty, method, args, span)? {
         builtin::BuiltinOutcome::Handled(hir, ty) => return Ok((hir, ty)),
@@ -380,24 +380,24 @@ pub(super) fn check_method_call(
         }
     }
 
-    // 查找含该方法的 impl 块候选（inherent 优先，trait 次之）。
-    // V3（2026-08-26）：类型匹配的 trait impl 且 trait 声明了该方法默认实现时，
-    // 回退到 `find_trait_default_impl`——类型匹配的 trait impl 且 trait 声明了
-    // 该方法的默认实现（`impl Trait for X {}` 未显式实现该方法）。
-    // X4：`trait_hint`（如 `fmt::Display` / `fmt::Debug`）时按 trait 名区分——
-    // 同名 trait 方法（Display::fmt 与 Debug::fmt）经此精确分派。
-    // A2（SH-P1-1，2026-09-02）：同一 `self_type` 上同一泛型 trait 的**多 impl**
+    // 查找含该方法的 impl 块候选（inherent 优先，protocol 次之）。
+    // V3（2026-08-26）：类型匹配的 protocol impl 且 protocol 声明了该方法默认实现时，
+    // 回退到 `find_protocol_default_impl`——类型匹配的 protocol impl 且 protocol 声明了
+    // 该方法的默认实现（`impl Protocol for X {}` 未显式实现该方法）。
+    // X4：`protocol_hint`（如 `fmt::Display` / `fmt::Debug`）时按 protocol 名区分——
+    // 同名 protocol 方法（Display::fmt 与 Debug::fmt）经此精确分派。
+    // A2（SH-P1-1，2026-09-02）：同一 `self_type` 上同一泛型 protocol 的**多 impl**
     // （`impl Wrap<i64> for W` 与 `impl Wrap<bool> for W`）此前按首匹配选取，
-    // 无法按 trait 类型实参 / 实参类型区分。现收集全部候选，按「代入 trait 类型
+    // 无法按 protocol 类型实参 / 实参类型区分。现收集全部候选，按「代入 protocol 类型
     // 实参后的方法签名与实参类型兼容」选取首个匹配者。
-    let candidates: Vec<ImplDef> = if let Some(tn) = trait_hint {
-        ctx.find_trait_method_candidates(&self_ty, tn, method)
+    let candidates: Vec<ImplDef> = if let Some(tn) = protocol_hint {
+        ctx.find_protocol_method_candidates(&self_ty, tn, method)
     } else {
         ctx.find_impl_candidates(&self_ty, method)
     };
 
     // 选取首个「签名与实参兼容」的候选。
-    // 每候选：先代入 trait 类型实参、再 unify 接收者类型、再由实参反推 impl /
+    // 每候选：先代入 protocol 类型实参、再 unify 接收者类型、再由实参反推 impl /
     // 方法级未定泛型，最后校验各实参类型与（代入后的）预期参数兼容。
     let mut selected: Option<(ImplDef, crate::types::ImplMethod, HashMap<String, Type>)> = None;
     for cand in &candidates {
@@ -406,9 +406,9 @@ pub(super) fn check_method_call(
             .iter()
             .find(|m| m.sig.name == method)
             .cloned()
-            // V3 回退：impl 未实现该方法但 trait 有默认实现 → 构造 ImplMethod
-            // （签名取 trait 方法签名，body 取 trait 默认实现 AST）。
-            .or_else(|| trait_default_method(ctx, cand, method))
+            // V3 回退：impl 未实现该方法但 protocol 有默认实现 → 构造 ImplMethod
+            // （签名取 protocol 方法签名，body 取 protocol 默认实现 AST）。
+            .or_else(|| protocol_default_method(ctx, cand, method))
         else {
             continue;
         };
@@ -423,13 +423,13 @@ pub(super) fn check_method_call(
             continue;
         };
         let mut subst = HashMap::new();
-        // A2：trait 类型实参代入方法签名（先于 self_type unify，避免同名泛型被
+        // A2：protocol 类型实参代入方法签名（先于 self_type unify，避免同名泛型被
         // 覆盖）。`impl Wrap<bool> for W` 的 `wrap(&self, v: T)` 经此变为
         // `wrap(&self, v: bool)`，使多 impl 按实参区分；`impl<T> Wrap<T> for W`
         // 的 `T` 替换为 impl 泛型参数（同名），留待下方由实参反推。
-        if let Some(tn) = &cand.trait_name {
-            if let Some(td) = ctx.trait_defs.get(tn) {
-                for (pn, ta) in td.type_params.iter().zip(&cand.trait_type_args) {
+        if let Some(tn) = &cand.protocol_name {
+            if let Some(td) = ctx.protocol_defs.get(tn) {
+                for (pn, ta) in td.type_params.iter().zip(&cand.protocol_type_args) {
                     subst.insert(pn.clone(), ta.clone());
                 }
             }
@@ -483,11 +483,11 @@ pub(super) fn check_method_call(
         Some(s) => s,
         None => {
             // M2（SH-P1-4）：自动解引用强制——无任何方法候选时，若接收者类型
-            // 实现了 `deref`（Deref trait 或内建智能指针 deref），对接收者插入
+            // 实现了 `deref`（Deref protocol 或内建智能指针 deref），对接收者插入
             // `*(recv.deref())` 递归重试解析（限深度，避免无限）。零新增 IR 节点。
             if depth < MAX_DEREF_DEPTH && ctx.find_impl_for_method(&self_ty, "deref").is_some() {
                 let deref_ast = make_deref_receiver(receiver, span);
-                return check_method_call(ctx, &deref_ast, method, args, trait_hint, span, depth + 1);
+                return check_method_call(ctx, &deref_ast, method, args, protocol_hint, span, depth + 1);
             }
             // 无兼容候选：回退到首个候选（V3 默认 impl / 首匹配），由下方兼容
             // 性检查产出清晰的类型不匹配诊断。
@@ -495,8 +495,8 @@ pub(super) fn check_method_call(
                 .into_iter()
                 .next()
                 .or_else(|| {
-                    if trait_hint.is_none() {
-                        ctx.find_trait_default_impl(&self_ty, method).cloned()
+                    if protocol_hint.is_none() {
+                        ctx.find_protocol_default_impl(&self_ty, method).cloned()
                     } else {
                         None
                     }
@@ -510,15 +510,15 @@ pub(super) fn check_method_call(
                 .iter()
                 .find(|m| m.sig.name == method)
                 .cloned()
-                .or_else(|| trait_default_method(ctx, &fallback, method))
+                .or_else(|| protocol_default_method(ctx, &fallback, method))
                 .ok_or_else(|| TypeError::FunctionNotFound {
                     name: format!("{self_ty}::{method}"),
                     span,
                 })?;
             let mut subst = HashMap::new();
-            if let Some(tn) = &fallback.trait_name {
-                if let Some(td) = ctx.trait_defs.get(tn) {
-                    for (pn, ta) in td.type_params.iter().zip(&fallback.trait_type_args) {
+            if let Some(tn) = &fallback.protocol_name {
+                if let Some(td) = ctx.protocol_defs.get(tn) {
+                    for (pn, ta) in td.type_params.iter().zip(&fallback.protocol_type_args) {
                         subst.insert(pn.clone(), ta.clone());
                     }
                 }
@@ -582,12 +582,12 @@ pub(super) fn check_method_call(
         .map(|p| replace_type_self(&substitute(p, &subst), &impl_self_ty))
         .collect();
     // V3-D（2026-08-27）：返回类型中的 `Self` 替换为 impl 目标具体类型。
-    // 默认方法返回 `Take2<Self>` 时，`Self`（trait 实现类型 = impl_def.self_type）
+    // 默认方法返回 `Take2<Self>` 时，`Self`（protocol 实现类型 = impl_def.self_type）
     // 须替换为具体类型，否则 `Take2<Self>` 的 `next` 内 `Self::next` 无法解析。
     let mut ret_ty = substitute(&method_def.sig.return_type, &subst);
     ret_ty = replace_type_self(&ret_ty, &impl_self_ty);
 
-    // 方法函数名：inherent/trait 方法统一 `Type::method`，泛型实例化追加后缀
+    // 方法函数名：inherent/protocol 方法统一 `Type::method`，泛型实例化追加后缀
     let Type::Named(base_name, _) = &impl_def.self_type else {
         return Err(TypeError::Unsupported {
             what: "impl 目标类型必须为具名类型".to_string(),

@@ -1,4 +1,4 @@
-# Q3a `Display`/`Debug` trait + `Formatter`
+# Q3a `Display`/`Debug` protocol + `Formatter`
 
 > **所属阶段**：阶段 Q
 > **状态**：✅ 已完成
@@ -7,7 +7,7 @@
 
 ## 目标
 
-定义 `Display`/`Debug` trait + `Formatter` 类型。
+定义 `Display`/`Debug` protocol + `Formatter` 类型。
 
 ## 背景
 
@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-std `fmt/module.rl`：`struct Formatter { buf: String }` + `impl Formatter { pub fn new() }`；`trait Display { fn fmt(&self, f: &mut Formatter) -> String }`、`trait Debug { fn fmt_debug(&self, f: &mut Formatter) -> String }`；core.rl 注入 `mod fmt;` + `use fmt::{...}`。MVP 签名降级：fmt 直接返回显示字符串（`Result<(), FmtError>` 未支持）；`Debug` 方法名用 `fmt_debug` 避免同名冲突。配套修复：`resolve_full_name` 加当前模块前缀回退 + `module_prefix` 设置。
+std `fmt/module.rl`：`struct Formatter { buf: String }` + `impl Formatter { pub fn new() }`；`protocol Display { fn fmt(&self, f: &mut Formatter) -> String }`、`protocol Debug { fn fmt_debug(&self, f: &mut Formatter) -> String }`；core.rl 注入 `mod fmt;` + `use fmt::{...}`。MVP 签名降级：fmt 直接返回显示字符串（`Result<(), FmtError>` 未支持）；`Debug` 方法名用 `fmt_debug` 避免同名冲突。配套修复：`resolve_full_name` 加当前模块前缀回退 + `module_prefix` 设置。
 
 ## 验证
 

@@ -1,4 +1,4 @@
-//! trait derive 宏展开（0.2.0-C）。
+//! protocol derive 宏展开（0.2.0-C）。
 //!
 //! 为带 `#[derive(Clone / PartialEq / Debug)]` 的结构体自动合成对应的 `impl`
 //! 块，并复用既有 `collect_impl` 注册（方法体在调用点实例化，零新增 IR 节点）。
@@ -10,7 +10,7 @@
 //!   `float_to_string`，String 走 `write_str`，嵌套类型走 `.fmt(f)`）。
 //!
 //! 已知限制：仅 struct 受支持（enum 待办）；generic struct 的字段类型须自身
-//! 实现对应 trait（如 `T: Clone`，MVP 未强制校验 bound，违反时在调用点报出）。
+//! 实现对应 protocol（如 `T: Clone`，MVP 未强制校验 bound，违反时在调用点报出）。
 
 use rlyeh_ast::{
     AstExpr, AstFnDecl, AstImplBlock, AstParam, AstStmt, AstStructDecl, AstStructField, AstType,
@@ -21,11 +21,11 @@ use rlyeh_lexer::Span;
 use crate::context::TypeContext;
 use crate::error::TypeError;
 
-/// 受支持的 derive trait 名 → 规范 trait 全名。
+/// 受支持的 derive protocol 名 → 规范 protocol 全名。
 ///
 /// 未知名（如 `Serialize` / `Deserialize`，serde 路径）返回 `None` 被忽略，
 /// 保持既有「宽松忽略」行为（不报错、不生成 impl）。
-fn canonical_trait(name: &str) -> Option<&'static str> {
+fn canonical_protocol(name: &str) -> Option<&'static str> {
     match name {
         "Clone" => Some("Clone"),
         "PartialEq" => Some("PartialEq"),
@@ -97,7 +97,7 @@ fn method_call(receiver: &str, method: &str, args: Vec<AstExpr>, span: Span) -> 
             receiver: ident(receiver, span),
             method: method.to_string(),
             args,
-            trait_hint: None,
+            protocol_hint: None,
         },
         span,
     )
@@ -163,7 +163,7 @@ fn clone_field_expr(field: &str, ty: &AstType, span: Span) -> AstExpr {
                 receiver: self_field(field, span),
                 method: "clone".to_string(),
                 args: vec![],
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )
@@ -213,28 +213,28 @@ fn build_clone_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         span,
     };
     AstImplBlock {
-        trait_name: Some("Clone".to_string()),
+        protocol_name: Some("Clone".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
-        trait_type_args: vec![],
-        extra_traits: vec![],
+        protocol_type_args: vec![],
+        extra_protocols: vec![],
         types: vec![],
         methods: vec![clone_fn],
         span,
     }
 }
 
-// ---------- Copy（标记 trait，无方法） ----------
+// ---------- Copy（标记 protocol，无方法） ----------
 
 fn build_copy_impl(s: &AstStructDecl, _prefix: &str, span: Span) -> AstImplBlock {
-    // `Copy` 是零方法标记 trait：`#[derive(Copy)]` 展开为 `impl Copy for T {}`，
-    // 供泛型约束 `T: Copy` 经 `type_implements_trait` 命中（与 Rust 语义对齐）。
+    // `Copy` 是零方法标记 protocol：`#[derive(Copy)]` 展开为 `impl Copy for T {}`，
+    // 供泛型约束 `T: Copy` 经 `type_implements_protocol` 命中（与 Rust 语义对齐）。
     AstImplBlock {
-        trait_name: Some("Copy".to_string()),
+        protocol_name: Some("Copy".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
-        trait_type_args: vec![],
-        extra_traits: vec![],
+        protocol_type_args: vec![],
+        extra_protocols: vec![],
         types: vec![],
         methods: vec![],
         span,
@@ -298,11 +298,11 @@ fn build_partialeq_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplB
         span,
     };
     AstImplBlock {
-        trait_name: Some("PartialEq".to_string()),
+        protocol_name: Some("PartialEq".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
-        trait_type_args: vec![],
-        extra_traits: vec![],
+        protocol_type_args: vec![],
+        extra_protocols: vec![],
         types: vec![],
         methods: vec![eq_fn],
         span,
@@ -339,7 +339,7 @@ fn debug_field_expr(f: &AstStructField, span: Span) -> AstExpr {
                     receiver: sf,
                     method: "fmt".to_string(),
                     args: vec![ident("f", span)],
-                    trait_hint: None,
+                    protocol_hint: None,
                 },
                 span,
             ),
@@ -356,7 +356,7 @@ fn debug_field_expr(f: &AstStructField, span: Span) -> AstExpr {
                 receiver: sf,
                 method: "fmt".to_string(),
                 args: vec![ident("f", span)],
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )
@@ -416,11 +416,11 @@ fn build_debug_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         span,
     };
     AstImplBlock {
-        trait_name: Some("fmt::Debug".to_string()),
+        protocol_name: Some("fmt::Debug".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
-        trait_type_args: vec![],
-        extra_traits: vec![],
+        protocol_type_args: vec![],
+        extra_protocols: vec![],
         types: vec![],
         methods: vec![fmt_fn],
         span,
@@ -442,11 +442,11 @@ pub(crate) fn expand_derives_for_struct(
     }
     let span = s.span;
     for name in &s.derive {
-        let Some(trait_full) = canonical_trait(name) else {
+        let Some(protocol_full) = canonical_protocol(name) else {
             // 未知 derive 名（serde 等）：忽略
             continue;
         };
-        let impl_block = match trait_full {
+        let impl_block = match protocol_full {
             "Clone" => build_clone_impl(s, prefix, span),
             "PartialEq" => build_partialeq_impl(s, prefix, span),
             "Copy" => build_copy_impl(s, prefix, span),

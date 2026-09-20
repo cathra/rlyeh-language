@@ -1,7 +1,7 @@
 // Y4b-2：泛型 Mutex<T> + guard Deref 解引用（std sync 泛型化原型）
 // 语言级能力（2026-08-28 完成）：
 //   - Y4a：泛型 struct 字面量构造推断（Mutex { value: 42 } → T = i64）
-//   - Y4b-1：* 解引用支持自定义 Deref<T> trait（guard.deref() 分派）
+//   - Y4b-1：* 解引用支持自定义 Deref<T> protocol（guard.deref() 分派）
 //   - Y4b-2：泛型 impl 静态方法 new 从实参推断 T（MyMutex::new(42)）
 // std sync/module.rl 的 Mutex 泛型化为破坏性改动（波及 core.rl/guard/driver），
 // 本测试用独立原型验证能力，std 迁移待专项。

@@ -1,8 +1,8 @@
-// SH-P1-5（2026-09-04）：Copy 标记 trait + #[derive(Copy)] + T: Copy 泛型约束。
+// SH-P1-5（2026-09-04）：Copy 标记 protocol + #[derive(Copy)] + T: Copy 泛型约束。
 //
 // Rlyeh 默认聚合即按值拷贝（无 move 语义），故 `Copy` 在此主要作为标记与约束：
 // ① `#[derive(Copy)]` 展开为 `impl Copy for T {}`；
-// ② `T: Copy` 约束经 `type_implements_trait` 命中派生 impl；
+// ② `T: Copy` 约束经 `type_implements_protocol` 命中派生 impl；
 // ③ Copy 类型传值后原绑定仍可用（不移动）。
 
 #[derive(Copy)]

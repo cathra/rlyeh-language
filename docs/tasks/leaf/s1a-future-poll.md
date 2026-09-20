@@ -1,4 +1,4 @@
-# S1a `Future`/`Poll` trait 定义
+# S1a `Future`/`Poll` protocol 定义
 
 > **所属阶段**：阶段 S
 > **状态**：✅ 已完成
@@ -7,7 +7,7 @@
 
 ## 目标
 
-定义 `Future`/`Poll` trait。
+定义 `Future`/`Poll` protocol。
 
 ## 背景
 
@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-`enum Poll<T> { Ready(T), Pending }` + `trait Future { fn poll(&mut self) -> Poll<i64>; }`——关联类型 `type Output` / `Pin<&mut Self>` / `Context` 验证不可行（parser 无 trait `type` 成员、dyn 不可作函数参数），按计划退化指示 Output 固定 i64；`rlyeh-std/rlyeh/future.rl` + core.rl 重导出。
+`enum Poll<T> { Ready(T), Pending }` + `protocol Future { fn poll(&mut self) -> Poll<i64>; }`——关联类型 `type Output` / `Pin<&mut Self>` / `Context` 验证不可行（parser 无 protocol `type` 成员、dyn 不可作函数参数），按计划退化指示 Output 固定 i64；`rlyeh-std/rlyeh/future.rl` + core.rl 重导出。
 
 ## 验证
 

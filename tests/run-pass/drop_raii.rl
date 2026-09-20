@@ -1,5 +1,5 @@
-// SH-P0-8：`Drop` trait / 析构 / RAII（0.2.0-Q）。
-//   Q-M1 `impl Drop for T` 识别（`Drop` 为编译器内置 trait，无需显式声明）
+// SH-P0-8：`Drop` protocol / 析构 / RAII（0.2.0-Q）。
+//   Q-M1 `impl Drop for T` 识别（`Drop` 为编译器内置 protocol，无需显式声明）
 //   Q-M2 块尾自动插入 `x.drop()`——仅拥有所有权的绑定，按**逆声明序**
 
 struct Resource { id: i64 }

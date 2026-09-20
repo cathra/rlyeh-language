@@ -453,9 +453,13 @@ impl MirLowerer {
                 });
                 Some(MirValue::Unit)
             }
-            HirExprKind::Index { base, index, elem, is_str } => {
+            HirExprKind::Index { base, index, elem, is_str, len } => {
                 let b = self.lower_expr(base)?;
                 let i = self.lower_expr(index)?;
+                let ln = match len {
+                    Some(e) => Some(self.lower_expr(e)?),
+                    None => None,
+                };
                 let tmp = self.fresh_temp();
                 self.emit(MirStmt::IndexGet {
                     target: tmp.clone(),
@@ -463,19 +467,25 @@ impl MirLowerer {
                     index: i,
                     ty: *elem,
                     is_str: *is_str,
+                    len: ln,
                 });
                 Some(MirValue::Place(tmp))
             }
-            HirExprKind::IndexSet { base, index, value, elem, is_str } => {
+            HirExprKind::IndexSet { base, index, value, elem, is_str, len } => {
                 let b = self.lower_expr(base)?;
                 let i = self.lower_expr(index)?;
                 let v = self.lower_expr(value)?;
+                let ln = match len {
+                    Some(e) => Some(self.lower_expr(e)?),
+                    None => None,
+                };
                 self.emit(MirStmt::IndexSet {
                     base: b,
                     index: i,
                     value: v,
                     ty: *elem,
                     is_str: *is_str,
+                    len: ln,
                 });
                 Some(MirValue::Unit)
             }
@@ -505,7 +515,7 @@ impl MirLowerer {
                 }
                 // `&arr[i]` / `&s[i]`（V1）：base 地址化 + 指针偏移（GEP）——
                 // 真实元素地址（非拷贝临时地址），`&mut` 写回原元素
-                if let HirExprKind::Index { base, index, elem, is_str } = &(expr.as_ref()).kind {
+                if let HirExprKind::Index { base, index, elem, is_str, .. } = &(expr.as_ref()).kind {
                     let b = self.addr_of(base)?;
                     let i = self.lower_expr(index)?;
                     let tmp = self.fresh_temp();

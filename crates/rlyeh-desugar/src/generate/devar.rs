@@ -201,13 +201,13 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             receiver,
             method,
             args,
-            trait_hint,
+            protocol_hint,
         } => AstExpr::new(
             ExprKind::MethodCall {
                 receiver: devar(receiver),
                 method: method.clone(),
                 args: args.iter().map(devar).collect(),
-                trait_hint: trait_hint.clone(),
+                protocol_hint: protocol_hint.clone(),
             },
             e.span,
         ),

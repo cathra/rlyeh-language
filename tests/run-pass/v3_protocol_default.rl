@@ -1,6 +1,6 @@
-// V3 trait 默认方法（2026-08-26）：
-// 1. trait 方法带 body（默认实现），impl 显式实现时覆盖默认
-// 2. impl 未实现时回退到 trait 默认实现
+// V3 protocol 默认方法（2026-08-26）：
+// 1. protocol 方法带 body（默认实现），impl 显式实现时覆盖默认
+// 2. impl 未实现时回退到 protocol 默认实现
 protocol Greeter {
     fn greeting(&self) -> String { String::from("hello") }
     fn loud(&self) -> String { String::from("HELLO!") }
@@ -20,7 +20,7 @@ struct Bar {
 }
 
 impl Bar: Greeter {
-    // 仅实现 greeting，loud 走 trait 默认实现
+    // 仅实现 greeting，loud 走 protocol 默认实现
     fn greeting(&self) -> String { String::from("bar-hi") }
 }
 

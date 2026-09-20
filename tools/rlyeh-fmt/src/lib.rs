@@ -176,7 +176,7 @@ impl Printer {
             AstItem::FnDecl(f) => self.print_fn_decl(f, true),
             AstItem::StructDecl(s) => self.print_struct_decl(s),
             AstItem::EnumDecl(e) => self.print_enum_decl(e),
-            AstItem::TraitDecl(t) => self.print_trait_decl(t),
+            AstItem::ProtocolDecl(t) => self.print_protocol_decl(t),
             AstItem::ImplBlock(i) => self.print_impl_block(i),
             AstItem::ModDecl(m) => self.print_mod_decl(m),
             AstItem::UseDecl(u) => self.print_use_decl(u),
@@ -287,13 +287,13 @@ impl Printer {
         self.line("}");
     }
 
-    fn print_trait_decl(&mut self, t: &AstTraitDecl) {
+    fn print_protocol_decl(&mut self, t: &AstProtocolDecl) {
         let mut head = format!("protocol {}", t.name);
         head.push_str(&region_suffix(&t.region_param));
         if !t.generics.is_empty() {
             head.push_str(&format!("<{}>", fmt_generics(&t.generics)));
         }
-        head.push_str(&conformance_suffix(&t.supertraits));
+        head.push_str(&conformance_suffix(&t.superprotocols));
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
             for ty in &t.types {
@@ -312,18 +312,18 @@ impl Printer {
         } else {
             format!("<{}>", fmt_generics(&i.generics))
         };
-        // `impl<G> Type<G>: Trait<A>` / `impl<G> Type<G>`。
+        // `impl<G> Type<G>: Protocol<A>` / `impl<G> Type<G>`。
         let self_ty = if i.generics.is_empty() {
             i.type_name.clone()
         } else {
             format!("{}<{}>", i.type_name, generic_names(&i.generics))
         };
-        let head = match &i.trait_name {
+        let head = match &i.protocol_name {
             Some(t) => format!(
                 "impl{} {}: {}",
                 gen,
                 self_ty,
-                fmt_protocol_ref(t, &i.trait_type_args)
+                fmt_protocol_ref(t, &i.protocol_type_args)
             ),
             None => format!("impl{} {}", gen, self_ty),
         };

@@ -4,7 +4,7 @@
 // `pub import error::TimeoutError;` 保持。
 //
 // W4（2026-08-25，std-lib.md §12 错误体系扩展）：参照 `IoError` 模式——消息字符串 +
-// `Error::message` 访问器。完整 Display trait 随 X4（Formatter 完整化）落地，MVP 用
+// `Error::message` 访问器。完整 Display protocol 随 X4（Formatter 完整化）落地，MVP 用
 // `message()`。
 
 struct TimeoutError {

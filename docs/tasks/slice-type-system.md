@@ -61,7 +61,7 @@
 - Y1 降级方案（`read_bytes`/`write_bytes` 用 `Vec<u8>` 缓冲）在切片落地后可平滑升级：
   - 新增 `File::read(&mut [u8]) -> usize` / `File::write(&[u8]) -> usize`（二进制安全）。
   - 在 Y1 叶子文档中标注 `Vec<u8>` 版为过渡方案，切片版为首选。
-- 切片方法 trait（MVP 后，复用 V3 Iterator 适配器）：`len`、`iter`、`split_at`、`first`/`last` 等。
+- 切片方法 protocol（MVP 后，复用 V3 Iterator 适配器）：`len`、`iter`、`split_at`、`first`/`last` 等。
 
 ## 7. 验收标准
 

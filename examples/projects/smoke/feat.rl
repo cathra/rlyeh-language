@@ -1,5 +1,5 @@
 // smoke4：项目依赖特性综合验证
-// dyn Trait / region adaptive / ? 运算符 / HashMap / sort_by / 闭包 / 数值区间
+// dyn Protocol / region adaptive / ? 运算符 / HashMap / sort_by / 闭包 / 数值区间
 
 protocol Shape {
     fn area(&self) -> f64;
@@ -19,7 +19,7 @@ fn load(path: String) -> Result<String, IoError> {
 }
 
 fn main() {
-    // dyn Trait 分派（局部绑定）
+    // dyn Protocol 分派（局部绑定）
     let c = Circle { radius: 2.0 };
     let d: dyn Shape = &c;
     println(d.area());                         // 12.56

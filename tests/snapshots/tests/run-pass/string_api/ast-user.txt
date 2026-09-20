@@ -111,7 +111,7 @@ AstProgram {
                                                 },
                                                 method: "chars",
                                                 args: [],
-                                                trait_hint: None,
+                                                protocol_hint: None,
                                             },
                                             span: Span {
                                                 start: 448,
@@ -444,7 +444,7 @@ AstProgram {
                                                 },
                                                 method: "lines",
                                                 args: [],
-                                                trait_hint: None,
+                                                protocol_hint: None,
                                             },
                                             span: Span {
                                                 start: 797,
@@ -556,7 +556,7 @@ AstProgram {
                                                                             },
                                                                             method: "len",
                                                                             args: [],
-                                                                            trait_hint: None,
+                                                                            protocol_hint: None,
                                                                         },
                                                                         span: Span {
                                                                             start: 884,
@@ -776,7 +776,7 @@ AstProgram {
                                                 },
                                                 method: "lines",
                                                 args: [],
-                                                trait_hint: None,
+                                                protocol_hint: None,
                                             },
                                             span: Span {
                                                 start: 1154,
@@ -888,7 +888,7 @@ AstProgram {
                                                                             },
                                                                             method: "len",
                                                                             args: [],
-                                                                            trait_hint: None,
+                                                                            protocol_hint: None,
                                                                         },
                                                                         span: Span {
                                                                             start: 1246,
@@ -1063,7 +1063,7 @@ AstProgram {
                                                     },
                                                     method: "to_uppercase",
                                                     args: [],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 1420,
@@ -1140,7 +1140,7 @@ AstProgram {
                                                     },
                                                     method: "to_lowercase",
                                                     args: [],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 1482,
@@ -1238,7 +1238,7 @@ AstProgram {
                                                                 },
                                                                 method: "to_uppercase",
                                                                 args: [],
-                                                                trait_hint: None,
+                                                                protocol_hint: None,
                                                             },
                                                             span: Span {
                                                                 start: 1607,
@@ -1262,7 +1262,7 @@ AstProgram {
                                                                 },
                                                                 method: "to_upper",
                                                                 args: [],
-                                                                trait_hint: None,
+                                                                protocol_hint: None,
                                                             },
                                                             span: Span {
                                                                 start: 1628,
@@ -1327,7 +1327,7 @@ AstProgram {
                                                                 },
                                                                 method: "to_lowercase",
                                                                 args: [],
-                                                                trait_hint: None,
+                                                                protocol_hint: None,
                                                             },
                                                             span: Span {
                                                                 start: 1664,
@@ -1351,7 +1351,7 @@ AstProgram {
                                                                 },
                                                                 method: "to_lower",
                                                                 args: [],
-                                                                trait_hint: None,
+                                                                protocol_hint: None,
                                                             },
                                                             span: Span {
                                                                 start: 1685,

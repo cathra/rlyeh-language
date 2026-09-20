@@ -290,6 +290,8 @@ pub enum LirStmt {
         ty: FieldScalar,
         /// `true` 表示字符串索引
         is_str: bool,
+        /// 运行时长度（边界检查用，`Some` 时 codegen 越界 → `panic`）。
+        len: Option<Local>,
     },
     /// `index_set(base, index, value)`：运行时索引写入。
     IndexSet {
@@ -303,6 +305,8 @@ pub enum LirStmt {
         ty: FieldScalar,
         /// `true` 表示字符串索引
         is_str: bool,
+        /// 运行时长度（边界检查用，语义同 `IndexGet::len`）。
+        len: Option<Local>,
     },
     /// `target = addr_of(operand)`：取引用（`&x` / `&mut x`）。
     /// 引用值统一为指针（`Ptr` 类型）：聚合对象取其对象指针（拷贝），

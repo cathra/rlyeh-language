@@ -6,7 +6,7 @@
 
 ## 目标
 
-集中跟踪 Rlyeh 语言级缺陷（类型系统、泛型、dyn trait 对象、切片参数化等），按规则：**探测到的新语言级缺陷先记录到本文档**，评估影响后再统一修复。区别于 [`parser-rework.md`](./parser-rework.md)（内建解析器重构专项）。
+集中跟踪 Rlyeh 语言级缺陷（类型系统、泛型、dyn protocol 对象、切片参数化等），按规则：**探测到的新语言级缺陷先记录到本文档**，评估影响后再统一修复。区别于 [`parser-rework.md`](./parser-rework.md)（内建解析器重构专项）。
 
 ## 背景
 
@@ -22,24 +22,24 @@ Y 阶段任务风险评估（2026-08-28）在实测中探测到多个语言级�
 - **修复（2026-08-28，Y4a）**：construct.rs `check_struct_construct` 在 `type_args` 为空且 struct 含泛型参数时，从字段实参推断（字段类型裸 `Generic(tp)` 的直接推断）。
 - **遗留限制**：复合字段（`Vec<T>`/`HashMap<K,V>`）的统一推断暂不覆盖。
 
-### 2. `&dyn Error` trait 对象构造/上转型失败（源自 Y6）
+### 2. `&dyn Error` protocol 对象构造/上转型失败（源自 Y6）
 
 - **症状**：
   - `let d: dyn Error = e;`（e: MyError）→ `expected dyn Error, found MyError`（无自动上转型）
   - `let d: &dyn Error = r;`（r: &MyError）→ `expected &dyn Error, found &MyError`（引用也不能转 dyn）
 - **影响**：Y6 的 `source() -> Option<&dyn Error>` 目标签名虽可声明，但无法构造非 `None` 的 `&dyn Error` 值（链式 source 语义不可实现）。
-- **修复方向（已落地）**：P4c 支持具体类型 → dyn trait 对象上转型——`coerce_to_dyn`（`check_expr/misc.rs:380`）实现 `&T → &dyn Trait` coercion，用于 `let` 绑定（`check_stmt.rs`）、函数返回（`fn_sig.rs:189`）等主路径；`&dyn Trait` 作参数/返回值（胖指针）亦可用（见 legacy-misc #4）。
+- **修复方向（已落地）**：P4c 支持具体类型 → dyn protocol 对象上转型——`coerce_to_dyn`（`check_expr/misc.rs:380`）实现 `&T → &dyn Protocol` coercion，用于 `let` 绑定（`check_stmt.rs`）、函数返回（`fn_sig.rs:189`）等主路径；`&dyn Protocol` 作参数/返回值（胖指针）亦可用（见 legacy-misc #4）。
 - **状态**：✅ 已修复（P4c；2026-09-06 复现验证）：`p4_dyn_upshift.rl` / `error_source.rl` 验证 `&dyn Error` 上转型与 `source() -> Option<&dyn Error>` 链式返回可用；`let d: &dyn Error = &e;` 形式正常。注：裸 `dyn Error`（按值，DST 不可存储）非缺陷，与 Rust 一致。
 
 ### 3.（预留）切片参数化（U1，源自 Y1）
 
 - `read(&mut [u8])`/`write(&[u8])` 切片实参依赖 U1 切片成熟——`&mut [u8]`/`&[u8]` 作函数参数 + 切片值传递，待确认语言支持后登记。
 
-### 4. 泛型 trait 实参不支持路径 + 无 where 子句（源自 Y6b）
+### 4. 泛型 protocol 实参不支持路径 + 无 where 子句（源自 Y6b）
 
 - **症状**：`impl From<io::error::IoErrorKind> for IoError` → parser 报 `expected '>', found Colon`（泛型类型实参不支持 `::` 路径）；裸名 `impl From<IoErrorKind>` 可行。
 - **影响**：Y6b 的 `From`/`Into` std 层只能对**裸名**类型生效；模块内路径类型（`io::error::IoErrorKind`）的泛型 impl 不可写。
-- **where 子句 + `Into` blanket 已支持（P6b / P6c-1/2，2026-08-29）**：`where` 子句语法已可解析进 AST（约束名记录，bound 支持 `::` 路径与泛型实参）；`Into::into` 的 blanket 语义由 typechecker 实现——`Into::<U>::into(x)` 约束求解确认 `impl From<A_source> for U_target` 存在后改写 `From::from(x)`（不注册真实 blanket impl，规避其方法体 `From::from(self)` 泛型静态检查障碍）。**`where` 约束现已在调用点校验（SH-P1-1 A4，2026-09-02）**：impl 级 `where` 约束于方法体实例化前校验，违反时报 `type X does not implement trait B`。
+- **where 子句 + `Into` blanket 已支持（P6b / P6c-1/2，2026-08-29）**：`where` 子句语法已可解析进 AST（约束名记录，bound 支持 `::` 路径与泛型实参）；`Into::into` 的 blanket 语义由 typechecker 实现——`Into::<U>::into(x)` 约束求解确认 `impl From<A_source> for U_target` 存在后改写 `From::from(x)`（不注册真实 blanket impl，规避其方法体 `From::from(self)` 泛型静态检查障碍）。**`where` 约束现已在调用点校验（SH-P1-1 A4，2026-09-02）**：impl 级 `where` 约束于方法体实例化前校验，违反时报 `type X does not implement protocol B`。
 - **修复方向（已落地）**：parser 泛型类型实参支持 `::` 路径——`impl From<io::error::IoErrorKind>` 不再报 `expected '>', found Colon`（2026-09-06 复现验证通过）+ `where` 子句已落地并校验（SH-P1-1，2026-09-02）。
 - **状态**：✅ 已修复（parser 路径实参 2026-09-06 复现验证；`where` 约束校验 SH-P1-1 A4，2026-09-02）；验收 `tests/run-pass/generic_where_clause.rl`（含 `.out`）。仅余"任意 blanket impl 方法体泛型静态检查 + 关联类型投影依赖 bound"的通用 `where` 求解仍属专项增强（非 #4 原始阻塞项）。
 
@@ -68,7 +68,7 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 
 **语言级障碍**（按严重度）：
 - **生命周期/借用缺失**：`lock_guard()` 返回携带 `&mut value` 的守卫，需要借用检查器理解「锁生命周期 = 守卫生命周期」，Rlyeh MVP 无借用生命周期；MVP 退化用**裸指针**（`value: i64` 存 `&value` 地址，`get/get_mut` 经 `__rlyeh_deref`/extern 间接访问，绕过借用检查）。
-- **Deref trait 分派（可选）**：若用户期望 `*g` 直接解引用取值（而非显式 `.get()`），需语言级 Deref trait 分派（Y4b 已识别为破坏性大改动）。MVP 可只用显式 `get/get_mut` 方法绕过。
+- **Deref protocol 分派（可选）**：若用户期望 `*g` 直接解引用取值（而非显式 `.get()`），需语言级 Deref protocol 分派（Y4b 已识别为破坏性大改动）。MVP 可只用显式 `get/get_mut` 方法绕过。
 - **泛型静态方法携带数据构造**：`new(v: T)` 的 `Mutex { p, value: v }` 构造——字段 `value: T` 为裸 `Generic(tp)`，Y4a 的字段推断已支持（直接推断，非复合）。
 
 **波及范围（破坏性改动，需统一迁移）**：
@@ -129,7 +129,7 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 ### 9. 方法返回 `&self.struct_field` 引用悬空（源自 P7d-1 / Y6c）
 
 - **症状**：方法返回 `&self.field`（取结构体字段地址作为引用返回）时，codegen 生成的字段槽地址指向**按值传入的 `self` 参数**（方法返回后该参数所在槽销毁），调用方拿到的引用悬空——解引用读到垃圾值或段错误。
-- **实证（2026-08-29，P7d-1）**：`trait Error { fn source(&self) -> Option<&dyn Error> }` 的 `impl Error for AppError { fn source(&self) -> Option<&dyn Error> { let d: &dyn Error = &self.source; ... } }`（`source: &IoFailure` 为引用字段）输出错乱；改为「持有引用类型字段 + 上转**存储的引用值**」（`let d: &dyn Error = self.source;`）则正确（`self.source` 是字段里的引用值，上转而非取地址）。
+- **实证（2026-08-29，P7d-1）**：`protocol Error { fn source(&self) -> Option<&dyn Error> }` 的 `impl Error for AppError { fn source(&self) -> Option<&dyn Error> { let d: &dyn Error = &self.source; ... } }`（`source: &IoFailure` 为引用字段）输出错乱；改为「持有引用类型字段 + 上转**存储的引用值**」（`let d: &dyn Error = self.source;`）则正确（`self.source` 是字段里的引用值，上转而非取地址）。
 - **根因**：V1「真实取址」（`&obj.field` → GEP 槽地址）对**局部/按值 self 字段**生成的是临时栈地址，返回该地址即悬空；MVP 借用检查未将「返回字段地址」判定为 `DanglingReference`（仅对返回 `&x` 局部变量/绑定引用变量判定）。
 - **影响**：错误包装器（及其他需返回内部引用者）**不能**用 `&self.field` 形式返回字段引用；须把内部引用作为**引用类型字段**存储，并返回该字段的引用**值**（上转型），而非对字段取地址。
 - **约束/规避**：MVP 暂不支持 `&dyn Error` 直接作 struct 字段（dtor/vtable 槽归零），故 `source` 链载体退化到具体引用类型（`&IoFailure`）；待借用检查补全「返回字段地址 = 悬空」判定 + `&dyn Error` 字段支持后解除。
@@ -148,7 +148,7 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 日期 | 变更 |
 |------|------|
 | 2026-08-28 | 建立专项文档；登记泛型 struct 字面量构造障碍（Y4）+ `&dyn Error` 构造障碍（Y6） |
-| 2026-08-28 | 登记泛型 trait 实参路径不支持 + where 子句缺失（Y6b） |
+| 2026-08-28 | 登记泛型 protocol 实参路径不支持 + where 子句缺失（Y6b） |
 | 2026-08-28 | 登记泛型 impl 静态方法推断（Y4b-2，已修复）+ std Mutex 泛型化待专项 |
 | 2026-08-28 | 登记完整 Poller kqueue 分派待专项（Y2b） |
 | 2026-08-28 | 登记 Channel<T> 泛型化待专项（Y4c，复合字段推断 + 无 turbofish） |
@@ -157,5 +157,5 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 | 2026-08-29 | #7 完整 Poller kqueue 分派标记已完成（Y2c，y2c_poller_kqueue.rl 端到端验证 macOS kqueue EV_ADD/kq_poll）；新增 #10（跨模块 &mut self 自动借用失效，源自 Y2c） |
 | 2026-08-29 | #6 std Mutex 泛型化（Y4b-2，P5）与 #8 Channel<T> 泛型化（Y4c，P7c）标记已完成（代码早已落地，本轮补 mutex_value.rl 验证 + 文档收尾）；173 用例全绿 |
 | 2026-09-06 | #10 跨模块 `&mut self` 自动借用失效标记已修复：复现验证用户代码跨模块调用 std / 用户模块 `&mut self` 方法（`q.register(...)` / `c.inc()`，接收者无论 `let`/`let mut` 绑定）均正确自动借用 `&mut` 并变更状态；原 y2c_poller_kqueue.rl 的 `(&mut q).register(...)` 冗余写法已改为 `q.register(...)`；新增回归用例 `tests/run-pass/cross_module_mut_self.rl`（输出 2）锁定修复 |
-| 2026-09-06 | #2 `&dyn Error` 上转型与 #4 泛型路径实参+where 子句标记已修复：#2 由 P4c `coerce_to_dyn`（`check_expr/misc.rs`）实现 `&T→&dyn Trait` 上转型（p4_dyn_upshift.rl/error_source.rl 验证）；#4 parser 已支持 `impl From<io::error::IoErrorKind>` 路径实参（复现验证无解析错误）+ `where` 约束在调用点校验（SH-P1-1 A4）；legacy-misc #4 随 #2 解决 |
+| 2026-09-06 | #2 `&dyn Error` 上转型与 #4 泛型路径实参+where 子句标记已修复：#2 由 P4c `coerce_to_dyn`（`check_expr/misc.rs`）实现 `&T→&dyn Protocol` 上转型（p4_dyn_upshift.rl/error_source.rl 验证）；#4 parser 已支持 `impl From<io::error::IoErrorKind>` 路径实参（复现验证无解析错误）+ `where` 约束在调用点校验（SH-P1-1 A4）；legacy-misc #4 随 #2 解决 |
 | 2026-09-06 | #9 方法返回 `&self.field` 引用悬空已修复：借用检查器 `HirParam` 增 `is_ref`（`crates/rlyeh-hir`）、真实函数/方法 HIR 构建按 AST 类型 `AstType::Ref` 填充、合成参数设为 `true`；`check_dangling_return` 经 `ref_root` 解析字段/索引链根变量 + `is_escaping_root` 区分调用方所有/全局（安全）与局部/按值参数（悬垂报 `BC005`）。回归用例 `tests/compile-fail/dangle_value_self.rl`、`dangle_value_param.rl` + `tests/run-pass/ref_self_field.rl`。自此 P1–P10 专项缺陷清理全部收口（#1/#5/#6/#7/#8 早已 ✅；#2/#4/#9/#10 本轮复核/修复 ✅） |

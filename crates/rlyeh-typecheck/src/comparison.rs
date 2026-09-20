@@ -138,7 +138,7 @@ pub(crate) fn check_comparison_chain(
                         receiver: recv,
                         method: "eq".to_string(),
                         args: vec![arg],
-                        trait_hint: None,
+                        protocol_hint: None,
                     },
                     span,
                 );
@@ -337,22 +337,22 @@ fn is_struct_object(ctx: &TypeContext, ty: &Type) -> bool {
 fn has_partial_eq(ctx: &TypeContext, ty: &Type) -> bool {
     ctx.impl_defs
         .iter()
-        .any(|d| d.trait_name.as_deref() == Some("PartialEq") && d.self_type == *ty)
+        .any(|d| d.protocol_name.as_deref() == Some("PartialEq") && d.self_type == *ty)
 }
 
 /// 类型是否实现了 `PartialOrd`（手写或 `#[derive(PartialOrd)]`）。
 ///
-/// 用于排序运算符（`Lt`/`Le`/`Gt`/`Ge`）重载回退的门控，避免对无该 trait 的类型
+/// 用于排序运算符（`Lt`/`Le`/`Gt`/`Ge`）重载回退的门控，避免对无该 protocol 的类型
 /// 误发「方法未找到」诊断。经 `find_impl_candidates`（内含 `type_matches`，可处理
 /// 泛型 impl 的实参反推）判定。
 fn has_partial_ord(ctx: &TypeContext, ty: &Type) -> bool {
     ctx.find_impl_candidates(ty, "lt")
         .iter()
-        .any(|d| d.trait_name.as_deref() == Some("PartialOrd"))
+        .any(|d| d.protocol_name.as_deref() == Some("PartialOrd"))
 }
 
 /// V5d+（2026-09-02）：排序运算符重载回退。对非数值/字符/字符串操作数，尝试
-/// `lt`/`le`/`gt`/`ge`（对应 `trait PartialOrd`）方法调用；命中且返回 `bool` 则返回
+/// `lt`/`le`/`gt`/`ge`（对应 `protocol PartialOrd`）方法调用；命中且返回 `bool` 则返回
 /// 其 HIR，否则返回 `None` 交由内建比较处理。复用既有 method-call 全链路，codegen 零改动。
 ///
 /// 参数按引用传递（`&other`），与 `PartialOrd` 方法签名一致——既匹配 `is_subset` 等
@@ -383,7 +383,7 @@ fn try_ordering_overload(
             receiver: left.clone(),
             method: method.to_string(),
             args: vec![arg],
-            trait_hint: None,
+            protocol_hint: None,
         },
         span,
     );

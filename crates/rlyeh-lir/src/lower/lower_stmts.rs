@@ -104,6 +104,7 @@ impl FunctionLowerer {
                 index,
                 ty,
                 is_str,
+                len,
             } => {
                 out.push(LirStmt::IndexGet {
                     target: target.clone(),
@@ -111,6 +112,7 @@ impl FunctionLowerer {
                     index: index.clone(),
                     ty: *ty,
                     is_str: *is_str,
+                    len: len.clone(),
                 });
             }
             MirStmt::IndexSet {
@@ -119,6 +121,7 @@ impl FunctionLowerer {
                 value,
                 ty,
                 is_str,
+                len,
             } => {
                 out.push(LirStmt::IndexSet {
                     base: base.clone(),
@@ -126,6 +129,7 @@ impl FunctionLowerer {
                     value: value.clone(),
                     ty: *ty,
                     is_str: *is_str,
+                    len: len.clone(),
                 });
             }
             MirStmt::AddrOf {

@@ -1,4 +1,4 @@
-# U2 trait 关联类型
+# U2 protocol 关联类型
 
 > **所属阶段**：阶段 U
 > **状态**：✅ 已完成
@@ -7,7 +7,7 @@
 
 ## 目标
 
-parser/typecheck 支持 `trait T { type Item; }` 关联类型。
+parser/typecheck 支持 `protocol T { type Item; }` 关联类型。
 
 ## 背景
 
@@ -15,7 +15,7 @@ parser/typecheck 支持 `trait T { type Item; }` 关联类型。
 
 ## 技术细节
 
-AST `AstTraitDecl.types`/`AstImplBlock.types`；parser trait/impl body 支持 `type` 成员 + `Self::Item` 路径；typecheck `TraitDef.assoc_types`/`ImplDef.assoc_types` + `TypeContext.assoc_types` 保存/恢复式填充，方法签名中 `Self::Item` 经 `resolve_ast_type` 查表替换，trait 声明期退化为 `Generic("Self::Item")` 占位。附带修复 codegen bug：`fn_llvm_type` 对 `Unit` 返回未处理 → void 返回。
+AST `AstProtocolDecl.types`/`AstImplBlock.types`；parser protocol/impl body 支持 `type` 成员 + `Self::Item` 路径；typecheck `ProtocolDef.assoc_types`/`ImplDef.assoc_types` + `TypeContext.assoc_types` 保存/恢复式填充，方法签名中 `Self::Item` 经 `resolve_ast_type` 查表替换，protocol 声明期退化为 `Generic("Self::Item")` 占位。附带修复 codegen bug：`fn_llvm_type` 对 `Unit` 返回未处理 → void 返回。
 
 ## 验证
 

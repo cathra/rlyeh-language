@@ -1,4 +1,4 @@
-//! method/dyn_call：`dyn Trait` 虚调用去虚拟化、`Self` 类型替换与 StrFat → String 转换。
+//! method/dyn_call：`dyn Protocol` 虚调用去虚拟化、`Self` 类型替换与 StrFat → String 转换。
 //! （由 method.rs 拆分而来，保持语义等价）
 
 use rlyeh_hir::{HirExprKind, HirStmtKind};
@@ -75,7 +75,7 @@ pub(super) fn make_strfat_to_string(ctx: &mut TypeContext, data_h: HirExpr, len_
 pub(super) fn devirtualize_dyn_call(
     ctx: &mut TypeContext,
     var: &str,
-    trait_name: &str,
+    protocol_name: &str,
     method: &str,
     recv_hir: HirExpr,
     args: &[AstExpr],
@@ -84,11 +84,11 @@ pub(super) fn devirtualize_dyn_call(
     let Some(concrete_ty) = ctx.get_dyn_concrete(var).cloned() else {
         return Ok(None);
     };
-    // 找 `impl Trait for 具体类型`（与 coerce_to_dyn 相同的匹配规则）
+    // 找 `impl Protocol for 具体类型`（与 coerce_to_dyn 相同的匹配规则）
     let Some(impl_def) = ctx
         .impl_defs
         .iter()
-        .find(|d| d.trait_name.as_deref() == Some(trait_name) && d.self_type == concrete_ty)
+        .find(|d| d.protocol_name.as_deref() == Some(protocol_name) && d.self_type == concrete_ty)
         .cloned()
     else {
         return Ok(None);
@@ -105,8 +105,8 @@ pub(super) fn devirtualize_dyn_call(
     let sig = &impl_method.sig;
     // G-M1（SH-P0-3）：dyn 变量绑定源具体类型已知时，含 `Self` 签名的方法可
     // 静态分派——将签名中的 `Self` 替换为具体类型后检查实参、推导返回类型
-    // （`Self` 返回的方法经 `dyn Trait` 调用时返回具体类型，合法）。
-    // 真正擦除具体类型的 `dyn Trait`（如作函数参数传递）仍由 vtable 分支
+    // （`Self` 返回的方法经 `dyn Protocol` 调用时返回具体类型，合法）。
+    // 真正擦除具体类型的 `dyn Protocol`（如作函数参数传递）仍由 vtable 分支
     // 以 object-unsafe 拒绝（与 Rust 一致）。
     let concrete_params: Vec<Type> = sig
         .params
@@ -148,7 +148,7 @@ pub(super) fn devirtualize_dyn_call(
 }
 
 /// V3-D（2026-08-27）：递归替换类型中的 `Self`（`Type::Generic("Self")`）为
-/// 具体类型 `concrete`。用于 trait 默认方法返回 `Take2<Self>` 等含 `Self`
+/// 具体类型 `concrete`。用于 protocol 默认方法返回 `Take2<Self>` 等含 `Self`
 /// 的签名实例化——`Self` 表示 impl 目标类型，须替换后方法体/后续调用才能解析。
 pub(super) fn replace_type_self(ty: &Type, concrete: &Type) -> Type {
     use Type::*;

@@ -1,5 +1,5 @@
 // Y6b：From/Into 错误转换（std io/error.rl）
-// `trait From<T> { fn from(v: T) -> Self; }` + `impl From<IoErrorKind> for IoError`
+// `protocol From<T> { fn from(v: T) -> Self; }` + `impl From<IoErrorKind> for IoError`
 // （复用 from_kind 的默认 message 生成）。`From::from` 关联调用 + `into()` 显式转换。
 
 fn main() {

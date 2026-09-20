@@ -535,9 +535,9 @@ impl Chars {
     }
 }
 
-// V2（2026-08-29）：Chars 实现 Iterator trait（`type Item = char` 码点），使
+// V2（2026-08-29）：Chars 实现 Iterator protocol（`type Item = char` 码点），使
 // `for c in s.chars()` 接入 V3 迭代器框架（目标签名 `chars() -> Chars`
-// 的落地）。inherent next 优先于 trait next。
+// 的落地）。inherent next 优先于 protocol next。
 impl Chars: Iterator {
     type Item = char;
     fn next(&mut self) -> Option<char> {
@@ -616,9 +616,9 @@ impl Lines {
     }
 }
 
-// V2（2026-08-29）：Lines 实现 Iterator trait（`type Item = String` 行），使
+// V2（2026-08-29）：Lines 实现 Iterator protocol（`type Item = String` 行），使
 // `for l in s.lines()` 接入 V3 迭代器框架（目标签名 `lines() -> Lines`
-// 的落地）。inherent next 优先于 trait next。
+// 的落地）。inherent next 优先于 protocol next。
 impl Lines: Iterator {
     type Item = String;
     fn next(&mut self) -> Option<String> {

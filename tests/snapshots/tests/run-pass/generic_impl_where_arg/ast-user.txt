@@ -1,7 +1,7 @@
 AstProgram {
     items: [
-        TraitDecl(
-            AstTraitDecl {
+        ProtocolDecl(
+            AstProtocolDecl {
                 name: "Convert",
                 generics: [
                     AstTypeParam {
@@ -68,7 +68,7 @@ AstProgram {
                     },
                 ],
                 region_param: None,
-                supertraits: [],
+                superprotocols: [],
                 span: Span {
                     start: 778,
                     end: 833,
@@ -77,8 +77,8 @@ AstProgram {
                 },
             },
         ),
-        TraitDecl(
-            AstTraitDecl {
+        ProtocolDecl(
+            AstProtocolDecl {
                 name: "Num",
                 generics: [],
                 types: [],
@@ -125,7 +125,7 @@ AstProgram {
                     },
                 ],
                 region_param: None,
-                supertraits: [],
+                superprotocols: [],
                 span: Span {
                     start: 834,
                     end: 872,
@@ -170,13 +170,13 @@ AstProgram {
         ),
         ImplBlock(
             AstImplBlock {
-                trait_name: Some(
+                protocol_name: Some(
                     "Num",
                 ),
                 type_name: "IntN",
                 generics: [],
-                trait_type_args: [],
-                extra_traits: [],
+                protocol_type_args: [],
+                extra_protocols: [],
                 types: [],
                 methods: [
                     AstFnDecl {
@@ -298,7 +298,7 @@ AstProgram {
         ),
         ImplBlock(
             AstImplBlock {
-                trait_name: Some(
+                protocol_name: Some(
                     "Convert",
                 ),
                 type_name: "C",
@@ -310,13 +310,13 @@ AstProgram {
                         ],
                     },
                 ],
-                trait_type_args: [
+                protocol_type_args: [
                     Path(
                         "T",
                         [],
                     ),
                 ],
-                extra_traits: [],
+                extra_protocols: [],
                 types: [],
                 methods: [
                     AstFnDecl {
@@ -385,7 +385,7 @@ AstProgram {
                                                     },
                                                     method: "val",
                                                     args: [],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 1043,
@@ -579,7 +579,7 @@ AstProgram {
                                                             },
                                                         },
                                                     ],
-                                                    trait_hint: None,
+                                                    protocol_hint: None,
                                                 },
                                                 span: Span {
                                                     start: 1142,

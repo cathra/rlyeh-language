@@ -97,7 +97,7 @@ pub fn doc_program(program: &AstProgram, source: &str, options: &DocOptions) -> 
     let mut funcs: Vec<&AstItem> = Vec::new();
     let mut structs: Vec<&AstItem> = Vec::new();
     let mut enums: Vec<&AstItem> = Vec::new();
-    let mut traits: Vec<&AstItem> = Vec::new();
+    let mut protocols: Vec<&AstItem> = Vec::new();
     let mut impls: Vec<&AstItem> = Vec::new();
     let mut actors: Vec<&AstItem> = Vec::new();
     let mut consts: Vec<&AstItem> = Vec::new();
@@ -109,7 +109,7 @@ pub fn doc_program(program: &AstProgram, source: &str, options: &DocOptions) -> 
             "函数" => funcs.push(item),
             "结构体" => structs.push(item),
             "枚举" => enums.push(item),
-            "Protocol" => traits.push(item),
+            "Protocol" => protocols.push(item),
             "impl" => impls.push(item),
             "Actor" => actors.push(item),
             "常量" => consts.push(item),
@@ -121,7 +121,7 @@ pub fn doc_program(program: &AstProgram, source: &str, options: &DocOptions) -> 
     render_section(&mut out, "函数", &funcs, &scan, &code_lines);
     render_section(&mut out, "结构体", &structs, &scan, &code_lines);
     render_section(&mut out, "枚举", &enums, &scan, &code_lines);
-    render_section(&mut out, "Protocol", &traits, &scan, &code_lines);
+    render_section(&mut out, "Protocol", &protocols, &scan, &code_lines);
     render_section(&mut out, "impl", &impls, &scan, &code_lines);
     render_section(&mut out, "Actor", &actors, &scan, &code_lines);
     render_section(&mut out, "常量与静态量", &consts, &scan, &code_lines);
@@ -166,7 +166,7 @@ fn render_item(out: &mut String, item: &AstItem, scan: &DocScan, code_lines: &BT
 
     // 聚合类型的成员列表
     match item {
-        AstItem::TraitDecl(t) if !t.methods.is_empty() => {
+        AstItem::ProtocolDecl(t) if !t.methods.is_empty() => {
             out.push_str("抽象方法:\n\n");
             for m in &t.methods {
                 out.push_str(&format!("- `{}`\n", fn_signature(m)));
@@ -218,7 +218,7 @@ fn category(item: &AstItem) -> &'static str {
         AstItem::FnDecl(_) => "函数",
         AstItem::StructDecl(_) => "结构体",
         AstItem::EnumDecl(_) => "枚举",
-        AstItem::TraitDecl(_) => "Protocol",
+        AstItem::ProtocolDecl(_) => "Protocol",
         AstItem::ImplBlock(_) => "impl",
         AstItem::ModDecl(_) => "模块",
         AstItem::UseDecl(_) => "其他项",
@@ -269,8 +269,8 @@ fn item_title(item: &AstItem) -> String {
             }
             t
         }
-        AstItem::TraitDecl(t) => {
-            let mut s = format!("trait {}", t.name);
+        AstItem::ProtocolDecl(t) => {
+            let mut s = format!("protocol {}", t.name);
             if !t.generics.is_empty() {
                 s.push_str(&format!("<{}>", fmt_generics(&t.generics)));
             }
@@ -278,7 +278,7 @@ fn item_title(item: &AstItem) -> String {
         }
         AstItem::ImplBlock(i) => {
             let mut s = String::from("impl ");
-            if let Some(t) = &i.trait_name {
+            if let Some(t) = &i.protocol_name {
                 s.push_str(&format!("{t} for "));
             }
             s.push_str(&i.type_name);
@@ -318,8 +318,8 @@ pub fn item_signature(item: &AstItem) -> String {
         AstItem::FnDecl(f) => fn_signature(f),
         AstItem::StructDecl(s) => struct_signature(s),
         AstItem::EnumDecl(e) => enum_signature(e),
-        AstItem::TraitDecl(t) => {
-            let mut s = format!("trait {}", t.name);
+        AstItem::ProtocolDecl(t) => {
+            let mut s = format!("protocol {}", t.name);
             if !t.generics.is_empty() {
                 s.push_str(&format!("<{}>", fmt_generics(&t.generics)));
             }
@@ -338,7 +338,7 @@ pub fn item_signature(item: &AstItem) -> String {
         }
         AstItem::ImplBlock(i) => {
             let mut s = String::from("impl ");
-            if let Some(t) = &i.trait_name {
+            if let Some(t) = &i.protocol_name {
                 s.push_str(&format!("{t} for "));
             }
             s.push_str(&i.type_name);
@@ -621,7 +621,7 @@ fn item_span(item: &AstItem) -> &rlyeh_lexer::Span {
         AstItem::FnDecl(f) => &f.span,
         AstItem::StructDecl(s) => &s.span,
         AstItem::EnumDecl(e) => &e.span,
-        AstItem::TraitDecl(t) => &t.span,
+        AstItem::ProtocolDecl(t) => &t.span,
         AstItem::ImplBlock(i) => &i.span,
         AstItem::ModDecl(m) => &m.span,
         AstItem::UseDecl(u) => &u.span,

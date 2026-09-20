@@ -1,4 +1,4 @@
-// 基准: dyn_dispatch —— 2000 万次 dyn Trait vtable 多态分派
+// 基准: dyn_dispatch —— 2000 万次 dyn Protocol vtable 多态分派
 // 测: 虚方法分派开销（Rlyeh 胖指针 + vtable 间接调用）
 // 逻辑: 循环交替调用 Tri/Quad 的 dyn 对象方法 sides()（读字段）。
 //       输出 = 10,000,000 * (3 + 4) = 70,000,000

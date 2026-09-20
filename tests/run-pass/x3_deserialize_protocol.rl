@@ -1,6 +1,6 @@
-// X3：Deserialize trait + 手写 impl（-> Self 返回）+ 泛型约束基础
-// `trait Deserialize { fn from_json(s: String) -> Self; }`
-// 依赖 U4 `-> Self` 返回 + 泛型 trait 约束（T: Trait bound）。
+// X3：Deserialize protocol + 手写 impl（-> Self 返回）+ 泛型约束基础
+// `protocol Deserialize { fn from_json(s: String) -> Self; }`
+// 依赖 U4 `-> Self` 返回 + 泛型 protocol 约束（T: Protocol bound）。
 
 protocol Deserialize {
     fn from_json(s: String) -> Self;
@@ -38,7 +38,7 @@ impl Point: Deserialize {
 }
 
 fn main() -> i64 {
-    // 手写 impl 调用（Deserialize trait 的 from_json -> Self）
+    // 手写 impl 调用（Deserialize protocol 的 from_json -> Self）
     let p = Point::from_json("{\"x\":3,\"y\":4}");
     let p2 = Point::from_json("{\"x\":10,\"y\":20}");
     (p.x + p.y) + (p2.x + p2.y)

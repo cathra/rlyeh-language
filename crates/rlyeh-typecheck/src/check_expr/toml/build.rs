@@ -167,7 +167,7 @@ pub(crate) fn toml_string_value_ast(s: &AstExpr, span: Span) -> AstExpr {
                 receiver: s.clone(),
                 method: "trim".to_string(),
                 args: Vec::new(),
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )],
@@ -179,7 +179,7 @@ pub(crate) fn toml_string_value_ast(s: &AstExpr, span: Span) -> AstExpr {
                 receiver: recv,
                 method: method.to_string(),
                 args,
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )

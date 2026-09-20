@@ -394,7 +394,7 @@ pub(super) fn extract_expr_awaits(
             receiver,
             method,
             args,
-            trait_hint,
+            protocol_hint,
         } => {
             let mut as_ = Vec::new();
             for a in args {
@@ -404,7 +404,7 @@ pub(super) fn extract_expr_awaits(
                 receiver: extract_expr_awaits(ctx, out, receiver, cur_uses, first, last)?,
                 method: method.clone(),
                 args: as_,
-                trait_hint: trait_hint.clone(),
+                protocol_hint: protocol_hint.clone(),
             }
         }
         ExprKind::Return(ret) => {

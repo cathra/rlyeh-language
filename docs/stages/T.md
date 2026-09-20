@@ -11,7 +11,7 @@
 | T1A | **Vec 目标 API 补齐**：`sort`/`binary_search`/`iter`（按 std-lib.md 目标 API 清单核对） | ✅ 已完成 | [`t1a-vec-api.md`](../tasks/leaf/t1a-vec-api.md) |
 | T1B | **String 目标 API 补齐**：`chars`/`lines`/`split`（部分已有）/`replace`/`to_uppercase`/`to_lowercase`/`trim` | ✅ 已完成 | [`t1b-string-api.md`](../tasks/leaf/t1b-string-api.md) |
 | T1C | **HashMap 目标 API 补齐**：`iter`/`keys`/`values` 等（按 std-lib.md 目标 API 清单核对） | ✅ 已完成 | [`t1c-hashmap-api.md`](../tasks/leaf/t1c-hashmap-api.md) |
-| T2 | **`Iterator` trait 定义**：`trait Iterator { type Item; fn next(&mut self) -> Option<Item>; }`——**风险**：先做关联类型 `type Item` 最小验证（H4 仅验证过非泛型 dyn）；适配器**保持内建 desugar 不迁移**（避免重构风险），trait 定义先行供自定义迭代器接入（J2 已支持方法式 `next() -> Option<T>`，trait 化为可选演进） | ✅ 已完成 | [`t2-iterator-trait.md`](../tasks/leaf/t2-iterator-trait.md) |
+| T2 | **`Iterator` protocol 定义**：`protocol Iterator { type Item; fn next(&mut self) -> Option<Item>; }`——**风险**：先做关联类型 `type Item` 最小验证（H4 仅验证过非泛型 dyn）；适配器**保持内建 desugar 不迁移**（避免重构风险），protocol 定义先行供自定义迭代器接入（J2 已支持方法式 `next() -> Option<T>`，protocol 化为可选演进） | ✅ 已完成 | [`t2-iterator-protocol.md`](../tasks/leaf/t2-iterator-protocol.md) |
 | T3A | **`Box::leak`**：泄漏堆对象返回裸指针 | ✅ 已完成 | [`t3a-box-leak.md`](../tasks/leaf/t3a-box-leak.md) |
 | T3B | **Rc/Arc 目标 API + `Weak::upgrade` 完善**（std-lib.md §11 目标 API 清单逐项核对） | ✅ 已完成 | [`t3b-rc-arc-api.md`](../tasks/leaf/t3b-rc-arc-api.md) |
 
@@ -32,19 +32,19 @@
 > | # | 缺口 | 实测依据 | 影响面 |
 > |---|------|---------|--------|
 > | 1 | typecheck 变量环境**按名全局索引、无作用域栈**，同名遮蔽互相覆盖（后续按类型分支输出异常） | T 阶段已知限制（§3b.9 / std-lib.md 顶部） | `get_mut` 引用语义、借用迭代器、引用返回值 |
-> | 2 | trait **关联类型** `type Item` / `type Output` 无载体 | S1a/T2 已验证（parser/typecheck 无 trait `type` 成员） | `Iterator` 泛型元素、`Future` 泛型 Output |
-> | 3 | **泛型 trait 约束** `T: Bound`（where 子句 / bound）不可用 | M2b 已验证（blanket impl 不可行） | `json::to_string<T: Serialize>`、`timeout<F: Future>` |
-> | 4 | trait 方法返回 **`-> Self`** 未支持（typecheck `undefined type Self`） | M2b/Q1a 已验证 | `Deserialize::from_json`、`From::from`、`Into::into` |
+> | 2 | protocol **关联类型** `type Item` / `type Output` 无载体 | S1a/T2 已验证（parser/typecheck 无 protocol `type` 成员） | `Iterator` 泛型元素、`Future` 泛型 Output |
+> | 3 | **泛型 protocol 约束** `T: Bound`（where 子句 / bound）不可用 | M2b 已验证（blanket impl 不可行） | `json::to_string<T: Serialize>`、`timeout<F: Future>` |
+> | 4 | protocol 方法返回 **`-> Self`** 未支持（typecheck `undefined type Self`） | M2b/Q1a 已验证 | `Deserialize::from_json`、`From::from`、`Into::into` |
 > | 5 | **MIR `AddrOf` 仅支持变量取址** | T3a 已验证（`&*b` 堆地址取引用不可行） | `Box::leak` 目标签名 `&'static mut T` |
 
 #### 6.3c.1 计划总览（阶段 U–Z）
 
 | 阶段 | 主题 | 子任务（关键交付，按序） | 子任务数 | 依赖 | 状态 |
 |------|------|---------|:---:|------|------|
-| **U** | 编译器地基（std 完整化前置） | U1 作用域栈重构、U2 trait 关联类型、U3 泛型约束 where、U4 `-> Self` 返回、U5 MIR AddrOf 任意目标、U6 数值转换 Cast IR、**U7 方法级泛型参数**、**U8 泛型结构体构造 + 泛型 trait** | 8 | G、T 已知限制 | ✅ 已完成（U1–U8 全部落地；执行情况见 [`stage-u-z.md`](../tasks/stage-u-z.md) 叶子文档） |
+| **U** | 编译器地基（std 完整化前置） | U1 作用域栈重构、U2 protocol 关联类型、U3 泛型约束 where、U4 `-> Self` 返回、U5 MIR AddrOf 任意目标、U6 数值转换 Cast IR、**U7 方法级泛型参数**、**U8 泛型结构体构造 + 泛型 protocol** | 8 | G、T 已知限制 | ✅ 已完成（U1–U8 全部落地；执行情况见 [`stage-u-z.md`](../tasks/stage-u-z.md) 叶子文档） |
 | **V** | 集合与迭代器完整化 | V1 借用迭代器（`Iter`/`IterMut`/`Iter<'_, K, V>`）、V2 String 码点迭代器（`Chars`/`Lines`）、V3 Iterator 默认方法 + 适配器迁移、V4 `get_mut` 引用语义、V5 新集合（HashSet/BTreeMap/VecDeque） | 5 | U1/U2/U3 | 🔧 进行中（**V1/V2/V4/V5 ✅ 全部完成**——V2 `&str` StrFat 视图（V2-A~E）已全部落地，见 [`v2-str-view.md`](../tasks/v2-str-view.md)；V3 默认方法基础 ✅；V3-A~D 待办，见 [`v3-iterator-adapters.md`](../tasks/v3-iterator-adapters.md)） |
 | **W** | 异步运行时完整化 | W1 Future 泛型化（Output/Pin/Context）、W2 await 状态机扩展（控制流/表达式嵌套/引用跨 await）、W3 事件驱动 executor（epoll/kqueue/io_uring + Future 挂起）、W4 `join_all`/`timeout` Future 版 + `TimeoutError`、W5 `recv_async`/HTTP async 真异步、W6 async 泛型/递归 + 闭包跨线程捕获 | 6 | U、R（Poller）、S1c | ✅ **全部完成（W1–W6）**（执行情况见 [`stage-u-z.md`](../tasks/stage-u-z.md) W 叶子文档） |
-| **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime 完整 API、X2 标准 TOML（空格形式/`[section]`/注释/多行字符串）+ 解析鲁棒性、X3 `Deserialize` trait + Serializer/Deserializer 框架 + `JsonError`/`TomlError`、X4 Formatter 完整化（`Result<(), FmtError>`） | 4 | U3/U4、Q | 🔧 进行中（X1 ✅；X2/X3/X4 规划，见 [`stage-u-z.md`](../tasks/stage-u-z.md) X 叶子文档） |
+| **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime 完整 API、X2 标准 TOML（空格形式/`[section]`/注释/多行字符串）+ 解析鲁棒性、X3 `Deserialize` protocol + Serializer/Deserializer 框架 + `JsonError`/`TomlError`、X4 Formatter 完整化（`Result<(), FmtError>`） | 4 | U3/U4、Q | 🔧 进行中（X1 ✅；X2/X3/X4 规划，见 [`stage-u-z.md`](../tasks/stage-u-z.md) X 叶子文档） |
 | **Y** | IO/网络/并发/智能指针收尾 | Y1 File `open_with`/`read(&mut [u8])`/`write(&[u8])`/Metadata、Y2 NIO 高性能后端（epoll/kqueue）、Y3 HTTP 连接复用 + sendfile Windows `TransmitFile`、Y4 Mutex/RwLock guard 完整 + Channel 泛型化/bounded、Y5 `Box::leak` 目标签名、Y6 `Error::source` + `Into::into` 自动转换、Y7 UDP（`net/udp.rl`）、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 📋 规划 |
 
 > **推荐执行路线**：

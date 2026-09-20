@@ -1,4 +1,4 @@
-// 跨模块协议引用：impl Point: m::Show 与 fn f<T: m::Show>（module 路径 trait 名，
+// 跨模块协议引用：impl Point: m::Show 与 fn f<T: m::Show>（module 路径 protocol 名，
 // parse_conformance_list / 泛型 bound 现已支持 :: 限定名）。应输出 7。
 // flag: --no-std
 module m {

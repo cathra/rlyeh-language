@@ -1,7 +1,7 @@
-// 阶段 Q3 / X4 验收：Display / Debug trait + Formatter + 格式化引擎接入。
-// - Q3a/Q3b：std `fmt/module.rl` 定义 `trait Display { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> }`
-//   与 `trait Debug { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> }`（X4：`Debug::fmt_debug`
-//   改名 `Debug::fmt`，同名经 impl 查找按 trait 区分）；`Formatter { buf, fill, width, align }`
+// 阶段 Q3 / X4 验收：Display / Debug protocol + Formatter + 格式化引擎接入。
+// - Q3a/Q3b：std `fmt/module.rl` 定义 `protocol Display { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> }`
+//   与 `protocol Debug { fn fmt(&self, f: &mut Formatter) -> Result<(), FmtError> }`（X4：`Debug::fmt_debug`
+//   改名 `Debug::fmt`，同名经 impl 查找按 protocol 区分）；`Formatter { buf, fill, width, align }`
 //   + `Formatter::new()` + `write_str`/`result`。`fmt` 返回 `Result<(), FmtError>`（写缓冲 + 错误返回）。
 // - Q3b：`{}` 查 `fmt::Display::fmt`，`{:?}` 查 `fmt::Debug::fmt`；`dbg!` 用 Debug 格式。
 //   内建类型（i64/bool/String/&str）走内建转换。

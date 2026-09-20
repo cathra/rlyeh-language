@@ -851,7 +851,7 @@ fn keyword_or_ident(text: &str) -> Token {
         "struct" => Token::Struct,
         "enum" => Token::Enum,
         // `protocol` 为协议声明关键字；`impl` 为扩展块关键字（`impl T: P` / `impl T`）。
-        // `trait` / `extension` 已从语法中彻底移除（见 docs/rfc/protocol-syntax.md §7.11）。
+        // `protocol` / `extension` 已从语法中彻底移除（见 docs/rfc/protocol-syntax.md §7.11）。
         "impl" => Token::Impl,
         "protocol" => Token::Protocol,
         "type" => Token::Type,

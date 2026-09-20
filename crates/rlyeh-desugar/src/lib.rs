@@ -180,7 +180,7 @@ pub fn desugar_program(program: &mut AstProgram) -> Result<(), DesugarError> {
 /// - `struct C: P { fields; members }` → 按「成员名是否属于 P 的需求集」拆分：属于 P 的成员入
 ///   `impl P for C`，其余入固有 `impl C`；协议无匹配成员时仍发空 impl（用于默认方法一致性声明）。
 /// - 多协议 `struct C: A, B { .. }` → 逐协议展开；成员按「首个接受它的协议」归属，未匹配者入固有 impl。
-/// - `enum E: P { .. }` 同理。内置 trait（`Drop`/`Any`）或预扫描未命中的协议视为「接受全部成员」。
+/// - `enum E: P { .. }` 同理。内置 protocol（`Drop`/`Any`）或预扫描未命中的协议视为「接受全部成员」。
 ///
 /// 递归处理模块项。
 fn lower_type_conformance(program: &mut AstProgram) -> Result<(), DesugarError> {
@@ -190,7 +190,7 @@ fn lower_type_conformance(program: &mut AstProgram) -> Result<(), DesugarError> 
     lower_items(&mut program.items, &proto_members)
 }
 
-/// 递归收集协议（`protocol`/`trait`）的成员名集合（方法 + 关联类型），供裁决拆分使用。
+/// 递归收集协议（`protocol`/`protocol`）的成员名集合（方法 + 关联类型），供裁决拆分使用。
 fn collect_protocol_members(
     items: &[AstItem],
     prefix: &str,
@@ -198,7 +198,7 @@ fn collect_protocol_members(
 ) {
     for item in items {
         match item {
-            AstItem::TraitDecl(t) => {
+            AstItem::ProtocolDecl(t) => {
                 let mut names: HashSet<String> = HashSet::new();
                 for m in &t.methods {
                     names.insert(m.name.clone());
@@ -227,8 +227,8 @@ fn collect_protocol_members(
 /// 构造一个归一后的 `AstItem::ImplBlock`。
 #[allow(clippy::too_many_arguments)]
 fn make_impl(
-    trait_name: Option<String>,
-    trait_type_args: Vec<AstType>,
+    protocol_name: Option<String>,
+    protocol_type_args: Vec<AstType>,
     type_name: String,
     span: Span,
     generics: Vec<AstTypeParam>,
@@ -236,11 +236,11 @@ fn make_impl(
     types: Vec<(String, AstType)>,
 ) -> AstItem {
     AstItem::ImplBlock(Box::new(AstImplBlock {
-        trait_name,
+        protocol_name,
         type_name,
         generics,
-        trait_type_args,
-        extra_traits: Vec::new(),
+        protocol_type_args,
+        extra_protocols: Vec::new(),
         types,
         methods,
         span,
@@ -249,7 +249,7 @@ fn make_impl(
 
 /// PC-9：把 `impl T: A, B { .. }` 的多协议一致性拆分为多个独立 impl 块。
 ///
-/// 第 0 个协议（原 `trait_name`）保留在原块（位置不变），其余协议追加到 `synthesized`。
+/// 第 0 个协议（原 `protocol_name`）保留在原块（位置不变），其余协议追加到 `synthesized`。
 /// 成员按「首个接受它的协议」归属（与声明点一致性 `struct C: A, B` 同一规则）；无处归属者
 /// 并入首个协议块——保证 `impl T: A, B { .. }` 与「拆成多个 `impl` 分别书写」在成员全属
 /// 首协议时等价。
@@ -261,18 +261,18 @@ fn lower_impl_conformance(
     let type_name = i.type_name.clone();
     let span = i.span;
     let generics = i.generics.clone();
-    let first = i.trait_name.take();
-    let first_args = std::mem::take(&mut i.trait_type_args);
+    let first = i.protocol_name.take();
+    let first_args = std::mem::take(&mut i.protocol_type_args);
     let mut protocols: Vec<(String, Vec<AstType>)> = Vec::new();
     if let Some(f) = first {
         protocols.push((f, first_args));
     }
-    protocols.extend(std::mem::take(&mut i.extra_traits));
+    protocols.extend(std::mem::take(&mut i.extra_protocols));
     if protocols.len() < 2 {
         // 防御：无额外协议时不应进入此处；回填后原样返回。
         if let Some((p, a)) = protocols.pop() {
-            i.trait_name = Some(p);
-            i.trait_type_args = a;
+            i.protocol_name = Some(p);
+            i.protocol_type_args = a;
         }
         return;
     }
@@ -299,8 +299,8 @@ fn lower_impl_conformance(
     }
     let (m0, t0) = buckets.remove(0);
     let (p0, a0) = protocols.remove(0);
-    i.trait_name = Some(p0);
-    i.trait_type_args = a0;
+    i.protocol_name = Some(p0);
+    i.protocol_type_args = a0;
     i.methods = m0;
     i.types = t0;
     for ((pn, pargs), (pm, pt)) in protocols.into_iter().zip(buckets) {
@@ -332,7 +332,7 @@ fn lower_items(
     for item in items.iter_mut() {
         // PC-9：`impl T: A, B { .. }`（多协议一致性）→ 按协议成员名裁决拆分为多个 impl 块。
         if let AstItem::ImplBlock(i) = item {
-            if !i.extra_traits.is_empty() {
+            if !i.extra_protocols.is_empty() {
                 lower_impl_conformance(i, &mut synthesized, proto_members);
             }
             continue;
@@ -381,7 +381,7 @@ fn lower_items(
         let mut inherent_methods: Vec<AstFnDecl> = Vec::new();
         let mut inherent_types: Vec<(String, AstType)> = Vec::new();
         // 协议 `p` 是否「接受」成员名 `name`：已预扫描者查其需求集；
-        // 未命中（内置 trait / 跨编译单元协议）者视为接受全部。
+        // 未命中（内置 protocol / 跨编译单元协议）者视为接受全部。
         let accepts = |p: &str, name: &str| -> bool {
             proto_members.get(p).map_or(true, |s| s.contains(name))
         };

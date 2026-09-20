@@ -159,7 +159,7 @@ pub(crate) fn fmt_expr(e: &AstExpr) -> String {
             receiver,
             method,
             args,
-            trait_hint: _,
+            protocol_hint: _,
         } => {
             let r = fmt_operand(receiver, PREC_POSTFIX, false);
             let a = args.iter().map(fmt_expr).collect::<Vec<_>>().join(", ");

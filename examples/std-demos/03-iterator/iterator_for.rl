@@ -18,7 +18,7 @@ impl Counter {
     }
 }
 
-// trait 迭代器：`impl NextIter for Step` 同样接入 for
+// protocol 迭代器：`impl NextIter for Step` 同样接入 for
 protocol NextIter {
     fn next(&mut self) -> Option<i64>;
 }
@@ -65,7 +65,7 @@ fn main() {
     }
     println(total); // 0+1 = 1
 
-    // 4. trait 迭代器接入 for：2, 4, 6, ..., 98, 100 之和
+    // 4. protocol 迭代器接入 for：2, 4, 6, ..., 98, 100 之和
     let st = Step { cur: 2, step: 2 };
     let mut s = 0;
     for v in st {

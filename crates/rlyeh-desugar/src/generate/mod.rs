@@ -129,7 +129,7 @@ fn poll_call(receiver: AstExpr, span: Span) -> AstExpr {
             receiver,
             method: "poll".to_string(),
             args: vec![cx_ref],
-            trait_hint: None,
+            protocol_hint: None,
         },
         span,
     )
@@ -214,14 +214,14 @@ pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
         span,
     };
     AstItem::ImplBlock(Box::new(AstImplBlock {
-        trait_name: Some("Future".to_string()),
+        protocol_name: Some("Future".to_string()),
         type_name: fut_ty_name(&a.decl.name),
         // W6：透传泛型参数到 impl（`impl<T> Future for __Fut_foo<T>`）。
         generics: a.decl.generics.clone(),
-        // P6c：trait 泛型实参（Future 无泛型实参，空）。
-        trait_type_args: Vec::new(),
+        // P6c：protocol 泛型实参（Future 无泛型实参，空）。
+        protocol_type_args: Vec::new(),
         // PC-9：多协议一致性（Future 为单协议，空）。
-        extra_traits: Vec::new(),
+        extra_protocols: Vec::new(),
         // W6：关联类型定义 `type Output = <ret_ty or i64>;`（U2）。
         // `()` 返回沿用 i64（尾值 Ready(0)）；泛型返回 `T` 经单态化替换。
         types: vec![(

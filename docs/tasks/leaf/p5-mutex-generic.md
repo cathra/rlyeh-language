@@ -28,12 +28,12 @@ impl<T> Mutex<T> {
 impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 ```
 
-**MVP 决策**：`get/get_mut` 用**裸指针**（`value: i64` 存 `&value` 地址，经 `__rlyeh_deref`/extern 间接访问，绕过借用检查）；**不做 Deref trait 分派**（Y4b 识别为破坏性大改动，MVP 用显式方法绕过）。
+**MVP 决策**：`get/get_mut` 用**裸指针**（`value: i64` 存 `&value` 地址，经 `__rlyeh_deref`/extern 间接访问，绕过借用检查）；**不做 Deref protocol 分派**（Y4b 识别为破坏性大改动，MVP 用显式方法绕过）。
 
 ## 语言级障碍
 
 - **生命周期/借用缺失**：`lock_guard()` 返回携带 `&mut value` 的守卫需借用检查器理解「锁生命周期 = 守卫生命周期」，MVP 用裸指针绕过
-- **Deref trait 分派（可选）**：`*g` 解引用需语言级 Deref，MVP 用显式 `get/get_mut`
+- **Deref protocol 分派（可选）**：`*g` 解引用需语言级 Deref，MVP 用显式 `get/get_mut`
 - 泛型静态方法携带数据构造：`new(v: T)` 的 `Mutex { p, value: v }`，字段 `value: T` 为裸 `Generic(tp)`，Y4a 字段推断已支持
 
 ## 波及范围（破坏性改动，需统一迁移）

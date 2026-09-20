@@ -21,7 +21,7 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 
 ## 实现纪要（L0，2026-09-04）
 - harness 新增 `diagnostics` 维度（`scripts/diff_harness.py`）：捕获 `rlyeh run <file>` 的 stderr 诊断文本（类型检查 / 借用检查错误），无论退出码均记为已获取，诊断文本本身即快照标的。
-- 新增 `tests/snapshot-baseline-diag-probe.txt`（12 例 compile-fail 代表性用例，覆盖类型不匹配 / 方法未找到 / 未定义变量·函数 / 借用冲突 / 泛型 where 约束 / match 守卫兜底 / 元组解构元数 / `?` 非 Option / 未知字段 / trait 约束 / 类型联合收窄），仅存 `diagnostics` 维度快照。
+- 新增 `tests/snapshot-baseline-diag-probe.txt`（12 例 compile-fail 代表性用例，覆盖类型不匹配 / 方法未找到 / 未定义变量·函数 / 借用冲突 / 泛型 where 约束 / match 守卫兜底 / 元组解构元数 / `?` 非 Option / 未知字段 / protocol 约束 / 类型联合收窄），仅存 `diagnostics` 维度快照。
 - CI（`.github/workflows/ci.yml`）新增 `Diagnostics probe regression (diff harness)` 步骤。
 - 验证：diagnostics 探针连续两次 `check` 均 12/0/0/0，无诊断级非确定性。
 - 已知缺口（后续项）：当前诊断 span 坐标为**合并源码（含 std 前缀）坐标**，非用户文件坐标（如 `type-mismatch.rl` 报 `7155:18`，实为 std 预置偏移后的行号）。**L1（用户态 span 对齐）** 需让 typecheck/borrowck/regionck 诊断减去 `prelude_len` 还原为用户行号；**L2（结构化诊断：稳定错误码 + 修复建议）** 亦为后续项。本增量仅为 L3 诊断对拍建立 harness 侧回归网。
@@ -39,7 +39,7 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
   - `rlyeh-borrowck/src/error.rs` / `rlyeh-regionck/src/error.rs`：构造器新增 `span: Span` 参数并记录 `line/col`；新增 `message()`（不含坐标前缀，供 `// expect:` 子串断言复用）与 `render(prelude_lines)`（减预置行数 + `line:col:` 前缀）；`Display` 调 `render(0)` 保持无偏移语义。
   - `rlyeh-borrowck/Cargo.toml` / `rlyeh-regionck/Cargo.toml`：新增 `rlyeh-lexer` 依赖（引入 `Span`）。
   - `rlyeh-borrowck/src/checker.rs` / `rlyeh-regionck/src/checker.rs`：新增 `cur_span: Span` 字段，在 `check_program`/`check_item` 进入函数体时置为 `item.span`；全部错误构造点透传 `self.cur_span`。
-  - `rlyeh-driver/src/util.rs`：新增 `DiagnosticsText` trait（`to_user_text(prelude_lines)`），`BorrowError`/`RegionError` 各自实现；`join_errors` 改为 `join_errors<T: DiagnosticsText>(errs, prelude_lines)`。
+  - `rlyeh-driver/src/util.rs`：新增 `DiagnosticsText` protocol（`to_user_text(prelude_lines)`），`BorrowError`/`RegionError` 各自实现；`join_errors` 改为 `join_errors<T: DiagnosticsText>(errs, prelude_lines)`。
   - `rlyeh-driver/src/lib.rs`：`full_pipeline_with_hints` 对 borrowck/regionck 错误映射改用 `join_errors(errs, prelude_lines)`（复用既有 `prelude_lines`）。
 - 验证：`borrow-conflict-mutmut.rl` → `4:1: borrow conflict: cannot mutably borrow ...`（main 第 4 行，函数级坐标）；region 未定义 → `1:1: region 'r` not found in current scope`；compile-fail 12 例 `// expect:` 片段校验无回归（仅增 `line:col:` 前缀，消息正文不变）。
 - 已知缺口（后续项）：**语句级精确坐标**需 HIR 子节点 Span 传播（重构项）；**L2 结构化诊断**（稳定错误码 + 修复建议 + 相关 span 标注）仍待办。
@@ -82,7 +82,7 @@ Rlyeh 版编译器复刻 Rust 参考实现的 **span 级诊断质量**（文件�
 | 2026-09-01 | 新增（评审发现：诊断质量对齐未在原评估缺口中单列） |
 | 2026-09-04 | L0 落地：harness `diagnostics` 维度 + 诊断探针基线（12 例）+ CI 步骤；记录 L1 用户态 span / L2 结构化诊断为后续项 |
 | 2026-09-04 | L1 落地：typecheck 诊断行号对齐用户坐标（`to_string_with_offset` + `prelude_lines` 透传）；重新生成诊断基线（12 例，check 12/0/0/0）；borrowck/regionck Span 传播与 L2 待办 |
-| 2026-09-04 | L1 余量落地：borrowck/regionck 函数级坐标对齐（`Span` 透传 + `render(prelude_lines)` 前缀；`DiagnosticsText` trait + `join_errors` 透传 `prelude_lines`）；compile-fail 12 例片段校验无回归 |
+| 2026-09-04 | L1 余量落地：borrowck/regionck 函数级坐标对齐（`Span` 透传 + `render(prelude_lines)` 前缀；`DiagnosticsText` protocol + `join_errors` 透传 `prelude_lines`）；compile-fail 12 例片段校验无回归 |
 | 2026-09-05 | 语句级精确坐标落地：HIR Span 全量传播（`HirExpr`/`HirStmt`/`HirBlock` 携带 `span` + typecheck 填充 + borrowck/regionck 节点级 `cur_span`）；`borrow-conflict-mutmut` 基线由 `4:1` 修正为 `7:14`；diagnostics `check` 12/0/0/0 |
 | 2026-09-05 | L2 结构化诊断落地：稳定错误码（`TC/BC/RC0xx`）+ 修复建议（`= help:`）+ 相关 span 标注（`= note:`，borrow 冲突回指先前借用位置）；driver 改用 `render_structured`/`to_string_structured`，`join_errors` 换行分隔；diagnostics 基线重生成（12 例），`check` 12/0/0/0，`rlyeh test tests/` 264/264 |
 | 2026-09-05 | L2 遗留补齐：regionck 填充相关 span（`DoubleTransfer` 回指首次 transfer 处、`InvalidTransfer`/`OuterRegionTransfer` 回指目标区域声明处），`with_related` 实际使用、移除 `#[allow(dead_code)]`；新增 regionck 单测断言 `= note:` 相关位置标注 |

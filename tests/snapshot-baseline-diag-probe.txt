@@ -34,7 +34,7 @@ tests/compile-fail/tuple-destructure-arity.rl
 tests/compile-fail/question-nonoption.rl
 # 未知字段
 tests/compile-fail/unknown-field.rl
-# trait 约束不满足
+# protocol 约束不满足
 tests/compile-fail/bound-mismatch.rl
 # 类型联合收窄失败
 tests/compile-fail/struct_field_union_unnarrowed.rl

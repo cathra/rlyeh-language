@@ -1,4 +1,4 @@
-// block_on.rl：S1 异步运行时基础（Poll + Future trait + block_on 手动轮询）
+// block_on.rl：S1 异步运行时基础（Poll + Future protocol + block_on 手动轮询）
 // S1a：`Poll::Ready`/`Poll::Pending` 构造与解构；
 // S1b：block_on 循环轮询到 Ready，返回携带值。
 struct MyFut {

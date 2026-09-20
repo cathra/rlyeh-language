@@ -121,7 +121,7 @@ pub(crate) fn json_serialize_ast(
                         receiver: recv,
                         method: "push_str".to_string(),
                         args: vec![val],
-                        trait_hint: None,
+                        protocol_hint: None,
                     },
                     span,
                 )
@@ -151,7 +151,7 @@ pub(crate) fn json_serialize_ast(
                     receiver: arg.clone(),
                     method: "len".to_string(),
                     args: Vec::new(),
-                    trait_hint: None,
+                    protocol_hint: None,
                 },
                 span,
             );
@@ -283,7 +283,7 @@ pub(crate) fn json_serialize_ast(
                         receiver: recv,
                         method: "push_str".to_string(),
                         args: vec![val],
-                        trait_hint: None,
+                        protocol_hint: None,
                     },
                     span,
                 )

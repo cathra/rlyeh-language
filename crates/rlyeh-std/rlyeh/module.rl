@@ -9,9 +9,9 @@
 // （符号按顺序解析，根类型须先于子模块签名注册）。子模块经 `module <name>;`
 // 相对标准库根目录解析（`<name>.rl` 或 `<name>/module.rl`）。
 
-// Y（SH-P3-1 M1）：标记 auto-trait 声明。`Send` / `Sync` 为并发安全标记 trait，
+// Y（SH-P3-1 M1）：标记 auto-protocol 声明。`Send` / `Sync` 为并发安全标记 protocol，
 // 其自动推导（M2）与并发边界检查（M3）由编译器内建谓词 `is_send_sync` 实现
-// （与 Rust 一致：auto trait 为编译器特判，不由用户 impl 触发），此处仅声明标记，
+// （与 Rust 一致：auto protocol 为编译器特判，不由用户 impl 触发），此处仅声明标记，
 // 供用户书写 `T: Send` / `T: Sync` 约束占位。
 protocol Send {}
 protocol Sync {}
@@ -55,7 +55,7 @@ module process;   // D（SH-P2-2）：进程调用 / 外部工具链 FFI
 // 重新导出到根命名空间，保持用户 API 不变（裸名即用，无需前缀）。
 // 目录化（2026-08）：子模块按 std-lib.md §1 目标架构拆分为目录形式，
 // import 路径指向类型文件完整路径（io::error::IoError 等）。
-pub import serde::traits::Serialize;
+pub import serde::protocols::Serialize;
 pub import time::duration::Duration;
 pub import time::instant::Instant;
 pub import time::system::SystemTime;

@@ -370,7 +370,7 @@ AstProgram {
                                                                 },
                                                                 method: "len",
                                                                 args: [],
-                                                                trait_hint: None,
+                                                                protocol_hint: None,
                                                             },
                                                             span: Span {
                                                                 start: 657,

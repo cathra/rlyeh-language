@@ -1,4 +1,4 @@
-# V3-D2：`take`/`skip` trait 默认方法 + 绑定包装迭代器
+# V3-D2：`take`/`skip` protocol 默认方法 + 绑定包装迭代器
 
 > **所属任务**：[V3 Iterator 关联类型 + 适配器迁移](../v3-iterator-adapters.md)（由 V3-D 细分子任务）
 > **状态**：📋 规划
@@ -8,16 +8,16 @@
 
 ## 目标
 
-`take`/`skip` 从 typecheck 内建 desugar 迁移为 `Iterator` trait 默认方法，返回 V3-C 的 `Take`/`Skip` 包装迭代器。
+`take`/`skip` 从 typecheck 内建 desugar 迁移为 `Iterator` protocol 默认方法，返回 V3-C 的 `Take`/`Skip` 包装迭代器。
 
 ## 背景
 
-迁移后 `v.iter().take(3)` 走 trait 默认方法 + `Take` 包装迭代器（V3-C 已定义），计数归零返回 None。
+迁移后 `v.iter().take(3)` 走 protocol 默认方法 + `Take` 包装迭代器（V3-C 已定义），计数归零返回 None。
 
 ## 改动范围
 
-- **std**：`Iterator` trait 增 `fn take(self, n: i64) -> Take<Self>` / `fn skip(self, n: i64) -> Skip<Self>` 默认方法（绑定 V3-C 结构体 + `next()`）。
-- **typecheck**：`try_check_adapter` 对 `take`/`skip` 优先走通用 trait 方法解析。
+- **std**：`Iterator` protocol 增 `fn take(self, n: i64) -> Take<Self>` / `fn skip(self, n: i64) -> Skip<Self>` 默认方法（绑定 V3-C 结构体 + `next()`）。
+- **typecheck**：`try_check_adapter` 对 `take`/`skip` 优先走通用 protocol 方法解析。
 - **测试**：`v.iter().take(3)` / `skip(2)` 链式输出一致。
 
 ## 验证

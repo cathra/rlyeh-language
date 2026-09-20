@@ -7,7 +7,7 @@
 
 ## 目标
 
-`trait Future { type Output; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>; }`。
+`protocol Future { type Output; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>; }`。
 
 ## 背景
 
@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-`future.rl` trait 签名升级 `type Output` + `cx: &mut Context`；新增 `struct Context { _unit: i64 }` 占位；`block_on`/`timeout` 内 `let mut cx = Context { _unit: 0 };` + `f.poll(&mut cx)`；desugar `gen_impl` poll 签名/impl types/`Poll<Self::Output>` + `poll_call` `&mut *cx` 透传；10 处手写 impl（tests+examples）同步新签名。
+`future.rl` protocol 签名升级 `type Output` + `cx: &mut Context`；新增 `struct Context { _unit: i64 }` 占位；`block_on`/`timeout` 内 `let mut cx = Context { _unit: 0 };` + `f.poll(&mut cx)`；desugar `gen_impl` poll 签名/impl types/`Poll<Self::Output>` + `poll_call` `&mut *cx` 透传；10 处手写 impl（tests+examples）同步新签名。
 
 ## 验证
 

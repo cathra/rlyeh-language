@@ -424,6 +424,7 @@ pub(crate) fn check_in_container_expression(
                     index: Box::new(HirExpr::new(HirExprKind::Variable(i_var.clone()), Span::dummy())),
                     elem: elem_scalar,
                     is_str,
+                    len: None,
                 }, Span::dummy()),
                 mutable: false,
             }, Span::dummy()),

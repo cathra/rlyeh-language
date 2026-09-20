@@ -34,8 +34,8 @@ pub enum AstItem {
     StructDecl(Box<AstStructDecl>),
     /// 枚举声明
     EnumDecl(Box<AstEnumDecl>),
-    /// Trait 声明
-    TraitDecl(Box<AstTraitDecl>),
+    /// Protocol 声明
+    ProtocolDecl(Box<AstProtocolDecl>),
     /// impl 块
     ImplBlock(Box<AstImplBlock>),
     /// 模块声明
@@ -52,12 +52,12 @@ pub enum AstItem {
     Statement(Box<AstStmt>),
 }
 
-/// 泛型参数（U3：携带 trait bound，`T: Bound1 + Bound2`）。
+/// 泛型参数（U3：携带 protocol bound，`T: Bound1 + Bound2`）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstTypeParam {
     /// 参数名
     pub name: String,
-    /// 约束 trait 名列表（`T: A + B`；MVP 支持简单 trait 路径 ident）
+    /// 约束 protocol 名列表（`T: A + B`；MVP 支持简单 protocol 路径 ident）
     pub bounds: Vec<String>,
 }
 
@@ -72,7 +72,7 @@ pub struct AstFnDecl {
     pub params: Vec<AstParam>,
     /// 返回类型（缺省为 `()`）
     pub return_type: Option<AstType>,
-    /// 函数体（trait 抽象方法为 `None`）
+    /// 函数体（protocol 抽象方法为 `None`）
     pub body: Option<AstBlock>,
     /// 是否为 `pub`
     pub is_pub: bool,
@@ -141,7 +141,7 @@ pub struct AstStructDecl {
     pub generics: Vec<AstTypeParam>,
     /// 命名字段
     pub fields: Vec<AstStructField>,
-    /// 派生 trait 名列表（`#[derive(Serialize, Deserialize)]`，阶段 Q1b）
+    /// 派生 protocol 名列表（`#[derive(Serialize, Deserialize)]`，阶段 Q1b）
     pub derive: Vec<String>,
     /// 是否 `#[repr(C)]`（SH-P0-1 E2：C ABI 内存布局标记；当前基础设施已解析并存储，
     /// 真布局（sub-8 字节字段打包）待 MIR/LIR/codegen 字段尺寸下传专项落地）
@@ -214,10 +214,10 @@ pub struct AstEnumVariant {
     pub span: Span,
 }
 
-/// Trait 声明。
+/// Protocol 声明。
 #[derive(Debug, Clone, PartialEq)]
-pub struct AstTraitDecl {
-    /// Trait 名（关键字为 `protocol`，`trait` 已从语法移除）
+pub struct AstProtocolDecl {
+    /// Protocol 名（关键字为 `protocol`，`protocol` 已从语法移除）
     pub name: String,
     /// 是否为 `pub`（可见性导出，P2）
     pub is_pub: bool,
@@ -228,10 +228,10 @@ pub struct AstTraitDecl {
     pub types: Vec<String>,
     /// 抽象方法列表
     pub methods: Vec<AstFnDecl>,
-    /// region 参数（B-4：`trait T 'a { ... }` 后缀生命参数，region 参数化语法）
+    /// region 参数（B-4：`protocol T 'a { ... }` 后缀生命参数，region 参数化语法）
     pub region_param: Option<String>,
-    /// 父协议（supertrait）列表（PC-4：`protocol A: B, C { .. }`，元素为「协议名 + 泛型实参」）。
-    pub supertraits: Vec<(String, Vec<AstType>)>,
+    /// 父协议（superprotocol）列表（PC-4：`protocol A: B, C { .. }`，元素为「协议名 + 泛型实参」）。
+    pub superprotocols: Vec<(String, Vec<AstType>)>,
     /// 源码位置
     pub span: Span,
 }
@@ -239,23 +239,23 @@ pub struct AstTraitDecl {
 /// impl 块。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstImplBlock {
-    /// 实现的 Trait 名（`impl Trait for Type` 时为 `Some`）
-    pub trait_name: Option<String>,
+    /// 实现的 Protocol 名（`impl Protocol for Type` 时为 `Some`）
+    pub protocol_name: Option<String>,
     /// 被实现的类型名
     pub type_name: String,
     /// 泛型参数名列表
     /// 泛型参数列表
     pub generics: Vec<AstTypeParam>,
-    /// trait 泛型实参（`impl Trait<Args> for Type` 中的 `Args`，如
+    /// protocol 泛型实参（`impl Protocol<Args> for Type` 中的 `Args`，如
     /// `impl From<IoErrorKind> for IoError` 的 `IoErrorKind`）。
-    /// 此前 parser 消费后丢弃，导致 trait 关联方法的泛型参数无法绑定；
-    /// P6c（2026-08-29）补回以支持 trait 关联函数调用（如 `From::from`）。
-    pub trait_type_args: Vec<AstType>,
-    /// 额外协议（`impl T: A, B` 中 `trait_name` 之外的协议，元素为「协议名 + 泛型实参」）。
+    /// 此前 parser 消费后丢弃，导致 protocol 关联方法的泛型参数无法绑定；
+    /// P6c（2026-08-29）补回以支持 protocol 关联函数调用（如 `From::from`）。
+    pub protocol_type_args: Vec<AstType>,
+    /// 额外协议（`impl T: A, B` 中 `protocol_name` 之外的协议，元素为「协议名 + 泛型实参」）。
     ///
     /// desugar 阶段（`lower_impl_conformance`）按协议成员名裁决，拆分为多个独立 impl 块
     /// （见 `docs/rfc/protocol-syntax.md` §3.4）。
-    pub extra_traits: Vec<(String, Vec<AstType>)>,
+    pub extra_protocols: Vec<(String, Vec<AstType>)>,
     /// 关联类型定义列表（`type Item = Concrete;`）
     pub types: Vec<(String, AstType)>,
     /// 方法列表
@@ -588,10 +588,10 @@ pub enum ExprKind {
         method: String,
         /// 实参
         args: Vec<AstExpr>,
-        /// X4：可选的 trait 提示（`fmt::Display` / `fmt::Debug`）——引擎生成
-        /// 同名 trait 方法（Display::fmt 与 Debug::fmt）的调用时，据此按 trait
+        /// X4：可选的 protocol 提示（`fmt::Display` / `fmt::Debug`）——引擎生成
+        /// 同名 protocol 方法（Display::fmt 与 Debug::fmt）的调用时，据此按 protocol
         /// 区分分派；普通方法调用为 `None`。
-        trait_hint: Option<String>,
+        protocol_hint: Option<String>,
     },
 
     /// 字段访问
@@ -936,7 +936,7 @@ pub enum AstType {
     Ref(Box<AstType>, bool, Option<String>),
     /// 裸指针类型（`*const T` / `*mut T`）
     RawPtr(Box<AstType>, bool),
-    /// trait 对象类型（`dyn Trait`：数据指针 + vtable 胖指针）
+    /// protocol 对象类型（`dyn Protocol`：数据指针 + vtable 胖指针）
     Dyn(String),
     /// 元组类型 `(A, B)`
     Tuple(Vec<AstType>),

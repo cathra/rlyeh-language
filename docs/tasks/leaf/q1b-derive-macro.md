@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-lexer 新增 `Pound` token + parser `parse_attributes` 特判，`AstStructDecl.derive` 存储 trait 名列表；其它 attribute 名报错、非 struct 项宽松忽略。
+lexer 新增 `Pound` token + parser `parse_attributes` 特判，`AstStructDecl.derive` 存储 protocol 名列表；其它 attribute 名报错、非 struct 项宽松忽略。
 
 ## 验证
 

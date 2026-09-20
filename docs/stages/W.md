@@ -8,7 +8,7 @@
 
 | 任务 | 内容 | 状态 | 详情 |
 |------|------|------|------|
-| W1 | **Future 泛型化**：`trait Future { type Output; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>; }`（依赖 U2 关联类型；`Context`/`Pin<&mut Self>` 为占位类型——`Pin` 语义 MVP 可退化 `&mut Self`）；async fn desugar 输出 `Output` 泛型化（当前固定 i64） | ✅ 已完成 | [`w1-future-generic.md`](../tasks/leaf/w1-future-generic.md) |
+| W1 | **Future 泛型化**：`protocol Future { type Output; fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>; }`（依赖 U2 关联类型；`Context`/`Pin<&mut Self>` 为占位类型——`Pin` 语义 MVP 可退化 `&mut Self`）；async fn desugar 输出 `Output` 泛型化（当前固定 i64） | ✅ 已完成 | [`w1-future-generic.md`](../tasks/leaf/w1-future-generic.md) |
 | W2 | **await 状态机扩展**：await 位置扩展到控制流块内（if/match/loop 体，状态机段切分按控制流图而非直线）、表达式中间嵌套 await（`a.await + b.await`）；跨 await 变量从 `i64` 扩展到引用类型（依赖 U1）；消除 S1c 显式报错限制 | ✅ 已完成 | [`w2-await-state-machine.md`](../tasks/leaf/w2-await-state-machine.md) |
 | W3 | **事件驱动 executor**：`rlyeh-async-runtime`（或语言侧 `async/executor.rl` + `task.rl`）——基于 R1 Poller（poll(2)，后续接 epoll/kqueue，见 Y2）的事件循环 + 任务队列 + Waker/唤醒注册：`block_on` 从忙等轮询改为「poll Pending → 注册 fd/定时器 → 事件就绪唤醒」；为 W5 提供真异步底座。**风险**：单线程事件循环 + Future 状态机 + fd 注册表三者联动是 MVP 后最大子系统，建议分两步——先「定时器唤醒」（sleep/超时事件驱动），再「fd 事件唤醒」 | ✅ 两步完成（定时器唤醒 + fd 事件唤醒；执行情况见 [`w3-event-executor.md`](../tasks/leaf/w3-event-executor.md) |
 | W4 | **`join_all`/`timeout` Future 版**：`join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output>`（依赖 W1 + 泛型集合；并发轮询，非线程版）；`timeout<F: Future>(d, fut) -> Result<F::Output, TimeoutError>` + `TimeoutError` 类型（§12 错误体系扩展），替代 `Err(-1)` 退化 | ✅ 完成 | [`w4-join-all-timeout.md`](../tasks/leaf/w4-join-all-timeout.md) |

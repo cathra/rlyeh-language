@@ -27,16 +27,16 @@
 （状态标记：🟢 完成 / ⏳ 规划中，详见 [P0 索引](./self-hosting-p0.md)）
 - 🟢 [SH-P0-1 `unsafe` 块 / 裸指针 / `#[repr(C)]`](./leaf/sh-p0-1-unsafe.md) → 0.2.0-E
 - 🟢 [SH-P0-2 跨函数边界闭包 + `move` + `'static`](./leaf/sh-p0-2-closure.md) → 0.2.0-F
-- 🟢 [SH-P0-3 `dyn Trait` 含 `Self` 方法 + `Any` 类型擦除](./leaf/sh-p0-3-dyn-any.md) → 0.2.0-G
+- 🟢 [SH-P0-3 `dyn Protocol` 含 `Self` 方法 + `Any` 类型擦除](./leaf/sh-p0-3-dyn-any.md) → 0.2.0-G
 - 🟢 [SH-P0-4 并发原语（Arc<Mutex>/atomic/线程 spawn）](./leaf/sh-p0-4-concurrency.md) → 0.2.0-H
 - 🟢 [SH-P0-5 元组值构造 + 解构（多返回值）](./leaf/sh-p0-5-tuple-value.md) → 0.2.0-N（复审补遗；复核后仅解构为真缺口）
 - 🟢 [SH-P0-6 `if let` / `while let` 模式控制流](./leaf/sh-p0-6-if-let.md) → 0.2.0-O（复审补遗；语言此前完全缺失，parser 层 desugar 落地）
 - 🟢 [SH-P0-7 `match` 守卫 + 范围/或模式](./leaf/sh-p0-7-match-guard.md) → 0.2.0-P（复审补遗；M1 修复缺陷、M2 补 typecheck、M3 或模式全链路新增）
-- 🟢 [SH-P0-8 `Drop` trait / 析构 / RAII](./leaf/sh-p0-8-drop.md) → 0.2.0-Q（复审补遗；Q1–Q3 已落地，Q4 智能指针接入待办）
+- 🟢 [SH-P0-8 `Drop` protocol / 析构 / RAII](./leaf/sh-p0-8-drop.md) → 0.2.0-Q（复审补遗；Q1–Q3 已落地，Q4 智能指针接入待办）
 
 ### P1 — 需新增语言/标准库特性（0.2.0 必须项）
-- [SH-P1-1 泛型 trait/impl 完整化](./leaf/sh-p1-1-generic-trait.md) → 0.2.0-A
-- [SH-P1-2 trait derive 宏](./leaf/sh-p1-2-derive.md) → 0.2.0-C
+- [SH-P1-1 泛型 protocol/impl 完整化](./leaf/sh-p1-1-generic-protocol.md) → 0.2.0-A
+- [SH-P1-2 protocol derive 宏](./leaf/sh-p1-2-derive.md) → 0.2.0-C
 - [SH-P1-3 嵌套模块 / `pub use` / `super`](./leaf/sh-p1-3-nested-module.md) → 0.2.0-B
 - [SH-P1-4 `Deref`/`DerefMut` 用户类型自动解引用强制](./leaf/sh-p1-4-deref.md) → 0.2.0-R（复审补遗）
 - [SH-P1-5 `Copy`/`Clone` 语义 + `#[derive(Copy)]` + `T: Copy` 约束](./leaf/sh-p1-5-copy-clone.md) → 0.2.0-S（复审补遗）
@@ -56,7 +56,7 @@
 - [SH-P2-11 结构体 `..` 更新 + 字段简写](./leaf/sh-p2-11-struct-update.md) → 0.2.0-X（复审补遗）
 
 ### P3 — 并发安全地基（可放宽，非硬阻塞）
-- [SH-P3-1 `Send`/`Sync` 自动 trait（放宽/标记）](./leaf/sh-p3-1-send-sync.md) → 0.2.0-Y（复审补遗；MVP 可告警式）
+- [SH-P3-1 `Send`/`Sync` 自动 protocol（放宽/标记）](./leaf/sh-p3-1-send-sync.md) → 0.2.0-Y（复审补遗；MVP 可告警式）
 
 ---
 

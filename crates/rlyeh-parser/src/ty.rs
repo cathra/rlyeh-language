@@ -61,7 +61,7 @@ impl<'src> Parser<'src> {
             Some(Token::LParen) => self.parse_tuple_type(),
             Some(Token::LBracket) => self.parse_array_type(),
             Some(Token::Fn) => self.parse_fn_type(),
-            // trait 对象 `dyn Trait`（H4）：`dyn` 后跟 trait 路径名
+            // protocol 对象 `dyn Protocol`（H4）：`dyn` 后跟 protocol 路径名
             Some(Token::Dyn) => {
                 self.bump();
                 let name = self.expect_ident()?;

@@ -1,6 +1,6 @@
-// T2 Iterator trait（MVP 退化：无关联类型 type Item，元素固定 i64）：
+// T2 Iterator protocol（MVP 退化：无关联类型 type Item，元素固定 i64）：
 // 自定义迭代器 impl Iterator for T 后经 for 循环接入（check_for_iterator
-// 检测 next() 方法，inherent 或 trait impl 均可）
+// 检测 next() 方法，inherent 或 protocol impl 均可）
 // 计数器迭代器：从 start 递增到 end（含），步长 1
 struct Counter {
     cur: i64,
@@ -35,7 +35,7 @@ impl Step: Iterator {
 }
 
 fn main() {
-    // 1. Counter 经 trait 接入 for：1+2+3+4 = 10
+    // 1. Counter 经 protocol 接入 for：1+2+3+4 = 10
     let mut c = Counter { cur: 1, end: 4 };
     let mut sum = 0;
     for x in c {
@@ -59,7 +59,7 @@ fn main() {
     }
     println(s2); // 12
 
-    // 4. 直接调用 next（trait 方法）：与 for 一致
+    // 4. 直接调用 next（protocol 方法）：与 for 一致
     let mut c2 = Counter { cur: 1, end: 3 };
     match c2.next() {
         Option::Some(v) => println(v), // 1

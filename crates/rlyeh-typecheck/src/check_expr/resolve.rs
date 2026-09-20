@@ -62,7 +62,7 @@ pub(crate) fn resolve_ast_type(
     match ty {
         AstType::Path(name, args) => {
             // `Self::Item`：关联类型引用（U2）——impl 收集时查当前 assoc_types
-            // 映射替换为具体类型；trait 声明收集时（无 impl 上下文）退化为
+            // 映射替换为具体类型；protocol 声明收集时（无 impl 上下文）退化为
             // 占位 `Type::Generic("Self::Item")`（仅作记录，不参与实例化替换）。
             if let Some(member) = name.strip_prefix("Self::") {
                 if let Some(t) = ctx.assoc_types.get(member) {
@@ -73,7 +73,7 @@ pub(crate) fn resolve_ast_type(
             // W4/V3-A4 补全：关联类型投影 `F::Item` / `F::Output`。
             // - base 为当前泛型参数时：产出 `Type::AssocProjection`，实例化时替换求值。
             // - base 为已命名具体类型（如 `Range::Item`）时：立即经 `eval_assoc_projection`
-            //   查该类型的 trait impl 的关联类型求值（V3-A4）。
+            //   查该类型的 protocol impl 的关联类型求值（V3-A4）。
             if args.is_empty() {
                 if let Some((base, member)) = name.rsplit_once("::") {
                     let is_generic_param = ctx.type_params.iter().any(|p| p == base)
@@ -140,23 +140,23 @@ pub(crate) fn resolve_ast_type(
             let inner = resolve_ast_type(ctx, inner, span)?;
             Ok(Type::RawPtr(Box::new(inner), *is_mut))
         }
-        // trait 对象（H4）：`dyn Trait` → `Type::Dyn(完整 trait 名)`。
+        // protocol 对象（H4）：`dyn Protocol` → `Type::Dyn(完整 protocol 名)`。
         // 布局为 2 槽胖指针（数据指针 + vtable 指针），转换与调用见
         // `coerce_to_dyn` / `check_method_call` 的 Dyn 分支。
         AstType::Dyn(name) => {
             // G-M2（SH-P0-3）：`dyn Any` 为编译器内置的类型擦除标签，不要求
-            // trait 声明存在。统一归一为 `Any`，使 `is_any_trait` 在各处
+            // protocol 声明存在。统一归一为 `Any`，使 `is_any_protocol` 在各处
             // （coerce_to_dyn / any_type_id / any_downcast_ref）稳定匹配。
-            if is_any_trait(name) {
+            if is_any_protocol(name) {
                 return Ok(Type::Dyn("Any".to_string()));
             }
-            // 复用 resolve_trait_key：支持裸名 / 模块前缀 / use 别名 / `::Name` 结尾
+            // 复用 resolve_protocol_key：支持裸名 / 模块前缀 / use 别名 / `::Name` 结尾
             // 定位（与 collect_impl 一致）。
-            // P7d-1（2026-08-29）：若未找到且当前正在收集同名 trait（自引用 trait，
-            // 如 `trait Error { fn source(&self) -> Option<&dyn Error> }`），回退到自身。
-            if let Some(full) = ctx.resolve_trait_key(name) {
+            // P7d-1（2026-08-29）：若未找到且当前正在收集同名 protocol（自引用 protocol，
+            // 如 `protocol Error { fn source(&self) -> Option<&dyn Error> }`），回退到自身。
+            if let Some(full) = ctx.resolve_protocol_key(name) {
                 Ok(Type::Dyn(full))
-            } else if let Some(cur) = &ctx.collecting_trait {
+            } else if let Some(cur) = &ctx.collecting_protocol {
                 let bare = name.rsplit("::").next().unwrap_or(name);
                 let cur_bare = cur.rsplit("::").next().unwrap_or(cur);
                 if bare == cur_bare {

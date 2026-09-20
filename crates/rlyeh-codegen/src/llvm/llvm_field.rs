@@ -195,6 +195,7 @@ impl LlvmEmitter {
                 index,
                 ty,
                 is_str,
+                len,
             } => {
                 // 数组元素步长 8 字节；字符串字符步长 1 字节。GEP 后按元素标量类型 load
                 let lt = field_scalar_llvm(*ty)?;
@@ -210,6 +211,30 @@ impl LlvmEmitter {
                     body,
                     f,
                 )?;
+                // 边界检查（TCL2/ASIL：消除越界 UB，越界确定性 abort）
+                if let Some(len_local) = len {
+                    let ln = self.operand_value(
+                        &LirOperand::Local(len_local.clone()),
+                        LirType::I64,
+                        body,
+                        f,
+                    )?;
+                    let neg = self.reg();
+                    let over = self.reg();
+                    let bad = self.reg();
+                    let ok = self.reg();
+                    let fail = self.reg();
+                    body.push_str(&format!("  %{neg} = icmp slt i64 {i}, 0\n"));
+                    body.push_str(&format!("  %{over} = icmp sge i64 {i}, {ln}\n"));
+                    body.push_str(&format!("  %{bad} = or i1 %{neg}, %{over}\n"));
+                    body.push_str(&format!(
+                        "  br i1 %{bad}, label %idx_fail_{fail}, label %idx_ok_{ok}\n"
+                    ));
+                    body.push_str(&format!("idx_fail_{fail}:\n"));
+                    body.push_str("  call void @abort()\n");
+                    body.push_str("  unreachable\n");
+                    body.push_str(&format!("idx_ok_{ok}:\n"));
+                }
                 let addr = self.reg();
                 if *is_str {
                     body.push_str(&format!("  %{addr} = getelementptr i8, i8* {b}, i64 {i}\n"));
@@ -248,6 +273,7 @@ impl LlvmEmitter {
                 value,
                 ty,
                 is_str,
+                len,
             } => {
                 let lt = field_scalar_llvm(*ty)?;
                 let vty = field_scalar_lir(*ty);
@@ -263,6 +289,30 @@ impl LlvmEmitter {
                     body,
                     f,
                 )?;
+                // 边界检查（TCL2/ASIL：消除越界 UB，越界确定性 abort）
+                if let Some(len_local) = len {
+                    let ln = self.operand_value(
+                        &LirOperand::Local(len_local.clone()),
+                        LirType::I64,
+                        body,
+                        f,
+                    )?;
+                    let neg = self.reg();
+                    let over = self.reg();
+                    let bad = self.reg();
+                    let ok = self.reg();
+                    let fail = self.reg();
+                    body.push_str(&format!("  %{neg} = icmp slt i64 {i}, 0\n"));
+                    body.push_str(&format!("  %{over} = icmp sge i64 {i}, {ln}\n"));
+                    body.push_str(&format!("  %{bad} = or i1 %{neg}, %{over}\n"));
+                    body.push_str(&format!(
+                        "  br i1 %{bad}, label %idx_fail_{fail}, label %idx_ok_{ok}\n"
+                    ));
+                    body.push_str(&format!("idx_fail_{fail}:\n"));
+                    body.push_str("  call void @abort()\n");
+                    body.push_str("  unreachable\n");
+                    body.push_str(&format!("idx_ok_{ok}:\n"));
+                }
                 let addr = self.reg();
                 if *is_str {
                     body.push_str(&format!("  %{addr} = getelementptr i8, i8* {b}, i64 {i}\n"));

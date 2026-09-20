@@ -443,8 +443,8 @@ fn run_fmt(args: &[String]) -> ExitCode {
         match args[i].as_str() {
             "--check" => check = true,
             "-w" | "--write" => write = true,
-            // PC-5 / PC-8：输出旧写法（`trait` / `impl Trait for Type`）；
-            // 默认输出新语法（`protocol` / `impl Type: Trait`）。
+            // PC-5 / PC-8：输出旧写法（`protocol` / `impl Protocol for Type`）；
+            // 默认输出新语法（`protocol` / `impl Type: Protocol`）。
             "--indent" => {
                 i += 1;
                 let Some(v) = args.get(i) else {

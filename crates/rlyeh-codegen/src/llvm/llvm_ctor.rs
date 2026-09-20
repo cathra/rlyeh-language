@@ -198,7 +198,7 @@ impl LlvmEmitter {
                 // 返回 ABI，不参与按值返回判定；但其 Return 值仍须经 4b-iv
                 // 连带剔除出 bvs——否则函数体按值返回 `{i64, i64}` 而声明为
                 // i8*，LLVM 报「value doesn't match function result type」
-                // （按值返回 `Self` 聚合经 `dyn Trait` 调用即触发此路径）。
+                // （按值返回 `Self` 聚合经 `dyn Protocol` 调用即触发此路径）。
                 let participates =
                     !f.is_extern && f.name != "main" && !taken.contains(&f.name);
                 let mut ret_vals: Vec<Local> = Vec::new();

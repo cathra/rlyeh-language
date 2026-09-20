@@ -2,7 +2,7 @@
 
 > **文档性质**：自举（self-hosting）主题权威评估报告。回答一个核心问题——**当前 Rlyeh 0.1.0 工具链（全部用 Rust 实现）能否用 Rlyeh 语言自身实现？**
 > **评估范围**：全栈编译器（前端 → 后端含 LLVM 代码生成）、标准库（`rlyeh-std`）、工具（`tools/`）。
-> **结论先行**：前端（词法/语法/AST/宏/工具）可行性高；类型检查/驱动属中高难度但可攻克；**真正的自举死结在运行时三件套（Actor / Region / GC）与 `rlyeh-std` 的 C FFI 绑定层**——它们依赖 Rlyeh 0.1.0 完全没有的 `unsafe`、跨函数边界闭包、`dyn Trait`+`Self`+`Any`、`Arc<Mutex>`。
+> **结论先行**：前端（词法/语法/AST/宏/工具）可行性高；类型检查/驱动属中高难度但可攻克；**真正的自举死结在运行时三件套（Actor / Region / GC）与 `rlyeh-std` 的 C FFI 绑定层**——它们依赖 Rlyeh 0.1.0 完全没有的 `unsafe`、跨函数边界闭包、`dyn Protocol`+`Self`+`Any`、`Arc<Mutex>`。
 > **版本边界（2026-09-01 修正）**：0.2.0 定位为**自举能力补齐阶段**——P0 语言级特性（`unsafe`/跨边界闭包/`dyn`+`Self`+`Any`/并发原语）**均在 0.2.0 落地**，使语言具备自举表达力；运行时三件套与 `rlyeh-std` 绑定层的**重写**属 0.3.0 工作，可长期保留 Rust 经 FFI 调用。即 0.2.0 补"能力"、0.3.0 做"自举"。详见 [`development-plan-0.2.0.md`](./development-plan-0.2.0.md)。
 > **事实依据**：所有结论来自对 `crates/`、`tools/`、`dagon/` 实际源码的核查（Rust→Rlyeh 可替代性映射见 §3），并与 `docs/guide/13-references-limits.md`、`CODEBUDDY.md` 的 MVP 实测限制对照。
 
@@ -20,7 +20,7 @@ Rlyeh 的定位（README / CODEBUDDY.md）：*"实现语言：Rust（自举编�
 |------|------|
 | ✅ 可直接实现 | Rlyeh 0.1.0 已有等价能力，逻辑可平移 |
 | 🔧 需小幅补齐 | 现有能力边界内扩展（如类型推断、错误类型），不引入新语言特性 |
-| ⚠️ 需重大能力 | 必须新增语言/标准库特性（如 `unsafe`、嵌套模块、泛型 trait impl） |
+| ⚠️ 需重大能力 | 必须新增语言/标准库特性（如 `unsafe`、嵌套模块、泛型 protocol impl） |
 | ❌ 当前不可行 | 依赖 Rlyeh 完全缺失的能力（如 `unsafe` 块、类型擦除 `Any`） |
 
 ---
@@ -43,17 +43,17 @@ Rlyeh 的定位（README / CODEBUDDY.md）：*"实现语言：Rust（自举编�
 | 组件 | 职责 | ≈LoC | 可行性 | 具体约束（细化） | 关联任务 |
 |------|------|------|--------|------------------|----------|
 | `rlyeh-lexer` | 词法分析、Token/Span/错误 | ~46K | ✅ 可直接 | ① `unsafe`×2（UTF-8 解码/位置推进的小范围字节操作，可改安全写法但需 `unsafe` 兜底越界）；② `derive(Debug/Clone/PartialEq)` 需手写或等 derive 宏；③ 词法主循环 `while let Some(tok)=next()` 依赖模式控制流；④ 字符分类用 `match` 守卫/范围模式 | [SH-P0-1](../tasks/leaf/sh-p0-1-unsafe.md)（E）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P） |
-| `rlyeh-parser` | 递归下降语法分析、AST 构建、宏解析 | ~230K | ✅ 可直接 | ① `Box` 深 AST 树（Rlyeh 已有 `Box<T>` ✅）；② `unsafe`×3 小范围；③ 解析器骨架需 `(token, rest)` **元组多返回**（当前 Rlyeh 元组类型层就绪但值构造/解构缺失）；④ 重度 `if let`/`while let` 处理 `Option` 返回值；⑤ `match` 守卫/范围模式做字符分类与判别分支；⑥ 闭包表达式解析需闭包值；⑦ AST 节点 `derive` | [SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P）、[SH-P0-1](../tasks/leaf/sh-p0-1-unsafe.md)（E）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-2](../tasks/leaf/sh-p0-2-closure.md)（F）、[SH-P1-1](../tasks/leaf/sh-p1-1-generic-trait.md)（A） |
+| `rlyeh-parser` | 递归下降语法分析、AST 构建、宏解析 | ~230K | ✅ 可直接 | ① `Box` 深 AST 树（Rlyeh 已有 `Box<T>` ✅）；② `unsafe`×3 小范围；③ 解析器骨架需 `(token, rest)` **元组多返回**（当前 Rlyeh 元组类型层就绪但值构造/解构缺失）；④ 重度 `if let`/`while let` 处理 `Option` 返回值；⑤ `match` 守卫/范围模式做字符分类与判别分支；⑥ 闭包表达式解析需闭包值；⑦ AST 节点 `derive` | [SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P）、[SH-P0-1](../tasks/leaf/sh-p0-1-unsafe.md)（E）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-2](../tasks/leaf/sh-p0-2-closure.md)（F）、[SH-P1-1](../tasks/leaf/sh-p1-1-generic-protocol.md)（A） |
 | `rlyeh-ast` | AST 节点定义 | ~21K | 🔧 需小幅补齐 | ① `derive`×33（Debug/Clone/PartialEq 重度），无 derive 需手写或提供等价机制；② 枚举负载字段 `f0/f1` 命名（已实现）；③ 枚举 payload 已用元组类型 | [SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P） |
 | `rlyeh-macro` | 声明式宏展开（`macro_rules!` 自研 token 级） | ~42K | ✅ 可直接 | ① 纯 token 算法 + HashMap + 枚举树，无 proc-macro；② 遍历 token 时 `if let` 处理节点 | [SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）（基本无阻塞，✅ 可直接） |
 | `rlyeh-hir` | 高级 IR（比较链/`in`/range 展开） | ~13K | 🔧 需小幅补齐 | ① `derive`×15；② 表达式脱糖重写需 `match` 守卫/元组聚合表示 | [SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N） |
-| `rlyeh-mir` | 中级 IR（类型标注 + lowering + 优化 pass） | ~86K | ⚠️ 需重大能力 | ① 泛型函数极多，需 Rlyeh **泛型 trait/impl** 支撑（鸡生蛋：注释 typecheck 自身即依赖）；② MIR 清理需 `Drop`/`RAII`；③ 值构造/解构用元组；④ `if let` 查询 MIR 结果 | [SH-P1-1](../tasks/leaf/sh-p1-1-generic-trait.md)（A）、[SH-P0-8](../tasks/leaf/sh-p0-8-drop.md)（Q）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O） |
-| `rlyeh-lir` | 低级 IR（三地址码 + 类型推断） | ~60K | ⚠️ 需重大能力 | ① `derive`×7；② 泛型 lowering；③ 元组值/解构、值语义 `Copy`/`Clone` | [SH-P1-1](../tasks/leaf/sh-p1-1-generic-trait.md)（A）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P1-5](../tasks/leaf/sh-p1-5-copy-clone.md)（S） |
-| `rlyeh-desugar` | 语法糖脱糖（async→状态机、guard） | ~140K | ⚠️ 需重大能力 | ① 大量 `Box` AST 重写 + `derive`×4；② 需**泛型 + 嵌套模块**组织；③ 嵌套 AST 变换需**元组多返回**；④ `if let`/`match` 守卫驱动脱糖分支；⑤ 作用域清理需 `Drop`；⑥ IR 重写需 `mem::swap`/`replace` 免借用冲突；⑦ 构造 AST 用 `..` 更新/字段简写 | [SH-P1-1](../tasks/leaf/sh-p1-1-generic-trait.md)（A）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P1-3](../tasks/leaf/sh-p1-3-nested-module.md)（B）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P）、[SH-P0-8](../tasks/leaf/sh-p0-8-drop.md)（Q）、[SH-P2-8](../tasks/leaf/sh-p2-8-mem-swap.md)（U）、[SH-P2-11](../tasks/leaf/sh-p2-11-struct-update.md)（X） |
-| `rlyeh-borrowck` | 借用检查（move/borrow 分析） | ~34K | 🔧 需小幅补齐 | ① `dyn`×1（trait 对象查询）；② `unsafe`×1（可改）；③ MIR borrow 查询用 `if let`；④ IR 重写需 `mem::swap` | [SH-P0-1](../tasks/leaf/sh-p0-1-unsafe.md)（E）、[SH-P0-3](../tasks/leaf/sh-p0-3-dyn-any.md)（G）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P2-8](../tasks/leaf/sh-p2-8-mem-swap.md)（U） |
+| `rlyeh-mir` | 中级 IR（类型标注 + lowering + 优化 pass） | ~86K | ⚠️ 需重大能力 | ① 泛型函数极多，需 Rlyeh **泛型 protocol/impl** 支撑（鸡生蛋：注释 typecheck 自身即依赖）；② MIR 清理需 `Drop`/`RAII`；③ 值构造/解构用元组；④ `if let` 查询 MIR 结果 | [SH-P1-1](../tasks/leaf/sh-p1-1-generic-protocol.md)（A）、[SH-P0-8](../tasks/leaf/sh-p0-8-drop.md)（Q）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O） |
+| `rlyeh-lir` | 低级 IR（三地址码 + 类型推断） | ~60K | ⚠️ 需重大能力 | ① `derive`×7；② 泛型 lowering；③ 元组值/解构、值语义 `Copy`/`Clone` | [SH-P1-1](../tasks/leaf/sh-p1-1-generic-protocol.md)（A）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P1-5](../tasks/leaf/sh-p1-5-copy-clone.md)（S） |
+| `rlyeh-desugar` | 语法糖脱糖（async→状态机、guard） | ~140K | ⚠️ 需重大能力 | ① 大量 `Box` AST 重写 + `derive`×4；② 需**泛型 + 嵌套模块**组织；③ 嵌套 AST 变换需**元组多返回**；④ `if let`/`match` 守卫驱动脱糖分支；⑤ 作用域清理需 `Drop`；⑥ IR 重写需 `mem::swap`/`replace` 免借用冲突；⑦ 构造 AST 用 `..` 更新/字段简写 | [SH-P1-1](../tasks/leaf/sh-p1-1-generic-protocol.md)（A）、[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md)（C）、[SH-P1-3](../tasks/leaf/sh-p1-3-nested-module.md)（B）、[SH-P0-5](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7](../tasks/leaf/sh-p0-7-match-guard.md)（P）、[SH-P0-8](../tasks/leaf/sh-p0-8-drop.md)（Q）、[SH-P2-8](../tasks/leaf/sh-p2-8-mem-swap.md)（U）、[SH-P2-11](../tasks/leaf/sh-p2-11-struct-update.md)（X） |
+| `rlyeh-borrowck` | 借用检查（move/borrow 分析） | ~34K | 🔧 需小幅补齐 | ① `dyn`×1（protocol 对象查询）；② `unsafe`×1（可改）；③ MIR borrow 查询用 `if let`；④ IR 重写需 `mem::swap` | [SH-P0-1](../tasks/leaf/sh-p0-1-unsafe.md)（E）、[SH-P0-3](../tasks/leaf/sh-p0-3-dyn-any.md)（G）、[SH-P0-6](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P2-8](../tasks/leaf/sh-p2-8-mem-swap.md)（U） |
 | `rlyeh-regionck` | 区域所有权/转移检查 | ~17K | 🔧 需小幅补齐 | ① `unsafe`×1；② `#![warn(unsafe_code)]` 属性 | [SH-P0-1](../tasks/leaf/sh-p0-1-unsafe.md)（E） |
 
-**前端小结**：`lexer`/`parser`/`ast`/`macro` 逻辑可平移，但解析器骨架强依赖 [SH-P0-5 元组值/解构](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6 `if let`](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7 `match` 守卫](../tasks/leaf/sh-p0-7-match-guard.md)（P）——这三项即 **0.2.0 前端 PoC 的直接前提**（复审补遗，原评估漏判）；`hir`/`borrowck`/`regionck` 仅需手写 `derive`（[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md) C）或小幅补齐；`mir`/`lir`/`desugar` 需要 **泛型 trait/impl（[SH-P1-1](../tasks/leaf/sh-p1-1-generic-trait.md) A）+ 嵌套模块（[SH-P1-3](../tasks/leaf/sh-p1-3-nested-module.md) B）+ derive 宏（[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md) C）+ `Drop`（[SH-P0-8](../tasks/leaf/sh-p0-8-drop.md) Q）+ `mem::swap`（[SH-P2-8](../tasks/leaf/sh-p2-8-mem-swap.md) U）**。整体前端自举在补齐上述 P0/P1 能力后可行，且可用 Rlyeh 重写 `lexer`+`parser` 作为 0.2.0 的 PoC 验证。
+**前端小结**：`lexer`/`parser`/`ast`/`macro` 逻辑可平移，但解析器骨架强依赖 [SH-P0-5 元组值/解构](../tasks/leaf/sh-p0-5-tuple-value.md)（N）、[SH-P0-6 `if let`](../tasks/leaf/sh-p0-6-if-let.md)（O）、[SH-P0-7 `match` 守卫](../tasks/leaf/sh-p0-7-match-guard.md)（P）——这三项即 **0.2.0 前端 PoC 的直接前提**（复审补遗，原评估漏判）；`hir`/`borrowck`/`regionck` 仅需手写 `derive`（[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md) C）或小幅补齐；`mir`/`lir`/`desugar` 需要 **泛型 protocol/impl（[SH-P1-1](../tasks/leaf/sh-p1-1-generic-protocol.md) A）+ 嵌套模块（[SH-P1-3](../tasks/leaf/sh-p1-3-nested-module.md) B）+ derive 宏（[SH-P1-2](../tasks/leaf/sh-p1-2-derive.md) C）+ `Drop`（[SH-P0-8](../tasks/leaf/sh-p0-8-drop.md) Q）+ `mem::swap`（[SH-P2-8](../tasks/leaf/sh-p2-8-mem-swap.md) U）**。整体前端自举在补齐上述 P0/P1 能力后可行，且可用 Rlyeh 重写 `lexer`+`parser` 作为 0.2.0 的 PoC 验证。
 
 ### 3.2 编译器后端（back-end / codegen）
 
@@ -96,11 +96,11 @@ Rlyeh 的定位（README / CODEBUDDY.md）：*"实现语言：Rust（自举编�
 ### P0 — 阻塞全栈自举（Rlyeh 0.1.0 完全没有）
 1. **`unsafe` 块 / 裸指针** — `gc-runtime`（裸指针+`UnsafeCell`）、`region-alloc`（手动链表）、`actor-runtime`（`unsafe extern "C"`/`dlsym`）、`rlyeh-std/nio`（libc 封装）全部依赖。Rlyeh 0.1.0 无 `unsafe` 块 → 运行时 100% 无法自托管。
 2. **闭包跨函数边界 + `move` + `'static`** — `actor-runtime`（`spawn(move || ...)`、`Box<dyn Fn() + Send + Sync>`）、`driver`（64MB 栈线程 `spawn(move)`）。Rlyeh 0.1.0「闭包不跨函数边界 / `move` 被忽略 / 无生命周期」→ 调度器与线程模型核心逻辑无法表达。
-3. **`dyn Trait` 调用含 `Self` 的方法 + `std::any::Any` 类型擦除/downcast** — actor 消息协议 `ActorState: Any + Send + Sync`、`Box<dyn Any + Send>`、`handle_message(&mut self, ...)` 正是 `Self` 方法；Rlyeh 0.1.0「`dyn Trait` 不可调用含 `Self` 签名方法」且**无类型擦除** → 无法表达。
+3. **`dyn Protocol` 调用含 `Self` 的方法 + `std::any::Any` 类型擦除/downcast** — actor 消息协议 `ActorState: Any + Send + Sync`、`Box<dyn Any + Send>`、`handle_message(&mut self, ...)` 正是 `Self` 方法；Rlyeh 0.1.0「`dyn Protocol` 不可调用含 `Self` 签名方法」且**无类型擦除** → 无法表达。
 
 ### P1 — 阻塞前端自举（需新增语言/标准库特性）
-4. **泛型 trait + impl** — `typecheck` 自身（700K+ LoC 最大 crate）表达泛型 trait/impl（`types.rs:440`）。Rlyeh 0.1.0「trait+impl 必须非泛型」→ 注释编译器自身即鸡生蛋问题，自举前 Rlyeh 须先支持泛型 trait。
-5. **`derive` 宏 / 自动 trait 派生** — 全代码库重度（`ast`×33、`hir`×15、`typecheck`×10）。Rlyeh 0.1.0 无 derive 宏 → AST/HIR/MIR/LIR 的 `Debug/Clone/PartialEq` 需手写或提供等价机制。
+4. **泛型 protocol + impl** — `typecheck` 自身（700K+ LoC 最大 crate）表达泛型 protocol/impl（`types.rs:440`）。Rlyeh 0.1.0「protocol+impl 必须非泛型」→ 注释编译器自身即鸡生蛋问题，自举前 Rlyeh 须先支持泛型 protocol。
+5. **`derive` 宏 / 自动 protocol 派生** — 全代码库重度（`ast`×33、`hir`×15、`typecheck`×10）。Rlyeh 0.1.0 无 derive 宏 → AST/HIR/MIR/LIR 的 `Debug/Clone/PartialEq` 需手写或提供等价机制。
 6. **嵌套模块 / `pub use` / `super` / `crate::`** — 大型 crate 普遍多级模块（`driver`/`typecheck` 32 文件）。Rlyeh 0.1.0「无嵌套模块 / `pub use` / `super`」→ crate 内部组织需在 Rlyeh 侧扁平化或提供命名空间方案。
 
 ### P2 — 可行但需重写 / 外部依赖
@@ -117,7 +117,7 @@ Rlyeh 的定位（README / CODEBUDDY.md）：*"实现语言：Rust（自举编�
 | 运行时三件套无法自举 | 🔴 高 | `unsafe`/`dyn`/`Arc`/`Any`/跨边界闭包是系统性缺口，非单点修复；即便 0.2.0 引入 `unsafe`，actor 运行时的 `Any` 类型擦除 + 跨线程 `dyn` 调度仍是语言级难题 |
 | **前端 PoC 前置语言特性缺失** | 🔴 高 | **复审补遗**：0.2.0 原计划漏判 `if let`/`while let`、元组值构造/解构、`match` 守卫/范围模式、`Drop`/RAII——这些是「用 Rlyeh 重写 `lexer`/`parser`/`typecheck`」的**直接前提**（解析器 `(tok,rest)`/`if let`、字符分类守卫、`MutexGuard` 自动释放），已补入 0.2.0 阶段 N–Q 并拆分中/低危子任务 |
 | LLVM IR 文本正确性 | 🟠 中 | 文本发射器工程量大、易错（ABI/phi/mem2reg），需完整测试对拍 |
-| 泛型 trait/impl 自举鸡生蛋 | 🟠 中 | 注释 typecheck 需泛型 trait，但 Rlyeh 须先有泛型 trait——需 staged bootstrap（先用 Rust 版编译器验证 Rlyeh 侧泛型 trait 实现） |
+| 泛型 protocol/impl 自举鸡生蛋 | 🟠 中 | 注释 typecheck 需泛型 protocol，但 Rlyeh 须先有泛型 protocol——需 staged bootstrap（先用 Rust 版编译器验证 Rlyeh 侧泛型 protocol 实现） |
 | 差分/对拍工程量大 | 🟠 中 | 需长期保留 Rust 参考编译器作对拍基准（K 阶段 harness），覆盖 IR/行为/诊断三维度 |
 | 外部依赖（dagon/pubgrub/压缩） | 🟡 低-中 | 算法可移植，但系统调用与压缩需 FFI；可长期保留 Rust 实现 |
 | 模块扁平化导致代码组织困难 | 🟡 低 | 大型编译器在扁平命名空间下可读性下降，可用前缀约定缓解（B 嵌套模块落地后缓解） |
@@ -133,7 +133,7 @@ Rlyeh 的定位（README / CODEBUDDY.md）：*"实现语言：Rust（自举编�
 - **路径 C — 接入 Cranelift**：需 Rlyeh FFI 调 Cranelift C API，且 Cranelift 当前未实际使用，优先级低。
 
 **阶段划分（2026-09-01 修正）**：
-1. **0.2.0 — 自举能力补齐（本计划）**：落地全部自举所需语言/标准库能力——P0 语言级特性（`unsafe`/跨边界闭包/`dyn`+`Self`+`Any`/并发原语）、P1（泛型 trait/impl、嵌套模块、derive）、P2-2（进程 FFI）、P2-3（arena/内部可变性）；并交付**前端自举 PoC**（Rlyeh 写 lexer/parser 经 Rust driver 编译）+ **FFI/ABI 链接桥** + **差分测试基础设施**验证能力地基。
+1. **0.2.0 — 自举能力补齐（本计划）**：落地全部自举所需语言/标准库能力——P0 语言级特性（`unsafe`/跨边界闭包/`dyn`+`Self`+`Any`/并发原语）、P1（泛型 protocol/impl、嵌套模块、derive）、P2-2（进程 FFI）、P2-3（arena/内部可变性）；并交付**前端自举 PoC**（Rlyeh 写 lexer/parser 经 Rust driver 编译）+ **FFI/ABI 链接桥** + **差分测试基础设施**验证能力地基。
 2. **0.3.0 — 工具链自举（用 Rlyeh 重写工具链）**：在 0.2.0 能力之上，逐步用 Rlyeh 重写 lexer→parser→…→codegen→driver→tools→std（见 `development-plan-0.3.0.md` 规划）。运行时三件套（actor/region/gc）与 `rlyeh-std` 绑定层的*重写*在 0.3.0 进行（依赖 0.2.0 的 `unsafe` 等能力），亦可持续保留 Rust 经 FFI 调用。
 
 ---

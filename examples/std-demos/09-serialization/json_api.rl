@@ -1,6 +1,6 @@
 // 阶段 Q2 验收：json 泛型 API 入口（Q2a）+ 流式 writer/reader（Q2b）。
 // - Q2a：`json.to_string(v)` / `json.from_str::<T>(s)`——编译器内建别名
-//   （≡ `json.stringify` / `json.parse::<T>`）。MVP 无泛型 trait 约束
+//   （≡ `json.stringify` / `json.parse::<T>`）。MVP 无泛型 protocol 约束
 //   （`T: Serialize` / `T: Deserialize` bound 未支持），签名退化为无 bound
 //   turbofish 形式：序列化类型由实参推断、反序列化经 turbofish 指定。
 // - Q2b：`json.to_writer(w, v)` → `w.write_all(json.stringify(v))`（返回

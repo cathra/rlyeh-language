@@ -5,7 +5,7 @@
 // - Q4b：`toml::from_str::<T>(s)` / `toml::parse::<T>(s)`：round-trip 反序列化（对齐
 //   stringify 的紧凑输出；字段序无关、缺失字段零值、未知字段忽略；嵌套 struct 为内联表；
 //   Vec/HashMap 反序列化）
-// MVP 签名降级：无泛型 trait 约束（`T: Serialize` / `T: Deserialize` bound 不支持），
+// MVP 签名降级：无泛型 protocol 约束（`T: Serialize` / `T: Deserialize` bound 不支持），
 // 退化为无 bound turbofish 形式（同 Q2 json）。
 // 输出与 toml_io.out 精确对比
 struct Point { x: i64, y: i64 }

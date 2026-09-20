@@ -25,7 +25,7 @@ Rlyeh 的设计目标是：**Rust 的安全性 + Go 的编译速度 + Erlang 的
 | `actor_pingpong` | 5 万次 actor 同步往返 | **Actor 并发模型**（消息调度吞吐） |
 | `btree` | 深度 15 完全二叉树构造 + 递归求和 | 层次内存访问 + 递归 |
 | `hashmap_str` | 1 万条字符串键 insert + get | 字符串哈希 + 运行时键构造 |
-| `dyn_dispatch` | 2000 万次多态分派 | **dyn Trait / 虚函数 vtable** |
+| `dyn_dispatch` | 2000 万次多态分派 | **dyn Protocol / 虚函数 vtable** |
 | `region_alloc` | 100 万次小对象分配 | **region 批量分配 vs 逐次分配** |
 | `region_batch` | 100 万循环 × 每次 4 小对象分配 | **region 多 bump 点批量提升** |
 | `nqueens` | 12 皇后回溯搜索 | 深度搜索 + 递归 + 剪枝分支 |
@@ -122,7 +122,7 @@ Rlyeh 的设计目标是：**Rust 的安全性 + Go 的编译速度 + Erlang 的
 - 较 C/C++/Rust/Swift（~158–181ms）快 **21–24x**：pthread condvar 每次往返需 futex 唤醒，而 Rlyeh 在竞争时才回退慢路径（`Envelope` 回复通道）。
 - 语义保守安全：变量被重新赋值导致映射失效时自动回退 vtable 间接调用。
 
-### 4.4 多态分派（dyn Trait / 虚函数）
+### 4.4 多态分派（dyn Protocol / 虚函数）
 
 `dyn_dispatch`：2000 万次多态分派，Rlyeh 4.84ms 为**仅次于 Rust（2.25ms）**，快于 Go（4.99ms）/ C（13.4ms）/ C++（12.8ms）/ Swift（24.3ms）。
 

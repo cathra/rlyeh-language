@@ -15,7 +15,7 @@ enum IoErrorKind {
 }
 
 // M1b（2026-08）：IO 错误结构（kind 分类 + 人类可读 message）。
-// 访问器返回分类 / 消息；正式 Display trait 随 Q3（格式化），MVP 用 message()。
+// 访问器返回分类 / 消息；正式 Display protocol 随 Q3（格式化），MVP 用 message()。
 struct IoError {
     kind: io::error::IoErrorKind,
     message: String,
@@ -25,7 +25,7 @@ impl IoError {
     fn new(kind: io::error::IoErrorKind, message: String) -> io::error::IoError {
         io::error::IoError { kind: kind, message: message }
     }
-    // M2b：错误转换约定（From/Into MVP 回退，见 trait 声明处注释）
+    // M2b：错误转换约定（From/Into MVP 回退，见 protocol 声明处注释）
     fn from_kind(kind: io::error::IoErrorKind) -> io::error::IoError {
         io::error::IoError { kind: kind, message: io::error::kind_message(kind) }
     }
@@ -37,9 +37,9 @@ impl IoError {
     }
 }
 
-// M2a（2026-08）：通用错误 trait（std-lib.md §12）。
-// MVP 仅 message()；正式 Display/Debug 随 Q3（格式化 trait）。
-// H4 限制：dyn Trait 仅可作局部变量绑定（不可作函数参数），
+// M2a（2026-08）：通用错误 protocol（std-lib.md §12）。
+// MVP 仅 message()；正式 Display/Debug 随 Q3（格式化 protocol）。
+// H4 限制：dyn Protocol 仅可作局部变量绑定（不可作函数参数），
 // describe 类调用在函数体内构造 `let d: dyn Error = ...`。
 // Y6a（2026-08-28）：补 `source()`——初版因 `&dyn Error` 上转型未实现退化为
 // `Option<String>`（仅返回源错误 message 字符串）。
@@ -59,8 +59,8 @@ impl IoError: Error {
     }
 }
 
-// M2b / Y6b（2026-08）：错误转换约定（std-lib.md §12 From/Into trait）。
-// Y6b（2026-08-28）：泛型 trait `From<T>`/`Into<T>` 声明 + 类型实参支持 `::` 路径
+// M2b / Y6b（2026-08）：错误转换约定（std-lib.md §12 From/Into protocol）。
+// Y6b（2026-08-28）：泛型 protocol `From<T>`/`Into<T>` 声明 + 类型实参支持 `::` 路径
 // （`impl From<io::error::IoErrorKind> for IoError`，P6a）与 `where` 子句（P6b）。
 // `IoError` 经 `From<IoErrorKind>` 接入 `from_kind`。
 // P6c（2026-08-29）：`From::from` + `?` 运算符 From 自动转换已落地；

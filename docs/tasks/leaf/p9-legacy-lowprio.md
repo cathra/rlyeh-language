@@ -2,13 +2,13 @@
 
 > **所属专项**：[专项开发计划](../专项开发计划.md)（P9）
 > **来源缺陷**：[`leaf/legacy-misc.md`](legacy-misc.md)（#1/#3/#4/#5 遗留限制）
-> **状态**：✅ 大部分完成（2026-08-29：P9a `rlyeh new` lib 模板导出函数 ✅、P9b `String::from` 多层直链 ✅、P9c `&dyn Trait` 参数/返回值 ✅；P9d 空数组字面量 ⏸️ 不实施——见下）
+> **状态**：✅ 大部分完成（2026-08-29：P9a `rlyeh new` lib 模板导出函数 ✅、P9b `String::from` 多层直链 ✅、P9c `&dyn Protocol` 参数/返回值 ✅；P9d 空数组字面量 ⏸️ 不实施——见下）
 > **风险**：低（各子项独立）
 > **前置能力**：依各子任务
 
 ## 目标
 
-收口 legacy-misc 中登记的低优先级遗留项：`rlyeh new` 增强、`String::from` 追踪扩展、dyn Trait 参数/返回值、空数组字面量/模式。
+收口 legacy-misc 中登记的低优先级遗留项：`rlyeh new` 增强、`String::from` 追踪扩展、dyn Protocol 参数/返回值、空数组字面量/模式。
 
 ## 子任务
 
@@ -38,18 +38,18 @@
   验证：`let a="x"; let b=a; let c=b; String::from(c)` → `x`（三层直链）；
   一层 `let d="y"; String::from(d)` → `y`（无回归）。
 
-### P9c dyn Trait 参数/返回值（LM#4，连 P4）
+### P9c dyn Protocol 参数/返回值（LM#4，连 P4）
 
-- **现状**：`fn_sig.rs:74-94` H4 MVP 限制——`dyn Trait` 为 2 槽胖指针，仅支持 `let d: dyn Trait = &obj;` 局部变量主路径，**暂不支持作函数/方法参数与返回值**。
+- **现状**：`fn_sig.rs:74-94` H4 MVP 限制——`dyn Protocol` 为 2 槽胖指针，仅支持 `let d: dyn Protocol = &obj;` 局部变量主路径，**暂不支持作函数/方法参数与返回值**。
 - **方案**：连 P4（dyn 上转型）一并解决，胖指针作参数/返回值。
 - **涉及**：`check_item/fn_sig.rs`
 - **验收**：`fn f(e: &dyn Error) -> &dyn Error` 可写。
-- ✅ **已完成（引用形式 `&dyn Trait`）**：P4 的 `&dyn` 上转型 + `method.rs` 的 `Ref(Dyn)`
-  虚调用扩展后，**`&dyn Trait` 作参数与返回值均已可用**（H4 的检查仅针对值形式 `Type::Dyn`，
+- ✅ **已完成（引用形式 `&dyn Protocol`）**：P4 的 `&dyn` 上转型 + `method.rs` 的 `Ref(Dyn)`
+  虚调用扩展后，**`&dyn Protocol` 作参数与返回值均已可用**（H4 的检查仅针对值形式 `Type::Dyn`，
   `Type::Ref(Dyn)` 不受限）。
   验证：`fn describe(e: &dyn Error) -> String` + `describe(d)` → `my error`；
   `fn pass(e: &dyn Error) -> &dyn Error`（参数 + 返回值透传）→ `d2.message()` = `my error`。
-- ⏸️ **值形式 `dyn Trait` 参数/返回值仍保留 H4 限制**：`fn f(e: dyn Error)` 报
+- ⏸️ **值形式 `dyn Protocol` 参数/返回值仍保留 H4 限制**：`fn f(e: dyn Error)` 报
   「`dyn Error` 作为函数/方法参数（H4 MVP 仅支持局部变量）」——2 槽胖指针需 LIR 参数/返回
   槽支持（当前 LIR 为标量槽），属独立能力，超出 P9 低优范围（引用形式已覆盖主要用例）。
 
@@ -71,7 +71,7 @@
 
 1. P9a：`rlyeh new` 选项 + lib 模板增强
 2. P9b：`String::from` 多层直链追踪
-3. P9c：dyn Trait 参数/返回值（连 P4）
+3. P9c：dyn Protocol 参数/返回值（连 P4）
 4. P9d：空数组字面量支持
 
 ## 验收标准
@@ -84,4 +84,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-08-28 | 由专项开发计划 P9 生成叶子文档（拆分 P9a/b/c/d） |
-| 2026-08-29 | ✅ P9a：`dagon/src/commands.rs` lib 模板从空壳注释改为含 `pub fn hello() -> String`（导出函数起点）；`--target`/`--toolchain` 不实施（Manifest 无字段 + 构建期选项已覆盖）。✅ P9b：`construct.rs check_string_from` 的 `local_inits` 追踪改为循环多层（深度上限 8），`let a="x"; let b=a; let c=b; String::from(c)` 可用。✅ P9c：`&dyn Trait` 作参数/返回值可用（`fn pass(e: &dyn Error) -> &dyn Error`）；值形式 `dyn Trait` 仍保留 H4 限制（需 LIR 胖指针槽）。⏸️ P9d 不实施：数组字面量为 `[T; N]`，与 `Vec<T>` 无自动转换（实测 `[1,2]` 赋给 `Vec<i64>` 亦报错），空数组仅对 `[T;0]` 有意义；Vec 空构造由 `Vec::new()`/`Vec::<T>::new()` 覆盖。cargo test（含 suite_test）全绿 |
+| 2026-08-29 | ✅ P9a：`dagon/src/commands.rs` lib 模板从空壳注释改为含 `pub fn hello() -> String`（导出函数起点）；`--target`/`--toolchain` 不实施（Manifest 无字段 + 构建期选项已覆盖）。✅ P9b：`construct.rs check_string_from` 的 `local_inits` 追踪改为循环多层（深度上限 8），`let a="x"; let b=a; let c=b; String::from(c)` 可用。✅ P9c：`&dyn Protocol` 作参数/返回值可用（`fn pass(e: &dyn Error) -> &dyn Error`）；值形式 `dyn Protocol` 仍保留 H4 限制（需 LIR 胖指针槽）。⏸️ P9d 不实施：数组字面量为 `[T; N]`，与 `Vec<T>` 无自动转换（实测 `[1,2]` 赋给 `Vec<i64>` 亦报错），空数组仅对 `[T;0]` 有意义；Vec 空构造由 `Vec::new()`/`Vec::<T>::new()` 覆盖。cargo test（含 suite_test）全绿 |

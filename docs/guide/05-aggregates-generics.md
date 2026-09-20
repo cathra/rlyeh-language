@@ -111,7 +111,7 @@ match res {
 
 ### protocol：定义"能做什么"的接口
 
-`protocol`（早期版本写作 `trait`，该关键字已从语法中移除）类似 C++ 的纯虚类 / Java 的 interface / C 的"函数指针结构体"，描述一组方法：
+`protocol`（早期版本写作 `protocol`，该关键字已从语法中移除）类似 C++ 的纯虚类 / Java 的 interface / C 的"函数指针结构体"，描述一组方法：
 
 ```rlyeh
 protocol Area {

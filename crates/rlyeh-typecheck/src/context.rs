@@ -8,7 +8,7 @@ use rlyeh_lexer::Span;
 use rlyeh_ast::{AstActorDecl, AstExpr, AstFnDecl};
 
 use crate::error::TypeError;
-use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, TraitDef, Type};
+use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, ProtocolDef, Type};
 
 /// 可见性检查模式（P2 灰度开关，由 `--visibility` 控制）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +63,7 @@ pub struct FnTemplate {
     pub name: String,
     /// 泛型参数名
     pub type_params: Vec<String>,
-    /// 泛型参数 → 约束 trait 名列表（U3：`fn f<T: Bound1 + Bound2>`）
+    /// 泛型参数 → 约束 protocol 名列表（U3：`fn f<T: Bound1 + Bound2>`）
     pub bounds: HashMap<String, Vec<String>>,
     /// 签名（参数 / 返回类型中可含 [`Type::Generic`]）
     pub sig: FnSignature,
@@ -114,13 +114,13 @@ pub struct TypeContext {
     pub structs: HashMap<String, StructDef>,
     /// 枚举定义表
     pub enum_defs: HashMap<String, EnumDef>,
-    /// trait 定义表
-    pub trait_defs: HashMap<String, TraitDef>,
-    /// P7d-1（2026-08-29）：当前正在收集的 trait 完整名（含模块前缀）。
-    /// 用于自引用 trait（如 `trait Error { fn source(&self) -> Option<&dyn Error> }`）
-    /// 在尚未注册进 trait_defs 前，让 dyn 解析回退到自身名字。
-    pub collecting_trait: Option<String>,
-    /// impl 块列表（inherent 与 trait impl 统一存放）
+    /// protocol 定义表
+    pub protocol_defs: HashMap<String, ProtocolDef>,
+    /// P7d-1（2026-08-29）：当前正在收集的 protocol 完整名（含模块前缀）。
+    /// 用于自引用 protocol（如 `protocol Error { fn source(&self) -> Option<&dyn Error> }`）
+    /// 在尚未注册进 protocol_defs 前，让 dyn 解析回退到自身名字。
+    pub collecting_protocol: Option<String>,
+    /// impl 块列表（inherent 与 protocol impl 统一存放）
     pub impl_defs: Vec<ImplDef>,
     /// 变体名索引（变体名 → (枚举名, 变体名)，支持裸名 `Some(x)` 构造）
     pub variant_index: HashMap<String, (String, String)>,
@@ -164,7 +164,7 @@ pub struct TypeContext {
     pub import_alias_spans: Vec<(String, String, Span)>,
     /// 可见性检查模式（P2），默认 `Off`（兼容存量代码 / 标准库）。
     pub visibility: VisibilityMode,
-    /// 对外公共符号面（`pub fn`/`struct`/`enum`/`const`/`static`/`actor`/`trait`/`import` 的
+    /// 对外公共符号面（`pub fn`/`struct`/`enum`/`const`/`static`/`actor`/`protocol`/`import` 的
     /// 全名）；跨模块访问私有符号（`--visibility=error`）时据此外部可达性判定。
     pub pub_symbols: std::collections::HashSet<String>,
     /// 当前作用域的泛型参数名（如 `["T"]`）
@@ -174,14 +174,14 @@ pub struct TypeContext {
     /// 当前 impl 的关联类型映射（关联类型名 → 具体类型，U2）。
     ///
     /// `collect_impl` 解析 `type Item = Concrete;` 后填充，方法签名中
-    /// `Self::Item` 经 `resolve_ast_type` 查本表替换；trait 声明收集时为空，
+    /// `Self::Item` 经 `resolve_ast_type` 查本表替换；protocol 声明收集时为空，
     /// `Self::Item` 退化为占位 `Type::Generic("Self::Item")`。
     pub assoc_types: HashMap<String, Type>,
     /// 当前 impl 的目标类型（U4：方法签名/body 中 `Self` 解析为它；
-    /// trait 上下文未设置时 `Self` 退化为占位 `Generic("Self")`）
+    /// protocol 上下文未设置时 `Self` 退化为占位 `Generic("Self")`）
     pub self_type: Option<Type>,
-    /// 当前 `let`/`return` 等上下文期望的类型（U-M3：下传到 trait 关联函数调用，
-    /// 作为协议静态方法 `Self` 的候选 `self_target`，使其可按 `let x: T = Trait::f()`
+    /// 当前 `let`/`return` 等上下文期望的类型（U-M3：下传到 protocol 关联函数调用，
+    /// 作为协议静态方法 `Self` 的候选 `self_target`，使其可按 `let x: T = Protocol::f()`
     /// 的 `T` 对齐返回类型；无期望时保持 `None`，退化为从 impl 自推断）。
     pub expected_type: Option<Type>,
     /// 遮蔽槽名计数器（生成 `name$N` 唯一槽名）
@@ -394,7 +394,7 @@ impl TypeContext {
         None
     }
 
-    /// 记录 dyn 绑定变量的具体类型（H4 去虚拟化：`let d: dyn Trait = &obj;`）。
+    /// 记录 dyn 绑定变量的具体类型（H4 去虚拟化：`let d: dyn Protocol = &obj;`）。
     pub fn insert_dyn_concrete(&mut self, name: String, type_: Type) {
         self.scopes
             .last_mut()
@@ -492,7 +492,7 @@ impl TypeContext {
         all.extend(self.constants.keys().cloned());
         all.extend(self.actors.keys().cloned());
         all.extend(self.modules.iter().cloned());
-        all.extend(self.trait_defs.keys().cloned());
+        all.extend(self.protocol_defs.keys().cloned());
         let mut cand: Vec<(usize, String)> = all
             .into_iter()
             .filter(|s| s != name)
@@ -595,9 +595,9 @@ impl TypeContext {
                 _ => break,
             }
         }
-        // Q3a 修复：模块内 trait/impl 方法签名在收集阶段解析参数类型时 use 段
+        // Q3a 修复：模块内 protocol/impl 方法签名在收集阶段解析参数类型时 use 段
         // 尚未注册，模块内短名须按 `module::Name` 前缀定位（如 `fmt/module.rl` 中
-        // `trait Display { fn fmt(&self, f: &mut Formatter) }`）。
+        // `protocol Display { fn fmt(&self, f: &mut Formatter) }`）。
         // 枚举同样按前缀定位（`protocol::Msg`），否则模块内裸名枚举类型注解
         // （`fn encode(m: Msg)`）与 match 模式解析失败。
         if !name.contains("::") && !self.module_prefix.is_empty() {
@@ -609,20 +609,20 @@ impl TypeContext {
         None
     }
 
-    /// 解析 trait 名的完整符号键（trait 未纳入 `resolve_full_name`，单独处理）。
+    /// 解析 protocol 名的完整符号键（protocol 未纳入 `resolve_full_name`，单独处理）。
     ///
-    /// 依次尝试：1) 精确键；2) 当前模块前缀；3) 以 `::name` 结尾的 trait（如
+    /// 依次尝试：1) 精确键；2) 当前模块前缀；3) 以 `::name` 结尾的 protocol（如
     /// 用户写 `From` 引用 `io::error::From`）。P6c（2026-08-29）。
-    pub(crate) fn resolve_trait_key(&self, name: &str) -> Option<String> {
-        if self.trait_defs.contains_key(name) {
+    pub(crate) fn resolve_protocol_key(&self, name: &str) -> Option<String> {
+        if self.protocol_defs.contains_key(name) {
             return Some(name.to_string());
         }
         if let Some(full) = self.resolve_full_name(name) {
-            if self.trait_defs.contains_key(&full) {
+            if self.protocol_defs.contains_key(&full) {
                 return Some(full);
             }
         }
-        self.trait_defs
+        self.protocol_defs
             .keys()
             .find(|k| k == &name || k.ends_with(&format!("::{name}")))
             .cloned()
@@ -647,7 +647,7 @@ impl TypeContext {
             return Ok(t.clone());
         }
         // U4：`Self` 解析为当前 impl 目标类型（方法签名/body 收集时设置）；
-        // trait 上下文（未设置）退化为占位 `Generic("Self")`
+        // protocol 上下文（未设置）退化为占位 `Generic("Self")`
         if name == "Self" {
             if let Some(t) = &self.self_type {
                 return Ok(t.clone());
@@ -770,15 +770,15 @@ impl TypeContext {
         def.type_params.is_empty() && def.variants.iter().all(|v| v.fields.is_empty())
     }
 
-    /// 记录一个 trait 定义。
-    pub fn insert_trait(&mut self, name: String, def: TraitDef) {
-        self.trait_defs.insert(name, def);
+    /// 记录一个 protocol 定义。
+    pub fn insert_protocol(&mut self, name: String, def: ProtocolDef) {
+        self.protocol_defs.insert(name, def);
     }
 
-    /// 查找 trait 定义。
+    /// 查找 protocol 定义。
     #[allow(dead_code)]
-    pub fn lookup_trait(&self, name: &str) -> Option<&TraitDef> {
-        self.trait_defs.get(name)
+    pub fn lookup_protocol(&self, name: &str) -> Option<&ProtocolDef> {
+        self.protocol_defs.get(name)
     }
 
     /// 记录一个 impl 块。
@@ -816,18 +816,18 @@ impl TypeContext {
     pub fn find_impl(&self, self_type: &Type) -> Option<&ImplDef> {
         self.impl_defs
             .iter()
-            .find(|d| d.trait_name.is_none() && type_matches(d, &self_type))
+            .find(|d| d.protocol_name.is_none() && type_matches(d, &self_type))
     }
 
-    /// 在 trait impl 中按目标类型查找方法所属的 impl 块。
+    /// 在 protocol impl 中按目标类型查找方法所属的 impl 块。
     #[allow(dead_code)]
-    pub fn find_trait_impl(&self, self_type: &Type) -> Option<&ImplDef> {
+    pub fn find_protocol_impl(&self, self_type: &Type) -> Option<&ImplDef> {
         self.impl_defs
             .iter()
-            .find(|d| d.trait_name.is_some() && type_matches(d, &self_type))
+            .find(|d| d.protocol_name.is_some() && type_matches(d, &self_type))
     }
 
-    /// 按目标类型查找含指定方法的 impl 块（inherent 优先，trait 次之）。
+    /// 按目标类型查找含指定方法的 impl 块（inherent 优先，protocol 次之）。
     /// 把类型名规范化：经别名链 + 后缀兜底（见 `resolve_named_type_suffix`）映射到
     /// 规范符号名。用于 impl / 方法查找时统一查询类型与注册 impl 的 `self_type`
     /// （标准库按子模块拆分后，查询方常持别名 `sync::Mutex`，而 impl 注册为
@@ -860,39 +860,39 @@ impl TypeContext {
     }
 
     /// A2（SH-P1-1，2026-09-02）：按目标类型 + 方法名查找**全部**匹配的 impl
-    /// （inherent 优先于 trait）。用于同一 `self_type` 上同一泛型 trait 的**多
+    /// （inherent 优先于 protocol）。用于同一 `self_type` 上同一泛型 protocol 的**多
     /// impl**（如 `impl Wrap<i64> for W` 与 `impl Wrap<bool> for W`），解析点
-    /// 需按 trait 类型实参 / 实参类型选取正确的 impl，而非首匹配。
+    /// 需按 protocol 类型实参 / 实参类型选取正确的 impl，而非首匹配。
     pub fn find_impl_candidates(&self, self_type: &Type, method: &str) -> Vec<ImplDef> {
         let self_type = self.canonical_type(self_type);
         let mut inherent = Vec::new();
-        let mut trait_impls = Vec::new();
+        let mut protocol_impls = Vec::new();
         for d in &self.impl_defs {
             if type_matches(d, &self_type) && d.methods.iter().any(|m| m.sig.name == method) {
-                if d.trait_name.is_none() {
+                if d.protocol_name.is_none() {
                     inherent.push(d.clone());
                 } else {
-                    trait_impls.push(d.clone());
+                    protocol_impls.push(d.clone());
                 }
             }
         }
-        inherent.extend(trait_impls);
+        inherent.extend(protocol_impls);
         inherent
     }
 
-    /// A2：按 trait 名 + 目标类型 + 方法名查找全部匹配的 trait impl（X4
-    /// `trait_hint` 路径的候选集）。
-    pub fn find_trait_method_candidates(
+    /// A2：按 protocol 名 + 目标类型 + 方法名查找全部匹配的 protocol impl（X4
+    /// `protocol_hint` 路径的候选集）。
+    pub fn find_protocol_method_candidates(
         &self,
         self_type: &Type,
-        trait_name: &str,
+        protocol_name: &str,
         method: &str,
     ) -> Vec<ImplDef> {
         let self_type = self.canonical_type(self_type);
         self.impl_defs
             .iter()
             .filter(|d| {
-                names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
+                names_match(d.protocol_name.as_deref().unwrap_or(""), protocol_name)
                     && type_matches(d, &self_type)
                     && d.methods.iter().any(|m| m.sig.name == method)
             })
@@ -900,23 +900,23 @@ impl TypeContext {
             .collect()
     }
 
-    /// X4：按目标类型 + trait 名查找含指定方法的 trait impl 块。
-    /// 用于同名方法分属不同 trait 时（如 `Display::fmt` 与 `Debug::fmt`），
-    /// 按 trait 名精确区分；`trait_name` 为解析后的完整符号名（如 `fmt::Display`）。
+    /// X4：按目标类型 + protocol 名查找含指定方法的 protocol impl 块。
+    /// 用于同名方法分属不同 protocol 时（如 `Display::fmt` 与 `Debug::fmt`），
+    /// 按 protocol 名精确区分；`protocol_name` 为解析后的完整符号名（如 `fmt::Display`）。
     ///
     /// 匹配经 [`names_match`]：先**精确**、未命中再**短名等价**——标准库按
     /// 子模块拆分后，impl 注册名可能是 `fmt::display::Display`，而调用方（如
     /// 占位符引擎）仍以 `fmt::Display` 查询。
-    pub fn find_impl_for_trait_method(
+    pub fn find_impl_for_protocol_method(
         &self,
         self_type: &Type,
-        trait_name: &str,
+        protocol_name: &str,
         method: &str,
     ) -> Option<&ImplDef> {
         let self_type = self.canonical_type(self_type);
-        // 精确匹配优先（避免同名 trait 串味）
+        // 精确匹配优先（避免同名 protocol 串味）
         if let Some(d) = self.impl_defs.iter().find(|d| {
-            d.trait_name.as_deref() == Some(trait_name)
+            d.protocol_name.as_deref() == Some(protocol_name)
                 && type_matches(d, &self_type)
                 && d.methods.iter().any(|m| m.sig.name == method)
         }) {
@@ -924,25 +924,25 @@ impl TypeContext {
         }
         // 短名等价兜底（模块化后注册名可能是 `fmt::display::Display`）
         self.impl_defs.iter().find(|d| {
-            names_match(d.trait_name.as_deref().unwrap_or(""), trait_name)
+            names_match(d.protocol_name.as_deref().unwrap_or(""), protocol_name)
                 && type_matches(d, &self_type)
                 && d.methods.iter().any(|m| m.sig.name == method)
         })
     }
 
-    /// V3 trait 默认方法回退（2026-08-26）：`find_impl_for_method` 找不到"实现了
-    /// 该方法的 impl"时，寻找类型匹配且是 trait impl、且该 trait 声明了 `method`
+    /// V3 protocol 默认方法回退（2026-08-26）：`find_impl_for_method` 找不到"实现了
+    /// 该方法的 impl"时，寻找类型匹配且是 protocol impl、且该 protocol 声明了 `method`
     /// 默认实现的 impl。返回的 impl 用于确定 self 类型与泛型统一，方法定义
-    /// （trait 默认 body）由 `check_method_call` 的 `trait_default_method` 构造。
-    pub fn find_trait_default_impl(&self, self_type: &Type, method: &str) -> Option<&ImplDef> {
+    /// （protocol 默认 body）由 `check_method_call` 的 `protocol_default_method` 构造。
+    pub fn find_protocol_default_impl(&self, self_type: &Type, method: &str) -> Option<&ImplDef> {
         self.impl_defs.iter().find(|d| {
             if !type_matches(d, &self_type) {
                 return false;
             }
-            let Some(tname) = d.trait_name.as_deref() else {
+            let Some(tname) = d.protocol_name.as_deref() else {
                 return false;
             };
-            self.trait_defs.get(tname).is_some_and(|t| {
+            self.protocol_defs.get(tname).is_some_and(|t| {
                 t.methods
                     .iter()
                     .any(|m| m.name == method && m.default_body.is_some())
@@ -959,12 +959,12 @@ impl TypeContext {
 
 /// impl 块目标类型与具体类型匹配（未含泛型参数的 impl 需精确匹配；
 /// 含泛型参数的 impl 匹配同名类型，参数在调用点替换）。
-/// trait 名等价判定：**精确相等**，或**最后一段相同**（模块化兼容）。
+/// protocol 名等价判定：**精确相等**，或**最后一段相同**（模块化兼容）。
 ///
 /// 标准库把 `fmt::Display` 下沉为子模块 `fmt::display::Display` 后，impl 的注册名与
 /// 调用方的查询名（占位符引擎、`#[derive]` 展开仍写 `fmt::Display`）可能处于不同
 /// 层级，故提供短名兜底；精确比较在调用点优先尝试
-/// （见 [`TypeContext::find_impl_for_trait_method`]）。
+/// （见 [`TypeContext::find_impl_for_protocol_method`]）。
 pub(crate) fn names_match(registered: &str, query: &str) -> bool {
     if registered == query {
         return true;
@@ -1036,7 +1036,7 @@ fn same_type(a: &Type, b: &Type) -> bool {
         // 类型实参在调用点统一；实参精确比较会破坏泛型 impl 匹配，故仅比名）。
         (Type::Named(n1, _), Type::Named(n2, _)) => n1 == n2,
         // 命名类型 ↔ 原始变体 / 原始变体 ↔ 原始变体：按规范名键互通
-        // （`impl i64: Trait` 的 self_type=`Named("i64")` 与注解 / 字面量解析出的 `Type::I64`）。
+        // （`impl i64: Protocol` 的 self_type=`Named("i64")` 与注解 / 字面量解析出的 `Type::I64`）。
         _ => {
             let k1 = type_name_key(a);
             let k2 = type_name_key(b);

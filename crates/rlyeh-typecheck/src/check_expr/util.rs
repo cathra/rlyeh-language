@@ -59,7 +59,7 @@ pub(super) fn align_string_ast(
                 receiver: recv,
                 method: method.to_string(),
                 args,
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )
@@ -226,14 +226,14 @@ pub(super) fn value_to_string_for_ty(
             span,
         ));
     }
-    // Q3b：自定义类型走 Display / Debug trait 方法
+    // Q3b：自定义类型走 Display / Debug protocol 方法
     // （X4 完整化：`{}` → `fmt::Display::fmt`，`{:?}` → `fmt::Debug::fmt`；
-    // 同名 `fmt` 经 impl 查找按 trait 名区分——`find_impl_for_trait_method`）。
+    // 同名 `fmt` 经 impl 查找按 protocol 名区分——`find_impl_for_protocol_method`）。
     // `fmt` 返回 `Result<(), FmtError>`（写缓冲），调用后取 `Formatter::result()`。
     let method = "fmt".to_string();
-    let trait_name = if debug { "fmt::Debug" } else { "fmt::Display" };
+    let protocol_name = if debug { "fmt::Debug" } else { "fmt::Display" };
     let has_impl = ctx
-        .find_impl_for_trait_method(&base, trait_name, &method)
+        .find_impl_for_protocol_method(&base, protocol_name, &method)
         .is_some();
     if has_impl {
         // 块表达式：
@@ -269,8 +269,8 @@ pub(super) fn value_to_string_for_ty(
                 receiver: arg.clone(),
                 method: method.clone(),
                 args: vec![f_ref],
-                // X4：引擎生成的 fmt 调用按 trait 分派（Display::fmt / Debug::fmt 同名）
-                trait_hint: Some(trait_name.to_string()),
+                // X4：引擎生成的 fmt 调用按 protocol 分派（Display::fmt / Debug::fmt 同名）
+                protocol_hint: Some(protocol_name.to_string()),
             },
             span,
         );
@@ -282,7 +282,7 @@ pub(super) fn value_to_string_for_ty(
                 receiver: AstExpr::new(ExprKind::Ident(tmp.clone()), span),
                 method: "result".to_string(),
                 args: Vec::new(),
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         );
@@ -622,6 +622,7 @@ pub(super) fn string_hash_hir(ctx: &mut TypeContext, s: &HirExpr) -> HirExpr {
                     index: Box::new(HirExpr::new(HirExprKind::Variable(i_name.clone()), Span::dummy())),
                     elem: FieldScalar::Int,
                     is_str: true,
+                    len: None,
                 }, Span::dummy()),
                 mutable: false,
             }, Span::dummy()),

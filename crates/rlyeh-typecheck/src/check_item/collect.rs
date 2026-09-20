@@ -57,7 +57,7 @@ pub(crate) fn resolve_struct_fields(
     let mut field_spans = Vec::with_capacity(s.fields.len());
     for field in &s.fields {
         let ty = resolve_ast_type(ctx, &field.type_, field.span)?;
-        // H4 MVP 限制：`dyn Trait` 暂不支持作为 struct 字段（2 槽胖指针字段布局规划中）
+        // H4 MVP 限制：`dyn Protocol` 暂不支持作为 struct 字段（2 槽胖指针字段布局规划中）
         if matches!(&ty, Type::Dyn(_)) {
             return Err(TypeError::Unsupported {
                 what: format!("`{ty}` 作为 struct 字段（H4 MVP 仅支持局部变量绑定）"),
@@ -85,7 +85,7 @@ pub(crate) fn resolve_struct_fields(
 
 /// SH-P0-1 E2 repr(C) 嵌套聚合内联：校验 repr(C) 结构体字段是否为 C 布局兼容类型。
 /// 允许：标量（含 sub-8 字节 i8/i16/i32/u8/u16/u32/f32/bool/char）、指针（8 字节）、
-/// 嵌套 repr(C) 结构体（内联）。拒绝：数组 / 枚举 / 联合 / dyn Trait / 字符串视图 /
+/// 嵌套 repr(C) 结构体（内联）。拒绝：数组 / 枚举 / 联合 / dyn Protocol / 字符串视图 /
 /// 元组 / 切片（规划中）；非 repr(C) 嵌套结构体须同样标注 #[repr(C)]。
 fn repr_c_field_ok(ty: &Type, ctx: &TypeContext, span: Span) -> Result<(), TypeError> {
     match ty {
@@ -111,7 +111,7 @@ fn repr_c_field_ok(ty: &Type, ctx: &TypeContext, span: Span) -> Result<(), TypeE
         }),
         _ => Err(TypeError::Unsupported {
             what: format!(
-                "repr(C) 结构体字段 `{ty}` 为不支持的聚合类型（枚举 / 联合 / 字符串视图 / dyn Trait / 元组 / 切片）"
+                "repr(C) 结构体字段 `{ty}` 为不支持的聚合类型（枚举 / 联合 / 字符串视图 / dyn Protocol / 元组 / 切片）"
             ),
             span,
         }),
@@ -167,25 +167,25 @@ pub(crate) fn collect_enum(ctx: &mut TypeContext, e: &AstEnumDecl, prefix: &str)
     Ok(())
 }
 
-pub(crate) fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &str) -> Result<(), TypeError> {
+pub(crate) fn collect_protocol(ctx: &mut TypeContext, t: &AstProtocolDecl, prefix: &str) -> Result<(), TypeError> {
     let saved_params = std::mem::take(&mut ctx.type_params);
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
     ctx.type_params = t.generics.iter().map(|p| p.name.clone()).collect();
 
     let full = full_name(prefix, &t.name);
-    // P7d-1（2026-08-29）：标记「正在收集的 trait」，使方法签名内的自引用
-    // （如 `fn source(&self) -> Option<&dyn Error>`）在 trait 尚未注册进 trait_defs
+    // P7d-1（2026-08-29）：标记「正在收集的 protocol」，使方法签名内的自引用
+    // （如 `fn source(&self) -> Option<&dyn Error>`）在 protocol 尚未注册进 protocol_defs
     // 前，经 resolve.rs 的 dyn 分支回退到自身名字解析（不提前插入占位 def，避免
-    // 干扰泛型 trait 的方法签名解析）。
-    let saved_collecting = ctx.collecting_trait.take();
-    ctx.collecting_trait = Some(full.clone());
+    // 干扰泛型 protocol 的方法签名解析）。
+    let saved_collecting = ctx.collecting_protocol.take();
+    ctx.collecting_protocol = Some(full.clone());
 
     let mut methods = Vec::new();
     for m in &t.methods {
         let mut params = Vec::with_capacity(m.params.len());
         for p in &m.params {
             if p.name == "self" {
-                // trait 方法签名中 `self` 用占位类型，具体类型由 impl 决定
+                // protocol 方法签名中 `self` 用占位类型，具体类型由 impl 决定
                 params.push(Type::Generic("Self".to_string()));
                 continue;
             }
@@ -199,8 +199,8 @@ pub(crate) fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &st
             name: m.name.clone(),
             params,
             return_type,
-            // V3 trait 默认方法：trait 方法带 body（`fn f(...) { ... }`）时保留其
-            // 完整方法 AST（含签名与默认实现体）；`impl Trait for X` 未实现该方法
+            // V3 protocol 默认方法：protocol 方法带 body（`fn f(...) { ... }`）时保留其
+            // 完整方法 AST（含签名与默认实现体）；`impl Protocol for X` 未实现该方法
             // 时回退（`check_method_call`）。抽象方法（无 body）为 `None`。
             default_body: m.body.is_some().then(|| m.clone()),
         });
@@ -208,14 +208,14 @@ pub(crate) fn collect_trait(ctx: &mut TypeContext, t: &AstTraitDecl, prefix: &st
 
     ctx.type_params = saved_params;
     ctx.generic_subst = saved_subst;
-    ctx.collecting_trait = saved_collecting;
-    ctx.insert_trait(
+    ctx.collecting_protocol = saved_collecting;
+    ctx.insert_protocol(
         full,
-        TraitDef {
+        ProtocolDef {
             name: t.name.clone(),
             type_params: t.generics.iter().map(|p| p.name.clone()).collect(),
             assoc_types: t.types.clone(),
-            supertraits: t.supertraits.iter().map(|(n, _)| n.clone()).collect(),
+            superprotocols: t.superprotocols.iter().map(|(n, _)| n.clone()).collect(),
             methods,
         },
     );
@@ -235,19 +235,19 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
             .map(|p| Type::Generic(p.name.clone()))
             .collect(),
     );
-    // trait 名解析为完整符号名（与 `dyn Trait` 解析一致）：
-    // 1) 显式 `mod::Trait` 路径原样使用；2) 当前模块前缀下存在（`impl Trait` 定义于 trait 同模块内）；
-    // 3) 顶层已定义；4) use 导入别名；5) 原样回退。inherent impl（无 trait）保持 None。
-    let trait_name = match &imp.trait_name {
+    // protocol 名解析为完整符号名（与 `dyn Protocol` 解析一致）：
+    // 1) 显式 `mod::Protocol` 路径原样使用；2) 当前模块前缀下存在（`impl Protocol` 定义于 protocol 同模块内）；
+    // 3) 顶层已定义；4) use 导入别名；5) 原样回退。inherent impl（无 protocol）保持 None。
+    let protocol_name = match &imp.protocol_name {
         Some(tn) if tn.contains("::") => Some(tn.clone()),
         Some(tn) if !prefix.is_empty()
             && ctx
-                .trait_defs
+                .protocol_defs
                 .contains_key(&format!("{}::{}", prefix, tn)) =>
         {
             Some(format!("{}::{}", prefix, tn))
         }
-        Some(tn) if ctx.trait_defs.contains_key(tn) => Some(tn.clone()),
+        Some(tn) if ctx.protocol_defs.contains_key(tn) => Some(tn.clone()),
         Some(tn) => Some(
             ctx.use_aliases
                 .get(tn)
@@ -319,13 +319,13 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
         });
     }
 
-    // P6c（2026-08-29）：解析 trait 泛型实参（如 `From<IoErrorKind>` 的 `IoErrorKind`）。
+    // P6c（2026-08-29）：解析 protocol 泛型实参（如 `From<IoErrorKind>` 的 `IoErrorKind`）。
     // 须在恢复 type_params 之前进行——此时 ctx.type_params 仍为 imp.generics（方法
-    // 循环结束后未被外层 restore 覆盖），trait 类型实参中的 impl 级泛型参数
+    // 循环结束后未被外层 restore 覆盖），protocol 类型实参中的 impl 级泛型参数
     // （如 `impl<T> Wrap<T> for Pair<T>` 的 `Wrap<T>` 之 `T`）才能正确解析；否则会因
     // type_params 已清空而报 undefined type。
-    let trait_type_args = imp
-        .trait_type_args
+    let protocol_type_args = imp
+        .protocol_type_args
         .iter()
         .map(|t| resolve_ast_type(ctx, t, imp.span))
         .collect::<Result<Vec<Type>, TypeError>>()?;
@@ -334,9 +334,9 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
     ctx.assoc_types = saved_assoc;
     ctx.self_type = saved_self;
     ctx.insert_impl(ImplDef {
-        trait_name,
+        protocol_name,
         self_type,
-        trait_type_args,
+        protocol_type_args,
         span: imp.span,
         type_params: imp.generics.iter().map(|p| p.name.clone()).collect(),
         bounds: imp
@@ -372,8 +372,8 @@ pub(crate) fn collect_mod_types_inner(
         ctx.gc_modules.insert(new_prefix.clone());
     }
     // Q3a：与 `collect_item_decls` 的 ModDecl 分支一致，模块内短名解析须感知
-    // 模块前缀（`fmt/module.rl` 的 `trait Display { fn fmt(&self, f: &mut Formatter) }`
-    // 等——collect_impl/collect_trait 收集阶段即 resolve_ast_type，use 段未注册）。
+    // 模块前缀（`fmt/module.rl` 的 `protocol Display { fn fmt(&self, f: &mut Formatter) }`
+    // 等——collect_impl/collect_protocol 收集阶段即 resolve_ast_type，use 段未注册）。
     let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
     // 先注册本模块全部 use 导入别名，再收集类型 / 子模块——避免子模块声明
     // 先于 `pub import` 时别名未注册导致全限定引用退化为别名串。
@@ -386,7 +386,7 @@ pub(crate) fn collect_mod_types_inner(
         match inner {
             AstItem::StructDecl(s) => collect_struct(ctx, s, &new_prefix)?,
             AstItem::EnumDecl(e) => collect_enum(ctx, e, &new_prefix)?,
-            AstItem::TraitDecl(t) => collect_trait(ctx, t, &new_prefix)?,
+            AstItem::ProtocolDecl(t) => collect_protocol(ctx, t, &new_prefix)?,
             AstItem::ImplBlock(imp) => collect_impl(ctx, imp, &new_prefix)?,
             AstItem::ModDecl(inner_mod) => collect_mod_types_inner(ctx, inner_mod, &new_prefix)?,
             _ => {}

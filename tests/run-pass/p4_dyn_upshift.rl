@@ -1,5 +1,5 @@
-// P4（2026-08-28）：`&dyn Trait` 上转型——`let d: &dyn Error = r;`（r: &MyError）
-// 把具体类型引用上转为胖指针引用 `&dyn Trait`，虚调用经 vtable/去虚拟化分派。
+// P4（2026-08-28）：`&dyn Protocol` 上转型——`let d: &dyn Error = r;`（r: &MyError）
+// 把具体类型引用上转为胖指针引用 `&dyn Protocol`，虚调用经 vtable/去虚拟化分派。
 // 覆盖：&dyn 上转型 + 虚调用 + 去虚拟化。
 
 protocol Error {

@@ -113,18 +113,18 @@ pub(super) fn check_generic_bounds(
             None => continue, // 未从实参确定（不推导，跳过）
         };
         for bound in bound_list {
-            // 把 bound 解析为 trait_defs 的完整键：裸名可能经 import 提升到
-            // 根命名空间，但 trait_defs 以模块路径（`future::Future`）注册，
-            // 需按 Display 名末段匹配（与 `impl Trait for T` / `dyn Trait` 的
+            // 把 bound 解析为 protocol_defs 的完整键：裸名可能经 import 提升到
+            // 根命名空间，但 protocol_defs 以模块路径（`future::Future`）注册，
+            // 需按 Display 名末段匹配（与 `impl Protocol for T` / `dyn Protocol` 的
             // 裸名解析一致）。
-            let full = resolve_trait_def_name(ctx, bound);
-            if !ctx.trait_defs.contains_key(&full) {
+            let full = resolve_protocol_def_name(ctx, bound);
+            if !ctx.protocol_defs.contains_key(&full) {
                 return Err(TypeError::UndefinedType {
                     name: bound.clone(),
                     span,
                 });
             }
-            if !type_implements_trait(ctx, &full, concrete) {
+            if !type_implements_protocol(ctx, &full, concrete) {
                 return Err(TypeError::GenericBoundMismatch {
                     param: param.clone(),
                     bound: bound.clone(),
@@ -137,44 +137,44 @@ pub(super) fn check_generic_bounds(
     Ok(())
 }
 
-pub(super) fn resolve_trait_def_name(ctx: &TypeContext, name: &str) -> String {
-    if ctx.trait_defs.contains_key(name) {
+pub(super) fn resolve_protocol_def_name(ctx: &TypeContext, name: &str) -> String {
+    if ctx.protocol_defs.contains_key(name) {
         return name.to_string();
     }
     if let Some(full) = ctx
         .use_aliases
         .get(name)
-        .filter(|f| ctx.trait_defs.contains_key(*f))
+        .filter(|f| ctx.protocol_defs.contains_key(*f))
     {
         return full.clone();
     }
-    ctx.trait_defs
+    ctx.protocol_defs
         .keys()
         .find(|k| k.rsplit("::").next() == Some(name))
         .cloned()
         .unwrap_or_else(|| name.to_string())
 }
 
-/// 类型 `concrete` 是否实现 trait `bound`（直接实现，或经父协议蕴含实现）。
+/// 类型 `concrete` 是否实现 protocol `bound`（直接实现，或经父协议蕴含实现）。
 ///
 /// PC-4：`protocol A: B` 时，实现了 `A` 的类型自动满足 `B`（父协议传递闭包）。
-pub(super) fn type_implements_trait(ctx: &TypeContext, bound: &str, concrete: &Type) -> bool {
-    // 直接实现（trait 名按精确或短名等价比较：std 模块化后 impl 的注册名可能是
+pub(super) fn type_implements_protocol(ctx: &TypeContext, bound: &str, concrete: &Type) -> bool {
+    // 直接实现（protocol 名按精确或短名等价比较：std 模块化后 impl 的注册名可能是
     // `future::interface::Future`，而 bound 仍写提升到根的短路径 `Future`）。
     if ctx.impl_defs.iter().any(|imp| {
-        imp.trait_name
+        imp.protocol_name
             .as_deref()
             .is_some_and(|t| crate::context::names_match(t, bound))
             && impl_self_type_matches(imp, concrete)
     }) {
         return true;
     }
-    // 经父协议蕴含：∃ 已实现 trait C，`bound` ∈ C 的父协议传递闭包。
+    // 经父协议蕴含：∃ 已实现 protocol C，`bound` ∈ C 的父协议传递闭包。
     ctx.impl_defs.iter().any(|imp| {
-        let Some(c) = imp.trait_name.as_deref() else {
+        let Some(c) = imp.protocol_name.as_deref() else {
             return false;
         };
-        impl_self_type_matches(imp, concrete) && trait_supertrait_closure(ctx, c).contains(bound)
+        impl_self_type_matches(imp, concrete) && protocol_superprotocol_closure(ctx, c).contains(bound)
     })
 }
 
@@ -189,44 +189,44 @@ fn impl_self_type_matches(imp: &ImplDef, concrete: &Type) -> bool {
     }
 }
 
-/// PC-10：trait 方法线性化顺序（即 `dyn T` 的 vtable 方法槽顺序）。
+/// PC-10：protocol 方法线性化顺序（即 `dyn T` 的 vtable 方法槽顺序）。
 ///
-/// 规则：**supertrait 方法在前**（按继承深度递归，基类更靠前），本 trait 方法在后；
+/// 规则：**superprotocol 方法在前**（按继承深度递归，基类更靠前），本 protocol 方法在后；
 /// 同名方法去重（保留首次出现者，即基类版本）。
 ///
 /// 该顺序保证 `protocol A: B` 时 **`dyn A` 的 vtable 前缀与 `dyn B` 相同**，因此
 /// `dyn A → dyn B` 上转可零开销复用同一胖指针（见 `check_stmt` 的 `dyn` 上转分支）。
 ///
-/// 返回 `(owner_trait, sig)`：`owner_trait` 是该方法的**声明协议**（用于定位对应 `impl`）。
-pub(crate) fn linearize_trait_methods(
+/// 返回 `(owner_protocol, sig)`：`owner_protocol` 是该方法的**声明协议**（用于定位对应 `impl`）。
+pub(crate) fn linearize_protocol_methods(
     ctx: &TypeContext,
-    trait_name: &str,
+    protocol_name: &str,
 ) -> Vec<(String, MethodSig)> {
-    let root = resolve_trait_def_name(ctx, trait_name);
+    let root = resolve_protocol_def_name(ctx, protocol_name);
     let mut out: Vec<(String, MethodSig)> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    collect_trait_methods(ctx, &root, &mut out, &mut seen);
+    collect_protocol_methods(ctx, &root, &mut out, &mut seen);
     out
 }
 
 /// 递归收集方法（父协议在前、本协议在后；按方法名去重）。
-fn collect_trait_methods(
+fn collect_protocol_methods(
     ctx: &TypeContext,
     name: &str,
     out: &mut Vec<(String, MethodSig)>,
     seen: &mut HashSet<String>,
 ) {
-    let Some(def) = ctx.trait_defs.get(name) else {
+    let Some(def) = ctx.protocol_defs.get(name) else {
         return;
     };
     let supers: Vec<String> = def
-        .supertraits
+        .superprotocols
         .iter()
-        .map(|s| resolve_trait_def_name(ctx, s))
+        .map(|s| resolve_protocol_def_name(ctx, s))
         .collect();
     let methods: Vec<MethodSig> = def.methods.clone();
     for s in supers {
-        collect_trait_methods(ctx, &s, out, seen);
+        collect_protocol_methods(ctx, &s, out, seen);
     }
     for m in methods {
         if seen.insert(m.name.clone()) {
@@ -240,7 +240,7 @@ fn collect_trait_methods(
 /// 适用值层 `dyn A → dyn B` 与引用层 `&dyn A → &dyn B`（引用层同构）。依据「线性化
 /// vtable」（父协议方法槽在前），子协议胖指针可直接复用为父协议胖指针——仅编译期改类型，
 /// 零运行时开销（见 `check_stmt` 的 `dyn` 上转分支）。
-pub(crate) fn dyn_supertrait_upshift(ctx: &TypeContext, at: &Type, ty: &Type) -> Option<Type> {
+pub(crate) fn dyn_superprotocol_upshift(ctx: &TypeContext, at: &Type, ty: &Type) -> Option<Type> {
     let (target_t, src_t) = match (at, ty) {
         (Type::Dyn(a), Type::Dyn(b)) => (a, b),
         (Type::Ref(a, _, _), Type::Ref(b, _, _)) => match (&**a, &**b) {
@@ -249,26 +249,26 @@ pub(crate) fn dyn_supertrait_upshift(ctx: &TypeContext, at: &Type, ty: &Type) ->
         },
         _ => return None,
     };
-    let src_full = resolve_trait_def_name(ctx, src_t);
-    let target_full = resolve_trait_def_name(ctx, target_t);
+    let src_full = resolve_protocol_def_name(ctx, src_t);
+    let target_full = resolve_protocol_def_name(ctx, target_t);
     if src_full == target_full {
         return None;
     }
-    trait_supertrait_closure(ctx, &src_full)
+    protocol_superprotocol_closure(ctx, &src_full)
         .contains(&target_full)
         .then(|| at.clone())
 }
 
-/// trait `trait_full` 的父协议传递闭包（解析后的 trait_defs 键集合，不含自身）。
+/// protocol `protocol_full` 的父协议传递闭包（解析后的 protocol_defs 键集合，不含自身）。
 ///
 /// PC-10：供 `dyn A → dyn B` 上转判定（`check_stmt`）复用。
-pub(super) fn trait_supertrait_closure(ctx: &TypeContext, trait_full: &str) -> HashSet<String> {
+pub(super) fn protocol_superprotocol_closure(ctx: &TypeContext, protocol_full: &str) -> HashSet<String> {
     let mut out: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = vec![trait_full.to_string()];
+    let mut stack: Vec<String> = vec![protocol_full.to_string()];
     while let Some(t) = stack.pop() {
-        if let Some(def) = ctx.trait_defs.get(&t) {
-            for st in &def.supertraits {
-                let full = resolve_trait_def_name(ctx, st);
+        if let Some(def) = ctx.protocol_defs.get(&t) {
+            for st in &def.superprotocols {
+                let full = resolve_protocol_def_name(ctx, st);
                 if out.insert(full.clone()) {
                     stack.push(full);
                 }
@@ -280,32 +280,32 @@ pub(super) fn trait_supertrait_closure(ctx: &TypeContext, trait_full: &str) -> H
 
 /// PC-4：校验父协议一致性——实现了协议 `A` 的类型必须同时实现 `A` 的各父协议。
 ///
-/// 在声明收集完成后调用（全部 trait / impl 已注册）。
-pub(crate) fn validate_supertraits(ctx: &TypeContext) -> Result<(), TypeError> {
+/// 在声明收集完成后调用（全部 protocol / impl 已注册）。
+pub(crate) fn validate_superprotocols(ctx: &TypeContext) -> Result<(), TypeError> {
     for imp in &ctx.impl_defs {
-        let Some(a_full) = imp.trait_name.as_deref() else {
+        let Some(a_full) = imp.protocol_name.as_deref() else {
             continue; // 固有 impl
         };
-        let Some(def) = ctx.trait_defs.get(a_full) else {
-            continue; // trait 未注册（错误在别处报出）
+        let Some(def) = ctx.protocol_defs.get(a_full) else {
+            continue; // protocol 未注册（错误在别处报出）
         };
-        if def.supertraits.is_empty() {
+        if def.superprotocols.is_empty() {
             continue;
         }
         let Type::Named(tname, _) = &imp.self_type else {
             continue;
         };
-        for st_raw in &def.supertraits {
-            let b_full = resolve_trait_def_name(ctx, st_raw);
+        for st_raw in &def.superprotocols {
+            let b_full = resolve_protocol_def_name(ctx, st_raw);
             let satisfied = ctx.impl_defs.iter().any(|i| {
-                i.trait_name.as_deref() == Some(b_full.as_str())
+                i.protocol_name.as_deref() == Some(b_full.as_str())
                     && matches!(&i.self_type, Type::Named(n, _) if n == tname)
             });
             if !satisfied {
-                return Err(TypeError::MissingSupertrait {
+                return Err(TypeError::MissingSuperprotocol {
                     type_: tname.clone(),
-                    trait_: def.name.clone(),
-                    supertrait_: st_raw.clone(),
+                    protocol_: def.name.clone(),
+                    superprotocol_: st_raw.clone(),
                     span: imp.span,
                 });
             }
@@ -387,19 +387,19 @@ pub(super) fn instantiate_generic_fn(
     Ok((mono_name, sig))
 }
 
-pub(super) fn trait_default_method(
+pub(super) fn protocol_default_method(
     ctx: &TypeContext,
     impl_def: &ImplDef,
     method: &str,
 ) -> Option<crate::types::ImplMethod> {
-    let trait_name = impl_def.trait_name.as_ref()?;
-    let trait_def = ctx.trait_defs.get(trait_name)?;
-    let sig = trait_def
+    let protocol_name = impl_def.protocol_name.as_ref()?;
+    let protocol_def = ctx.protocol_defs.get(protocol_name)?;
+    let sig = protocol_def
         .methods
         .iter()
         .find(|m| m.name == method)?
         .clone();
-    // 仅当 trait 方法带默认实现 body 时才回退
+    // 仅当 protocol 方法带默认实现 body 时才回退
     let body = sig.default_body.clone()?;
     Some(crate::types::ImplMethod {
         sig,
@@ -420,10 +420,10 @@ pub(super) fn instantiate_impl_method(
             span,
         });
     };
-    // X4：trait impl 方法符号带 trait 区分（`Point::fmt`（Display）与
-    // `Point::fmt`（Debug）同名共存）——trait 名如 `fmt::Debug` 转为
+    // X4：protocol impl 方法符号带 protocol 区分（`Point::fmt`（Display）与
+    // `Point::fmt`（Debug）同名共存）——protocol 名如 `fmt::Debug` 转为
     // `Point::fmt__fmt::Debug`，避免同名方法符号碰撞。
-    let base_fn = match &impl_def.trait_name {
+    let base_fn = match &impl_def.protocol_name {
         Some(tn) => format!("{base_name}::{}__{tn}", method_def.sig.name),
         None => format!("{base_name}::{}", method_def.sig.name),
     };
@@ -445,13 +445,13 @@ pub(super) fn instantiate_impl_method(
                 .unwrap_or_else(|| tp.clone())
         })
         .collect();
-    // A2（SH-P1-1，2026-09-02）：trait 类型实参须并入 mono 键 / 后缀。
-    // 同一 self_type 上同一泛型 trait 的多个 impl（如 `impl Wrap<i64> for W` 与
+    // A2（SH-P1-1，2026-09-02）：protocol 类型实参须并入 mono 键 / 后缀。
+    // 同一 self_type 上同一泛型 protocol 的多个 impl（如 `impl Wrap<i64> for W` 与
     // `impl Wrap<bool> for W`）此前仅含 impl 泛型参数（此处为空），产生相同
     // mono 键 → `mono_instances` 缓存命中复用首个实例，后续 impl 被错误复用
     // （方法体 / 接收者错配，表现为跨调用结果异常）。`impl<T> Wrap<T> for Pair<T>`
     // 之类则由 self_type 的 T 实例化后使键不同，天然无碰撞。
-    for ta in &impl_def.trait_type_args {
+    for ta in &impl_def.protocol_type_args {
         mono_parts.push(type_mono_key(&substitute(ta, subst)));
     }
     for mp in &body_ast.generics {
@@ -502,7 +502,7 @@ pub(super) fn instantiate_impl_method(
 
     // self 参数类型：impl 方法签名的首个参数（`&self` 层级已含）经替换。
     // 静态方法（无 self 参数）传 None。
-    // V3 trait 默认方法回退：trait 默认方法的 `self` 参数类型是 `Generic("Self")`
+    // V3 protocol 默认方法回退：protocol 默认方法的 `self` 参数类型是 `Generic("Self")`
     // 占位，须替换为 impl 目标具体类型（与 `ctx.self_type` 一致），否则方法体内
     // `self.next()` 等调用无法在占位上解析（`find_impl_for_method` 找不到）。
     let self_param = method_def.sig.params.first().map(|p| {

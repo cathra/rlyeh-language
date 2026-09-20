@@ -168,6 +168,8 @@ pub enum MirStmt {
         ty: rlyeh_hir::FieldScalar,
         /// `true` 表示字符串索引
         is_str: bool,
+        /// 运行时长度（边界检查用，`Some` 时 codegen 越界 → `panic`）。
+        len: Option<Local>,
     },
     /// `index_set(base, index, value)`：运行时索引写入。
     IndexSet {
@@ -181,6 +183,8 @@ pub enum MirStmt {
         ty: rlyeh_hir::FieldScalar,
         /// `true` 表示字符串索引
         is_str: bool,
+        /// 运行时长度（边界检查用，语义同 `IndexGet::len`）。
+        len: Option<Local>,
     },
     /// `target = addr_of(operand)`：取引用（`&x` / `&mut x`）。
     /// 聚合对象（`pointee = Ptr`）的"地址"即其对象指针（拷贝值）；

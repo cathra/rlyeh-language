@@ -114,7 +114,7 @@ pub(crate) fn toml_serialize_ast_path(
                         receiver: recv,
                         method: method.to_string(),
                         args,
-                        trait_hint: None,
+                        protocol_hint: None,
                     },
                     span,
                 )
@@ -198,7 +198,7 @@ pub(crate) fn toml_serialize_ast_path(
                         receiver: recv,
                         method: "push_str".to_string(),
                         args: vec![val],
-                        trait_hint: None,
+                        protocol_hint: None,
                     },
                     span,
                 )
@@ -228,7 +228,7 @@ pub(crate) fn toml_serialize_ast_path(
                     receiver: arg.clone(),
                     method: "len".to_string(),
                     args: Vec::new(),
-                    trait_hint: None,
+                    protocol_hint: None,
                 },
                 span,
             );
@@ -354,7 +354,7 @@ pub(crate) fn toml_serialize_ast_path(
                         receiver: recv,
                         method: "push_str".to_string(),
                         args: vec![val],
-                        trait_hint: None,
+                        protocol_hint: None,
                     },
                     span,
                 )

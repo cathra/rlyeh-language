@@ -48,7 +48,7 @@
 - harness 增强 `scripts/diff_harness.py`：
   - `--dims <csv>`：维度子集（默认 `ir,ast,hir,run`），`capture` 仅取所需维度。
   - `--manifest <file>`：基线清单（每行一个 `.rl` 相对路径，`#` 注释；优先于 dirs 扫描），使基线可复现、可评审。
-- 新增 `tests/snapshot-baseline.txt`：精选 ~30 个确定性运行行为用例（覆盖控制流/模式匹配/枚举/泛型/trait/闭包/内存布局等），均为无并发、无哈希序依赖、无 IO 副作用的程序，作为语义回归轻量基线。
+- 新增 `tests/snapshot-baseline.txt`：精选 ~30 个确定性运行行为用例（覆盖控制流/模式匹配/枚举/泛型/protocol/闭包/内存布局等），均为无并发、无哈希序依赖、无 IO 副作用的程序，作为语义回归轻量基线。
 - 生成基线：`update --manifest tests/snapshot-baseline.txt --dims run` → 30 个 `tests/snapshots/<relpath>/run.txt`，总体积 120K（run 输出小）；连续三次 `check` 均 30/0/0/0，无行为非确定性。
 - CI（`.github/workflows/ci.yml`）新增 `Snapshot regression (diff harness)` 步骤：`python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline.txt --dims run`，编译回归即失败。
 - 清理：删除冒烟期遗留的 `tests/snapshots/examples/`（含修复前、被前缀主导的 ast/hir/ir 大文件）。

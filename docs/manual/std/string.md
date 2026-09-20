@@ -2,7 +2,7 @@
 
 UTF-8 字符串缓冲，堆上存储为 3 槽结构：`data`（指针）/ `len`（字节长度）/ `cap`（容量）。原地修改在容量不足时 O(n) 扩容。
 
-> MVP 底层：`i8` 与 `u8` 共享 64 位整数槽（窄化 reinterpret）。`str` 字面量值与 `String` 自动升级互通：`String` 参数位置的字面量实参（`m.push_str("!")`、`m.contains("z")`、`map.insert("k", 1)`、`f("hi")`）自动升级为 `String`，覆盖实例/静态方法、普通函数、函数指针、泛型调用与 `dyn Trait` 方法。
+> MVP 底层：`i8` 与 `u8` 共享 64 位整数槽（窄化 reinterpret）。`str` 字面量值与 `String` 自动升级互通：`String` 参数位置的字面量实参（`m.push_str("!")`、`m.contains("z")`、`map.insert("k", 1)`、`f("hi")`）自动升级为 `String`，覆盖实例/静态方法、普通函数、函数指针、泛型调用与 `dyn Protocol` 方法。
 
 > **C 程序员对照**：C 的字符串是 `char*` + `\0` 结尾，拼接靠 `strcat`/`snprintf`（极易缓冲区溢出），释放靠你手动 `free`。Rlyeh 的 `String` 是 **拥有所有权的、可增长的 UTF-8 缓冲**（内部 `data`/`len`/`cap` 三槽），自动管理长度与容量、自动扩容、离开作用域自动释放——**不会溢出也不会泄漏**。日常用法接近 C++ 的 `std::string`。
 >

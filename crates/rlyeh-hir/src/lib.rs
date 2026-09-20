@@ -365,6 +365,10 @@ pub enum HirExprKind {
         elem: FieldScalar,
         /// `true` 表示字符串索引（字符步长 1 字节）；数组元素步长 8 字节
         is_str: bool,
+        /// 运行时长度（边界检查用）。`Some` 时在 codegen 注入越界 → `panic`
+        /// 确定性中止（消除 UB）；`None` 表示不做检查（裸指针 / 数组 / `Str`
+        /// 等，保留原语义）。Vec/`String`/`&str`/切片由 typecheck 填入槽 1 长度。
+        len: Option<Box<HirExpr>>,
     },
     /// 索引写入 `arr[i] = v`（求值为单元值）。
     IndexSet {
@@ -378,6 +382,8 @@ pub enum HirExprKind {
         elem: FieldScalar,
         /// `true` 表示字符串索引（字符步长 1 字节）；数组元素步长 8 字节
         is_str: bool,
+        /// 运行时长度（边界检查用，语义同 `Index::len`）。
+        len: Option<Box<HirExpr>>,
     },
 }
 

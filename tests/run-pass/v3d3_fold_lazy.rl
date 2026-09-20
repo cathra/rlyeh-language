@@ -1,5 +1,5 @@
 // V3-D3：fold 惰性默认方法（自定义迭代器）
-// fold 基于 next() 遍历归约累加（MVP 累加器 i64），impl 未显式实现时走 trait 默认方法。
+// fold 基于 next() 遍历归约累加（MVP 累加器 i64），impl 未显式实现时走 protocol 默认方法。
 
 struct Range {
     cur: i64,

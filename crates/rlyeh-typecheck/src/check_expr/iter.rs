@@ -98,7 +98,7 @@ pub(super) fn check_for(
         return check_for_array(ctx, pattern, iter_hir, elem.as_ref(), n, body, span);
     }
     // 自定义迭代器（J2）：接收者类型存在 `next() -> Option<Item>` 方法
-    // （inherent 或 trait impl）→ 经 check_for_iterator 接入 for 循环。
+    // （inherent 或 protocol impl）→ 经 check_for_iterator 接入 for 循环。
     let concrete = peel_ref(&iter_ty);
     if let Some(imp) = ctx.find_impl_for_method(&concrete, "next").cloned() {
         if let Some(md) = imp.methods.iter().find(|m| m.sig.name == "next") {
@@ -383,6 +383,7 @@ pub(super) fn check_for_vec(
                 index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: elem_scalar,
                 is_str: false,
+                len: None,
             }, Span::dummy()),
             mutable: false,
         }, Span::dummy()),
@@ -498,6 +499,7 @@ pub(super) fn check_for_array(
                 index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: elem_scalar,
                 is_str: is_byte,
+                len: None,
             }, Span::dummy()),
             mutable: false,
         }, Span::dummy()),
@@ -644,6 +646,7 @@ pub(super) fn check_for_hashmap(
                     index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                     elem: FieldScalar::Int,
                     is_str: false,
+                    len: None,
                 }, Span::dummy())),
                 Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
             ), Span::dummy())),
@@ -672,6 +675,7 @@ pub(super) fn check_for_hashmap(
                 index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: k_scalar,
                 is_str: false,
+                len: None,
             }, Span::dummy()),
             mutable: false,
         }, Span::dummy()),
@@ -687,6 +691,7 @@ pub(super) fn check_for_hashmap(
                 index: Box::new(HirExpr::new(HirExprKind::Variable(stored_i.clone()), Span::dummy())),
                 elem: v_scalar,
                 is_str: false,
+                len: None,
             }, Span::dummy()),
             mutable: false,
         }, Span::dummy()),

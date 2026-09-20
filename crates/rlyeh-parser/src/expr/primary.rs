@@ -400,7 +400,7 @@ impl <'src> Parser<'src> {
                             receiver,
                             method: name,
                             args,
-                            trait_hint: None,
+                            protocol_hint: None,
                         },
                         span,
                     ))
@@ -437,7 +437,7 @@ impl <'src> Parser<'src> {
                             receiver,
                             method: name,
                             args,
-                            trait_hint: None,
+                            protocol_hint: None,
                         },
                         span,
                     ))

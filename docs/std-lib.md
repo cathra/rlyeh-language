@@ -230,7 +230,7 @@ protocol Iterator {
 }
 ```
 
-> **已实现（T2 ✅，MVP 退化，`core/module.rl` 顶部）**：`protocol Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 规划（parser/typecheck 无 protocol `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl T: Iterator` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 protocol impl 均可）；**V3 默认方法 ✅（2026-08-26）**：`count`/`sum`/`any`/`all`（protocol 默认实现，基于 `self.next()` 循环，`any`/`all` 接受 `fn(i64) -> bool` 谓词、兼容函数指针与闭包；impl 未显式实现时回退——typecheck protocol 默认方法机制 `MethodSig.default_body` + `find_trait_default_impl` 回退）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（迁移到 protocol 默认方法需 `Iterator::Item` 关联类型 + `Map<Self,B>` 包装迭代器，规划中）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
+> **已实现（T2 ✅，MVP 退化，`core/module.rl` 顶部）**：`protocol Iterator { fn next(&mut self) -> Option<i64>; }`——关联类型 `type Item` 规划（parser/typecheck 无 protocol `type` 成员载体，S1a 已验证，元素固定 i64）；自定义迭代器 `impl T: Iterator` 后经 `for` 接入（J2 检测 next() 方法，inherent 或 protocol impl 均可）；**V3 默认方法 ✅（2026-08-26）**：`count`/`sum`/`any`/`all`（protocol 默认实现，基于 `self.next()` 循环，`any`/`all` 接受 `fn(i64) -> bool` 谓词、兼容函数指针与闭包；impl 未显式实现时回退——typecheck protocol 默认方法机制 `MethodSig.default_body` + `find_protocol_default_impl` 回退）；适配器 `map`/`filter`/`fold`/`collect`/`take`/`skip` 保持编译器内建 desugar（迁移到 protocol 默认方法需 `Iterator::Item` 关联类型 + `Map<Self,B>` 包装迭代器，规划中）。泛型元素迭代器（如 `StdinLines` 返回 `Option<String>`）仍走方法式接入。
 
 ---
 

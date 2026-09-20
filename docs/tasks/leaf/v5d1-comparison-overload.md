@@ -8,14 +8,14 @@
 
 V5d 交付了 `BinaryOp`（`+ - * / % & | ^ << >>`）的通用运算符重载，并落地 `HashSet` 的 `| & - ^` 集合代数糖。但其「范围与限制」明确：比较链 `CompareOp`（`0 < x < 10`）走独立路径（`comparison.rs`），`<`/`>`（子集/超集）未重载，集合关系仍以命名方法 `is_subset`/`is_superset` 表达。
 
-本项补齐该缺口：集合关系运算符 `<`/`<=`/`>`/`>=` 经**比较链运算符重载**降级为 `PartialOrd` trait 方法，与 Python `set` 语义一致。
+本项补齐该缺口：集合关系运算符 `<`/`<=`/`>`/`>=` 经**比较链运算符重载**降级为 `PartialOrd` protocol 方法，与 Python `set` 语义一致。
 
 ## 方案
 
-### 1. `PartialOrd` trait（core.rl，对齐既有 `PartialEq`）
+### 1. `PartialOrd` protocol（core.rl，对齐既有 `PartialEq`）
 
 ```rlyeh
-trait PartialOrd {
+protocol PartialOrd {
     fn lt(&self, other: &Self) -> bool;
     fn le(&self, other: &Self) -> bool;
     fn gt(&self, other: &Self) -> bool;
@@ -54,7 +54,7 @@ impl<T> PartialOrd for HashSet<T> {
 
 ### 4. 门控与诊断
 
-`has_partial_ord(ty)` 经 `ctx.find_impl_candidates(ty, "lt")` 判定（内含 `type_matches`，可处理泛型 impl 实参反推），仅对**真正实现 `PartialOrd`** 的类型尝试重载。因此对无该 trait 的类型（如自定义结构体）`<` 仍精确报 `MissingPartialOrd`（"type `S` does not support ordering"），不产生 "lt not found" 误报。
+`has_partial_ord(ty)` 经 `ctx.find_impl_candidates(ty, "lt")` 判定（内含 `type_matches`，可处理泛型 impl 实参反推），仅对**真正实现 `PartialOrd`** 的类型尝试重载。因此对无该 protocol 的类型（如自定义结构体）`<` 仍精确报 `MissingPartialOrd`（"type `S` does not support ordering"），不产生 "lt not found" 误报。
 
 ### 5. 范围与限制
 
@@ -71,4 +71,4 @@ impl<T> PartialOrd for HashSet<T> {
 
 | 日期 | 变更 |
 |------|------|
-| 2026-09-02 | 实现比较链运算符重载：`comparison.rs` 新增 `has_partial_ord`/`try_ordering_overload`/`check_build_pair`，单比较与比较链分支注入 `lt`/`le`/`gt`/`ge` 重载回退（`code_build_pair` 复用预生成 HIR，重写 `expand_forward`/`expand_backward` 移除不再使用的 `reverse_op`）；`core.rl` 新增 `PartialOrd` trait + `HashSet<T>` 的 `PartialOrd` 实现（降级到 V5b 关系方法）；新增 `tests/run-pass/hashset_cmp_symbol.{rl,out}`（含正向/反向比较链）；全量 259/259 通过 |
+| 2026-09-02 | 实现比较链运算符重载：`comparison.rs` 新增 `has_partial_ord`/`try_ordering_overload`/`check_build_pair`，单比较与比较链分支注入 `lt`/`le`/`gt`/`ge` 重载回退（`code_build_pair` 复用预生成 HIR，重写 `expand_forward`/`expand_backward` 移除不再使用的 `reverse_op`）；`core.rl` 新增 `PartialOrd` protocol + `HashSet<T>` 的 `PartialOrd` 实现（降级到 V5b 关系方法）；新增 `tests/run-pass/hashset_cmp_symbol.{rl,out}`（含正向/反向比较链）；全量 259/259 通过 |

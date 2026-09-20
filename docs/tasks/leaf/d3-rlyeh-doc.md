@@ -15,7 +15,7 @@
 
 ## 技术细节
 
-按源码位置提取 `///` 文档注释（连续行合并，`//!` 文件级文档）；输出 Markdown：标题 + 目录 + 按类别分组正文（函数/结构体/枚举/Trait/impl/Actor/常量/模块/其他）；签名重建独立实现（`item_signature`/`fn_signature`/`fmt_type`/`fmt_param`，self 接收者特判）。CLI `rlyeh doc <file.rl> [--out <file.md>] [--title <标题>]`。
+按源码位置提取 `///` 文档注释（连续行合并，`//!` 文件级文档）；输出 Markdown：标题 + 目录 + 按类别分组正文（函数/结构体/枚举/Protocol/impl/Actor/常量/模块/其他）；签名重建独立实现（`item_signature`/`fn_signature`/`fmt_type`/`fmt_param`，self 接收者特判）。CLI `rlyeh doc <file.rl> [--out <file.md>] [--title <标题>]`。
 
 ## 验证
 

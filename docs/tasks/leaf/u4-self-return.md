@@ -7,7 +7,7 @@
 
 ## 目标
 
-typecheck 支持 trait/impl 方法签名返回 `Self`。
+typecheck 支持 protocol/impl 方法签名返回 `Self`。
 
 ## 背景
 
@@ -15,11 +15,11 @@ typecheck 支持 trait/impl 方法签名返回 `Self`。
 
 ## 技术细节
 
-`TypeContext.self_type: Option<Type>` 上下文字段；`collect_impl` 方法签名解析时设为 impl 目标类型、`instantiate_impl_method` body 检查时设为 `substitute(self_type, subst)`；`resolve_named_type` 裸 `Self` 优先解析 self_type、trait 上下文退化 `Generic("Self")`。覆盖 trait/inherent/static 方法返回位置 + body 内 Self 注解 + 链式调用。MVP：`Self` 参数位置与 dyn 场景保持禁止。
+`TypeContext.self_type: Option<Type>` 上下文字段；`collect_impl` 方法签名解析时设为 impl 目标类型、`instantiate_impl_method` body 检查时设为 `substitute(self_type, subst)`；`resolve_named_type` 裸 `Self` 优先解析 self_type、protocol 上下文退化 `Generic("Self")`。覆盖 protocol/inherent/static 方法返回位置 + body 内 Self 注解 + 链式调用。MVP：`Self` 参数位置与 dyn 场景保持禁止。
 
 ## 验证
 
-`self_return.{rlyeh,out}`（trait/inherent/static + body 内 Self 注解 + 链式，输出 7/14/0/200/11/22）+ `self_ret_test.rs`。
+`self_return.{rlyeh,out}`（protocol/inherent/static + body 内 Self 注解 + 链式，输出 7/14/0/200/11/22）+ `self_ret_test.rs`。
 
 ## 变更记录
 

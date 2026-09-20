@@ -197,7 +197,7 @@ impl<'src> Parser<'src> {
                 Ok(AstItem::StructDecl(Box::new(s)))
             }
             Some(Token::Enum) => Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?))),
-            Some(Token::Protocol) => Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?))),
+            Some(Token::Protocol) => Ok(AstItem::ProtocolDecl(Box::new(self.parse_protocol()?))),
             Some(Token::Impl) => Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?))),
             Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone(), false)?))),
             Some(Token::Use) => Ok(AstItem::UseDecl(Box::new(self.parse_use(false)?))),
@@ -206,7 +206,7 @@ impl<'src> Parser<'src> {
             }
             Some(Token::Actor) => Ok(AstItem::ActorDecl(Box::new(self.parse_actor()?))),
             // `pub` 后按实际关键字分派：mod / const / static / struct / enum /
-            // trait / impl / use / actor 消费 pub 后进入各自解析器；
+            // protocol / impl / use / actor 消费 pub 后进入各自解析器；
             // `fn`（及 async / unsafe / extern 前缀）**不消费 pub**，交给
             // `parse_fn` 自行处理以正确记录 `is_pub`。
             Some(Token::Pub) => {
@@ -235,9 +235,9 @@ impl<'src> Parser<'src> {
                     }
                     Some(Token::Protocol) => {
                         self.bump();
-                        let mut t = self.parse_trait()?;
+                        let mut t = self.parse_protocol()?;
                         t.is_pub = true;
-                        Ok(AstItem::TraitDecl(Box::new(t)))
+                        Ok(AstItem::ProtocolDecl(Box::new(t)))
                     }
                     Some(Token::Impl) => {
                         self.bump();
@@ -276,7 +276,7 @@ impl<'src> Parser<'src> {
     ///
     /// MVP 仅支持 struct 声明前的 `derive` 标记（`#[derive(..)]`，可多个、可空
     /// `#[derive]`）与 `#[repr(C)]`；其它 attribute 名报错。返回
-    /// `(derive trait 名列表, 是否 repr(C))`。
+    /// `(derive protocol 名列表, 是否 repr(C))`。
     fn parse_attributes(&mut self) -> Result<(Vec<String>, bool, Option<String>), ParseError> {
         let mut derives = Vec::new();
         let mut repr_c = false;

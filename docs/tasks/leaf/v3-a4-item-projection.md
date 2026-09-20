@@ -21,7 +21,7 @@ V3-A2 打通 `Self::Item`，V3-A3 落地 Iterator 具体化。本子任务补 `F
 
 ## 实施情况（已完成，2026-08-27）
 
-- **typecheck `resolve_ast_type`**：`F::Item` 命名类型关联投影——在 `name.rsplit_once("::")` 后，base 非泛型参数时经 `eval_assoc_projection`（查该类型 trait impl 的 `assoc_types`）立即求值，返回具体类型（与 U4 泛型参数投影 `F::Output` 并存）。此前命名类型 `Range::Item` 报 `undefined type`。
+- **typecheck `resolve_ast_type`**：`F::Item` 命名类型关联投影——在 `name.rsplit_once("::")` 后，base 非泛型参数时经 `eval_assoc_projection`（查该类型 protocol impl 的 `assoc_types`）立即求值，返回具体类型（与 U4 泛型参数投影 `F::Output` 并存）。此前命名类型 `Range::Item` 报 `undefined type`。
 - **测试**：新增 `v3a4_item_projection.rl`（自定义 `Range { type Item = i64 }` + 命名类型投影注解 + 迭代器经函数传递 for 接入 + `next()` 返回）。
 
 ## 验证

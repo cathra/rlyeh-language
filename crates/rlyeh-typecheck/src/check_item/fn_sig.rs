@@ -2,7 +2,7 @@
 //! （由 mod.rs 二次拆分而来，保持语义等价）
 
 use super::*;
-// P4c：`&T → &dyn Trait` 返回上转型（coerce_to_dyn 在 check_expr）
+// P4c：`&T → &dyn Protocol` 返回上转型（coerce_to_dyn 在 check_expr）
 use crate::check_expr::coerce_to_dyn;
 use rlyeh_hir::HirExprKind;
 
@@ -20,7 +20,7 @@ pub fn collect_fn_signatures(
     })?;
     let program = &program;
     let mut ctx = TypeContext::new();
-    // 先注册全部 use 导入别名，再收集结构体 / 枚举 / trait / impl / 模块。
+    // 先注册全部 use 导入别名，再收集结构体 / 枚举 / protocol / impl / 模块。
     // 关键：若某 `module X;` 声明排在 `pub import X::Y;` 之前，子模块收集时别名
     // 尚未注册，其内 `sync::Mutex` 类全限定引用会退化为未规范化的别名串
     // （sync 模块拆分回归：Mutex::new 返回类型存成别名 `sync::Mutex` 而非
@@ -34,7 +34,7 @@ pub fn collect_fn_signatures(
         match item {
             AstItem::StructDecl(s) => collect_struct(&mut ctx, s, "")?,
             AstItem::EnumDecl(e) => collect_enum(&mut ctx, e, "")?,
-            AstItem::TraitDecl(t) => collect_trait(&mut ctx, t, "")?,
+            AstItem::ProtocolDecl(t) => collect_protocol(&mut ctx, t, "")?,
             AstItem::ImplBlock(imp) => collect_impl(&mut ctx, imp, "")?,
             AstItem::ModDecl(m) => collect_mod_types(&mut ctx, m)?,
             _ => {}
@@ -82,13 +82,13 @@ pub(crate) fn fn_signature_with_self(
         Some(t) => resolve_ast_type(ctx, t, span)?,
         None => Type::Unit,
     };
-    // H4 MVP 限制：`dyn Trait` 为 2 槽胖指针，暂不支持作为函数/方法参数与返回值
+    // H4 MVP 限制：`dyn Protocol` 为 2 槽胖指针，暂不支持作为函数/方法参数与返回值
     // （LIR 参数/返回为标量槽，无法表达胖指针；局部变量 + vtable 调用为主路径）。
     for p in &params {
         if matches!(p, Type::Dyn(_)) {
             return Err(TypeError::Unsupported {
                 what: format!(
-                    "`{}` 作为函数/方法参数（H4 MVP 仅支持 `let d: dyn Trait = &obj;` 局部变量）",
+                    "`{}` 作为函数/方法参数（H4 MVP 仅支持 `let d: dyn Protocol = &obj;` 局部变量）",
                     p
                 ),
                 span,
@@ -127,7 +127,7 @@ pub(crate) fn check_fn_body_with_self(
     let body = match &f.body {
         Some(b) => b,
         None => {
-            // trait 抽象方法 / extern 声明允许无函数体
+            // protocol 抽象方法 / extern 声明允许无函数体
             if f.is_pub || f.is_extern {
                 return Ok(None);
             }
@@ -186,15 +186,15 @@ pub(crate) fn check_fn_body_with_self(
         // 零捕获闭包值等价于 fn 指针（调用展开为空字段读取），签名匹配时
         // 将尾表达式替换为 `FnPtr(__closure_N)`。
         let mut downgraded = false;
-        // P4c（2026-08-28）：`&dyn Trait` 作函数返回值——尾表达式为 `&T`
-        // （T 实现该 trait）时上转为胖指针引用 `&dyn Trait`（Y6 `source() -> &dyn Error` 前提）。
+        // P4c（2026-08-28）：`&dyn Protocol` 作函数返回值——尾表达式为 `&T`
+        // （T 实现该 protocol）时上转为胖指针引用 `&dyn Protocol`（Y6 `source() -> &dyn Error` 前提）。
         let mut upshifted = false;
         if let (Type::Ref(inner_ret, _, _), Type::Ref(inner_body, _, _)) = (&return_type, &body_ty) {
-            if let Type::Dyn(trait_name) = &**inner_ret {
+            if let Type::Dyn(protocol_name) = &**inner_ret {
                 if let Type::Named(..) = &**inner_body {
                     if let Some(fe) = hir_body.final_expr.take() {
                         let concrete = (**inner_body).clone();
-                        let up = coerce_to_dyn(ctx, fe, &concrete, trait_name, f.span)?;
+                        let up = coerce_to_dyn(ctx, fe, &concrete, protocol_name, f.span)?;
                         hir_body.final_expr = Some(up);
                         upshifted = true;
                     }

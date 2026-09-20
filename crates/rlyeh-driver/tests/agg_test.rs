@@ -147,7 +147,7 @@ fn main() {
 "#;
 
 /// 协议定义 + `impl Type: Protocol` + 协议方法调用。
-const TRAIT_IMPL: &str = r#"
+const PROTOCOL_IMPL: &str = r#"
 enum Option {
     None,
     Some(i64),
@@ -200,8 +200,8 @@ fn run_float_field() {
 }
 
 #[test]
-fn run_trait_impl() {
-    let out = run_source(TRAIT_IMPL).expect("运行失败");
+fn run_protocol_impl() {
+    let out = run_source(PROTOCOL_IMPL).expect("运行失败");
     assert_eq!(out, "77\n-1\n");
 }
 

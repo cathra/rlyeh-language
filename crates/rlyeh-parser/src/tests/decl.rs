@@ -36,7 +36,7 @@ fn test_protocol_and_impl() {
     let program = parse_ok(
         "protocol Shape { fn area(&self) -> f64; } impl Point: Shape { fn area(&self) -> f64 { 0.0 } }",
     );
-    let AstItem::TraitDecl(t) = &program.items[0] else {
+    let AstItem::ProtocolDecl(t) = &program.items[0] else {
         panic!();
     };
     assert_eq!(t.name, "Shape");
@@ -44,7 +44,7 @@ fn test_protocol_and_impl() {
     let AstItem::ImplBlock(i) = &program.items[1] else {
         panic!();
     };
-    assert_eq!(i.trait_name.as_deref(), Some("Shape"));
+    assert_eq!(i.protocol_name.as_deref(), Some("Shape"));
     assert_eq!(i.type_name, "Point");
     assert!(i.methods[0].body.is_some());
 }
@@ -56,12 +56,12 @@ fn test_protocol_assoc_type_decl() {
         "protocol IterA { type Item; fn next(&mut self) -> Option<Self::Item>; } \
          protocol IterB { type Item = i64; fn next(&mut self) -> Option<Self::Item>; }",
     );
-    let AstItem::TraitDecl(ta) = &program.items[0] else {
+    let AstItem::ProtocolDecl(ta) = &program.items[0] else {
         panic!();
     };
     assert_eq!(ta.types, vec!["Item".to_string()]);
     assert!(ta.methods[0].body.is_none());
-    let AstItem::TraitDecl(tb) = &program.items[1] else {
+    let AstItem::ProtocolDecl(tb) = &program.items[1] else {
         panic!();
     };
     // `type Item = i64;` 记录名字 `Item`（默认具体化由 typecheck 消费）
@@ -114,7 +114,7 @@ fn test_pub_module_decl() {
 
 #[test]
 fn test_region_param_suffix() {
-    // B-4：`struct/enum/trait Foo 'a { ... }` region 参数化后缀语法应被解析并写入 `region_param`。
+    // B-4：`struct/enum/protocol Foo 'a { ... }` region 参数化后缀语法应被解析并写入 `region_param`。
     let program = parse_ok(
         "struct Wrapper 'a { inner: &'a i64 } \
          enum E 'b { V(&'b i64), W } \
@@ -132,8 +132,8 @@ fn test_region_param_suffix() {
     assert_eq!(e.region_param.as_deref(), Some("b"));
     assert_eq!(e.variants.len(), 2);
 
-    let AstItem::TraitDecl(t) = &program.items[2] else {
-        panic!("expected trait");
+    let AstItem::ProtocolDecl(t) = &program.items[2] else {
+        panic!("expected protocol");
     };
     assert_eq!(t.region_param.as_deref(), Some("c"));
 }
@@ -163,7 +163,7 @@ fn test_protocol_and_impl_keywords() {
          impl Sq: Draw { fn draw(&self) {} } \
          impl Sq { fn new(s: i64) -> Sq { Sq { s: s } } }",
     );
-    let AstItem::TraitDecl(t) = &program.items[0] else {
+    let AstItem::ProtocolDecl(t) = &program.items[0] else {
         panic!("expected protocol decl");
     };
     assert_eq!(t.name, "Draw");
@@ -172,21 +172,21 @@ fn test_protocol_and_impl_keywords() {
     let AstItem::ImplBlock(conf) = &program.items[2] else {
         panic!("expected conformance impl");
     };
-    assert_eq!(conf.trait_name.as_deref(), Some("Draw"));
+    assert_eq!(conf.protocol_name.as_deref(), Some("Draw"));
     assert_eq!(conf.type_name, "Sq");
 
     let AstItem::ImplBlock(inherent) = &program.items[3] else {
         panic!("expected inherent impl");
     };
-    assert_eq!(inherent.trait_name, None);
+    assert_eq!(inherent.protocol_name, None);
     assert_eq!(inherent.type_name, "Sq");
 }
 
 #[test]
-fn test_trait_extension_are_plain_identifiers() {
-    // `trait` / `extension` 已从语法中彻底移除，成为普通标识符（可作变量名）。
+fn test_protocol_extension_are_plain_identifiers() {
+    // `protocol` / `extension` 已从语法中彻底移除，成为普通标识符（可作变量名）。
     let program = parse_ok(
-        "fn f() -> i64 { let trait = 1; let extension = 2; trait + extension }",
+        "fn f() -> i64 { let protocol = 1; let extension = 2; protocol + extension }",
     );
     assert_eq!(program.items.len(), 1);
 }
@@ -220,13 +220,13 @@ fn test_enum_conformance_and_inline_members() {
 fn test_protocol_inheritance() {
     // PC-4：`protocol A: B, C { .. }` 父协议列表。
     let program = parse_ok("protocol Loud: Named, Aged { fn shout(&self); }");
-    let AstItem::TraitDecl(t) = &program.items[0] else {
+    let AstItem::ProtocolDecl(t) = &program.items[0] else {
         panic!("expected protocol");
     };
     assert_eq!(t.name, "Loud");
-    assert_eq!(t.supertraits.len(), 2);
-    assert_eq!(t.supertraits[0].0, "Named");
-    assert_eq!(t.supertraits[1].0, "Aged");
+    assert_eq!(t.superprotocols.len(), 2);
+    assert_eq!(t.superprotocols[0].0, "Named");
+    assert_eq!(t.superprotocols[1].0, "Aged");
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn test_multi_conformance_list() {
 
 #[test]
 fn test_conformance_list_qualified_name() {
-    // 已知限制 #2 闭合：声明点一致性列表支持模块路径限定的协议名（如 `mod::Trait`）。
+    // 已知限制 #2 闭合：声明点一致性列表支持模块路径限定的协议名（如 `mod::Protocol`）。
     let program = parse_ok("struct Sq: a::Area, other::Named<i64> { s: i64 }");
     let AstItem::StructDecl(s) = &program.items[0] else {
         panic!("expected struct");
@@ -257,23 +257,23 @@ fn test_conformance_list_qualified_name() {
 
 #[test]
 fn test_impl_conformance_qualified_name() {
-    // 已知限制 #2 闭合：`impl T: mod::Trait` 首协议名保留模块路径。
+    // 已知限制 #2 闭合：`impl T: mod::Protocol` 首协议名保留模块路径。
     let program = parse_ok("impl Sq: m::Area { fn area(&self) -> i64 { 0 } }");
     let AstItem::ImplBlock(i) = &program.items[0] else {
         panic!("expected impl");
     };
-    assert_eq!(i.trait_name.as_deref(), Some("m::Area"));
+    assert_eq!(i.protocol_name.as_deref(), Some("m::Area"));
 }
 
 #[test]
 fn test_generic_param_bound_qualified_name() {
-    // 已知限制 #2 闭合：泛型参数 bound 支持模块路径（`fn f<T: m::Trait>()`）。
-    let program = parse_ok("fn f<T: m::Trait>(x: T) -> i64 { 0 }");
+    // 已知限制 #2 闭合：泛型参数 bound 支持模块路径（`fn f<T: m::Protocol>()`）。
+    let program = parse_ok("fn f<T: m::Protocol>(x: T) -> i64 { 0 }");
     let AstItem::FnDecl(f) = &program.items[0] else {
         panic!("expected fn");
     };
     assert_eq!(f.generics.len(), 1);
-    assert_eq!(f.generics[0].bounds, vec!["m::Trait".to_string()]);
+    assert_eq!(f.generics[0].bounds, vec!["m::Protocol".to_string()]);
 }
 
 #[test]
@@ -289,7 +289,7 @@ fn test_struct_inline_inherent_method() {
 
 #[test]
 fn test_impl_new_syntax_conformance() {
-    // PC-8：`impl T: P` 归一为 trait impl；`impl T` 为固有。
+    // PC-8：`impl T: P` 归一为 protocol impl；`impl T` 为固有。
     // 旧语序 `impl P for T` 已按 PC-12 移除，故仅校验新语序两条路径。
     let program = parse_ok(
         "impl Sq: Area { fn area(&self) -> i64 { 0 } } \
@@ -298,13 +298,13 @@ fn test_impl_new_syntax_conformance() {
     let AstItem::ImplBlock(c) = &program.items[0] else {
         panic!("expected impl");
     };
-    assert_eq!(c.trait_name.as_deref(), Some("Area"));
+    assert_eq!(c.protocol_name.as_deref(), Some("Area"));
     assert_eq!(c.type_name, "Sq");
 
     let AstItem::ImplBlock(inherent) = &program.items[1] else {
         panic!("expected inherent impl");
     };
-    assert_eq!(inherent.trait_name, None);
+    assert_eq!(inherent.protocol_name, None);
     assert_eq!(inherent.type_name, "Sq");
 }
 
@@ -318,31 +318,31 @@ fn test_impl_new_syntax_generic() {
     let AstItem::ImplBlock(i) = &program.items[0] else {
         panic!("expected impl");
     };
-    assert_eq!(i.trait_name.as_deref(), Some("Wrap"));
+    assert_eq!(i.protocol_name.as_deref(), Some("Wrap"));
     assert_eq!(i.type_name, "Pair");
     assert_eq!(i.generics.len(), 1);
-    assert_eq!(i.trait_type_args.len(), 1);
+    assert_eq!(i.protocol_type_args.len(), 1);
 
     let AstItem::ImplBlock(inherent) = &program.items[1] else {
         panic!("expected inherent impl");
     };
-    assert_eq!(inherent.trait_name, None);
+    assert_eq!(inherent.protocol_name, None);
     assert_eq!(inherent.type_name, "Pair");
 }
 
 #[test]
 fn test_impl_multi_conformance_list() {
-    // PC-9：`impl Sq: Area, Named`——首个协议入 `trait_name`，其余入 `extra_traits`，
+    // PC-9：`impl Sq: Area, Named`——首个协议入 `protocol_name`，其余入 `extra_protocols`，
     // 由 desugar 按协议成员名裁决拆分为多个 impl 块。
     let program = parse_ok("impl Sq: Area, Named { fn area(&self) -> i64 { 0 } }");
     let AstItem::ImplBlock(i) = &program.items[0] else {
         panic!("expected impl");
     };
-    assert_eq!(i.trait_name.as_deref(), Some("Area"));
+    assert_eq!(i.protocol_name.as_deref(), Some("Area"));
     assert_eq!(i.type_name, "Sq");
-    assert_eq!(i.extra_traits.len(), 1);
-    assert_eq!(i.extra_traits[0].0, "Named");
-    assert!(i.extra_traits[0].1.is_empty());
+    assert_eq!(i.extra_protocols.len(), 1);
+    assert_eq!(i.extra_protocols[0].0, "Named");
+    assert!(i.extra_protocols[0].1.is_empty());
 }
 
 #[test]
@@ -352,12 +352,12 @@ fn test_impl_multi_conformance_generic() {
     let AstItem::ImplBlock(i) = &program.items[0] else {
         panic!("expected impl");
     };
-    assert_eq!(i.trait_name.as_deref(), Some("Wrap"));
+    assert_eq!(i.protocol_name.as_deref(), Some("Wrap"));
     assert_eq!(i.type_name, "Pair");
     assert_eq!(i.generics.len(), 1);
-    assert_eq!(i.trait_type_args.len(), 1);
-    assert_eq!(i.extra_traits.len(), 1);
-    assert_eq!(i.extra_traits[0].0, "Show");
+    assert_eq!(i.protocol_type_args.len(), 1);
+    assert_eq!(i.extra_protocols.len(), 1);
+    assert_eq!(i.extra_protocols[0].0, "Show");
 }
 
 #[test]

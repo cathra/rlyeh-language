@@ -76,7 +76,7 @@ pub(super) fn check_binary(
     Ok((hir_op, merge_numeric(left.clone(), right.clone())))
 }
 
-/// V5d（2026-09-02）：可重载的二元运算符 → 运算符 trait 方法名。
+/// V5d（2026-09-02）：可重载的二元运算符 → 运算符 protocol 方法名。
 /// 逻辑 &&/|| 短路语义不可重载；比较链 < > 等走 CompareOp 独立路径，本期不重载。
 pub(super) fn overload_method(op: BinaryOp) -> Option<&'static str> {
     let name = match op {

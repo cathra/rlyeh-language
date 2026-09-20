@@ -2,7 +2,7 @@
 //
 // 组成（拆分前 OpenMode / c_str 内联于本文件，现下沉 io/base.rl）：
 //   io/base.rl    （OpenMode / open_mode_str / c_str）
-//   io/error.rl   （IoErrorKind / IoError / Error trait / kind_message）
+//   io/error.rl   （IoErrorKind / IoError / Error protocol / kind_message）
 //   io/file.rl    （File 对象 + read_file/write_file/append_file）
 //   io/console.rl （Stdout/Stderr/stdout/stderr + stdin 读取/lines）
 //   io/nio.rl     （Interest/Event/Poller/set_nonblocking/is_nonblocking）

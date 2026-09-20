@@ -19,7 +19,7 @@ pub struct Warning {
 pub enum WarningKind {
     /// 冗余显式解引用：`(*r).field` / `(*r).method()` / `(*r)[i]`。
     ///
-    /// 引用会自动解引用，无需手写 `*`；裸指针（`*p`）与自定义 `Deref` trait
+    /// 引用会自动解引用，无需手写 `*`；裸指针（`*p`）与自定义 `Deref` protocol
     /// 解引用仍需 `*`——前者操作数为 `Type::RawPtr`，后者本身不是引用。
     RedundantDeref {
         /// 改进建议（已并入 [`Warning::message`]）。

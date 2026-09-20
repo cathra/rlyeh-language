@@ -130,14 +130,20 @@ fn remove_dead_assignments(f: &mut MirFunction) {
                     used.insert(base.clone());
                     used.insert(value.clone());
                 }
-                MirStmt::IndexGet { base, index, .. } => {
+                MirStmt::IndexGet { base, index, len, .. } => {
                     used.insert(base.clone());
                     used.insert(index.clone());
+                    if let Some(l) = len {
+                        used.insert(l.clone());
+                    }
                 }
-                MirStmt::IndexSet { base, index, value, .. } => {
+                MirStmt::IndexSet { base, index, value, len, .. } => {
                     used.insert(base.clone());
                     used.insert(index.clone());
                     used.insert(value.clone());
+                    if let Some(l) = len {
+                        used.insert(l.clone());
+                    }
                 }
                 MirStmt::AddrOf { operand, .. } => {
                     used.insert(operand.clone());

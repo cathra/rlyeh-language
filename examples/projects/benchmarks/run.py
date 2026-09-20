@@ -45,7 +45,7 @@ DESC = {
     "actor_pingpong": "5 万次 actor 同步往返（Rlyeh 并发模型 vs 线程通道）",
     "btree":          "深度 15 完全二叉树构造 + 递归求和（内存访问 + 递归）",
     "hashmap_str":    "1 万条字符串键 insert + get（字符串哈希 + 键构造）",
-    "dyn_dispatch":   "2000 万次 dyn Trait / 虚函数多态分派",
+    "dyn_dispatch":   "2000 万次 dyn Protocol / 虚函数多态分派",
     "region_alloc":   "100 万次小对象分配（Rlyeh region 批量 vs 逐次分配）",
     "region_batch":   "100 万循环 × 每次 4 小对象分配（批量提升 vs 手动 bump 真实写带宽）",
     "nqueens":        "12 皇后回溯搜索（纯整数递归 + 剪枝分支）",
@@ -265,7 +265,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     lines.append("- `hashmap`：Rlyeh/Rust/Go/Swift 侧为各语言标准/内置哈希表（std HashMap / 内置 map），"
                  "C 无标准哈希表、手写线性探测表（2^20 槽，负载 ~19%）。")
     lines.append("- `hashmap_str`：各语言在插入/查询阶段每次重建键字符串（format!/sprintf/strdup/Sprintf），键构造成本计入基准。")
-    lines.append("- `dyn_dispatch`：Rlyeh 侧为 `dyn Trait` 胖指针 + vtable 间接分派，C++ 虚函数、Rust trait 对象、"
+    lines.append("- `dyn_dispatch`：Rlyeh 侧为 `dyn Protocol` 胖指针 + vtable 间接分派，C++ 虚函数、Rust protocol 对象、"
                  "Swift `any` 存在类型；局部对象多态调用在各编译器下可能被去虚拟化优化，本基准反映真实多态调用吞吐。")
     lines.append("- `nqueens` 为 P2 复平面迭代（mandelbrot）的替代：Rlyeh MVP 的 `as f64` 数值转换尚未在 IR 层实现"
                  "（Cast 在 typecheck 后被静默擦除、无转换指令，i64 位模式被直接当作 f64 值），mandelbrot 需要运行时 "

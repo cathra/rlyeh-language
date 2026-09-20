@@ -835,12 +835,12 @@ pub(crate) fn check_stmt_inner(
             let anno_ty = match type_anno {
                 Some(anno) => {
                     let at = resolve_ast_type(ctx, &anno.ty, span)?;
-                    // H4 `dyn Trait` 转换：注解为 `dyn Trait`、init 为 `&T`
-                    // （T 实现了该 trait）时，把 init 转成 trait 对象胖指针，
+                    // H4 `dyn Protocol` 转换：注解为 `dyn Protocol`、init 为 `&T`
+                    // （T 实现了该 protocol）时，把 init 转成 protocol 对象胖指针，
                     // 并同步绑定类型，使后续 `at.compatible_with(&ty)` 一致。
-                    if let (Type::Dyn(trait_name), Type::Ref(inner, _, _)) = (&at, &ty) {
+                    if let (Type::Dyn(protocol_name), Type::Ref(inner, _, _)) = (&at, &ty) {
                         let inner_ty = (**inner).clone();
-                        h_init = coerce_to_dyn(ctx, h_init, inner, trait_name, span)?;
+                        h_init = coerce_to_dyn(ctx, h_init, inner, protocol_name, span)?;
                         ty = at.clone();
                         // H4 去虚拟化：记录绑定变量 → 具体类型
                         // （后续 `dyn_var.method()` 可静态分派到具体类型实现）
@@ -848,16 +848,16 @@ pub(crate) fn check_stmt_inner(
                             pending_dyn_concrete = Some(inner_ty);
                         }
                     }
-                    // P4（2026-08-28）：`&dyn Trait` 上转型——注解为 `&dyn Trait`、
-                    // init 为 `&T`（T 实现该 trait）时，把 `&T` 引用上转为胖指针引用
-                    // `&dyn Trait`（data 指向引用目标、vtable 指向 T 的实现）。
+                    // P4（2026-08-28）：`&dyn Protocol` 上转型——注解为 `&dyn Protocol`、
+                    // init 为 `&T`（T 实现该 protocol）时，把 `&T` 引用上转为胖指针引用
+                    // `&dyn Protocol`（data 指向引用目标、vtable 指向 T 的实现）。
                     // 与 H4 值上转型同构，仅注解为 `Ref(Dyn)`；胖指针布局相同（2 槽）。
                     else if let (Type::Ref(inner_at, _, _), Type::Ref(inner_init, _, _)) = (&at, &ty) {
-                        if let Type::Dyn(trait_name) = &**inner_at {
+                        if let Type::Dyn(protocol_name) = &**inner_at {
                             if let Type::Named(_, _) = &**inner_init {
                                 let concrete = (**inner_init).clone();
                                 h_init =
-                                    coerce_to_dyn(ctx, h_init, &concrete, trait_name, span)?;
+                                    coerce_to_dyn(ctx, h_init, &concrete, protocol_name, span)?;
                                 ty = at.clone();
                                 pending_dyn_concrete = Some(concrete);
                             }
@@ -867,7 +867,7 @@ pub(crate) fn check_stmt_inner(
                     // `&dyn A → &dyn B` 同构。线性化 vtable 保证父协议方法槽位于子协议 vtable
                     // 前部，故直接复用同一胖指针、仅编译期改类型（零运行时开销）。
                     else if let Some(up) =
-                        crate::check_expr::dyn_supertrait_upshift(ctx, &at, &ty)
+                        crate::check_expr::dyn_superprotocol_upshift(ctx, &at, &ty)
                     {
                         ty = up;
                     }

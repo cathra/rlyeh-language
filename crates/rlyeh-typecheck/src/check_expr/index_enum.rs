@@ -79,13 +79,18 @@ pub(super) fn check_index_inner(
             return Ok((
                 HirExpr::new(HirExprKind::Index{
                     base: Box::new(HirExpr::new(HirExprKind::FieldGet{
-                        base: Box::new(b_hir),
+                        base: Box::new(b_hir.clone()),
                         index: 0,
                         ty: FieldScalar::Ptr,
                     }, Span::dummy())),
                     index: Box::new(i_hir),
                     elem: FieldScalar::Int,
                     is_str: true,
+                    len: Some(Box::new(HirExpr::new(HirExprKind::FieldGet{
+                        base: Box::new(b_hir),
+                        index: 1,
+                        ty: FieldScalar::Int,
+                    }, Span::dummy()))),
                 }, Span::dummy()),
                 Type::U8,
             ));
@@ -103,6 +108,7 @@ pub(super) fn check_index_inner(
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
                     is_str: is_byte,
+                    len: None,
                 }, Span::dummy()),
                 elem_sub,
             ))
@@ -113,6 +119,7 @@ pub(super) fn check_index_inner(
                 index: Box::new(i_hir),
                 elem: FieldScalar::Char,
                 is_str: true,
+                len: None,
             }, Span::dummy()),
             Type::Char,
         )),
@@ -124,13 +131,18 @@ pub(super) fn check_index_inner(
             Ok((
                 HirExpr::new(HirExprKind::Index{
                     base: Box::new(HirExpr::new(HirExprKind::FieldGet{
-                        base: Box::new(b_hir),
+                        base: Box::new(b_hir.clone()),
                         index: 0,
                         ty: FieldScalar::Ptr,
                     }, Span::dummy())),
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
                     is_str: is_byte,
+                    len: Some(Box::new(HirExpr::new(HirExprKind::FieldGet{
+                        base: Box::new(b_hir),
+                        index: 1,
+                        ty: FieldScalar::Int,
+                    }, Span::dummy()))),
                 }, Span::dummy()),
                 elem_sub,
             ))
@@ -150,6 +162,7 @@ pub(super) fn check_index_inner(
                     index: Box::new(i_hir),
                     elem: field_scalar_of(&elem_sub),
                     is_str: is_byte,
+                    len: None,
                 }, Span::dummy()),
                 elem_sub,
             ))
@@ -161,13 +174,18 @@ pub(super) fn check_index_inner(
                 Ok((
                     HirExpr::new(HirExprKind::Index{
                         base: Box::new(HirExpr::new(HirExprKind::FieldGet{
-                            base: Box::new(b_hir),
+                            base: Box::new(b_hir.clone()),
                             index: 0,
                             ty: FieldScalar::Ptr,
                         }, Span::dummy())),
                         index: Box::new(i_hir),
                         elem: FieldScalar::Int,
                         is_str: true,
+                        len: Some(Box::new(HirExpr::new(HirExprKind::FieldGet{
+                            base: Box::new(b_hir),
+                            index: 1,
+                            ty: FieldScalar::Int,
+                        }, Span::dummy()))),
                     }, Span::dummy()),
                     Type::U8,
                 ))
@@ -182,13 +200,18 @@ pub(super) fn check_index_inner(
                 Ok((
                     HirExpr::new(HirExprKind::Index{
                         base: Box::new(HirExpr::new(HirExprKind::FieldGet{
-                            base: Box::new(b_hir),
+                            base: Box::new(b_hir.clone()),
                             index: 0,
                             ty: FieldScalar::Ptr,
                         }, Span::dummy())),
                         index: Box::new(i_hir),
                         elem: field_scalar_of(&elem_sub),
                         is_str: is_byte,
+                        len: Some(Box::new(HirExpr::new(HirExprKind::FieldGet{
+                            base: Box::new(b_hir),
+                            index: 1,
+                            ty: FieldScalar::Int,
+                        }, Span::dummy()))),
                     }, Span::dummy()),
                     elem_sub,
                 ))
@@ -451,7 +474,7 @@ pub(super) fn check_question(
     // 失败变体经完整路径构造（`Option::None` / `Result::Err(e)`）：裸 `None`
     // 是 Ident（infer_expr 无变体兜底），带参变体是 Call（走 check_call 的
     // split_variant_path 兜底）。枚举名取自 `Type::Named`（可能含模块路径）。
-    // P6c（2026-08-29）：若错误类型不同（`E1` ≠ `E2`），经 trait 关联函数
+    // P6c（2026-08-29）：若错误类型不同（`E1` ≠ `E2`），经 protocol 关联函数
     // `From::<E1>::from(__e)` 自动转换（需 `impl From<E1> for E2`），语义对齐 Rust `?`。
     let err_arg: AstExpr = if has_err_field {
         let target_err = match &ctx.current_return_type {

@@ -1,2 +1,2 @@
-错误: [typecheck] 14:13: error[TC027]: type `Rock` does not implement trait `Speak` (bound on generic parameter `T`)
-  = help: 为类型实现所需 trait，或放宽 `where` 约束
+错误: [typecheck] 14:13: error[TC027]: type `Rock` does not implement protocol `Speak` (bound on generic parameter `T`)
+  = help: 为类型实现所需 protocol，或放宽 `where` 约束

@@ -15,7 +15,7 @@
 5. **引用**：`&x` 表达式、`&T` 参数、`str` 类型、解引用 `*`、裸指针——全部未实现。
    仅方法接收者 `&self` / `&mut self` 可用。
 6. **闭包**：`|x| x + 1` 语法可解析但 Unsupported。
-7. `dyn Trait`、函数指针、`?` 错误传播——未实现。
+7. `dyn Protocol`、函数指针、`?` 错误传播——未实现。
 8. `Rc<T>` / `Arc<T>` / `Gc<T>`（L2/L3 内存层）——规划未实现。
 9. **迭代器**：`Iterator` protocol / `collect` 未实现；`for` **仅支持数值区间**（`for i in 0..<10`），不支持 `for x in vec`。
 10. 字符串插值 / `format!` 格式化——未实现。

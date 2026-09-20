@@ -279,7 +279,7 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             receiver,
             method,
             args,
-            trait_hint,
+            protocol_hint,
         } => AstExpr::new(
             ExprKind::MethodCall {
                 receiver: rewrite_expr(receiver, lifted, span),
@@ -288,7 +288,7 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
                     .iter()
                     .map(|arg| rewrite_expr(arg, lifted, span))
                     .collect(),
-                trait_hint: trait_hint.clone(),
+                protocol_hint: protocol_hint.clone(),
             },
             span,
         ),

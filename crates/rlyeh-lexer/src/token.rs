@@ -51,7 +51,7 @@ pub enum Token {
     Enum,
     /// `impl`（扩展块关键字：`impl T: P` / `impl T`）
     Impl,
-    /// `protocol`（协议声明关键字；`trait` / `extension` 已从语法中移除）
+    /// `protocol`（协议声明关键字；`protocol` / `extension` 已从语法中移除）
     Protocol,
     /// `type`
     Type,

@@ -333,7 +333,7 @@ impl Checker {
                 }
             }
             AstItem::StructDecl(_) | AstItem::EnumDecl(_) | AstItem::UseDecl(_) => {}
-            AstItem::TraitDecl(t) => {
+            AstItem::ProtocolDecl(t) => {
                 for m in &t.methods {
                     if let Some(body) = &m.body {
                         self.push_scope();
@@ -518,7 +518,7 @@ impl Checker {
                 receiver,
                 args,
                 method: _,
-                trait_hint: _,
+                protocol_hint: _,
             } => {
                 self.walk_expr(receiver);
                 for a in args {

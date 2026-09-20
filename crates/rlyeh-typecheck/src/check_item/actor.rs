@@ -9,11 +9,11 @@ pub(crate) fn collect_actor(ctx: &mut TypeContext, a: &AstActorDecl, prefix: &st
     let full = full_name(prefix, &a.name);
     if ctx.structs.contains_key(&full)
         || ctx.enum_defs.contains_key(&full)
-        || ctx.trait_defs.contains_key(&full)
+        || ctx.protocol_defs.contains_key(&full)
         || ctx.actors.contains_key(&full)
     {
         return Err(TypeError::Unsupported {
-            what: format!("重复定义 `{full}`（已存在同名 struct/enum/trait/actor）"),
+            what: format!("重复定义 `{full}`（已存在同名 struct/enum/protocol/actor）"),
             span: a.span,
         });
     }

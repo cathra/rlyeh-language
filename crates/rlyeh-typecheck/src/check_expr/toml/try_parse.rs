@@ -78,7 +78,7 @@ pub(crate) fn toml_try_parse_ast(
                 receiver: recv,
                 method: method.to_string(),
                 args,
-                trait_hint: None,
+                protocol_hint: None,
             },
             span,
         )

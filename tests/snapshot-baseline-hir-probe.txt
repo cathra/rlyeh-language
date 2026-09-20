@@ -38,7 +38,7 @@ tests/run-pass/tuple_value.rl
 # 字符串 API
 tests/run-pass/string_api.rl
 
-# 泛型 trait / impl
+# 泛型 protocol / impl
 tests/run-pass/generic_impl_where_arg.rl
 
 # 函数指针

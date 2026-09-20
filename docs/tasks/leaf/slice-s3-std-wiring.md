@@ -10,7 +10,7 @@
 
 ## 技术细节
 
-- `core.rl` 切片方法 trait（复用 V3 Iterator 适配器）：`len`、`iter`、`split_at`、`first`/`last`。
+- `core.rl` 切片方法 protocol（复用 V3 Iterator 适配器）：`len`、`iter`、`split_at`、`first`/`last`。
 - Y1 升级：`File::read(&mut [u8]) -> usize` / `File::write(&[u8]) -> usize`（二进制安全）；原 `Vec<u8>` 版 `read_bytes`/`write_bytes` 标为过渡方案（见 Y1 叶子文档）。
 - `&[u8]` ↔ `&str` 视角转换（开放问题，标注）。
 

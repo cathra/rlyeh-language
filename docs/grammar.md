@@ -9,7 +9,7 @@
 > 闭包 `|x| ...`（H2/H3/H5 ✅ 已实现，见 guide/03-basic-syntax.md §3.8；typecheck 按预期 fn 签名/捕获检查）、引用类型 `&T` 已实现
 > （G1 ✅：`&x`/`&mut x` 表达式、`&T`/`&mut T` 参数与返回、`*` 解引用；`&str` 只读借用视图已实现
 > （G2 ✅：`as_str()` + `&str` 参数/返回/索引 + `String::from(&str)`），裸指针 `*const T`/`*mut T` 已实现（G3 ✅））、
-> `dyn Trait`（H4 ✅）、`?` 运算符（K1 ✅）、`expr as T` 数值转换（U6 ✅：≤64 位整族 + 浮点 + bool + char
+> `dyn Protocol`（H4 ✅）、`?` 运算符（K1 ✅）、`expr as T` 数值转换（U6 ✅：≤64 位整族 + 浮点 + bool + char
 > 间转换，`fptosi`/`sitofp`/`trunc`/`sext`/`zext`/`icmp ne 0` 等，见 guide/03-basic-syntax.md §3.2）、生命周期参数 `'a` 等。
 > 普通函数 `async fn`/`await` 已实现（S1c ✅：`FnDecl`/`ActorMethod` 的 `async?` 与 `expr.await` 语法全程接受，
 > 状态机 desugar——`async fn` 编译为 Future 结构体 + poll 状态机 + 构造器，`expr.await` 经状态机轮询子 future，
@@ -125,7 +125,7 @@ Program     ::= ModuleItem*
 ModuleItem  ::= FnDecl
               | StructDecl
               | EnumDecl
-              | TraitDecl
+              | ProtocolDecl
               | ImplBlock
               | ModuleDecl
               | ImportDecl
@@ -175,7 +175,7 @@ Type        ::= PrimType
               | '[' Type ']'
               | '(' TypeList? ')'
               | '!'  // never type
-              | 'dyn' TraitBound
+              | 'dyn' ProtocolBound
 
 PrimType    ::= 'i8' | 'i16' | 'i32' | 'i64' | 'i128' | 'isize'
               | 'u8' | 'u16' | 'u32' | 'u64' | 'u128' | 'usize'
@@ -276,10 +276,10 @@ Lifetime    ::= ''' Ident
 // 可选生命参数）。与 GenParams 内的 LifetimeParam 并存；当前仅捕获存储（region 感知
 // 校验规划中）。
 RegionParam ::= Lifetime
-TypeParam   ::= Ident (':' TraitBound)?
+TypeParam   ::= Ident (':' ProtocolBound)?
 
 WhereClause ::= 'where' WherePred (',' WherePred)*
-WherePred   ::= Type ':' TraitBound (',' TraitBound)*
+WherePred   ::= Type ':' ProtocolBound (',' ProtocolBound)*
 ```
 
 ### 2.8 语句

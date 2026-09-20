@@ -17,7 +17,7 @@ fn tokens(source: &str) -> Vec<Token> {
 
 #[test]
 fn test_protocol_keyword() {
-    // 语法仅保留 `protocol` 作为协议声明关键字（`trait` / `extension` 已从语法中移除）。
+    // 语法仅保留 `protocol` 作为协议声明关键字（`protocol` / `extension` 已从语法中移除）。
     assert_eq!(tokens("protocol"), vec![Token::Protocol]);
 }
 

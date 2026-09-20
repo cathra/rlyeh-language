@@ -43,26 +43,26 @@ pub(crate) fn make_slice_fat(ctx: &mut TypeContext, data: HirExpr, len: i128) ->
     })), Span::dummy())
 }
 
-/// P6c（2026-08-29）：trait 关联函数调用（`From::from` / `Into::into` 等）。
+/// P6c（2026-08-29）：protocol 关联函数调用（`From::from` / `Into::into` 等）。
 ///
-/// 查找并实例化 `impl Trait<Args> for Self` 中的关联方法；Self 可由 `self_target`
+/// 查找并实例化 `impl Protocol<Args> for Self` 中的关联方法；Self 可由 `self_target`
 /// （如 `?` 运算符的目标错误类型）给定，或从 impl 的具体 `self_type` 推断（手动调用）。
-pub(super) fn check_trait_static_call(
+pub(super) fn check_protocol_static_call(
     ctx: &mut TypeContext,
-    trait_key: &str,
+    protocol_key: &str,
     method: &str,
     args: &[AstExpr],
     type_args: &[Type],
     self_target: Option<Type>,
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
-    let trait_def = ctx.lookup_trait(trait_key).cloned();
-    let trait_params = trait_def
+    let protocol_def = ctx.lookup_protocol(protocol_key).cloned();
+    let protocol_params = protocol_def
         .as_ref()
         .map(|t| t.type_params.clone())
         .unwrap_or_default();
 
-    // 推断实参类型（亦用于无 turbofish 时按实参位置推断 trait 参数）
+    // 推断实参类型（亦用于无 turbofish 时按实参位置推断 protocol 参数）
     let arg_infos: Vec<(HirExpr, Type)> = args
         .iter()
         .map(|a| infer_expr(ctx, a))
@@ -72,8 +72,8 @@ pub(super) fn check_trait_static_call(
     // 等价于 `From::from(x)`，当且仅当存在 `impl From<A_source> for U_target`。
     // 不注册 blanket impl（其方法体 `From::from(self)` 无法在泛型层面静态检查），
     // 改由类型检查器在此直接改写，并以其约束求解确认 `From` impl 存在。
-    let trait_short = trait_key.rsplit("::").next().unwrap_or(trait_key);
-    if trait_short == "Into" && method == "into" {
+    let protocol_short = protocol_key.rsplit("::").next().unwrap_or(protocol_key);
+    if protocol_short == "Into" && method == "into" {
         if type_args.len() != 1 {
             return Err(TypeError::Unsupported {
                 what: "`Into::into` 需经 turbofish 指定目标类型（如 `Into::<Target>::into(x)`）；`x.into()` 方法形式的目标类型推断待专项".to_string(),
@@ -93,12 +93,12 @@ pub(super) fn check_trait_static_call(
             }
         };
         // 约束求解：确认 `impl From<A_source> for U_target` 存在（即 `From<A_source>`
-        // 对 `U_target` 有可用 trait impl；缺失则报错，语义对齐 Rust `U: From<T>`）。
+        // 对 `U_target` 有可用 protocol impl；缺失则报错，语义对齐 Rust `U: From<T>`）。
         let from_key = ctx
-            .resolve_trait_key("From")
+            .resolve_protocol_key("From")
             .unwrap_or_else(|| "From".to_string());
         if ctx
-            .find_impl_for_trait_method(&u_target, &from_key, "from")
+            .find_impl_for_protocol_method(&u_target, &from_key, "from")
             .is_none()
         {
             return Err(TypeError::Unsupported {
@@ -109,8 +109,8 @@ pub(super) fn check_trait_static_call(
             });
         }
         // 改写：`From::from(x)`（Self = U_target，turbofish 绑定 From 泛型参数 = A_source）。
-        // 复用 trait 关联函数调用路径，零新增 IR 节点。
-        return check_trait_static_call(
+        // 复用 protocol 关联函数调用路径，零新增 IR 节点。
+        return check_protocol_static_call(
             ctx,
             &from_key,
             "from",
@@ -123,7 +123,7 @@ pub(super) fn check_trait_static_call(
 
     let mut chosen: Option<&ImplDef> = None;
     for d in &ctx.impl_defs {
-        if d.trait_name.as_deref() != Some(trait_key) {
+        if d.protocol_name.as_deref() != Some(protocol_key) {
             continue;
         }
         let method_def = match d.methods.iter().find(|m| m.sig.name == method) {
@@ -136,17 +136,17 @@ pub(super) fn check_trait_static_call(
                 continue;
             }
         }
-        // 构造 trait 参数绑定：turbofish 优先，否则从实参位置推断
+        // 构造 protocol 参数绑定：turbofish 优先，否则从实参位置推断
         let mut bind: HashMap<String, Type> = HashMap::new();
         for (i, ta) in type_args.iter().enumerate() {
-            if let Some(tp) = trait_params.get(i) {
+            if let Some(tp) = protocol_params.get(i) {
                 bind.insert(tp.clone(), ta.clone());
             }
         }
         if bind.is_empty() {
             for (i, p) in method_def.sig.params.iter().enumerate() {
                 if let Type::Generic(tp) = p {
-                    if trait_params.iter().any(|x| x == tp) && !bind.contains_key(tp) {
+                    if protocol_params.iter().any(|x| x == tp) && !bind.contains_key(tp) {
                         if let Some((_, aty)) = arg_infos.get(i) {
                             bind.insert(tp.clone(), aty.clone());
                         }
@@ -154,10 +154,10 @@ pub(super) fn check_trait_static_call(
                 }
             }
         }
-        // 与 impl 记录的 trait_type_args 对齐（均为具体类型时一致性校验）
+        // 与 impl 记录的 protocol_type_args 对齐（均为具体类型时一致性校验）
         let mut ok = true;
-        if d.trait_type_args.len() == trait_params.len() {
-            for (tp, ta) in trait_params.iter().zip(&d.trait_type_args) {
+        if d.protocol_type_args.len() == protocol_params.len() {
+            for (tp, ta) in protocol_params.iter().zip(&d.protocol_type_args) {
                 if let Some(b) = bind.get(tp) {
                     if !b.compatible_with(ta) {
                         ok = false;
@@ -177,7 +177,7 @@ pub(super) fn check_trait_static_call(
         None => {
             return Err(TypeError::Unsupported {
                 what: format!(
-                    "找不到 `{trait_key}::{method}` 的可用 trait impl（需实现 `impl {trait_key}<..> for <Self>`）"
+                    "找不到 `{protocol_key}::{method}` 的可用 protocol impl（需实现 `impl {protocol_key}<..> for <Self>`）"
                 ),
                 span,
             })
@@ -192,7 +192,7 @@ pub(super) fn check_trait_static_call(
             if matches!(s, Type::Generic(_)) {
                 return Err(TypeError::Unsupported {
                     what: format!(
-                        "`{trait_key}::{method}` 的 Self 无法从上下文确定（需目标类型注解 / 返回值上下文）"
+                        "`{protocol_key}::{method}` 的 Self 无法从上下文确定（需目标类型注解 / 返回值上下文）"
                     ),
                     span,
                 });
@@ -201,10 +201,10 @@ pub(super) fn check_trait_static_call(
         }
     };
 
-    // 组装替换：trait 参数绑定 + Self
+    // 组装替换：protocol 参数绑定 + Self
     let mut subst: HashMap<String, Type> = HashMap::new();
     for (i, ta) in type_args.iter().enumerate() {
-        if let Some(tp) = trait_params.get(i) {
+        if let Some(tp) = protocol_params.get(i) {
             subst.insert(tp.clone(), ta.clone());
         }
     }
@@ -216,7 +216,7 @@ pub(super) fn check_trait_static_call(
             .unwrap();
         for (i, p) in method_def.sig.params.iter().enumerate() {
             if let Type::Generic(tp) = p {
-                if trait_params.iter().any(|x| x == tp) && !subst.contains_key(tp) {
+                if protocol_params.iter().any(|x| x == tp) && !subst.contains_key(tp) {
                     if let Some((_, aty)) = arg_infos.get(i) {
                         subst.insert(tp.clone(), aty.clone());
                     }
@@ -232,7 +232,7 @@ pub(super) fn check_trait_static_call(
         .find(|m| m.sig.name == method)
         .cloned()
         .ok_or_else(|| TypeError::FunctionNotFound {
-            name: format!("{trait_key}::{method}"),
+            name: format!("{protocol_key}::{method}"),
             span,
         })?;
 
@@ -248,7 +248,7 @@ pub(super) fn check_trait_static_call(
 
     if arg_infos.len() != expected.len() {
         return Err(TypeError::UnexpectedArgumentCount {
-            name: format!("{trait_key}::{method}"),
+            name: format!("{protocol_key}::{method}"),
             expected: expected.len(),
             found: arg_infos.len(),
             span,
@@ -265,7 +265,7 @@ pub(super) fn check_trait_static_call(
                 }
                 _ => {
                     return Err(TypeError::ArgumentTypeMismatch {
-                        name: format!("{trait_key}::{method}"),
+                        name: format!("{protocol_key}::{method}"),
                         index: i,
                         expected: expected[i].to_string(),
                         found: ty.to_string(),
@@ -332,7 +332,7 @@ pub(super) fn check_call(
     // L2 编译器内建 JSON 序列化/反序列化（`json.stringify(v)` / `json.parse::<T>(s)`）：
     // AST 层 desugar 为 String 构建 / 解析表达式，零新增 IR 节点。
     // Q2a 泛型 API 别名：`json.to_string(v)` ≡ `json.stringify(v)`；
-    // `json.from_str::<T>(s)` ≡ `json.parse::<T>(s)`。MVP 无泛型 trait 约束
+    // `json.from_str::<T>(s)` ≡ `json.parse::<T>(s)`。MVP 无泛型 protocol 约束
     // （`T: Serialize` / `T: Deserialize` bound 不支持），签名退化为无 bound
     // turbofish 形式：序列化类型由实参推断，反序列化经 turbofish 指定。
     if name == "json::stringify" || name == "json::to_string" {
@@ -348,7 +348,7 @@ pub(super) fn check_call(
     }
     // Q4 `toml` 模块（轻量 MVP）：`toml.to_string`/`toml.stringify` 序列化（基础标量 /
     // 嵌套表（内联表）/ 数组），`toml.from_str`/`toml.parse` 反序列化（round-trip 对齐
-    // stringify 的紧凑输出）。MVP 无泛型 trait 约束（`T: Serialize` / `T: Deserialize`
+    // stringify 的紧凑输出）。MVP 无泛型 protocol 约束（`T: Serialize` / `T: Deserialize`
     // bound 不支持），签名退化为无 bound turbofish 形式（同 Q2 json）。
     if name == "toml::stringify" || name == "toml::to_string" {
         return check_toml_stringify(ctx, args, span);
@@ -909,18 +909,18 @@ pub(super) fn check_call(
                 // P7b-2：传入 turbofish 类型实参（`Bag::<i64>::new()` → T = i64）
                 return check_static_method_call(ctx, &ty_full, method, args, type_args, span);
             }
-            // P6c（2026-08-29）：trait 关联函数调用（`From::from` / `Into::into` 等）。
+            // P6c（2026-08-29）：protocol 关联函数调用（`From::from` / `Into::into` 等）。
             // Self 类型无法从调用点单独确定时（无期望类型上下文），由 impl 的具体
             // self_type 推断（如 `From::<E1>::from(e)` 的 Self = 该 impl 的目标类型）。
-            if let Some(trait_key) = ctx.resolve_trait_key(&ty_full).or_else(|| ctx.resolve_trait_key(ty_name)) {
+            if let Some(protocol_key) = ctx.resolve_protocol_key(&ty_full).or_else(|| ctx.resolve_protocol_key(ty_name)) {
                 let resolved_args: Vec<Type> = type_args
                     .iter()
                     .map(|t| resolve_ast_type(ctx, t, span))
                     .collect::<Result<Vec<_>, _>>()?;
-                // U-M3：把 `let x: T = Trait::f()` 的 `T` 作为 `Self` 候选，使协议静态方法
+                // U-M3：把 `let x: T = Protocol::f()` 的 `T` 作为 `Self` 候选，使协议静态方法
                 // 的返回类型可按上下文期望对齐（默认 `None` 退化为从 impl 自推断）。
                 let self_target = ctx.expected_type.clone();
-                return check_trait_static_call(ctx, &trait_key, method, args, &resolved_args, self_target, span);
+                return check_protocol_static_call(ctx, &protocol_key, method, args, &resolved_args, self_target, span);
             }
         }
     }

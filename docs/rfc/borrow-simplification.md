@@ -225,8 +225,8 @@ typecheck 赋值 / 绑定 / 调用处的 Copy 类型 `&T → T` 自动解引用�
 - 接入的 coerce 落点（类型不匹配且上述条件满足时自动注入 `*`）：
   - `check_stmt.rs` 带标注 `let` 绑定（`let v: T = r;` 其中 `r: &T`）
   - `check_expr/ctrl.rs` 赋值（`x = r;` 其中 `x: T`、`r: &T`）
-  - `check_expr/call.rs` 三类调用实参：普通函数、内建函数、trait 关联函数
-    （`check_trait_static_call`）、函数指针间接调用（`check_indirect_call`）
+  - `check_expr/call.rs` 三类调用实参：普通函数、内建函数、protocol 关联函数
+    （`check_protocol_static_call`）、函数指针间接调用（`check_indirect_call`）
 - 非 Copy 类型 `&T → T` 仍报类型错误（如 `let v: Big = r;`），保持原行为。
 - 验证：`cargo test -p rlyeh-typecheck --lib` 新增 4 个单测全过（let / 赋值 / 调用
   三类 coerce 成功 + 非 Copy 拒绝）；`cargo build --workspace` 通过；
@@ -277,8 +277,8 @@ part: &str }` 与 `fn longest(x: &str, y: &str) -> &str` 等**省略写法本就
 **B-4（region 参数化语法）**：
 
 - 新增 AST 字段 `AstStructDecl.region_param` / `AstEnumDecl.region_param` /
-  `AstTraitDecl.region_param: Option<String>`。
-- `parse_struct` / `parse_enum` / `parse_trait` 在名称后识别可选 `Token::Lifetime`
+  `AstProtocolDecl.region_param: Option<String>`。
+- `parse_struct` / `parse_enum` / `parse_protocol` 在名称后识别可选 `Token::Lifetime`
   后缀（`struct Foo 'a { ... }`），经 `expect_lifetime()` 取出去引号名（`"a"`）。
 - 既有 `struct Foo<'a> { ... }`（`<'a>` 泛型生命参数）**保持原样**（仍按 G4 丢弃，
   不写入 `region_param`），向后兼容零回归。
@@ -294,9 +294,9 @@ part: &str }` 与 `fn longest(x: &str, y: &str) -> &str` 等**省略写法本就
 borrowck，属「严格借用检查」专项，本轮不引入新诊断以保证零回归。
 
 - 落点：`crates/rlyeh-ast/src/lib.rs`（3 处 `region_param` 字段）；
-  `crates/rlyeh-parser/src/item.rs`（`parse_struct` / `parse_enum` / `parse_trait`）；
+  `crates/rlyeh-parser/src/item.rs`（`parse_struct` / `parse_enum` / `parse_protocol`）；
   `crates/rlyeh-desugar/src/generate/mod.rs`（Future 结构体构造补 `region_param: None`）。
-- 验证：`rlyeh-parser` 单测新增 `test_region_param_suffix`（struct/enum/trait `'a`
+- 验证：`rlyeh-parser` 单测新增 `test_region_param_suffix`（struct/enum/protocol `'a`
   后缀）与 `test_region_param_absent_and_generic_form`（无后缀 / `<'a>` 既有写法均为
   `None`）；新增 `tests/run-pass/lifetime_omit.rl`（省略默认 + `'a` 后缀，exit 0，
   输出 10/20/20）；既有 `lifetime.rl` / `borrow_pass.rl` 回归通过；`cargo build
@@ -316,7 +316,7 @@ borrowck，属「严格借用检查」专项，本轮不引入新诊断以保证
 
 **核实中发现的 3 处陈旧测试**（非实现缺陷，属测试与已演进文法脱节），已修复并提交：
 
-- `c4b3997`：B-4 解析单测 `test_region_param_suffix` 用错已移除的 `trait` 关键字（语法现为 `protocol`），导致该用例自编写起即失败；改为 `protocol T 'c` 后通过。
+- `c4b3997`：B-4 解析单测 `test_region_param_suffix` 用错已移除的 `protocol` 关键字（语法现为 `protocol`），导致该用例自编写起即失败；改为 `protocol T 'c` 后通过。
 - `8de7278`：`test_protocol_and_impl` 与 `test_impl_new_syntax_conformance` 使用已按 PC-12 移除的旧语序 `impl P for T`，而 `parse_impl` 仅支持 `impl T: P` / `impl T`；已对齐到新语序。
 
 **收口判定**：首轮切片（`B-0 → B-1 → B-2 → B-6 → P1(B-3/B-4/B-5 部分)`）已全部落地并核实；本 RFC 状态由 `Draft` 更新为「首轮切片完成」。

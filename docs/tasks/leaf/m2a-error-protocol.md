@@ -1,4 +1,4 @@
-# M2a `Error` trait
+# M2a `Error` protocol
 
 > **所属阶段**：阶段 M
 > **状态**：✅ 已完成
@@ -7,7 +7,7 @@
 
 ## 目标
 
-定义 `Error` trait 并验证 dyn 分派。
+定义 `Error` protocol 并验证 dyn 分派。
 
 ## 背景
 
@@ -15,11 +15,11 @@
 
 ## 技术细节
 
-`trait Error { fn message(&self) -> String; }` + `impl Error for IoError`（`message()` 读 `self.message` 字段）+ `describe(e: &dyn Error)` 验证（H4 dyn Trait ✅）。H4 限制——dyn Trait 仅可作局部变量绑定，`describe` 类调用于函数体内构造 `let d: dyn Error = ...`。
+`protocol Error { fn message(&self) -> String; }` + `impl IoError: Error`（`message()` 读 `self.message` 字段）+ `describe(e: &dyn Error)` 验证（H4 dyn Protocol ✅）。H4 限制——dyn Protocol 仅可作局部变量绑定，`describe` 类调用于函数体内构造 `let d: dyn Error = ...`。
 
 ## 验证
 
-`tests/run-pass/error_trait.rl` + `error_trait.{rlyeh,out}`。
+`tests/run-pass/error_protocol.rl` + `error_protocol.{rlyeh,out}`。
 
 ## 变更记录
 

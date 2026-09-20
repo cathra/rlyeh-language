@@ -42,7 +42,7 @@ impl Helper {
 
 // 5) impl 块级 where（既有能力回归）：约束 impl 的泛型参数。
 //    注：impl 的类型参数由**接收者类型** unify 推导（`Pair<T>`），
-//    trait 类型实参不参与推导，故此处用无类型参数的 trait。
+//    protocol 类型实参不参与推导，故此处用无类型参数的 protocol。
 struct Pair<T> { a: T }
 
 protocol Wrap {

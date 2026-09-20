@@ -7,7 +7,7 @@
 | 任务 | 内容 | 状态 | 详情 |
 |------|------|------|------|
 | L1 | **`async fn`/`await`**：普通函数异步支持（actor `async` 方法已有独立机制，抽象复用） | ✅（MVP 同步语义；执行情况见 [`l1-async-fn.md`](../tasks/leaf/l1-async-fn.md) |
-| L2 | **`serde` 序列化模块**：`Serialize`/`Deserialize` trait + `#[derive]` 风格宏（依赖 I） | ✅（`json::stringify`/`json::parse::<T>` 内建 + turbofish；自定义 trait/derive 仍规划；执行情况见 [`l2-serde.md`](../tasks/leaf/l2-serde.md) |
+| L2 | **`serde` 序列化模块**：`Serialize`/`Deserialize` protocol + `#[derive]` 风格宏（依赖 I） | ✅（`json::stringify`/`json::parse::<T>` 内建 + turbofish；自定义 protocol/derive 仍规划；执行情况见 [`l2-serde.md`](../tasks/leaf/l2-serde.md) |
 | L3 | **region 选项接线**：`strategy (bump)` 等其余选项（`rlyeh-region-alloc` 已就绪，PGO 预测可直接回灌 `adaptive` 初始容量） | ✅ | [`l3-region.md`](../tasks/leaf/l3-region.md) |
 | L4 | **平台加固**：WASI 下 net 支持（或明确禁用文档化）；Actor 交叉编译 / WASM 支持（消除 §13 约束 2/3） | ✅ | [`l4-platform.md`](../tasks/leaf/l4-platform.md) |
 
@@ -60,7 +60,7 @@
 | 1 | **宏系统**：✅ 已解决——I1 声明式宏 / I2 内置格式化宏 / I3 集合宏均已实现 | grammar.md §2.14 `macro_rules!` EBNF（新 crate `rlyeh-macro`）；std-lib.md §8 `Display`/`Debug` 仍为规划 API | **I**（I1/I2/I3 ✅） |
 | 2 | **引用与借用**：`&x` 表达式、`&T` 参数类型、`str` 类型、解引用 `*`、裸指针均未实现；仅方法接收者 `&self`/`&mut self` 可用 | grammar.md Type 规则含 `'&' Lifetime? 'mut'? Type`、UnaryExpr 含 `'*' | '&' 'mut'?`、Pattern 含 `'ref'`（均已定义未实现）；typecheck `UnaryOp::Deref/AddrOf/AddrOfMut` → Unsupported（check_expr.rs）；borrowck crate 仅服务 `&self` 接收者 | **G**（G1–G4 ✅） |
 | 3 | **闭包**：`|x| x + 1` 语法可解析，typecheck 报 Unsupported | parser 已产出 `AstExpr::Closure`；typecheck 报 Unsupported（check_expr.rs） | **H**（H1–H5 ✅） |
-| 4 | **运算符**：✅ 已解决——K1 `?` 错误传播、H1 函数指针、H4 `dyn Trait` 均已实现 | grammar.md 含 `'dyn' TraitBound` 与后缀 `'?'`；`Option`/`Result` + `expect`/`unwrap_or` 已实现 | ✅ |
+| 4 | **运算符**：✅ 已解决——K1 `?` 错误传播、H1 函数指针、H4 `dyn Protocol` 均已实现 | grammar.md 含 `'dyn' ProtocolBound` 与后缀 `'?'`；`Option`/`Result` + `expect`/`unwrap_or` 已实现 | ✅ |
 | 5 | **所有权层级**：✅ 已解决——K2 `Box<T>` / K3 `Rc<T>`/`Arc<T>`/`Weak<T>` / K4 `Gc<T>`（MVP）均已实现 | memory-model.md §4（Rc/Arc）/§5（Gc）规范完备；`Box<T>` 亦为 §3 目标 API | **K** |
 | 6 | **并发**：actor `async` 方法 + `.await`/`send` 已实现；普通函数 `async fn`/`await` 已支持（L1 ✅）；`json` 序列化已实现（L2 ✅） | std-lib.md §8（fmt）规划标注 / §9（serde）已部分实现（`json::stringify`/`json::parse::<T>` 内建）；§10（async 运行时）已部分实现 | fmt→**I**，serde→L2 ✅，async→L1 ✅ |
 | 7 | **迭代器协议**：数值区间、`for x in vec`/`for (k, v) in map`/`for x in arr`（数组迭代 J1）可用；自定义迭代器（`next() -> Option<T>` 方法）接入 `for`（J2）；`map`/`filter`/`fold`/`collect`/`take`/`skip` 适配器可用（J3，返回 Vec） | typecheck for 循环分派（range/Vec/HashMap/数组/迭代器），适配器内建 desugar（check_expr.rs）；std-lib.md §2.3 Iterator 规划 | **J** |
@@ -80,8 +80,8 @@
 ### 6.3b. 标准库深度完善计划（阶段 M–T）
 
 > **需求来源**：[`std-lib.md`](../std-lib.md) 状态总览中标记为 📋 规划 / 🔧 部分的标准库章节（§2.3 Iterator、§4 File/标准输入输出/Path/fs/NIO/sendfile、§5 TCP 对象化/HTTP、§6.2 Channel、§8 `Display`/`Debug`、§9 `Serialize`/`Deserialize`、§10 异步运行时、§11 智能指针目标 API、§12 错误处理）。
-> **前置**：阶段 G–L 已全部完成，提供能力地基——G（引用/`&str`/裸指针/严格借用）、H（函数指针/闭包/`dyn Trait`）、I（宏/格式化宏/集合宏）、J（迭代器）、K（`?`/Box/Rc/Arc/Gc）、L（async 同步语义/json/region 指令/WASI）。
+> **前置**：阶段 G–L 已全部完成，提供能力地基——G（引用/`&str`/裸指针/严格借用）、H（函数指针/闭包/`dyn Protocol`）、I（宏/格式化宏/集合宏）、J（迭代器）、K（`?`/Box/Rc/Arc/Gc）、L（async 同步语义/json/region 指令/WASI）。
 > **Rust 绑定层策略**：延续 rlyeh-std「绑定层阶段」——每个新 std 模块先在 `crates/rlyeh-std/src/` 用 Rust 实现 C ABI 绑定（`#[no_mangle] extern "C"`），语言侧 `crates/rlyeh-std/rlyeh/*.rl` 经 FFI 调用封装；**NIO/sendfile 绑定层已就绪**（`rlyeh-std/src/nio/`：poller.rs/sendfile.rs/nonblocking.rs，三平台 epoll/kqueue/poll），阶段 R 为纯语言侧封装。
-> **现状修正（std-lib.md 过时标注，规划时以实际为准）**：§8 内置格式化宏已实现（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；§12 `?` 运算符已实现（K1）；§9 `json::stringify`/`json::parse::<T>` 已实现（L2，trait/derive 仍规划）。
+> **现状修正（std-lib.md 过时标注，规划时以实际为准）**：§8 内置格式化宏已实现（I2：`println!`/`print!`/`format!`/`dbg!` + N4 `eprintln!`/`eprint!`（stderr），`{}`/`{:?}` 占位）；§12 `?` 运算符已实现（K1）；§9 `json::stringify`/`json::parse::<T>` 已实现（L2，protocol/derive 仍规划）。
 >
 > **任务粒度**：全部任务已拆分为「可独立实现 + 独立验收」的子任务（共 **59 个**），字母后缀（a/b/c）子任务须按序完成（后者依赖前者）；M–T 推荐执行路线见上文 §2。

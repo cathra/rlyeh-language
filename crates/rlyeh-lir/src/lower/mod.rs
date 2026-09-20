@@ -357,15 +357,21 @@ fn collect_locals(f: &MirFunction) -> Vec<Local> {
                     names.push(base.clone());
                     names.push(value.clone());
                 }
-                MirStmt::IndexGet { target, base, index, .. } => {
+                MirStmt::IndexGet { target, base, index, len, .. } => {
                     names.push(target.clone());
                     names.push(base.clone());
                     names.push(index.clone());
+                    if let Some(l) = len {
+                        names.push(l.clone());
+                    }
                 }
-                MirStmt::IndexSet { base, index, value, .. } => {
+                MirStmt::IndexSet { base, index, value, len, .. } => {
                     names.push(base.clone());
                     names.push(index.clone());
                     names.push(value.clone());
+                    if let Some(l) = len {
+                        names.push(l.clone());
+                    }
                 }
                 MirStmt::AddrOf { target, operand, .. } => {
                     names.push(target.clone());

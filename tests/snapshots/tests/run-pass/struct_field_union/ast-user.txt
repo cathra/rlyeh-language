@@ -604,7 +604,7 @@ AstProgram {
                                                                     },
                                                                     method: "len",
                                                                     args: [],
-                                                                    trait_hint: None,
+                                                                    protocol_hint: None,
                                                                 },
                                                                 span: Span {
                                                                     start: 766,
@@ -1019,7 +1019,7 @@ AstProgram {
                                                                 },
                                                                 method: "len",
                                                                 args: [],
-                                                                trait_hint: None,
+                                                                protocol_hint: None,
                                                             },
                                                             span: Span {
                                                                 start: 1097,
