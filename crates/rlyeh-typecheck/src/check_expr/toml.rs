@@ -383,13 +383,22 @@ pub(crate) fn toml_parse_ast(
                             AstStmt::Let {
                                 pattern: AstPattern::Ident(kpart_name),
                                 type_anno: None,
+                                // X2（修复）：键段须 trim 剥离两侧空格——`"only" = 9` 的 `find("=")`
+                                // 命中后 `substring(0, c)` 得 `"only" `（含尾随空格），若不 trim 直接
+                                // `json_unescape` 仅剥首引号、尾引号被空格隔断而保留 → 键变成
+                                // `only"` → `insert` 进 `only"`、`get("only")` 查无 → 反序列化 Hash
+                                // Map 键全部 miss。与 struct 分支（同文件 substring 后 `.trim()`）保持一致。
                                 init: mcall(
-                                    part_id.clone(),
-                                    "substring",
-                                    vec![
-                                        AstExpr::new(ExprKind::IntLiteral(0), span),
-                                        c_id.clone(),
-                                    ],
+                                    mcall(
+                                        part_id.clone(),
+                                        "substring",
+                                        vec![
+                                            AstExpr::new(ExprKind::IntLiteral(0), span),
+                                            c_id.clone(),
+                                        ],
+                                    ),
+                                    "trim",
+                                    Vec::new(),
                                 ),
                                 mutable: false,
                             },

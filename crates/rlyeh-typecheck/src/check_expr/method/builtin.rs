@@ -2,7 +2,7 @@
 //! （由 method.rs 的 `check_method_call` 拆分而来，保持语义等价）
 //!
 //! 覆盖：切片胖指针 `len`/`first`/`last`、`Vec` 切片视图、`&str` → String 升级、
-//! `push_str(字面量)` 快速路径、`Rc`/`Arc`/`Weak` 引用计数、`dyn Protocol` 虚调用。
+//! `Rc`/`Arc`/`Weak` 引用计数、`dyn Protocol` 虚调用。
 //! 这些分支必须早于常规 impl 分派——切片在 标准库无对应 impl（无法为 `[T]`
 //! 写 impl），引用计数需要原始对象，虚调用走 vtable 而非静态分派。
 
@@ -236,66 +236,16 @@ pub(super) fn try_builtin_method_call(
         })), Span::dummy());
         recv_ty = Type::Named("String".to_string(), vec![]);
     }
-    // `push_str(字面量实参)` 整体特判：改调 `String::push_bytes(src, n)` 快速路径，
-    // 免去字面量实参每次 alloc_bytes + copy_bytes 深拷贝（strcat 类拼接基准收益
-    // ~3 个数量级；直接字面量实参的字节数与内容编译期已知）。
-    // `src` 实参传 `&__lit`（Str 标量槽地址）：`&str` 的标准表示是 String 3 槽
-    // 对象指针（`as_str()` 返回对象指针，`check_index` 对 `&str` 索引先取槽 0 的
-    // data 指针），而字面量值本身是裸 data 指针——若直传字面量，`push_bytes` 内
-    // `src[i]` 会把常量前 8 字节当对象指针解引用（段错误）。`&__lit` 经 AddrOf
-    // 标量分支生成「指向 data 指针槽的指针」= 单槽伪对象头，FieldGet 槽 0 即 data。
-    // 条件：String 接收者 + 单实参且为字符串字面量。
-    if method == "push_str"
-        && args.len() == 1
-        && matches!(&recv_ty, Type::Named(n, _) if n == "String")
-        && matches!(&*args[0].kind, ExprKind::StringLiteral(_))
-    {
-        let s = match &*args[0].kind {
-            ExprKind::StringLiteral(s) => s.clone(),
-            _ => unreachable!(),
-        };
-        let n = s.len() as i128;
-        let lit_tmp = ctx.fresh_temp();
-        let impl_def = ctx
-            .find_impl_for_method(&recv_ty, "push_bytes")
-            .cloned()
-            .ok_or_else(|| TypeError::FunctionNotFound {
-                name: "String::push_bytes".to_string(),
-                span,
-            })?;
-        let method_def = impl_def
-            .methods
-            .iter()
-            .find(|m| m.sig.name == "push_bytes")
-            .cloned()
-            .ok_or_else(|| TypeError::FunctionNotFound {
-                name: "String::push_bytes".to_string(),
-                span,
-            })?;
-        let fn_name = instantiate_impl_method(ctx, &impl_def, &method_def, &HashMap::new(), span)?;
-        return Ok(BuiltinOutcome::Handled(
-            HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
-                stmts: vec![HirStmt::new(HirStmtKind::Let{
-                    name: lit_tmp.clone(),
-                    init: HirExpr::new(HirExprKind::StringLiteral(s), Span::dummy()),
-                    mutable: false,
-                }, Span::dummy())],
-                final_expr: Some(HirExpr::new(HirExprKind::Call{
-                    callee: fn_name,
-                    args: vec![
-                        recv_hir,
-                        HirExpr::new(HirExprKind::Ref{
-                            expr: Box::new(HirExpr::new(HirExprKind::Variable(lit_tmp), Span::dummy())),
-                            is_mut: false,
-                            pointee: FieldScalar::Str,
-                        }, Span::dummy()),
-                        HirExpr::new(HirExprKind::IntLiteral(n), Span::dummy()),
-                    ],
-                }, Span::dummy())),
-            })), Span::dummy()),
-            Type::Unit,
-        ));
-    }
+    // `push_str(字面量实参)` 快速路径（原改调 `String::push_bytes(src, n)`）已移除：
+    // 该特判把字面量经 `&__lit`（单槽伪对象头，仅含 data 指针）传给 `push_bytes`，
+    // 而 `push_bytes` 内部的 `src[i]` 索引按 `&str` 胖指针（StrFat `{data, len}`）
+    // 读取 `len` 字段做边界检查——单槽对象在偏移 +8 处是栈上垃圾值，导致边界检查
+    // `i >= len` 立即成立、`abort()`（典型崩溃：`m.push_str(" world")`、`float_to_string`
+    // 内的 `push_str(数字串)`）。回退到常规 `push_str(String)` 路径（字面量经
+    // `upgrade_str_arg` 升级为 `String`，`push_str` 直接索引 `other.data[i]` 且边界
+    // 用正确的 `other.len`），行为正确、零新增回归；性能优化（避免字面量深拷贝）应改为
+    // 在 codegen 为字面量构造完整 StrFat `{data, len}` 后再接 `push_bytes`，而非当前
+    // 单槽伪对象头。
     // `Rc<T>` / `Arc<T>` / `Weak<T>` 引用计数内建方法（K3）：clone /
     // strong_count / weak_count / downgrade / try_unwrap / upgrade。
     // 须在堆指针改写前分派（内建需要原始 Rc 对象取 RcInner 指针）
