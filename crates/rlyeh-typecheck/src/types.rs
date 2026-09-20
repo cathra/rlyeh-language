@@ -658,6 +658,75 @@ pub(crate) fn type_byte_size(
     }
 }
 
+/// 判断类型是否可安全跨线程共享（Send + Sync 合并判定，用于并发边界告警）。
+///
+/// 这是 SH-P3-1 MVP 的**放宽规则**（告警式，非硬阻塞）：覆盖标量、常见并发包装器与
+/// 结构体 / 枚举字段递归推导；对无法判定的类型保守返回 `true`（不误报）。
+/// 引用类型由 `check_move_closure_spawn` 的 `'static` 检查先行拦截，此处不处理。
+pub(crate) fn is_send_sync(ty: &Type, ctx: &TypeContext) -> bool {
+    is_send_sync_depth(ty, ctx, 0)
+}
+
+fn is_send_sync_depth(ty: &Type, ctx: &TypeContext, depth: u32) -> bool {
+    // 递归深度保护：防 `struct Node { next: Box<Node> }` 类自引用无限展开，
+    // 深度超限保守通过（MVP 不误报）。
+    if depth > 32 {
+        return true;
+    }
+    match ty {
+        // 标量 / 字符串 / 单元 / never / 函数指针：天然 Send + Sync
+        Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 | Type::F32
+        | Type::I64 | Type::U64 | Type::U128 | Type::USize | Type::F64 | Type::Bool
+        | Type::Char | Type::Str | Type::Unit | Type::Never | Type::Fn(_) => true,
+        // 裸指针 / 引用 / trait 对象：默认非线程安全（保守告警；引用由 'static 检查拦截）
+        Type::RawPtr(..) | Type::Ref(..) | Type::Dyn(_) => false,
+        // 聚合：所有元素满足
+        Type::Array(e, _) | Type::Slice(e) => is_send_sync_depth(e, ctx, depth + 1),
+        Type::Tuple(es) | Type::Union(es) => {
+            es.iter().all(|e| is_send_sync_depth(e, ctx, depth + 1))
+        }
+        Type::Closure { captures, .. } => {
+            captures.iter().all(|c| is_send_sync_depth(c, ctx, depth + 1))
+        }
+        Type::Named(name, args) => {
+            let s = name.rsplit("::").next().unwrap_or(name);
+            match s {
+                // 这些包装器：内部类型满足即整体满足（MVP 近似；Mutex<T> 真实语义为
+                // T: Send 即可，此处近似为 T: Send+Sync 不会漏报典型用法）
+                "Box" | "Arc" | "Mutex" | "RwLock" | "AtomicI64" | "Vec" | "String"
+                | "Condvar" | "Barrier" | "Sender" | "Receiver" | "Channel"
+                | "ChannelPair" | "RecvAsync" | "Builder" | "Future" | "Poll"
+                | "Context" => args
+                    .first()
+                    .map_or(true, |a| is_send_sync_depth(a, ctx, depth + 1)),
+                // Rc / Weak：!Sync（仅 Send），合并判定为不安全
+                "Rc" | "Weak" => false,
+                _ => {
+                    // 用户结构体：所有字段满足
+                    if let Some(d) = ctx.lookup_struct(name) {
+                        return d
+                            .fields
+                            .iter()
+                            .all(|(_, f)| is_send_sync_depth(f, ctx, depth + 1));
+                    }
+                    // 用户枚举：所有变体的所有字段满足
+                    if let Some(e) = ctx.lookup_enum(name) {
+                        return e.variants.iter().all(|v| {
+                            v.fields
+                                .iter()
+                                .all(|(_, f)| is_send_sync_depth(f, ctx, depth + 1))
+                        });
+                    }
+                    // 未知具名类型：保守通过
+                    true
+                }
+            }
+        }
+        // Infer 等其余：保守通过
+        _ => true,
+    }
+}
+
 /// 单字段的 C 表示：返回 `(size, align, scalar?)`；`scalar = Some((field_ty, conv))`
 /// 为标量字段，`None` 表示嵌套 repr(C) 结构体（size 为其整体大小）。
 fn c_field_repr(

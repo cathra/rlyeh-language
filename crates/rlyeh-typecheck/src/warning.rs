@@ -25,6 +25,14 @@ pub enum WarningKind {
         /// 改进建议（已并入 [`Warning::message`]）。
         suggestion: String,
     },
+    /// 并发安全基线（SH-P3-1 M3）：跨线程捕获的类型不满足 `Send + Sync`。
+    ///
+    /// MVP 为**告警式**（非硬阻塞）：跨线程共享该类型可能不安全，提示用户确认。
+    /// 引用类型由 `Thread::start` 的 `'static` 检查先行拦截，此处仅覆盖拥有所有权的类型。
+    NotSendSync {
+        /// 不满足 `Send + Sync` 的类型文本。
+        ty: String,
+    },
 }
 
 impl Warning {
@@ -33,6 +41,9 @@ impl Warning {
         match &self.kind {
             WarningKind::RedundantDeref { suggestion } => {
                 format!("redundant explicit dereference: {suggestion}")
+            }
+            WarningKind::NotSendSync { ty } => {
+                format!("captured type `{ty}` may not be `Send + Sync`; sharing across threads may be unsafe")
             }
         }
     }
@@ -43,6 +54,9 @@ impl Warning {
             WarningKind::RedundantDeref { .. } => Some(
                 "引用会自动解引用，直接写 `x.field` / `x.method()` / `x[i]`，无需 `*x`",
             ),
+            WarningKind::NotSendSync { .. } => Some(
+                "确保捕获的数据拥有所有权且可跨线程共享（如用 `Arc<Mutex<T>>` 替代 `Rc` / 裸指针）",
+            ),
         }
     }
 
@@ -50,6 +64,7 @@ impl Warning {
     fn code(&self) -> &'static str {
         match self.kind {
             WarningKind::RedundantDeref { .. } => "W001",
+            WarningKind::NotSendSync { .. } => "W002",
         }
     }
 

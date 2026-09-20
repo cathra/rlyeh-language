@@ -3,6 +3,8 @@
 
 use rlyeh_hir::{HirExprKind, HirStmtKind};
 use rlyeh_lexer::Span;
+use crate::types::is_send_sync;
+use crate::{Warning, WarningKind};
 use super::*;
 
 pub(super) fn check_thread_start_closure(
@@ -192,6 +194,19 @@ pub(crate) fn check_move_closure_spawn(
                     "spawn 闭包捕获了第 {} 个变量，其类型为 `{:?}`，含借用引用（非 'static）；跨线程须捕获拥有所有权的数据",
                     i, cap_ty
                 ),
+                span,
+            });
+        }
+    }
+
+    // 2b. Y（SH-P3-1 M3）：Send + Sync 并发安全基线（MVP 告警式，非硬阻塞）。
+    // 捕获类型若不满足 Send + Sync，跨线程共享可能不安全——发出 W002 警告，不阻断编译。
+    for cap_ty in captures.iter() {
+        if !is_send_sync(cap_ty, ctx) {
+            ctx.emit_warning(Warning {
+                kind: WarningKind::NotSendSync {
+                    ty: cap_ty.to_string(),
+                },
                 span,
             });
         }

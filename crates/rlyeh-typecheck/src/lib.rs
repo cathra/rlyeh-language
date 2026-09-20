@@ -158,6 +158,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn send_sync_predicate() {
+        // SH-P3-1 M2/M3：is_send_sync 并发安全判定谓词逻辑验证（无需 std 加载）。
+        use crate::context::TypeContext;
+        use crate::types::{is_send_sync, Mutability, Type};
+        let ctx = TypeContext::default();
+        // 标量 / 字符串 / 元组 / 数组 / 已知并发包装器：Send + Sync
+        assert!(is_send_sync(&Type::I64, &ctx), "i64 应为 Send + Sync");
+        assert!(is_send_sync(&Type::Str, &ctx), "str 应为 Send + Sync");
+        assert!(
+            is_send_sync(&Type::Tuple(vec![Type::I64, Type::Bool]), &ctx),
+            "标量元组应为 Send + Sync"
+        );
+        assert!(
+            is_send_sync(&Type::Array(Box::new(Type::I64), 4), &ctx),
+            "标量数组应为 Send + Sync"
+        );
+        assert!(
+            is_send_sync(&Type::Named("Arc".to_string(), vec![Type::I64]), &ctx),
+            "Arc<i64> 应为 Send + Sync"
+        );
+        assert!(
+            is_send_sync(&Type::Named("Mutex".to_string(), vec![Type::I64]), &ctx),
+            "Mutex<i64> 应为 Send + Sync"
+        );
+        // 未知具名类型：保守通过（不误报）
+        assert!(
+            is_send_sync(&Type::Named("Unknown".to_string(), vec![]), &ctx),
+            "未知类型应保守判定为 Send + Sync"
+        );
+        // 裸指针 / 引用 / Rc：非 Send + Sync
+        assert!(
+            !is_send_sync(&Type::RawPtr(Box::new(Type::I64), false), &ctx),
+            "裸指针应为非 Send + Sync"
+        );
+        assert!(
+            !is_send_sync(&Type::Ref(Box::new(Type::I64), Mutability::Immutable, None), &ctx),
+            "引用应为非 Send + Sync"
+        );
+        assert!(
+            !is_send_sync(&Type::Named("Rc".to_string(), vec![Type::I64]), &ctx),
+            "Rc<i64> 应为非 Send + Sync"
+        );
+    }
+
     /// B-2（P0'）：源码是否能通过类型检查（coerce 成功路径应返回 Ok）。
     fn ok(src: &str) -> bool {
         typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off).is_ok()

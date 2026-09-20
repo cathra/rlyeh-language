@@ -8,6 +8,13 @@
 // 不含任何实现。在预置加载中**最后**拼接：声明与重导出须位于全部类型之后
 // （符号按顺序解析，根类型须先于子模块签名注册）。子模块经 `module <name>;`
 // 相对标准库根目录解析（`<name>.rl` 或 `<name>/module.rl`）。
+
+// Y（SH-P3-1 M1）：标记 auto-trait 声明。`Send` / `Sync` 为并发安全标记 trait，
+// 其自动推导（M2）与并发边界检查（M3）由编译器内建谓词 `is_send_sync` 实现
+// （与 Rust 一致：auto trait 为编译器特判，不由用户 impl 触发），此处仅声明标记，
+// 供用户书写 `T: Send` / `T: Sync` 约束占位。
+protocol Send {}
+protocol Sync {}
 //
 // 注：与 `core` **平级**的平铺单元（`str_ext` / `convert` / `collections` / `externs`）
 // 承载根命名空间内容，**不在此声明**——它们由 rlyeh-driver/src/stdlib.rs 的 `FLAT_UNITS`
