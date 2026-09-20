@@ -483,6 +483,12 @@ pub(crate) fn collect_mod_fn_sigs(
     prefix: &str,
     sigs: &mut Vec<(String, FnSignature)>,
 ) -> Result<(), TypeError> {
+    // B-6：模块内 `fn` 签名解析须感知模块前缀（与字段类型解析一致，见
+    // `resolve_struct_fields_items`），使 `#[memory(gc)]` 模块内的 `&T` 形参
+    // 经 `in_gc_module()` 正确映射为 `Gc<T>`。未设置时 `graph::read(h: &i64)`
+    // 的形参会残留在 `&i64` 而非 `Gc<i64>`，与已映射的实参类型失配
+    // （典型错误：expects `&i64`, found `Gc<i64>`）。
+    let old_prefix = std::mem::replace(&mut ctx.module_prefix, prefix.to_string());
     for inner in &m.items {
         match inner {
             AstItem::FnDecl(f) => {
@@ -529,5 +535,6 @@ pub(crate) fn collect_mod_fn_sigs(
             _ => {}
         }
     }
+    ctx.module_prefix = old_prefix;
     Ok(())
 }

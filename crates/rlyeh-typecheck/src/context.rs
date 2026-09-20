@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use rlyeh_hir::HirExpr;
 use rlyeh_lexer::Span;
 
-use rlyeh_ast::{AstActorDecl, AstExpr, AstFnDecl};
+use rlyeh_ast::{AstActorDecl, AstExpr, AstFnDecl, AstUseDecl};
 
 use crate::error::TypeError;
 use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, ProtocolDef, Type};
@@ -157,6 +157,11 @@ pub struct TypeContext {
     pub pub_module_prefixes: std::collections::HashSet<String>,
     /// glob 导入来源记录（`name` → 导入它的模块前缀列表）；同名来自 ≥2 个模块即歧义。
     pub glob_exports: std::collections::HashMap<String, Vec<String>>,
+    /// 待延后解析的 glob 导入（`use a::*`）：声明收集阶段（pass1）遇到 glob 导入时
+    /// 仅记录、不立即枚举成员——因模块内函数签名到 pass3 才登记，pass1 枚举会漏掉
+    /// 函数符号（典型：`import mymod::*` 后 `square` 报 `function not found`）。收集全
+    /// 部函数签名后再统一处理本表（`resolve_pending_globs`，见 mod.rs）。
+    pub pending_globs: Vec<(AstUseDecl, String)>,
     /// 显式 import 的本地别名 → 是否为 `pub` 导入（`pub import` 重导出链不计入冲突，
     /// 仅非 `pub` 的同名冲突才报 `NameConflict`，避免误伤标准库的重导出链）。用于 glob
     /// 歧义判定时排除显式命名（显式优先，不视为歧义）。

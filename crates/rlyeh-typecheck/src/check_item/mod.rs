@@ -141,6 +141,8 @@ fn collect_declarations(ctx: &mut TypeContext, program: &AstProgram) -> Result<(
     for item in &program.items {
         collect_fn_sigs_pass(ctx, item, "")?;
     }
+    // pass3 后：全部函数签名已登记，统一解析延后的 glob 导入（依赖 fn_signatures）。
+    resolve_pending_globs(ctx)?;
     Ok(())
 }
 
@@ -278,12 +280,19 @@ fn collect_item_decls(
         AstItem::UseDecl(u) => register_use(ctx, u, prefix)?,
         // 收集阶段注册模块常量 / 全局变量（供函数体 / 其它 const 引用）
         AstItem::ConstDecl(c) => {
-            let (value, ty) = infer_expr(ctx, &c.value)?;
             if c.is_static {
-                // `static` / `static mut`：登记为全局变量（data 段符号），
-                // 而非可内联常量；引用处经 codegen 的全局名表发射 `@name` 读写。
+                // `static` / `static mut`：pass1 仅登记全局符号（用声明类型），
+                // 初值求值 / 编译期常量检查延后至 check_item（pass3 函数签名收集之后）。
+                // 否则 pass1 即求值初值会引用尚未收集的函数而误报 "function not found"
+                // （典型：`static mut R = get();`，见 static-init-nonconst）。check_item
+                // 阶段经 `eval_const_value` 判定非编译期常量并产出 `NonConstStaticInit`。
+                let ty = match &c.type_ {
+                    Some(t) => resolve_ast_type(ctx, t, c.span)?,
+                    None => infer_expr(ctx, &c.value)?.1,
+                };
                 ctx.insert_global(full_name(prefix, &c.name), ty, c.is_mut);
             } else {
+                let (value, ty) = infer_expr(ctx, &c.value)?;
                 ctx.insert_constant(full_name(prefix, &c.name), value, ty);
             }
         }
@@ -384,66 +393,11 @@ fn register_use(
         return Ok(());
     }
     if u.path.last().map(String::as_str) == Some("*") {
-        // glob 导入 `a::*`：枚举 `a` 的直接子项（不含 `a::b::` 嵌套），逐一定位全名。
-        let base = resolve_import_path(
-            ctx,
-            prefix,
-            &u.path
-                .iter()
-                .take(u.path.len() - 1)
-                .map(|s| norm(s))
-                .collect::<Vec<String>>()
-                .join("::"),
-        );
-        let prefix2 = base.clone();
-        let mut members: Vec<String> = Vec::new();
-        for k in ctx.fn_signatures.keys() {
-            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
-                if !rest.contains("::") {
-                    members.push(rest.to_string());
-                }
-            }
-        }
-        for k in ctx.structs.keys() {
-            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
-                if !rest.contains("::") {
-                    members.push(rest.to_string());
-                }
-            }
-        }
-        for k in ctx.enum_defs.keys() {
-            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
-                if !rest.contains("::") {
-                    members.push(rest.to_string());
-                }
-            }
-        }
-        for k in ctx.constants.keys() {
-            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
-                if !rest.contains("::") {
-                    members.push(rest.to_string());
-                }
-            }
-        }
-        for k in ctx.actors.keys() {
-            if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
-                if !rest.contains("::") {
-                    members.push(rest.to_string());
-                }
-            }
-        }
-        for m in members {
-            let full = format!("{base}::{m}");
-            // 记录 glob 来源（≥2 即歧义）；插入仅首次生效（显式 / 先到者优先，不遮蔽）。
-            ctx.glob_exports.entry(m.clone()).or_default().push(base.clone());
-            if !ctx.use_aliases.contains_key(&m) {
-                ctx.insert_use_alias(m.clone(), full.clone());
-                if u.is_pub {
-                    ctx.insert_use_alias(full_name(prefix, &m), full.clone());
-                }
-            }
-            ctx.import_alias_spans.push((m.clone(), full.clone(), u.span));
-        }
+        // glob 导入 `a::*`：枚举成员依赖模块内函数签名（pass3 才收集），故声明收集
+        // 阶段不立即解析，记录到 pending_globs，待全函数签名登记后由
+        // `resolve_pending_globs` 统一处理（否则 pass1 枚举会漏掉函数符号，
+        // 导致 `import mymod::*` 后 `square` 报 `function not found`）。
+        ctx.pending_globs.push((u.clone(), prefix.to_string()));
         return Ok(());
     }
     let path = u
@@ -458,6 +412,77 @@ fn register_use(
     };
     let full = resolve_import_path(ctx, prefix, &path);
     register_one(ctx, local, full, prefix, u.is_pub)?;
+    Ok(())
+}
+
+/// 解析单个 glob 导入 `a::*`（延后至全部函数签名登记后调用）。
+///
+/// 枚举模块 `a` 的直接子项（`fn_signatures` / `structs` / `enum_defs` / `constants` /
+/// `actors`）中前缀为 `a::` 且不含更深嵌套 `::` 的符号，逐一登记为 `use_aliases`
+/// 本地名 → `a::member` 全名；首次生效（显式 / 先到者优先，不遮蔽），记录 glob 来源
+/// 与别名位置。逻辑原位于 `register_use` 的 glob 分支，因依赖 pass3 才收集的函数签名，
+/// 抽出为独立函数以便延后调用（见 `resolve_pending_globs`）。
+fn resolve_glob_import(ctx: &mut TypeContext, u: &AstUseDecl, prefix: &str) -> Result<(), TypeError> {
+    let base = resolve_import_path(
+        ctx,
+        prefix,
+        &u.path
+            .iter()
+            .take(u.path.len() - 1)
+            .map(|s| s.strip_prefix("r#").unwrap_or(s).to_string())
+            .collect::<Vec<String>>()
+            .join("::"),
+    );
+    let prefix2 = base.clone();
+    let mut members: Vec<String> = Vec::new();
+    // 枚举前缀为 `base::` 且不含更深嵌套 `::` 的直接子项名（各表独立，泛型签名各异，
+    // 故按表逐个内联遍历，避免闭包类型无法跨不同 value 类型统一）。
+    let collect = |k: &str, members: &mut Vec<String>| {
+        if let Some(rest) = k.strip_prefix(&format!("{prefix2}::")) {
+            if !rest.contains("::") {
+                members.push(rest.to_string());
+            }
+        }
+    };
+    for k in ctx.fn_signatures.keys() {
+        collect(k, &mut members);
+    }
+    for k in ctx.structs.keys() {
+        collect(k, &mut members);
+    }
+    for k in ctx.enum_defs.keys() {
+        collect(k, &mut members);
+    }
+    for k in ctx.constants.keys() {
+        collect(k, &mut members);
+    }
+    for k in ctx.actors.keys() {
+        collect(k, &mut members);
+    }
+    for m in members {
+        let full = format!("{base}::{m}");
+        // 记录 glob 来源（≥2 即歧义）；插入仅首次生效（显式 / 先到者优先，不遮蔽）。
+        ctx.glob_exports.entry(m.clone()).or_default().push(base.clone());
+        if !ctx.use_aliases.contains_key(&m) {
+            ctx.insert_use_alias(m.clone(), full.clone());
+            if u.is_pub {
+                ctx.insert_use_alias(full_name(prefix, &m), full.clone());
+            }
+        }
+        ctx.import_alias_spans.push((m.clone(), full.clone(), u.span));
+    }
+    Ok(())
+}
+
+/// 声明收集全部完成后，统一解析延后的 glob 导入（`pending_globs`）。
+///
+/// 必须在 pass3（函数签名收集）之后调用——glob 枚举依赖已登记的函数签名，
+/// 而 pass1 收集 use 声明时签名尚未就绪（典型：模块内 `fn` 到 pass3 才登记）。
+fn resolve_pending_globs(ctx: &mut TypeContext) -> Result<(), TypeError> {
+    let globs = std::mem::take(&mut ctx.pending_globs);
+    for (u, prefix) in globs {
+        resolve_glob_import(ctx, &u, &prefix)?;
+    }
     Ok(())
 }
 
