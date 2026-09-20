@@ -1171,7 +1171,8 @@ pub(crate) fn check_stmt_inner(
         AstStmt::Item(item) => {
             // 语句级嵌套项（如函数体内的局部 fn）：检查但不在顶层生成 HIR
             let mut scratch = Vec::new();
-            crate::check_item::check_item(ctx, item, "", &mut scratch)?;
+            let mut scratch_globals = Vec::new();
+            crate::check_item::check_item(ctx, item, "", &mut scratch, &mut scratch_globals)?;
             Ok((vec![HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::Unit, Span::dummy())), Span::dummy())], Type::Unit))
         }
     }

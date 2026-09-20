@@ -172,7 +172,10 @@ pub fn lower_program(program: &MirProgram) -> Result<LirProgram, LirError> {
         functions.push(lower_function(f, ty, ret, &ret_types, ptys)?);
     }
 
-    Ok(LirProgram { functions })
+    Ok(LirProgram {
+        functions,
+        globals: Vec::new(),
+    })
 }
 
 /// 对单个函数做类型推断，返回（局部变量类型表，返回类型）。

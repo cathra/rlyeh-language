@@ -148,6 +148,32 @@ pub(crate) fn infer_expr_inner(
                     return Ok((value.clone(), ty.clone()));
                 }
             }
+            // 2b. 全局变量（`static` / `static mut`）：返回可寻址变量引用，
+            //     codegen 经全局名表发射 `@name` 读写（与局部变量 HIR 同形，
+            //     靠名字落入 globals 集合区分）。
+            if let Some((gty, is_mut)) = ctx.lookup_global(name) {
+                // `static mut` 读取同样受 unsafe 门禁约束（与赋值一致，
+                // SH-P0-1 E3）：裸指针 / extern 之外的第二处 Unsafe 边界。
+                if is_mut && !ctx.in_unsafe {
+                    return Err(TypeError::StaticMutOutsideUnsafe {
+                        name: name.to_string(),
+                        span,
+                    });
+                }
+                return Ok((HirExpr::new(HirExprKind::Variable(name.to_string()), Span::dummy()), gty));
+            }
+            if !name.contains("::") && !ctx.module_prefix.is_empty() {
+                let full = format!("{}::{}", ctx.module_prefix, name);
+                if let Some((gty, is_mut)) = ctx.lookup_global(&full) {
+                    if is_mut && !ctx.in_unsafe {
+                        return Err(TypeError::StaticMutOutsideUnsafe {
+                            name: full.clone(),
+                            span,
+                        });
+                    }
+                    return Ok((HirExpr::new(HirExprKind::Variable(full), Span::dummy()), gty));
+                }
+            }
             // 3. 函数引用（函数一等值）：`let f = my_func;`。
             // 裸名经模块前缀 / use 别名解析为完整符号名。
             let resolved = resolve_callable(ctx, name);

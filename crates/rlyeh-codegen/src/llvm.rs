@@ -13,8 +13,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use rlyeh_lir::{
-    FieldScalar, LirBlock, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator, LirType,
-    Local, ReprConv,
+    FieldScalar, LirBlock, LirConst, LirFunction, LirOperand, LirProgram, LirStmt, LirTerminator,
+    LirType, Local, ReprConv,
 };
 
 use crate::error::CodegenError;
@@ -97,7 +97,10 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
         inline_region_literal(&mut f2);
         functions.push(f2);
     }
-    let program2 = LirProgram { functions };
+    let program2 = LirProgram {
+        functions,
+        globals: program.globals.clone(),
+    };
     let mut emitter = LlvmEmitter::new(&program2);
     for f in &program2.functions {
         emitter.emit_function(f)?;
@@ -138,6 +141,19 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     out.push_str("!1 = !{!\"rlyeh_mem\", !0}\n");
     out.push_str("!2 = !{!\"rlyeh_region_header\", !1}\n");
     out.push_str("!3 = !{!\"rlyeh_region_body\", !1}\n");
+    // 全局变量（`static` / `static mut`）定义：发射为 data 段符号。
+    // 不可变发射为 `constant`，可变发射为 `global`；均带对齐以满足 LLVM 要求。
+    for g in &program.globals {
+        let lt = llvm_type(g.type_)?;
+        let init = match &g.init {
+            LirConst::I64(v) => format!("{lt} {v}"),
+            LirConst::F64(v) => format!("double 0x{:016X}", v.to_bits()),
+            LirConst::Bool(v) => format!("i1 {}", if *v { "true" } else { "false" }),
+            LirConst::Char(v) => format!("i32 {}", *v as u32),
+        };
+        let kind = if g.is_mut { "global" } else { "constant" };
+        out.push_str(&format!("@{name} = {kind} {init}, align 8\n", name = g.name));
+    }
     for g in &emitter.globals {
         out.push_str(g);
         out.push('\n');
@@ -220,6 +236,9 @@ struct LlvmEmitter {
     sigs: HashMap<String, (Vec<LirType>, LirType, bool, bool)>,
     /// 收集的全局常量定义
     globals: Vec<String>,
+    /// 全局变量表（`static` / `static mut`，名称 → 类型）：供 codegen 将
+    /// 全局名引用发射为 `@name` 而非局部栈槽 `%name.addr`。
+    global_types: HashMap<String, LirType>,
     /// 全局常量 / 格式串计数器
     global_counter: usize,
     /// 临时寄存器计数器
@@ -278,12 +297,61 @@ impl LlvmEmitter {
     ) -> Result<(), CodegenError> {
         match stmt {
             LirStmt::Assign { target, value } => {
+                // 全局变量赋值：写入 `@target` 而非局部栈槽 `%target.addr`。
+                if let Some(&gt) = self.global_types.get(target) {
+                    let lt = llvm_type(gt)?;
+                    match value {
+                        LirOperand::Local(src) => {
+                            let src_ty = local_type(f, src);
+                            let lt_src = llvm_type(src_ty)?;
+                            let r = self.reg();
+                            body.push_str(&format!(
+                                "  %{r} = load {lt_src}, {lt_src}* %{src}.addr\n"
+                            ));
+                            body.push_str(&format!("  store {lt_src} %{r}, {lt}* @{target}\n"));
+                        }
+                        LirOperand::FnPtr(name) => {
+                            let r = self.reg();
+                            let (pt, rt, _, _) = self
+                                .sigs
+                                .get(name)
+                                .cloned()
+                                .ok_or_else(|| CodegenError::UndefinedFunction {
+                                    name: name.clone(),
+                                })?;
+                            let fnty = fn_llvm_type(&pt, rt)?;
+                            let gn = llvm_global_name(name);
+                            body.push_str(&format!("  %{r} = bitcast {fnty} @{gn} to i8*\n"));
+                            body.push_str(&format!("  store i8* %{r}, {lt}* @{target}\n"));
+                        }
+                        lit => {
+                            let v = self.literal(lit, gt, body)?;
+                            body.push_str(&format!("  store {lt} {v}, {lt}* @{target}\n"));
+                        }
+                    }
+                    return Ok(());
+                }
                 let ty = local_type(f, target);
                 if ty == LirType::Unit {
                     return Ok(());
                 }
                 let lt = llvm_type(ty)?;
                 if let LirOperand::Local(src) = value {
+                    // 源是全局变量（`static` / `static mut`）：从 `@src` 加载而非局部栈槽。
+                    if let Some(&sgt) = self.global_types.get(src) {
+                        let slt = llvm_type(sgt)?;
+                        let r = self.reg();
+                        body.push_str(&format!("  %{r} = load {slt}, {slt}* @{src}\n"));
+                        let (val, val_ty) = match self.coerce_local_slot(&r, sgt, ty, body) {
+                            Some(c) => (c, ty),
+                            None => (r.clone(), sgt),
+                        };
+                        body.push_str(&format!(
+                            "  store {} %{val}, {lt}* %{target}.addr\n",
+                            llvm_type(val_ty)?
+                        ));
+                        return Ok(());
+                    }
                     let src_ty = local_type(f, src);
                     if src_ty == LirType::Unit {
                         return Ok(());

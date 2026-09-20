@@ -764,6 +764,12 @@ impl<'src> Parser<'src> {
         } else {
             (false, self.expect(&Token::Const, "'const'")?.span)
         };
+        // `static mut`：可变的全局变量（需位于 `unsafe` 块内访问）。
+        let is_mut = if is_static && self.eat(&Token::Mut) {
+            true
+        } else {
+            false
+        };
         let name = self.expect_ident()?;
         let type_ = if self.eat(&Token::Colon) {
             Some(self.parse_type()?)
@@ -779,6 +785,7 @@ impl<'src> Parser<'src> {
             type_,
             value,
             is_static,
+            is_mut,
             span,
         })
     }

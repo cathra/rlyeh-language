@@ -205,6 +205,13 @@ impl LlvmEmitter {
     ) -> Result<String, CodegenError> {
         match op {
             LirOperand::Local(name) => {
+                // 全局变量（`static` / `static mut`）：直接加载 `@name`，而非局部栈槽。
+                if let Some(&gt) = self.global_types.get(name) {
+                    let lt = llvm_type(gt)?;
+                    let r = self.reg();
+                    body.push_str(&format!("  %{r} = load {lt}, {lt}* @{name}\n"));
+                    return Ok(format!("%{r}"));
+                }
                 let lt = llvm_type(ty)?;
                 let r = self.reg();
                 body.push_str(&format!("  %{r} = load {lt}, {lt}* %{name}.addr\n"));

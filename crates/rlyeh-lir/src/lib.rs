@@ -78,11 +78,39 @@ impl std::fmt::Display for LirType {
     }
 }
 
+/// 编译期常量值（用于 `static` 初始值发射）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum LirConst {
+    /// 64 位有符号整数
+    I64(i64),
+    /// 64 位浮点
+    F64(f64),
+    /// 布尔
+    Bool(bool),
+    /// 字符（i8）
+    Char(i8),
+}
+
+/// 全局变量（`static` / `static mut`）定义，发射为 data 段符号。
+#[derive(Debug, Clone, PartialEq)]
+pub struct LirGlobal {
+    /// 全局符号名（LLVM 中即 `@name`）
+    pub name: String,
+    /// 类型
+    pub type_: LirType,
+    /// 是否可变（`static mut`）；不可变发射为 `constant`，可变发射为 `global`
+    pub is_mut: bool,
+    /// 初始值（必须是编译期常量表达式）
+    pub init: LirConst,
+}
+
 /// LIR 程序。
 #[derive(Debug, Clone, PartialEq)]
 pub struct LirProgram {
     /// 函数列表
     pub functions: Vec<LirFunction>,
+    /// 全局变量（`static` / `static mut`）定义，发射为 data 段符号。
+    pub globals: Vec<LirGlobal>,
 }
 
 /// LIR 函数（三地址码控制流图）。

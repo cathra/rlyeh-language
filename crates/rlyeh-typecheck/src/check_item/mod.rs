@@ -6,8 +6,8 @@ use rlyeh_ast::{
     AstStructDecl, AstTraitDecl, AstUseDecl, AstUseMember,
 };
 use rlyeh_hir::{
-    FieldScalar, HirBinaryOp, HirBlock, HirConstDecl, HirExpr, HirFnDecl, HirItem, HirItemKind,
-    HirParam, HirProgram, HirStmt,
+    FieldScalar, HirBinaryOp, HirBlock, HirConstDecl, HirExpr, HirExprKind, HirFnDecl, HirItem,
+    HirItemKind, HirParam, HirProgram, HirStmt,
 };
 use rlyeh_lexer::Span;
 
@@ -17,6 +17,7 @@ use crate::check_expr::{
 };
 use crate::context::{FnTemplate, TypeContext};
 use crate::error::TypeError;
+use crate::{ConstValue, GlobalDecl};
 use crate::Warning;
 use crate::types::{
     field_scalar_of, EnumDef, FnSignature, ImplDef, ImplMethod, MethodSig, Mutability, StructDef,
@@ -33,6 +34,7 @@ use crate::types::{
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
 pub fn typecheck(program: &AstProgram) -> Result<(HirProgram, Vec<Warning>), TypeError> {
     typecheck_with_region_hints(program, &Default::default(), 0, crate::VisibilityMode::Off)
+        .map(|(hir, w, _globals)| (hir, w))
 }
 
 /// 类型检查完整程序，并注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
@@ -43,7 +45,7 @@ pub fn typecheck_with_region_hints(
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
     visibility: crate::VisibilityMode,
-) -> Result<(HirProgram, Vec<Warning>), TypeError> {
+) -> Result<(HirProgram, Vec<Warning>, Vec<GlobalDecl>), TypeError> {
     let mut ctx = TypeContext::new();
     ctx.region_hints = region_hints.clone();
     ctx.prelude_len = prelude_len;
@@ -55,14 +57,16 @@ pub fn typecheck_with_region_hints(
     resolve_all_struct_fields(&mut ctx, program)?;
 
     let mut items = Vec::new();
+    // 全局变量（`static` / `static mut`）声明：收集为 GlobalDecl 透传至 codegen。
+    let mut globals: Vec<GlobalDecl> = Vec::new();
     for item in &program.items {
-        check_item(&mut ctx, item, "", &mut items)?;
+        check_item(&mut ctx, item, "", &mut items, &mut globals)?;
     }
     // B：全部收集完成后延迟校验 import 目标符号 / 模块是否存在（规避模块收集时序误报）。
     verify_imports(&mut ctx)?;
     // 泛型实例化产生的函数项追加到末尾
     items.append(&mut ctx.mono_items);
-    Ok((HirProgram { items }, ctx.warnings.clone()))
+    Ok((HirProgram { items }, ctx.warnings.clone(), globals))
 }
 
 /// 拼接模块前缀与名称（`mod::name`），顶层直接返回原名。
@@ -71,6 +75,50 @@ fn full_name(prefix: &str, name: &str) -> String {
         name.to_string()
     } else {
         format!("{prefix}::{name}")
+    }
+}
+
+/// 将编译期常量表达式求值为 [`crate::ConstValue`]，用于 `static` 初始值发射。
+/// 仅支持字面量及其算术组合（i64 / f64 / bool / char）；其余返回 `None`。
+pub(crate) fn eval_const_value(expr: &HirExpr) -> Option<ConstValue> {
+    use rlyeh_hir::{HirBinaryOp, HirUnaryOp};
+    match &expr.kind {
+        HirExprKind::IntLiteral(i) => Some(ConstValue::I64(*i as i64)),
+        HirExprKind::FloatLiteral(f) => Some(ConstValue::F64(*f)),
+        HirExprKind::BoolLiteral(b) => Some(ConstValue::Bool(*b)),
+        HirExprKind::CharLiteral(c) => Some(ConstValue::Char(*c as i8)),
+        HirExprKind::Unary(op, e) => {
+            let v = eval_const_value(e)?;
+            match (*op, v) {
+                (HirUnaryOp::Neg, ConstValue::I64(x)) => Some(ConstValue::I64(-x)),
+                (HirUnaryOp::Neg, ConstValue::F64(x)) => Some(ConstValue::F64(-x)),
+                _ => None,
+            }
+        }
+        HirExprKind::Binary(op, a, b) => {
+            let av = eval_const_value(a)?;
+            let bv = eval_const_value(b)?;
+            match (*op, av, bv) {
+                (HirBinaryOp::Add, ConstValue::I64(x), ConstValue::I64(y)) => {
+                    Some(ConstValue::I64(x.wrapping_add(y)))
+                }
+                (HirBinaryOp::Sub, ConstValue::I64(x), ConstValue::I64(y)) => {
+                    Some(ConstValue::I64(x.wrapping_sub(y)))
+                }
+                (HirBinaryOp::Mul, ConstValue::I64(x), ConstValue::I64(y)) => {
+                    Some(ConstValue::I64(x.wrapping_mul(y)))
+                }
+                (HirBinaryOp::Div, ConstValue::I64(x), ConstValue::I64(y)) => {
+                    Some(ConstValue::I64(x.wrapping_div(y)))
+                }
+                (HirBinaryOp::Add, ConstValue::F64(x), ConstValue::F64(y)) => Some(ConstValue::F64(x + y)),
+                (HirBinaryOp::Sub, ConstValue::F64(x), ConstValue::F64(y)) => Some(ConstValue::F64(x - y)),
+                (HirBinaryOp::Mul, ConstValue::F64(x), ConstValue::F64(y)) => Some(ConstValue::F64(x * y)),
+                (HirBinaryOp::Div, ConstValue::F64(x), ConstValue::F64(y)) => Some(ConstValue::F64(x / y)),
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -196,10 +244,16 @@ fn collect_item_decls(
             ctx.module_prefix = old_prefix;
         }
         AstItem::UseDecl(u) => register_use(ctx, u, prefix)?,
-        // 收集阶段注册模块常量（供函数体 / 其它 const 引用）
+        // 收集阶段注册模块常量 / 全局变量（供函数体 / 其它 const 引用）
         AstItem::ConstDecl(c) => {
             let (value, ty) = infer_expr(ctx, &c.value)?;
-            ctx.insert_constant(full_name(prefix, &c.name), value, ty);
+            if c.is_static {
+                // `static` / `static mut`：登记为全局变量（data 段符号），
+                // 而非可内联常量；引用处经 codegen 的全局名表发射 `@name` 读写。
+                ctx.insert_global(full_name(prefix, &c.name), ty, c.is_mut);
+            } else {
+                ctx.insert_constant(full_name(prefix, &c.name), value, ty);
+            }
         }
         _ => {}
     }
@@ -465,11 +519,13 @@ fn import_target_known(ctx: &TypeContext, full: &str) -> bool {
 }
 
 /// 第二遍：检查函数体 / const，生成 HIR 项（递归处理嵌套模块）。
+/// `globals` 收集 `static` / `static mut` 声明，透传至 codegen 发射 data 段符号。
 pub(crate) fn check_item(
     ctx: &mut TypeContext,
     item: &AstItem,
     prefix: &str,
     out: &mut Vec<HirItem>,
+    globals: &mut Vec<GlobalDecl>,
 ) -> Result<(), TypeError> {
     // K4：GC 运行时 extern 声明（程序级去重，有 item 即生成；
     // `Gc::new` / `gc_region` 依赖，未使用也无 harm——LLVM declare 未引用符号不报错）
@@ -527,12 +583,31 @@ pub(crate) fn check_item(
             let old_prefix = std::mem::replace(&mut ctx.module_prefix, prefix.to_string());
             let (value, ty) = infer_expr(ctx, &c.value)?;
             ctx.module_prefix = old_prefix;
-            ctx.insert_constant(full_name(prefix, &c.name), value.clone(), ty);
-            out.push(HirItem {
-                name: full_name(prefix, &c.name),
-                kind: HirItemKind::Const(HirConstDecl { value }),
-                span: c.span,
-            });
+            if c.is_static {
+                // `static` / `static mut`：收集为全局声明，发射 data 段符号；
+                // 不发射 HIR const 项（codegen 经 LirProgram.globals 处理）。
+                match eval_const_value(&value) {
+                    Some(init) => globals.push(GlobalDecl {
+                        name: full_name(prefix, &c.name),
+                        type_: ty,
+                        is_mut: c.is_mut,
+                        init,
+                    }),
+                    None => {
+                        return Err(TypeError::NonConstStaticInit {
+                            name: c.name.clone(),
+                            span: c.span,
+                        })
+                    }
+                }
+            } else {
+                ctx.insert_constant(full_name(prefix, &c.name), value.clone(), ty);
+                out.push(HirItem {
+                    name: full_name(prefix, &c.name),
+                    kind: HirItemKind::Const(HirConstDecl { value }),
+                    span: c.span,
+                });
+            }
         }
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
@@ -543,7 +618,7 @@ pub(crate) fn check_item(
             // 与收集阶段一致：模块内短名解析感知模块前缀（Q3a）
             let old_prefix = std::mem::replace(&mut ctx.module_prefix, new_prefix.clone());
             for inner in &m.items {
-                check_item(ctx, inner, &new_prefix, out)?;
+                check_item(ctx, inner, &new_prefix, out, globals)?;
             }
             ctx.module_prefix = old_prefix;
         }

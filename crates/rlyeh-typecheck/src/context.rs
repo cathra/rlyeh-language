@@ -130,6 +130,10 @@ pub struct TypeContext {
     pub use_aliases: HashMap<String, String>,
     /// 模块常量表（完整符号名 → (HIR 值, 类型)，如 `"math::MAX"`）
     pub constants: HashMap<String, (HirExpr, Type)>,
+    /// 全局变量表（`static` / `static mut`；完整符号名 → (类型, 是否可变)）。
+    /// 与 `constants` 分离：`static` 需要 data 段符号（可寻址、可赋值），
+    /// 而 `const` 仅在引用处内联。
+    pub globals: HashMap<String, (Type, bool)>,
     /// Actor 定义表（完整符号名 → 声明，如 `"Counter"` / `"math::Counter"`）
     pub actors: HashMap<String, AstActorDecl>,
     /// 已生成的 `rlyeh_actor_*` extern 声明名（actor 展开去重用）
@@ -533,6 +537,22 @@ impl TypeContext {
         }
         self.resolve_full_name(name)
             .and_then(|full| self.constants.get(&full))
+    }
+
+    /// 记录一个全局变量（`static` / `static mut`；完整符号名 → (类型, 是否可变)）。
+    pub fn insert_global(&mut self, name: String, type_: Type, is_mut: bool) {
+        self.globals.insert(name, (type_, is_mut));
+    }
+
+    /// 查找全局变量（支持短名 → 完整名解析，与常量一致）。
+    ///
+    /// 返回 `(类型, 是否可变)`；`static mut` 为 `true`。
+    pub fn lookup_global(&self, name: &str) -> Option<(Type, bool)> {
+        if let Some(v) = self.globals.get(name) {
+            return Some(v.clone());
+        }
+        self.resolve_full_name(name)
+            .and_then(|full| self.globals.get(&full).cloned())
     }
 
     /// 将局部名解析为完整符号名。

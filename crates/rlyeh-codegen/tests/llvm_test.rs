@@ -22,6 +22,7 @@ fn simple_main(
             is_extern: false,
             extern_ret32: false,
         }],
+        globals: vec![],
     }
 }
 
@@ -97,6 +98,7 @@ fn gen_user_function_and_call() {
                 extern_ret32: false,
             },
         ],
+        globals: vec![],
     };
     let ll = generate_llvm(&p).expect("生成 LLVM IR");
     assert!(ll.contains("define i64 @add(i64 %a, i64 %b)"));

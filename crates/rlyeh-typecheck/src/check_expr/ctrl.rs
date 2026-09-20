@@ -268,6 +268,22 @@ pub(crate) fn infer_expr_tail(
                     });
                 }
             };
+            // 全局变量赋值：`static`（不可变）禁止赋值；`static mut` 必须位于
+            // `unsafe` 块内（与裸指针 / extern 同属 unsafe 边界，SH-P0-1）。
+            if let Some((_, is_mut)) = ctx.lookup_global(&target_name) {
+                if !is_mut {
+                    return Err(TypeError::CannotAssignStatic {
+                        name: target_name.clone(),
+                        span,
+                    });
+                }
+                if !ctx.in_unsafe {
+                    return Err(TypeError::StaticMutOutsideUnsafe {
+                        name: target_name.clone(),
+                        span,
+                    });
+                }
+            }
             let hir_op = match op {
                 AssignOp::Assign => HirAssignOp::Assign,
                 AssignOp::AddAssign => HirAssignOp::AddAssign,

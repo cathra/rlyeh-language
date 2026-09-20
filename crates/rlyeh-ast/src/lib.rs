@@ -321,6 +321,8 @@ pub struct AstConstDecl {
     pub value: AstExpr,
     /// 是否为 `static`
     pub is_static: bool,
+    /// 是否可变（`static mut`）；仅 `static` 可带 `mut`
+    pub is_mut: bool,
     /// 源码位置
     pub span: Span,
 }

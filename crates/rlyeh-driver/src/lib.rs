@@ -29,7 +29,9 @@ use incremental::cache::IncrementalCache;
 use incremental::hash::{compute_interface_hash, compute_source_hash, extract_interface};
 use rlyeh_borrowck::BorrowChecker;
 use rlyeh_hir::{HirItem, HirProgram};
+use rlyeh_lir::{LirConst, LirGlobal, LirType};
 use rlyeh_regionck::RegionChecker;
+use rlyeh_typecheck::{ConstValue, GlobalDecl, Type};
 
 /// 一次编译的结果（含缓存状态，供 CLI 报告）。
 #[derive(Debug, Clone)]
@@ -537,6 +539,36 @@ fn full_pipeline(source: &str) -> Result<String, DriverError> {
 }
 
 /// 完整流水线，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
+/// 将 typecheck 收集的 `GlobalDecl` 转换为 LIR 全局（类型 → LIR 类型）。
+///
+/// MVP 仅支持标量类型：整数族（≤128 位，含有/无符号与平台宽）按 ABI 统一承载于
+/// `I64` 槽；浮点族 `f32`/`f64` 承载于 `F64` 槽；`bool`/`char` 对应 `Bool`/`Char`。
+/// 字符串 / 引用 / 聚合类型等非常量数据段全局暂不支持，返回 `None`（跳过），
+/// 后续可补常量数据段发射。
+fn convert_global_decl(g: &GlobalDecl) -> Option<LirGlobal> {
+    let type_ = match &g.type_ {
+        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128
+        | Type::ISize | Type::U8 | Type::U16 | Type::U32 | Type::U64
+        | Type::U128 | Type::USize => LirType::I64,
+        Type::F32 | Type::F64 => LirType::F64,
+        Type::Bool => LirType::Bool,
+        Type::Char => LirType::Char,
+        _ => return None,
+    };
+    let init = match &g.init {
+        ConstValue::I64(v) => LirConst::I64(*v),
+        ConstValue::F64(v) => LirConst::F64(*v),
+        ConstValue::Bool(v) => LirConst::Bool(*v),
+        ConstValue::Char(v) => LirConst::Char(*v),
+    };
+    Some(LirGlobal {
+        name: g.name.clone(),
+        type_,
+        is_mut: g.is_mut,
+        init,
+    })
+}
+
 fn full_pipeline_with_hints(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
@@ -544,8 +576,8 @@ fn full_pipeline_with_hints(
     prelude_lines: usize,
     visibility: rlyeh_typecheck::VisibilityMode,
 ) -> Result<String, DriverError> {
-    // 1. 类型检查（内部完成 lex + parse → HIR），并收集建议性警告
-    let (hir, warnings) = rlyeh_typecheck::typecheck_source_with_warnings(
+    // 1. 类型检查（内部完成 lex + parse → HIR），并收集建议性警告与全局声明
+    let (hir, warnings, globals) = rlyeh_typecheck::typecheck_source_with_warnings(
         source,
         region_hints,
         prelude_len,
@@ -573,7 +605,10 @@ fn full_pipeline_with_hints(
     rlyeh_mir::passes::optimize(&mut mir);
 
     // 5. LIR lowering
-    let lir = rlyeh_lir::lower::lower_program(&mir).map_err(|e| DriverError::Lir(e.to_string()))?;
+    let mut lir = rlyeh_lir::lower::lower_program(&mir).map_err(|e| DriverError::Lir(e.to_string()))?;
+    // 5b. 挂载全局变量（`static` / `static mut`）声明：typecheck 收集的 GlobalDecl
+    //     经类型→LIR 类型转换后注入 LIR 程序，最终由 codegen 发射为 data 段符号。
+    lir.globals = globals.iter().filter_map(convert_global_decl).collect();
 
     // 6. LLVM IR 文本生成
     rlyeh_codegen::generate_llvm(&lir).map_err(|e| DriverError::Codegen(e.to_string()))

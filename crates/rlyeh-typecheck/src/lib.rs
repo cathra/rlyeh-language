@@ -33,6 +33,33 @@ pub use types::{FnSignature, Mutability, StructDef, Type};
 pub use context::VisibilityMode;
 pub use warning::{Warning, WarningKind};
 
+/// 编译期常量值（`static` 初始值求值结果）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConstValue {
+    /// 64 位有符号整数
+    I64(i64),
+    /// 64 位浮点
+    F64(f64),
+    /// 布尔
+    Bool(bool),
+    /// 字符（i8）
+    Char(i8),
+}
+
+/// 全局变量声明（`static` / `static mut`），由类型检查收集并随 HIR 一并返回，
+/// 最终透传至 codegen 发射为 data 段符号。
+#[derive(Debug, Clone)]
+pub struct GlobalDecl {
+    /// 全局符号名
+    pub name: String,
+    /// 类型
+    pub type_: Type,
+    /// 是否可变（`static mut`）
+    pub is_mut: bool,
+    /// 初始值（必须是编译期常量表达式）
+    pub init: ConstValue,
+}
+
 use rlyeh_hir::HirProgram;
 use rlyeh_lexer::Span;
 
@@ -69,18 +96,19 @@ pub fn typecheck_source_with_region_hints(
         span: e.span(),
     })?;
     typecheck_source_with_warnings(source, region_hints, prelude_len, visibility)
-        .map(|(hir, _warnings)| hir)
+        .map(|(hir, _warnings, _globals)| hir)
 }
 
 /// 便捷函数：解析源码并类型检查，返回 HIR 与收集到的建议性警告（非致命）。
 ///
 /// driver 编译路径使用本入口，以便把警告（如冗余 `*` 解引用）带正确行偏移打印给用户。
+/// 返回的 `Vec<GlobalDecl>` 为 `static` / `static mut` 全局声明，需透传至 codegen。
 pub fn typecheck_source_with_warnings(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
     visibility: VisibilityMode,
-) -> Result<(HirProgram, Vec<Warning>), TypeError> {
+) -> Result<(HirProgram, Vec<Warning>, Vec<GlobalDecl>), TypeError> {
     let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
         span: e.span(),
@@ -90,8 +118,9 @@ pub fn typecheck_source_with_warnings(
         what: e.to_string(),
         span: e.span(),
     })?;
-    let (hir, warnings) = typecheck_with_region_hints(&program, region_hints, prelude_len, visibility)?;
-    Ok((hir, warnings))
+    let (hir, warnings, globals) =
+        typecheck_with_region_hints(&program, region_hints, prelude_len, visibility)?;
+    Ok((hir, warnings, globals))
 }
 
 
@@ -100,7 +129,7 @@ mod tests {
     use super::*;
 
     fn warns(src: &str) -> Vec<Warning> {
-        let (_, warnings) = typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off)
+        let (_, warnings, _globals) = typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off)
             .expect("类型检查应成功");
         warnings
     }

@@ -270,9 +270,18 @@ impl LlvmEmitter {
             }
         }
 
+        // —— 全局变量表（static / static mut）：名称 → 类型 ——
+        // 供 codegen 将全局名引用发射为 `@name` 而非局部栈槽 `%name.addr`。
+        let global_types = program
+            .globals
+            .iter()
+            .map(|g| (g.name.clone(), g.type_))
+            .collect();
+
         Self {
             sigs,
             globals: Vec::new(),
+            global_types,
             global_counter: 0,
             reg_counter: 0,
             label_counter: 0,
