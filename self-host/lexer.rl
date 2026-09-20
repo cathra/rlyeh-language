@@ -32,6 +32,14 @@ fn char_str(b: i64) -> String {
     s
 }
 
+/// 十六进制字符 → 数值（非 hex 返回 0，仅供转义解码）
+fn hex_val(c: i64) -> i64 {
+    if c >= 48 && c <= 57 { c - 48 }
+    else if c >= 97 && c <= 102 { c - 87 }
+    else if c >= 65 && c <= 70 { c - 55 }
+    else { 0 }
+}
+
 fn i64_to_string(n: i64) -> String {
     if n == 0 { return String::from("0"); }
     let mut neg = 0;
@@ -285,8 +293,41 @@ fn lex(src: String) -> Vec<String> {
             i = i + 1;
             let mut s = String::new();
             while i < n && src.get(i) != 34 {
-                s.push_byte(src.get(i));
-                i = i + 1;
+                let ch = src.get(i);
+                if ch == 92 {
+                    i = i + 1;
+                    let e = src.get(i);
+                    if e == 110 { s.push_byte(10); i = i + 1; }
+                    else if e == 116 { s.push_byte(9); i = i + 1; }
+                    else if e == 114 { s.push_byte(13); i = i + 1; }
+                    else if e == 92 { s.push_byte(92); i = i + 1; }
+                    else if e == 34 { s.push_byte(34); i = i + 1; }
+                    else if e == 39 { s.push_byte(39); i = i + 1; }
+                    else if e == 120 {
+                        i = i + 1;
+                        let h1 = hex_val(src.get(i));
+                        i = i + 1;
+                        let h2 = hex_val(src.get(i));
+                        i = i + 1;
+                        s.push_byte(h1 * 16 + h2);
+                    }
+                    else if e == 117 {
+                        i = i + 1;
+                        i = i + 1;
+                        let mut v = 0;
+                        while i < n && src.get(i) != 125 {
+                            v = v * 16 + hex_val(src.get(i));
+                            i = i + 1;
+                        }
+                        i = i + 1;
+                        if v <= 127 { s.push_byte(v); }
+                        else { s.push_byte(239); s.push_byte(191); s.push_byte(189); }
+                    }
+                    else { s.push_byte(e); i = i + 1; }
+                } else {
+                    s.push_byte(ch);
+                    i = i + 1;
+                }
             }
             i = i + 1;
             toks.push("STR " + s);
@@ -307,7 +348,37 @@ fn lex(src: String) -> Vec<String> {
                 continue;
             } else {
                 i = i + 1;
-                let ch = src.get(i);
+                let mut ch = src.get(i);
+                if ch == 92 {
+                    i = i + 1;
+                    let e = src.get(i);
+                    if e == 110 { ch = 10; i = i + 1; }
+                    else if e == 116 { ch = 9; i = i + 1; }
+                    else if e == 114 { ch = 13; i = i + 1; }
+                    else if e == 92 { ch = 92; i = i + 1; }
+                    else if e == 34 { ch = 34; i = i + 1; }
+                    else if e == 39 { ch = 39; i = i + 1; }
+                    else if e == 120 {
+                        i = i + 1;
+                        let h1 = hex_val(src.get(i));
+                        i = i + 1;
+                        let h2 = hex_val(src.get(i));
+                        i = i + 1;
+                        ch = h1 * 16 + h2;
+                    }
+                    else if e == 117 {
+                        i = i + 1;
+                        i = i + 1;
+                        let mut v = 0;
+                        while i < n && src.get(i) != 125 {
+                            v = v * 16 + hex_val(src.get(i));
+                            i = i + 1;
+                        }
+                        i = i + 1;
+                        if v <= 127 { ch = v; } else { ch = 239; }
+                    }
+                    else { i = i + 1; }
+                }
                 i = i + 1;
                 if i < n && src.get(i) == 39 { i = i + 1; }
                 toks.push("CHAR " + char_str(ch));

@@ -91,4 +91,10 @@ fn m_m1_lexer_matches_rust_oracle() {
          let t1 = 9am;\nlet t2 = 6pm;\nlet t3 = 22:00;\nlet t4 = 9:30am;\n\
          let raw1 = r\"plain text\";\nlet raw2 = r#\"hash raw\"#;\nlet id = r#type;\n",
     );
+    // corpus4：转义解码（\n \t \r \\ \" \' \xHH；仅 ASCII 范围，避开 UTF-8 多字节与浮点）
+    check(
+        "let s1 = \"line1\\nline2\";\nlet s2 = \"tab\\there\";\nlet s3 = \"quote\\\"inside\";\n\
+         let s4 = \"backslash\\\\end\";\nlet s5 = \"hex\\x41byte\";\n\
+         let c1 = '\\n';\nlet c2 = '\\t';\nlet c3 = '\\\\';\nlet c4 = '\\'';\n",
+    );
 }

@@ -42,7 +42,7 @@
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ✅ 完成（C-ABI staticlib 链接桥） | Rlyeh 产物经 `extern "C"` 符号 + `crate-type=["rlib","staticlib"]` 链接 `librlyeh_*_runtime.a`（按需、缺失跳过），actor/gc/region 测试全绿 |
 | **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | 🟢 PoC(CD) | harness + 单编译器快照基线（C0/C1/C2）落地；三阶段自举 K-M1..K-M3 推迟 0.3.0 |
 | **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | 🟢 完成 | L0 harness 诊断维度 + 探针基线（12 例 check 12/0/0/0）；L1 typecheck/borrowck/regionck 用户态 span 对齐 + 语句级坐标（HIR Span 传播）；L2 结构化诊断（稳定错误码 TC/BC/RC0xx + `= help:` + 相关 span 标注，TypeError 多位置回指） |
-| **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | 🟡 进行中 | M-M1a/b 切片1 落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/字符串/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）+ 差分对拍 harness（`--emit tokens` oracle）corpus1/2/3 token 逐行一致；M-M1c（浮点/转义解码/非法字符报错）、M-M2/M-M3/M-M4 待推进 |
+| **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | 🟡 进行中 | M-M1a/b/c 切片1 落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/字符串含转义/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）+ 差分对拍 harness（`--emit tokens` oracle）corpus1/2/3/4 token 逐行一致；M-M1c 浮点/非法字符报错、M-M2/M-M3/M-M4 待推进 |
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
