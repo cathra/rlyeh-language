@@ -483,6 +483,32 @@ pub(crate) fn infer_expr_inner(
                             span,
                         });
                     }
+                    // M3（0.2.0-V）：对 `static` / `static mut` 全局取址 `&GLOBAL` 产出
+                    // `&'static T` / `&'static mut T`——data 段符号生命周期等于整个程序，
+                    // 故生命周期固定为 `'static`。HIR 保留 `Variable(name)`，由 codegen
+                    // 经全局名表识别为 `@name` 地址（而非局部栈槽 `%name.addr`）。
+                    // 注：`static mut` 取址的 unsafe 门禁已在操作数 `Ident` 解析阶段
+                    // （`lookup_global` 的 `is_mut && !in_unsafe` 检查）先行拦截。
+                    if let HirExprKind::Variable(gname) = &o_hir.kind {
+                        if let Some((gty, g_is_mut)) = ctx.lookup_global(gname) {
+                            let m = if g_is_mut {
+                                Mutability::Mutable
+                            } else {
+                                Mutability::Immutable
+                            };
+                            return Ok((
+                                HirExpr::new(
+                                    HirExprKind::Ref {
+                                        expr: Box::new(o_hir),
+                                        is_mut,
+                                        pointee: field_scalar_of(&gty),
+                                    },
+                                    Span::dummy(),
+                                ),
+                                Type::Ref(Box::new(gty), m, Some("static".to_string())),
+                            ));
+                        }
+                    }
                     let m = if is_mut {
                         Mutability::Mutable
                     } else {

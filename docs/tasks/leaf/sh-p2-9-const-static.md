@@ -1,6 +1,6 @@
 # SH-P2-9 `const` / `static` 全局项
 
-> **级别**：P2 · **风险**：🟠 中 · **状态**：⏳ 规划中 · **归属**：0.2.0-V
+> **级别**：P2 · **风险**：🟠 中 · **状态**：🟢 M1/M2/M3 完成（const 编译期折叠 / static·static mut 全局符号 / &'static T 取址） · **归属**：0.2.0-V
 > **索引**：[`../self-hosting-p2.md`](../self-hosting-p2.md) · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.22
 
 ## 目标
@@ -10,9 +10,9 @@
 - 模块级 `pub const PI: f64` 语法已存在于 CODEBUDDY 模块示例，但**编译期常量折叠不完整**；`static` / `static mut` 全局项**缺失**（grammar.md 无产生式）。
 
 ## 风险分解（→ 中/低危）
-- **M1（中）** 模块级 `const` 编译期常量传播 + 折叠（表达式常量求值），替换现有「仅字面量 const」。
-- **M2（中）** `static` / `static mut` 全局项：data 段符号发射，FFI 共享可变/不可变状态（依赖 E `unsafe` 边界约定访问 `static mut`）。
-- **M3（中）** `&'static T` 生命周期值（配合 F/E 的 `'static` 约束）。
+- **M1（中）** 模块级 `const` 编译期常量传播 + 折叠（表达式常量求值），替换现有「仅字面量 const」✅。
+- **M2（中）** `static` / `static mut` 全局项：data 段符号发射，FFI 共享可变/不可变状态（依赖 E `unsafe` 边界约定访问 `static mut`）✅。
+- **M3（中）** `&'static T` 生命周期值（配合 F/E 的 `'static` 约束）✅：对 `static` 取址 `&GLOBAL` 产出 `&'static T` / `&'static mut T`（data 段符号地址即 `@name`），`&'static T` 类型注解经 T-1 既已透传；`static mut` 取址受 unsafe 门禁（TC016b）。
 - **L1（低）** 差分对拍：全局表初始化与读取。
 
 ## 受影响组件
@@ -25,3 +25,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-09-01 | 复审补遗：从运行时 FFI 全局状态依赖中拆出 |
+| 2026-09-20 | M1/M2/M3 落地：const 折叠 / static·static mut data 段符号 + unsafe 门禁（TC016a/b/c）/ `&GLOBAL` 产出 `&'static T`（`@name` 取址）；run-pass `static_global.rl`、`static_ref.rl` + 4 个 compile-fail 用例全绿（330/330） |

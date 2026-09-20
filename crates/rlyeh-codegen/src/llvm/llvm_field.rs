@@ -377,10 +377,21 @@ impl LlvmEmitter {
                     // operand_value 返回带 `%` 前缀，store_to 内部会补 `%`
                     self.store_to(target, &v[1..], body, f)?;
                 } else {
-                    // 标量：取变量存储槽地址，统一为 i8*
-                    let lt = llvm_type(local_type(f, operand))?;
+                    // 标量：取变量存储槽地址，统一为 i8*。
+                    // 全局变量（`static` / `static mut`）无局部栈槽，地址即
+                    // data 段符号 `@operand` 本身（M3，0.2.0-V `&GLOBAL`）。
+                    let is_global = self.global_types.contains_key(operand);
+                    let lt = if is_global {
+                        llvm_type(*self.global_types.get(operand).unwrap())?
+                    } else {
+                        llvm_type(local_type(f, operand))?
+                    };
                     let r = self.reg();
-                    body.push_str(&format!("  %{r} = bitcast {lt}* %{operand}.addr to i8*\n"));
+                    if is_global {
+                        body.push_str(&format!("  %{r} = bitcast {lt}* @{operand} to i8*\n"));
+                    } else {
+                        body.push_str(&format!("  %{r} = bitcast {lt}* %{operand}.addr to i8*\n"));
+                    }
                     self.store_to(target, &r, body, f)?;
                 }
             }
