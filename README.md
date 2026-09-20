@@ -19,6 +19,98 @@ Rlyeh 是一门面向未来十年基础设施的**系统级编程语言**：
 
 ---
 
+## 多语言交叉对比
+
+Rlyeh 的全部对比均在**同一台机器、同一套基准、同一份源码逻辑**下实测（[`examples/projects/benchmarks/`](examples/projects/benchmarks/)），跨语言输出逐项自动核对，不存在「只跑一侧」的宣传数据。
+
+### 1. 语言设计对比
+
+与主流语言的**设计取向**对照（非性能，性能见 §2）：
+
+| 维度 | **Rlyeh** | Rust | Go | Erlang / Elixir | Python |
+|------|-----------|------|----|-----------------|--------|
+| 类型系统 | 静态 · `protocol` + 泛型单态化 | 静态 · `trait` + 泛型单态化 | 静态 · `interface` + 泛型 | 动态（typespec 仅文档） | 动态 |
+| 内存管理 | **分层可选**：编译期所有权 / 借用（L0）· region 批量释放（L1）· `Rc`/`Arc`（L2）· 可选 GC（L3） | 编译期所有权 / 借用 + `Rc`/`Arc`，无 GC | 并发三色标记 GC | 每进程独立堆 + GC | 引用计数 + 分代 GC |
+| 并发模型 | **Actor 一等公民**（消息 + 监督重启）+ `sync` 原语（Mutex / RwLock / Atomic / channel） | 线程 + `Send`/`Sync` + `async` | goroutine + channel | Actor 进程 + 监督树 | GIL + `asyncio` / 线程 |
+| 崩溃 / 容错 | Actor 监督策略自动重启（OneForOne / AllForOne / RestartForOne） | `panic` / `Result` 传播 | `panic` / `recover` | 「let it crash」+ 监督树 | 异常 |
+| 数学式条件 | 比较链 `0 < x < 10`；`in` 集合 / 范围 / 时间字面量 `9am...6pm` | 无 | 无 | 无 | 链式比较（`0 < x < 10`） |
+| 编译后端 | LLVM（clang -O3 发布级管线） | LLVM / Cranelift | 自研 gc 后端 | BEAM 字节码 | CPython 字节码 / JIT |
+
+### 2. 运行时性能对比（13 基准 × 6 语言）
+
+- **环境**：Apple M5 Pro（arm64，18 核）· macOS 27.0 · Apple clang 21.0.0 · Go 1.27.0 · Swift 6.4 · rustc 1.96.0
+- **方法**：每基准每语言 warmup 1 次 + 正式 10 次取平均（ms，含进程启动）；各语言均开发布级优化（`clang -O3` / `clang++ -O3` / `go build` / `swiftc -O` / `rustc -O` / `rlyeh build`）
+- **数据源**：[`results/benchmark_report.md`](examples/projects/benchmarks/results/benchmark_report.md)（2026-09-01 自动生成）
+
+| 基准 | Rlyeh | C | C++ | Go | Rust | Swift |
+|------|-----:|-----:|-----:|-----:|-----:|-----:|
+| fib | 5.071 | 4.988 | 4.962 | **4.317** | 5.371 | 5.998 |
+| loop_sum | 3.633 | 3.593 | **3.566** | 25.572 | 3.791 | 25.555 |
+| matmul | **12.195** | 13.105 | 13.210 | 12.513 | 13.043 | 14.733 |
+| strcat | 3.824 | 3.798 | 4.161 | **2.749** | 3.845 | 5.111 |
+| hashmap | 7.539 | **6.519** | 9.133 | 16.581 | 6.662 | 9.144 |
+| sort | 3.807 | 3.767 | 3.667 | **2.956** | 3.879 | 4.553 |
+| actor_pingpong | **6.783** | 181.481 | 176.910 | 12.156 | 149.204 | 164.067 |
+| btree | 4.052 | 3.836 | 3.787 | **2.825** | 4.001 | 3.759 |
+| hashmap_str | 8.121 | 4.828 | 4.290 | **3.573** | 4.688 | 4.896 |
+| dyn_dispatch | **3.762** | 13.083 | 13.223 | 4.994 | 3.775 | 25.666 |
+| region_alloc | 6.793 | 6.248 | 3.882 | **3.065** | 4.423 | 4.717 |
+| region_batch | 11.665 | 11.974 | 11.707 | **10.814** | 11.577 | 13.815 |
+| nqueens | 59.428 | 58.341 | 59.268 | 58.912 | **56.220** | 67.079 |
+
+*(单位 ms，越低越好；**加粗**为该行最快语言。)*
+
+**相对速度**（以 Rlyeh = 1.0 为基准，>1 表示该语言比 Rlyeh 快）：
+
+| 基准 | C | C++ | Go | Rust | Swift |
+|------|-----:|-----:|-----:|-----:|-----:|
+| fib | 1.0x | 1.0x | 1.2x | 0.9x | 0.8x |
+| loop_sum | 1.0x | 1.0x | 0.1x | 1.0x | 0.1x |
+| matmul | 0.9x | 0.9x | 1.0x | 0.9x | 0.8x |
+| strcat | 1.0x | 0.9x | 1.4x | 1.0x | 0.7x |
+| hashmap | 1.2x | 0.8x | 0.5x | 1.1x | 0.8x |
+| sort | 1.0x | 1.0x | 1.3x | 1.0x | 0.8x |
+| **actor_pingpong** | 0.0x | 0.0x | 0.6x | 0.0x | 0.0x |
+| btree | 1.1x | 1.1x | 1.4x | 1.0x | 1.1x |
+| **hashmap_str** | 1.7x | 1.9x | 2.3x | 1.7x | 1.7x |
+| dyn_dispatch | 0.3x | 0.3x | 0.8x | 1.0x | 0.1x |
+| **region_alloc** | 1.1x | 1.7x | 2.2x | 1.5x | 1.4x |
+| region_batch | 1.0x | 1.0x | 1.1x | 1.0x | 0.8x |
+| nqueens | 1.0x | 1.0x | 1.0x | 1.1x | 0.9x |
+
+**结论**
+
+- **3 项全场最快**：`actor_pingpong`（6.78ms，**超 Go 1.8x、超 C/Rust/Swift 22–27x**）、`dyn_dispatch`（3.76ms，与 Rust 持平、超 Go 1.3x）、`matmul`（12.20ms）。
+- **约 1.0x 持平**：`loop_sum`、`nqueens`、`region_batch` 与最快语言差距在 1.1x 内。
+- **相对落后项**：`hashmap_str`（2.3x，瓶颈在 `format!` 键构造的分配次数）、`region_alloc`（2.2x，差距主要是 region 语义必需的逐对象越界检查 ~1ns/迭代）、`strcat`/`btree`（1.4x）。
+- `actor_pingpong` 中 C/C++/Rust/Swift 侧为**双线程双通道同步往返**（mutex/condvar、mpsc），Rlyeh 侧为 Actor ask 同步往返（同线程 fast path 零调度）——这正是 Actor 作为**语言一等公民**的价值。
+
+**编译耗时**（单次全量冷编译，`rlyeh build --force` 绕开增量缓存）：
+
+| | Rlyeh | C | C++ | Go | Rust | Swift |
+|---|---:|---:|---:|---:|---:|---:|
+| 区间 (ms) | 223–290 | 42–79 | 41–269 | 44–193 | 77–181 | 156–700 |
+
+Rlyeh 处于 C++/Swift 区间；「编译速度对标 Go」的目标需靠**增量缓存 / 惰性 LLVM 后端**兑现（规划中）。
+
+### 3. region 内存策略对比
+
+同机同构 100 万次 32B 对象分配，10 次取中位数（[`examples/projects/benchmarks/README.md`](examples/projects/benchmarks/README.md)）：
+
+| 策略 | 语法 | 扩容次数 | 内存峰值 | 耗时 (ms) |
+|------|------|:---:|:---:|-----:|
+| plain（默认 bump ×2） | `region 'r {}` | 13 | 17.5MB | 4.644 |
+| adaptive（EWMA 画像） | `region 'r adaptive {}` | 20 | ~17.5MB | 4.698 |
+| `with_size (32MB)` | `region 'r with_size (33554432) {}` | 0 | 32MB | 4.780 |
+| `with_size (4KB)` | `region 'r with_size (4096) {}` | 8 | 26.8MB | 4.907 |
+| `strategy (bump)` | `region 'r strategy (bump) {}` | 13 | 17.5MB | **4.625** |
+
+对照基线：空进程 2.06ms、空 `region` 2.43ms（进出开销 0.37ms）；**无 region 的逐次堆分配 9.77ms —— region 分配约为其 1/2**。结论：热循环分配已被优化为纯寄存器 bump（约 **2.6 ns/次**），五种策略耗时落在 4.6–4.9ms、差异在噪声内，日常代码可放心用默认 `region`。
+
+> 复现：`cd examples/projects/benchmarks && python3 run.py`（`--runs 10` 更稳，`--only fib,matmul` 指定基准）。
+
+---
+
 ## 核心特性
 
 ### 分层内存管理（零 GC 起步）
@@ -110,7 +202,8 @@ let d: dyn Shape = &c;             // 协议对象：vtable 多态分派
 - **模块系统**：`module` / `import`，多文件模块（扁平名字空间）
 - **async/await**：`async fn` desugar 为 Future 状态机 + `block_on` 驱动
 - **FFI 与 WASM**：`extern fn` 全链路打通；`wasm32-wasip1` 目标支持（actor 运行时 + WASI 单线程同步）
-- **JSON 序列化**：`json::stringify` / `json::parse::<T>`
+- **序列化**：`json::stringify` / `json::parse::<T>`；`toml::to_string` / `toml::from_str::<T>`（标量 / 数组 / Vec / 嵌套表 `[section]` / HashMap 内联表，支持 round-trip）
+- **可恢复解析**：`json::try_parse::<T>` / `toml::try_parse::<T>` 返回 `Result<T, serde::JsonError | serde::TomlError>`（非法输入走 `Err`，`?` 传播）
 - **格式化宏**：`println!` / `print!` / `format!` / `dbg!` / `eprintln!`
 
 ---
@@ -171,7 +264,7 @@ rlyeh-language/
 ├── tools/                 # rlyeh-fmt / rlyeh-check / rlyeh-doc / rlyeh-bench
 ├── dagon/                   # 包管理器
 ├── docs/                  # 权威规范 + 开发进度（入口：docs/README.md）
-├── examples/              # 可运行示例
+├── examples/              # 可运行示例（含 projects/benchmarks 多语言性能基准）
 ├── skills/                # rlyeh-language 技能（SKILL.md + references/，随工具链分发）
 └── tests/                 # 集成测试（.rl 用例）
 ```
@@ -193,6 +286,7 @@ rlyeh-language/
 | [docs/module-system.md](docs/module-system.md) | 模块系统规范 |
 | [docs/std-lib.md](docs/std-lib.md) | 标准库 API 规范 |
 | [docs/development-plan.md](docs/development-plan.md) | 开发计划（阶段 A–F + 剩余任务消解 G–L / M–T / U–Z） |
+| [examples/projects/benchmarks/results/benchmark_report.md](examples/projects/benchmarks/results/benchmark_report.md) | 多语言性能基准完整报告（13 基准 × 6 语言） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 
 ---
