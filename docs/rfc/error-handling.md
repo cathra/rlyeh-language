@@ -156,4 +156,4 @@ Rlyeh **没有异常（exception）机制**，错误通过返回类型显式表�
 | `eh-7-context` | 4.7 | context/背链附加 |
 | `eh-8-panic-policy` | 4.8 | panic 策略文档 + `panic=abort` + `no_panic` |
 
-> **下一步**：① `sh-p1-6`（`?`+From 调用侧）**与 U4 定义侧均已核实落地**，`std-lib.md` §12 标注已过时；② 评审通过后，在 `tasks/leaf/` 落地 `eh-1…eh-8`（eh-1/eh-2 转为"修正过时标注 + 填充 `source` 根因链"收尾项），并入 0.3.0 计划。
+> **下一步**：① `sh-p1-6`（`?`+From 调用侧）**与 U4 定义侧均已核实落地**，`std-lib.md` §12 标注已过时；② 评审通过后，在 `tasks/leaf/` 落地 `eh-1…eh-8`（eh-1/eh-2 转为"修正过时标注 + 填充 `source` 根因链"收尾项），并入 0.2.0 计划。

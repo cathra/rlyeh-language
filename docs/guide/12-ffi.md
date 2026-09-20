@@ -112,7 +112,7 @@ libs = ["m"]          # 链接 libm（数学库），等价于 clang 的 -lm
 ## 12.6 当前限制（规划中特性）
 
 - **低阶 FFI**：当前是"直接声明 C 函数签名 + 人工对齐 ABI"的模式。
-- **高阶绑定**（自动类型映射、安全封装、自动生成 `extern` 声明）规划中。
+- **高阶绑定**（自动类型映射、安全封装、自动生成 `extern` 声明）规划中，完整设计见 RFC：[`docs/rfc/ffi-advanced-bindings.md`](../../rfc/ffi-advanced-bindings.md)（含调用约定、`#[link]`、不透明类型、`#[repr(C)]`/`union`、函数指针回调、变参、字符串/所有权编组、`#[no_mangle]` 导出与 bindgen 路线图）。
 - 调用 C 时仍需你**自己保证**：参数类型/返回类型与 C 侧完全一致、生命周期安全（不让 C 持有 Rlyeh 借出的悬垂引用）。
 
 > **安全建议**：尽量只在 FFI 边界传递**标量、裸指针、简单结构体**。复杂的 Rlyeh 对象（String/Vec/closure）不要直接透传给 C——在边界处做转换（如先把 String 转成 `&str` 拷贝出 C 需要的 `char*`）。
