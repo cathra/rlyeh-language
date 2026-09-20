@@ -5,13 +5,17 @@
 //   ——形参为 `fn(..) -> ..` 函数值，方法泛型由实参 fn 类型反推（typecheck
 //   `check_method_call` 候选循环此前把含泛型的 fn 形参一律跳过，2026-09-21 修复）。
 //
+// 第三批（嵌套泛型）：Option::flatten / Result::flatten / Option::transpose /
+//   Result::transpose——依赖 2026-09-21 的「parser 保留 impl 泛型实参 +
+//   typecheck 按实参构建嵌套 self 类型」修复（此前 `impl<T> Option<Option<T>>`
+//   连解析都失败）。
+//
 // 已知约束：
 // 1. 闭包字面量实参（`|x| ..`）不能反推方法泛型（闭包体类型无法脱离上下文
 //    定型），请传具名函数 / `fn` 值；
 // 2. 同一函数内同名绑定不得跨类型复用——typecheck 变量环境按名全局索引、无作用域
 //    隔离（docs/std-lib.md §12 已知限制），LIR 亦按名记录类型并直接报冲突；
-// 3. 嵌套泛型组合子（flatten / transpose / copied / cloned）受
-//    `impl<T> Option<Option<T>>`（嵌套泛型 self 类型）不被解析支持的限制，暂缓。
+// 3. `copied` / `cloned`（`Option<&T>` → `Option<T>`）尚未落地。
 
 fn inc(x: i64) -> i64 { x + 1 }
 fn dbl(x: i64) -> i64 { x + x }
@@ -108,6 +112,61 @@ fn main() {
     // 13. ok_or 用于 option → result 提升
     println(len_or_err(Option::Some(String::from("rlyeh"))));  // 5
     println(len_or_err(Option::None));                         // -1
+
+    // ---------- 第三批：嵌套泛型组合子 ----------
+    // （依赖 parser 保留 impl 泛型实参 + typecheck 按实参构建嵌套 self 类型）
+    // 14. Option::flatten：Some(Some) / Some(None) / None
+    let f1: Option<Option<i64>> = Option::Some(Option::Some(5));
+    match f1.flatten() {
+        Option::Some(vf1) => println(vf1),  // 5
+        Option::None => println(-1),
+    }
+    let f2: Option<Option<i64>> = Option::Some(Option::None);
+    println(f2.flatten().is_none());        // 1
+    let f3: Option<Option<i64>> = Option::None;
+    println(f3.flatten().is_none());        // 1
+    // 15. Result::flatten：Ok(Ok) / Ok(Err)
+    let f4: Result<Result<i64, String>, String> = Result::Ok(Result::Ok(3));
+    match f4.flatten() {
+        Result::Ok(vf4) => println(vf4),    // 3
+        Result::Err(_) => println(-1),
+    }
+    let f5: Result<Result<i64, String>, String> = Result::Ok(Result::Err(String::from("inner")));
+    match f5.flatten() {
+        Result::Ok(_) => println(-1),
+        Result::Err(ef5) => println(ef5),   // inner
+    }
+    // 16. Option<Result>::transpose：Some(Ok) / None
+    let t1: Option<Result<i64, String>> = Option::Some(Result::Ok(7));
+    match t1.transpose() {
+        Result::Ok(vt1) => match vt1 {
+            Option::Some(vt1i) => println(vt1i),  // 7
+            Option::None => println(-1),
+        },
+        Result::Err(_) => println(-1),
+    }
+    let t2: Option<Result<i64, String>> = Option::None;
+    match t2.transpose() {
+        Result::Ok(_) => println(88),       // Ok(None) → 88
+        Result::Err(_) => println(-1),
+    }
+    // 17. Result<Option>::transpose：Ok(Some) / Err
+    let t3: Result<Option<i64>, String> = Result::Ok(Option::Some(8));
+    match t3.transpose() {
+        Option::Some(rt3) => match rt3 {
+            Result::Ok(vt3) => println(vt3),      // 8
+            Result::Err(_) => println(-1),
+        },
+        Option::None => println(-1),
+    }
+    let t4: Result<Option<i64>, String> = Result::Err(String::from("boom"));
+    match t4.transpose() {
+        Option::Some(rt4) => match rt4 {
+            Result::Ok(_) => println(-1),
+            Result::Err(et4) => println(et4),     // boom
+        },
+        Option::None => println(-1),
+    }
 }
 
 fn len_or_err(s: Option<String>) -> i64 {

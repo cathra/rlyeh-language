@@ -301,13 +301,23 @@ pub(crate) fn collect_impl(ctx: &mut TypeContext, imp: &AstImplBlock, prefix: &s
     let saved_subst = std::mem::take(&mut ctx.generic_subst);
     ctx.type_params = imp.generics.iter().map(|p| p.name.clone()).collect();
 
-    // self 类型：`impl<T> Vec<T>` → `Named("Vec", [Generic("T")])`
+    // self 类型：优先用 parser 保留的泛型实参（支持嵌套泛型 self 类型
+    // `impl<T> Option<Option<T>>` → `Named("Option", [Named("Option", [Generic("T")])])`）；
+    // 无实参（`impl Foo` / `impl<T> W`）时回退为 impl 泛型参数
+    // （`impl<T> Vec<T>` → `Named("Vec", [Generic("T")])`，与旧行为一致）。
     let self_type = Type::Named(
         full_name(prefix, &imp.type_name),
-        imp.generics
-            .iter()
-            .map(|p| Type::Generic(p.name.clone()))
-            .collect(),
+        if imp.self_type_args.is_empty() {
+            imp.generics
+                .iter()
+                .map(|p| Type::Generic(p.name.clone()))
+                .collect()
+        } else {
+            imp.self_type_args
+                .iter()
+                .map(|t| resolve_ast_type(ctx, t, imp.span))
+                .collect::<Result<Vec<Type>, TypeError>>()?
+        },
     );
     // protocol 名解析为完整符号名（与 `dyn Protocol` 解析一致）：
     // 1) 显式 `mod::Protocol` 路径原样使用；2) 当前模块前缀下存在（`impl Protocol` 定义于 protocol 同模块内）；

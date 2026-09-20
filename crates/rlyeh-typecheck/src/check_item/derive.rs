@@ -216,6 +216,8 @@ fn build_clone_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         protocol_name: Some("Clone".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
+        // self 类型实参留空 → typecheck 回退为 impl 泛型参数重建（沿用旧行为）。
+        self_type_args: vec![],
         protocol_type_args: vec![],
         extra_protocols: vec![],
         types: vec![],
@@ -233,6 +235,8 @@ fn build_copy_impl(s: &AstStructDecl, _prefix: &str, span: Span) -> AstImplBlock
         protocol_name: Some("Copy".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
+        // self 类型实参留空 → typecheck 回退为 impl 泛型参数重建（沿用旧行为）。
+        self_type_args: vec![],
         protocol_type_args: vec![],
         extra_protocols: vec![],
         types: vec![],
@@ -301,6 +305,8 @@ fn build_partialeq_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplB
         protocol_name: Some("PartialEq".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
+        // self 类型实参留空 → typecheck 回退为 impl 泛型参数重建（沿用旧行为）。
+        self_type_args: vec![],
         protocol_type_args: vec![],
         extra_protocols: vec![],
         types: vec![],
@@ -419,6 +425,8 @@ fn build_debug_impl(s: &AstStructDecl, prefix: &str, span: Span) -> AstImplBlock
         protocol_name: Some("fmt::Debug".to_string()),
         type_name: s.name.clone(),
         generics: s.generics.clone(),
+        // self 类型实参留空 → typecheck 回退为 impl 泛型参数重建（沿用旧行为）。
+        self_type_args: vec![],
         protocol_type_args: vec![],
         extra_protocols: vec![],
         types: vec![],

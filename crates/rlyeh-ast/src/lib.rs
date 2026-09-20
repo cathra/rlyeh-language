@@ -263,6 +263,12 @@ pub struct AstImplBlock {
     /// 泛型参数名列表
     /// 泛型参数列表
     pub generics: Vec<AstTypeParam>,
+    /// impl 目标类型的泛型实参（如 `impl<T> Option<Option<T>>` 的 `Option<T>`）。
+    /// 此前 parser 消费后丢弃，致 typecheck 只能用 impl 泛型参数重建 self 类型，
+    /// 嵌套泛型 self 类型（`Option<Option<T>>`）的内层被丢弃 → 方法解析错配
+    /// （返回类型被实例化为 `Option<Option<i64>>` 而非 `Option<i64>`）。
+    /// 2026-09-21 保留以支持嵌套泛型 self 类型（EH-3 `flatten`/`transpose` 前置）。
+    pub self_type_args: Vec<AstType>,
     /// protocol 泛型实参（`impl Protocol<Args> for Type` 中的 `Args`，如
     /// `impl From<IoErrorKind> for IoError` 的 `IoErrorKind`）。
     /// 此前 parser 消费后丢弃，导致 protocol 关联方法的泛型参数无法绑定；

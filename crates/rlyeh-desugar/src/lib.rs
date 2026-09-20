@@ -239,6 +239,8 @@ fn make_impl(
         protocol_name,
         type_name,
         generics,
+        // self 类型实参留空 → typecheck 回退为 impl 泛型参数重建（沿用旧行为）。
+        self_type_args: Vec::new(),
         protocol_type_args,
         extra_protocols: Vec::new(),
         types,

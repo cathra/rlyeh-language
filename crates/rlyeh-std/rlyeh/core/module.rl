@@ -112,6 +112,31 @@ impl<T> Option<T> {
     }
 }
 
+// EH-3（2026-09-21）：嵌套泛型组合子（依赖 parser 保留 impl 泛型实参 + typecheck
+// 按实参构建嵌套 self 类型，2026-09-21 修复）。
+// `Option<Option<T>>` → `Option<T>`：Some(Some(v)) → Some(v)；其余 → None。
+impl<T> Option<Option<T>> {
+    fn flatten(self) -> Option<T> {
+        match self {
+            Option::Some(inner) => inner,
+            Option::None => Option::None,
+        }
+    }
+}
+
+// `Option<Result<T, E>>` → `Result<Option<T>, E>`（None → Ok(None)）。
+impl<T, E> Option<Result<T, E>> {
+    fn transpose(self) -> Result<Option<T>, E> {
+        match self {
+            Option::Some(inner) => match inner {
+                Result::Ok(v) => Result::Ok(Option::Some(v)),
+                Result::Err(e) => Result::Err(e),
+            },
+            Option::None => Result::Ok(Option::None),
+        }
+    }
+}
+
 enum Result<T, E> {
     Ok(T),
     Err(E),
@@ -194,6 +219,29 @@ impl<T, E> Result<T, E> {
         match self {
             Result::Ok(v) => f(v),
             Result::Err(e) => Result::Err(e),
+        }
+    }
+}
+
+// EH-3（2026-09-21）：`Result<Result<T, E>, E>` → `Result<T, E>`（出错短路）。
+impl<T, E> Result<Result<T, E>, E> {
+    fn flatten(self) -> Result<T, E> {
+        match self {
+            Result::Ok(inner) => inner,
+            Result::Err(e) => Result::Err(e),
+        }
+    }
+}
+
+// `Result<Option<T>, E>` → `Option<Result<T, E>>`（Err(e) → Some(Err(e))）。
+impl<T, E> Result<Option<T>, E> {
+    fn transpose(self) -> Option<Result<T, E>> {
+        match self {
+            Result::Ok(inner) => match inner {
+                Option::Some(v) => Option::Some(Result::Ok(v)),
+                Option::None => Option::None,
+            },
+            Result::Err(e) => Option::Some(Result::Err(e)),
         }
     }
 }

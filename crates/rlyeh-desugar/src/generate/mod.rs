@@ -218,6 +218,8 @@ pub fn gen_impl(a: &AnalyzedAsync, cyclic: &HashSet<String>) -> AstItem {
         type_name: fut_ty_name(&a.decl.name),
         // W6：透传泛型参数到 impl（`impl<T> Future for __Fut_foo<T>`）。
         generics: a.decl.generics.clone(),
+        // self 类型实参留空 → typecheck 回退为 impl 泛型参数重建（沿用旧行为）。
+        self_type_args: Vec::new(),
         // P6c：protocol 泛型实参（Future 无泛型实参，空）。
         protocol_type_args: Vec::new(),
         // PC-9：多协议一致性（Future 为单协议，空）。

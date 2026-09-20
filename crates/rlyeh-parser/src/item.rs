@@ -583,7 +583,7 @@ impl<'src> Parser<'src> {
         // `first` 即被实现类型；随后消费其泛型实参（仅校验并丢弃——
         // self 类型由 typecheck 依据 impl `generics` 重建）。
         let first = self.expect_ident()?;
-        self.skip_type_generic_args()?;
+        let self_type_args = self.parse_type_generic_args()?;
         // P6c（2026-08-29）：协议泛型实参收集（如 `impl T: From<IoErrorKind>` 的
         // `IoErrorKind`），此前消费后丢弃导致协议关联方法泛型无法绑定。
         let mut protocol_type_args: Vec<AstType> = Vec::new();
@@ -626,6 +626,7 @@ impl<'src> Parser<'src> {
             protocol_name,
             type_name,
             generics,
+            self_type_args,
             protocol_type_args,
             extra_protocols,
             types,
@@ -634,26 +635,35 @@ impl<'src> Parser<'src> {
         })
     }
 
-    /// 消费并丢弃类型名后的泛型实参列表（`<T, U>`；无则空操作）。
+    /// 解析类型名后的泛型实参列表（`<T, U>`；无则返回空）。
     ///
-    /// MVP：仅校验并丢弃——self 类型由 typecheck 依据 impl `generics` 重建，
-    /// 故无需保留此处实参。P6a：实参走完整类型解析（支持 `::` 路径与嵌套泛型）。
-    fn skip_type_generic_args(&mut self) -> Result<(), ParseError> {
+    /// 2026-09-21：由「消费并丢弃」改为**保留**——typecheck 需要真实实参以构建
+    /// 嵌套泛型 self 类型（`impl<T> Option<Option<T>>` 的 `Option<Option<T>>`）；
+    /// 此前仅用 impl 泛型参数重建，内层实参丢失导致方法解析错配。
+    fn parse_type_generic_args(&mut self) -> Result<Vec<AstType>, ParseError> {
+        let mut args = Vec::new();
         if !self.check(&Token::Lt) {
-            return Ok(());
+            return Ok(args);
         }
         self.bump();
-        while !self.check(&Token::Gt) {
+        while !self.check(&Token::Gt) && self.pending_gt == 0 {
             if self.at_eof() {
                 return Err(self.unexpected("'>'"));
             }
-            self.parse_type()?;
+            args.push(self.parse_type()?);
             if !self.eat(&Token::Comma) {
                 break;
             }
         }
-        self.expect(&Token::Gt, "'>'")?;
-        Ok(())
+        // 关闭本层：`parse_type` 经 `close_generics` 把 `>>` 拆层时，本层的 `>`
+        // 已作为 `pending_gt` 留存（如 `impl<T> Opt<Opt<T>>`）——须消费它，
+        // 而非再 `expect(Gt)`（否则会报 `expected '>', found '{'`）。
+        if self.pending_gt > 0 {
+            self.pending_gt -= 1;
+        } else {
+            self.expect(&Token::Gt, "'>'")?;
+        }
+        Ok(args)
     }
 
     /// 模块声明：`mod name { ... }` 或 `mod name;`
