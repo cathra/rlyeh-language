@@ -92,6 +92,24 @@ impl<T> Option<T> {
             Option::None => Result::Err(err),
         }
     }
+    // EH-3（2026-09-21）：`map`——Some(v) → Some(f(v))；None → None。
+    // 形参为**函数值** `fn(T) -> U`：方法泛型 U 由实参 fn 类型反推（typecheck
+    // `check_method_call` 对含泛型的 fn 形参并入 unify，2026-09-21 修复）。
+    // 注：闭包字面量实参（`|x| ..`）尚不能反推 U（体类型无法脱离上下文定型），
+    // 请传具名函数或 `fn` 值。
+    fn map<U>(self, f: fn(T) -> U) -> Option<U> {
+        match self {
+            Option::Some(v) => Option::Some(f(v)),
+            Option::None => Option::None,
+        }
+    }
+    // EH-3（2026-09-21）：`and_then`——Some(v) → f(v)；None → None（f 返回 Option<U>）。
+    fn and_then<U>(self, f: fn(T) -> Option<U>) -> Option<U> {
+        match self {
+            Option::Some(v) => f(v),
+            Option::None => Option::None,
+        }
+    }
 }
 
 enum Result<T, E> {
@@ -155,6 +173,27 @@ impl<T, E> Result<T, E> {
         match self {
             Result::Ok(v) => loop {},
             Result::Err(e) => e,
+        }
+    }
+    // EH-3（2026-09-21）：`map`——Ok(v) → Ok(f(v))；Err(e) → Err(e)。U 由实参 fn 反推。
+    fn map<U>(self, f: fn(T) -> U) -> Result<U, E> {
+        match self {
+            Result::Ok(v) => Result::Ok(f(v)),
+            Result::Err(e) => Result::Err(e),
+        }
+    }
+    // EH-3（2026-09-21）：`map_err`——Ok(v) → Ok(v)；Err(e) → Err(f(e))。F 由实参 fn 反推。
+    fn map_err<F>(self, f: fn(E) -> F) -> Result<T, F> {
+        match self {
+            Result::Ok(v) => Result::Ok(v),
+            Result::Err(e) => Result::Err(f(e)),
+        }
+    }
+    // EH-3（2026-09-21）：`and_then`——Ok(v) → f(v)；Err(e) → Err(e)。
+    fn and_then<U>(self, f: fn(T) -> Result<U, E>) -> Result<U, E> {
+        match self {
+            Result::Ok(v) => f(v),
+            Result::Err(e) => Result::Err(e),
         }
     }
 }

@@ -453,11 +453,16 @@ pub(super) fn check_method_call(
             .map(|p| substitute(p, &subst))
             .collect();
         for (pty, aty) in expected.iter().zip(&arg_types) {
-            // 形参为 fn 类型（实参可能是无注解闭包）时跳过兼容性判定，
-            // 交由下方实参循环按预期签名检查，避免误拒合法闭包实参。
-            if !matches!(pty, Type::Fn(_))
-                && crate::check_expr::generic::contains_generic_named(pty, &generics)
-            {
+            // 形参含未定泛型时由实参反推。`contains_generic_named` 已递归进
+            // `Type::Fn`，故 `fn(T) -> U` 这类**含泛型的 fn 形参**同样能绑定 U
+            // （此前 `!matches!(pty, Type::Fn(_))` 把 fn 形参一律跳过，导致
+            // `Option::map(f: fn(T) -> U)` 等的 U 无法推断 → 调用点 `undefined type U`）。
+            // 例外：fn 形参仅当**实参同为 fn 类型**时才 unify——无注解闭包实参
+            // （形如 Infer / 闭包类型）跳过，避免把泛型误绑为 Infer，交由下方
+            // 实参循环按预期签名检查。
+            let has_generic = crate::check_expr::generic::contains_generic_named(pty, &generics);
+            let fn_ok = !matches!(pty, Type::Fn(_)) || matches!(aty, Type::Fn(_));
+            if has_generic && fn_ok {
                 let _ = unify(pty, aty, &mut subst);
             }
         }
