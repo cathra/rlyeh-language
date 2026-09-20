@@ -371,6 +371,50 @@ pub(super) fn check_call(
     if name == "json::from_reader" {
         return check_json_from_reader(ctx, args, type_args, span);
     }
+    // U（SH-P2-8 M1）：`mem::swap(&mut a, &mut b)` 内建——交换两可变引用指向的槽内容。
+    // 泛型 T 的字节大小由 typecheck 在调用点算出，注入到内建 `mem_swap(ptr, ptr, size)`。
+    if name == "mem::swap" {
+        if args.len() != 2 {
+            return Err(TypeError::Unsupported {
+                what: "mem::swap 需要恰好 2 个参数 (&mut a, &mut b)".to_string(),
+                span,
+            });
+        }
+        let (_, ta) = infer_expr(ctx, &args[0])?;
+        let (_, tb) = infer_expr(ctx, &args[1])?;
+        let t = match (
+            &ta,
+            &tb,
+        ) {
+            (
+                Type::Ref(a, crate::types::Mutability::Mutable, _),
+                Type::Ref(b, crate::types::Mutability::Mutable, _),
+            ) if a.compatible_with(b) => a,
+            _ => {
+                return Err(TypeError::Unsupported {
+                    what: format!(
+                        "mem::swap 要求两个 &mut T 参数（得到 `{}` 与 `{}`）",
+                        ta, tb
+                    ),
+                    span,
+                });
+            }
+        };
+        let size = crate::types::type_byte_size(t, ctx, span)?;
+        let call = AstExpr::new(
+            ExprKind::Call {
+                callee: AstExpr::new(ExprKind::Ident("mem_swap".to_string()), span),
+                args: vec![
+                    args[0].clone(),
+                    args[1].clone(),
+                    AstExpr::new(ExprKind::IntLiteral(size as i128), span),
+                ],
+                type_args: Vec::new(),
+            },
+            span,
+        );
+        return infer_expr(ctx, &call);
+    }
 
     // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
     // 按签名检查参数、返回签名类型

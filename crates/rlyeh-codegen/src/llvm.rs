@@ -54,6 +54,7 @@ const BUILTIN_FUNCTIONS: &[&str] = &[
     "eprintln_string",
     "hash_value",
     "panic",
+    "mem_swap",
 ];
 
 /// 指令是否读/写了 `aliases` 中任一对象（用于判定 `AllocInRegion`

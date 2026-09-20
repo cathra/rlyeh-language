@@ -50,7 +50,7 @@
 | **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | 🟡 进行中 | M1 `Deref`/`DerefMut` trait 声明落地（2026-09-04）；M2 自动解引用强制待实现 |
 | **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | 🟢 完成 | `trait Copy {}` + `#[derive(Copy)]` 展开 `impl Copy for T` + `T: Copy` 约束（2026-09-04） |
 | **0.2.0-T** | `?` 经 `From`/`Into` 错误自动转换 | P1-6 | [SH-P1-6](tasks/leaf/sh-p1-6-question-from.md) | 🟠 中 | 🟢 完成 | `?`+`From` 转换 P6c（2026-08-29）已落地，`check_question` 在 `E1≠E2` 时插入 `From::<E1>::from` |
-| **0.2.0-U** | `mem::swap` / `mem::replace` 内建 | P2-8 | [SH-P2-8](tasks/leaf/sh-p2-8-mem-swap.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：IR 重写免借用冲突 |
+| **0.2.0-U** | `mem::swap` / `mem::replace` 内建 | P2-8 | [SH-P2-8](tasks/leaf/sh-p2-8-mem-swap.md) | 🟠 中 | 🔧 M1 完成、M2/M3 暂缓 | **复审补遗**：IR 重写免借用冲突 |
 | **0.2.0-V** | `const` / `static` 全局项 | P2-9 | [SH-P2-9](tasks/leaf/sh-p2-9-const-static.md) | 🟠 中 | ⏳ 规划 | **复审补遗**：运行时 FFI 全局状态 |
 | **0.2.0-W** | `panic!`/`assert!`/`unreachable!`/`todo!` 宏 | P2-10 | [SH-P2-10](tasks/leaf/sh-p2-10-assert-macros.md) | 🟡 低 | ✅ 完成（L1 运行时 panic：desugar 为内置 `panic` 调用，codegen 经 `dprintf` 输出到 stderr 后 `abort()`；L3 never 类型待办） | **复审补遗**：编译器内部断言 |
 | **0.2.0-X** | 结构体 `..` 更新 + 字段简写 | P2-11 | [SH-P2-11](tasks/leaf/sh-p2-11-struct-update.md) | 🟡 低 | ⏳ 规划 | **复审补遗**：AST 构造样板消减 |

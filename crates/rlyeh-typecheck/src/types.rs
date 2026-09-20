@@ -626,6 +626,38 @@ fn compute_repr_c_depth(
     })
 }
 
+/// 计算类型在内存中的字节大小（供 `mem::swap` 等字节级原语使用）。
+///
+/// 布局规则与 codegen 对齐：普通结构体 / 元组按「每字段（元素）8 字节槽」对齐
+/// （见 `llvm_field.rs` 的 `index * 8` 槽布局，无压缩无 padding）；repr(C)
+/// 结构体走紧凑 C 布局；标量 / 引用 / 裸指针按真实字节（`c_field_repr`）。
+pub(crate) fn type_byte_size(
+    ty: &Type,
+    ctx: &TypeContext,
+    span: Span,
+) -> Result<u32, TypeError> {
+    match ty {
+        Type::Unit => Ok(0),
+        Type::Tuple(elems) => Ok(elems.len() as u32 * 8),
+        Type::Array(elem, len) => Ok(type_byte_size(elem, ctx, span)? * (*len as u32)),
+        Type::Named(n, _) => {
+            if let Some(d) = ctx.lookup_struct(n) {
+                if d.repr_c {
+                    Ok(compute_repr_c(&d.fields, ctx, span)?.size)
+                } else {
+                    Ok(d.fields.len() as u32 * 8)
+                }
+            } else {
+                Ok(8)
+            }
+        }
+        // 引用 / 裸指针：存储为 i8* 槽（8 字节）
+        Type::Ref(..) | Type::RawPtr(..) => Ok(8),
+        // 标量：`c_field_repr` 给出真实字节（≤8）；其余不支持的聚合回退 8
+        other => Ok(c_field_repr(other, ctx, span, 0).unwrap_or((8, 8, None)).0 as u32),
+    }
+}
+
 /// 单字段的 C 表示：返回 `(size, align, scalar?)`；`scalar = Some((field_ty, conv))`
 /// 为标量字段，`None` 表示嵌套 repr(C) 结构体（size 为其整体大小）。
 fn c_field_repr(

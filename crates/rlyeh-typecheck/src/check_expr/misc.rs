@@ -11,6 +11,8 @@ pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         "print" | "println" | "eprint" | "eprintln" => Some((vec![Type::Infer], Type::Unit)),
         // panic!：接收一条 &str 消息（或空），返回单元；codegen 输出到 stderr 后 abort()。
         "panic" => Some((vec![Type::Infer], Type::Unit)),
+        // mem_swap：内部内建（mem::swap desugar 产物）；接收两指针与字节数，交换两槽内容。
+        "mem_swap" => Some((vec![Type::Infer, Type::Infer, Type::I64], Type::Unit)),
         "alloc_array" => Some((vec![Type::I64], dyn_arr())),
         "array_copy" => Some((vec![dyn_arr(), dyn_arr(), Type::I64], Type::Unit)),
         "array_free" => Some((vec![dyn_arr()], Type::Unit)),

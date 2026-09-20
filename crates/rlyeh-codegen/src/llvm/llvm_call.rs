@@ -293,6 +293,28 @@ impl LlvmEmitter {
             ));
             return Ok(());
         }
+        // 内存交换：mem_swap(a, b, n)——交换两指针指向的 n 字节（mem::swap 内建）。
+        // 经栈上临时缓冲做三次 memcpy（temp←a, a←b, b←temp），零分配无别名写冲突。
+        if callee == "mem_swap" {
+            let a =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::Ptr, body, f)?;
+            let b =
+                self.operand_value(&LirOperand::Local(args[1].clone()), LirType::Ptr, body, f)?;
+            let n =
+                self.operand_value(&LirOperand::Local(args[2].clone()), LirType::I64, body, f)?;
+            let tmp = self.reg();
+            body.push_str(&format!("  %{tmp} = alloca i8, i64 {n}\n"));
+            body.push_str(&format!(
+                "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %{tmp}, i8* {a}, i64 {n}, i1 false)\n"
+            ));
+            body.push_str(&format!(
+                "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* {a}, i8* {b}, i64 {n}, i1 false)\n"
+            ));
+            body.push_str(&format!(
+                "  call void @llvm.memcpy.p0i8.p0i8.i64(i8* {b}, i8* %{tmp}, i64 {n}, i1 false)\n"
+            ));
+            return Ok(());
+        }
         // 字节缓冲相等：`memcmp(a, b, n) == 0`（String 内容比较；
         // 长度相等性由调用方先比较，n 恒为同一长度）
         if callee == "bytes_eq" {

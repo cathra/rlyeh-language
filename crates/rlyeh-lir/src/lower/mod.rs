@@ -32,6 +32,7 @@ pub const BUILTIN_FUNCTIONS: &[&str] = &[
     "eprintln_string",
     "hash_value",
     "panic",
+    "mem_swap",
 ];
 
 /// 将优化后的 MIR 程序降低为 LIR 程序。
