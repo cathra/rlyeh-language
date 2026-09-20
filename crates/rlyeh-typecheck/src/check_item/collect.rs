@@ -363,6 +363,10 @@ pub(crate) fn collect_mod_types_inner(
     let new_prefix = full_name(prefix, &m.name);
     // 登记已声明模块路径（供 `resolve_import_path` 消歧，与 `collect_item_decls` 一致）
     ctx.modules.insert(new_prefix.clone());
+    // A：`pub module` 前缀登记到对外公共面（供 P2 可见性判定；本阶段仅记录、不强制）
+    if m.is_pub {
+        ctx.pub_module_prefixes.insert(new_prefix.clone());
+    }
     // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
     if m.memory.as_deref() == Some("gc") {
         ctx.gc_modules.insert(new_prefix.clone());

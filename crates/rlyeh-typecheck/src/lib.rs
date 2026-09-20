@@ -30,6 +30,7 @@ mod warning;
 
 pub use error::TypeError;
 pub use types::{FnSignature, Mutability, StructDef, Type};
+pub use context::VisibilityMode;
 pub use warning::{Warning, WarningKind};
 
 use rlyeh_hir::HirProgram;
@@ -48,7 +49,7 @@ pub use crate::check_item::{collect_fn_signatures, typecheck, typecheck_with_reg
 
 /// 便捷函数：解析源码并类型检查，返回 HIR。
 pub fn typecheck_source(source: &str) -> Result<HirProgram, TypeError> {
-    typecheck_source_with_region_hints(source, &Default::default(), 0)
+    typecheck_source_with_region_hints(source, &Default::default(), 0, VisibilityMode::Off)
 }
 
 /// 便捷函数：解析源码并类型检查，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
@@ -56,6 +57,7 @@ pub fn typecheck_source_with_region_hints(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
+    visibility: VisibilityMode,
 ) -> Result<HirProgram, TypeError> {
     let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
@@ -66,7 +68,8 @@ pub fn typecheck_source_with_region_hints(
         what: e.to_string(),
         span: e.span(),
     })?;
-    typecheck_source_with_warnings(source, region_hints, prelude_len).map(|(hir, _warnings)| hir)
+    typecheck_source_with_warnings(source, region_hints, prelude_len, visibility)
+        .map(|(hir, _warnings)| hir)
 }
 
 /// 便捷函数：解析源码并类型检查，返回 HIR 与收集到的建议性警告（非致命）。
@@ -76,6 +79,7 @@ pub fn typecheck_source_with_warnings(
     source: &str,
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
+    visibility: VisibilityMode,
 ) -> Result<(HirProgram, Vec<Warning>), TypeError> {
     let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
@@ -86,7 +90,7 @@ pub fn typecheck_source_with_warnings(
         what: e.to_string(),
         span: e.span(),
     })?;
-    let (hir, warnings) = typecheck_with_region_hints(&program, region_hints, prelude_len)?;
+    let (hir, warnings) = typecheck_with_region_hints(&program, region_hints, prelude_len, visibility)?;
     Ok((hir, warnings))
 }
 
@@ -96,7 +100,7 @@ mod tests {
     use super::*;
 
     fn warns(src: &str) -> Vec<Warning> {
-        let (_, warnings) = typecheck_source_with_warnings(src, &Default::default(), 0)
+        let (_, warnings) = typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off)
             .expect("类型检查应成功");
         warnings
     }
@@ -156,7 +160,7 @@ mod tests {
 
     /// B-2（P0'）：源码是否能通过类型检查（coerce 成功路径应返回 Ok）。
     fn ok(src: &str) -> bool {
-        typecheck_source_with_warnings(src, &Default::default(), 0).is_ok()
+        typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off).is_ok()
     }
 
     #[test]

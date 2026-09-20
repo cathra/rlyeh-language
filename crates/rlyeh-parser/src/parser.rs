@@ -199,7 +199,7 @@ impl<'src> Parser<'src> {
             Some(Token::Enum) => Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?))),
             Some(Token::Protocol) => Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?))),
             Some(Token::Impl) => Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?))),
-            Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone())?))),
+            Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone(), false)?))),
             Some(Token::Use) => Ok(AstItem::UseDecl(Box::new(self.parse_use(false)?))),
             Some(Token::Const) | Some(Token::Static) => {
                 Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
@@ -214,7 +214,7 @@ impl<'src> Parser<'src> {
                 match next {
                     Some(Token::Mod) => {
                         self.bump(); // 消费 pub
-                        Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone())?)))
+                        Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone(), true)?)))
                     }
                     Some(Token::Const) | Some(Token::Static) => {
                         self.bump(); // 消费 pub
@@ -224,15 +224,20 @@ impl<'src> Parser<'src> {
                         self.bump();
                         let mut s = self.parse_struct()?;
                         s.derive = derive;
+                        s.is_pub = true;
                         Ok(AstItem::StructDecl(Box::new(s)))
                     }
                     Some(Token::Enum) => {
                         self.bump();
-                        Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?)))
+                        let mut e = self.parse_enum()?;
+                        e.is_pub = true;
+                        Ok(AstItem::EnumDecl(Box::new(e)))
                     }
                     Some(Token::Protocol) => {
                         self.bump();
-                        Ok(AstItem::TraitDecl(Box::new(self.parse_trait()?)))
+                        let mut t = self.parse_trait()?;
+                        t.is_pub = true;
+                        Ok(AstItem::TraitDecl(Box::new(t)))
                     }
                     Some(Token::Impl) => {
                         self.bump();
@@ -244,7 +249,9 @@ impl<'src> Parser<'src> {
                     }
                     Some(Token::Actor) => {
                         self.bump();
-                        Ok(AstItem::ActorDecl(Box::new(self.parse_actor()?)))
+                        let mut a = self.parse_actor()?;
+                        a.is_pub = true;
+                        Ok(AstItem::ActorDecl(Box::new(a)))
                     }
                     _ => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
                 }

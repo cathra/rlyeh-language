@@ -151,6 +151,7 @@ pub(crate) fn infer_expr_inner(
             // 3. 函数引用（函数一等值）：`let f = my_func;`。
             // 裸名经模块前缀 / use 别名解析为完整符号名。
             let resolved = resolve_callable(ctx, name);
+            ctx.check_visibility(&resolved, span)?;
             if !ctx.fn_templates.contains_key(&resolved) {
                 if let Some(sig) = ctx.fn_signatures.get(&resolved).cloned() {
                     return Ok((
@@ -172,6 +173,7 @@ pub(crate) fn infer_expr_inner(
         ExprKind::Path(segments) => {
             let path = segments.join("::");
             let resolved = resolve_callable(ctx, &path);
+            ctx.check_visibility(&resolved, span)?;
             // 无参枚举变体构造：`Option::None` / `shape::Kind::None`
             if !ctx.fn_signatures.contains_key(&resolved) {
                 if let Some((en, vr)) = split_variant_path(ctx, &resolved) {

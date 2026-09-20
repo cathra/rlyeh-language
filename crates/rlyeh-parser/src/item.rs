@@ -350,6 +350,7 @@ impl<'src> Parser<'src> {
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstStructDecl {
             name,
+            is_pub: false,
             region_param,
             generics,
             conformances,
@@ -469,6 +470,7 @@ impl<'src> Parser<'src> {
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstEnumDecl {
             name,
+            is_pub: false,
             region_param,
             generics,
             conformances,
@@ -523,6 +525,7 @@ impl<'src> Parser<'src> {
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstTraitDecl {
             name,
+            is_pub: false,
             region_param,
             generics,
             supertraits,
@@ -617,7 +620,7 @@ impl<'src> Parser<'src> {
     }
 
     /// 模块声明：`mod name { ... }` 或 `mod name;`
-    pub(crate) fn parse_mod(&mut self, memory: Option<String>) -> Result<AstModDecl, ParseError> {
+    pub(crate) fn parse_mod(&mut self, memory: Option<String>, is_pub: bool) -> Result<AstModDecl, ParseError> {
         let start = self.expect(&Token::Mod, "'mod'")?.span;
         let name = self.expect_ident()?;
         let (items, external) = if self.check(&Token::LBrace) {
@@ -640,6 +643,7 @@ impl<'src> Parser<'src> {
             name,
             items,
             external,
+            is_pub,
             memory,
             span: self.merge_span(start, end),
         })

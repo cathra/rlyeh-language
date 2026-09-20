@@ -27,6 +27,8 @@ pub(super) fn check_struct_construct(
     if type_name.len() >= 2 {
         let variant = type_name[type_name.len() - 1].clone();
         let enum_name = type_name[..type_name.len() - 1].join("::");
+        // P2 可见性：跨模块且私有的枚举变体结构式构造，`--visibility=error` 报 PrivateItem。
+        ctx.check_visibility(&enum_name, span)?;
         if let Some(enum_def) = ctx.lookup_enum(&enum_name).cloned() {
             if let Some(variant_def) = enum_def
                 .variants
@@ -60,6 +62,8 @@ pub(super) fn check_struct_construct(
             }
         }
     }
+    // P2 可见性：跨模块且私有的结构体字面量构造，`--visibility=error` 报 PrivateItem。
+    ctx.check_visibility(&struct_name, span)?;
     let def = ctx.lookup_struct(&struct_name).cloned().ok_or_else(|| {
         TypeError::UndefinedType {
             name: struct_name.clone(),

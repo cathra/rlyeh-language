@@ -508,6 +508,8 @@ pub(super) fn check_call(
                 ctx.resolve_full_name(actor_part)
                     .unwrap_or_else(|| actor_part.to_string())
             }) {
+                // P2 可见性：跨模块且私有的 actor 类型，`--visibility=error` 报 PrivateItem。
+                ctx.check_visibility(&actor_full, span)?;
                 let supervised = seg == "new_supervised";
                 // 受监督构造必须提供策略参数（i64）：0=OneForOne 1=AllForOne 2=RestartForOne
                 let strategy_hir = if supervised {
@@ -578,6 +580,8 @@ pub(super) fn check_call(
 
     // 普通函数调用：先经 use 别名 / 模块路径解析到完整符号名，再查签名
     let resolved = resolve_callable(ctx, &name);
+    // P2 可见性：跨模块调用的函数若私有，`--visibility=error` 报 PrivateItem。
+    ctx.check_visibility(&resolved, span)?;
 
     // 枚举变体构造：`Option::Some(x)`、`shape::Kind::Pair(x, y)` 或裸 `Some(x)`
     // （普通函数同名时优先函数路径）

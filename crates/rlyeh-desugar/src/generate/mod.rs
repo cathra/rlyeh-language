@@ -157,6 +157,7 @@ pub fn gen_struct(
         .collect();
     let item = AstItem::StructDecl(Box::new(AstStructDecl {
         name: fut_ty_name(&a.decl.name),
+        is_pub: false,
         // W6：透传泛型参数到 Future 结构体（`struct __Fut_foo<T>`）。
         generics: a.decl.generics.clone(),
         fields,

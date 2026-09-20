@@ -32,7 +32,7 @@ use crate::types::{
 ///
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
 pub fn typecheck(program: &AstProgram) -> Result<(HirProgram, Vec<Warning>), TypeError> {
-    typecheck_with_region_hints(program, &Default::default(), 0)
+    typecheck_with_region_hints(program, &Default::default(), 0, crate::VisibilityMode::Off)
 }
 
 /// 类型检查完整程序，并注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
@@ -42,10 +42,12 @@ pub fn typecheck_with_region_hints(
     program: &AstProgram,
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
+    visibility: crate::VisibilityMode,
 ) -> Result<(HirProgram, Vec<Warning>), TypeError> {
     let mut ctx = TypeContext::new();
     ctx.region_hints = region_hints.clone();
     ctx.prelude_len = prelude_len;
+    ctx.visibility = visibility;
     collect_declarations(&mut ctx, program)?;
     // PC-4：父协议一致性校验（`protocol A: B` → 实现 A 的类型必须同时实现 B）。
     crate::check_expr::validate_supertraits(&ctx)?;
@@ -56,6 +58,8 @@ pub fn typecheck_with_region_hints(
     for item in &program.items {
         check_item(&mut ctx, item, "", &mut items)?;
     }
+    // B：全部收集完成后延迟校验 import 目标符号 / 模块是否存在（规避模块收集时序误报）。
+    verify_imports(&mut ctx)?;
     // 泛型实例化产生的函数项追加到末尾
     items.append(&mut ctx.mono_items);
     Ok((HirProgram { items }, ctx.warnings.clone()))
@@ -88,6 +92,9 @@ fn collect_item_decls(
         AstItem::StructDecl(s) => {
             collect_struct(ctx, s, prefix)?;
             expand_derives_for_struct(ctx, s, prefix)?;
+            if s.is_pub {
+                ctx.pub_symbols.insert(full_name(prefix, &s.name));
+            }
         }
         AstItem::FnDecl(f) => {
             if !f.generics.is_empty() {
@@ -136,17 +143,44 @@ fn collect_item_decls(
                         ctx.extern_fns.insert(full);
                     }
                 }
+                if f.is_pub {
+                    ctx.pub_symbols.insert(full_name(prefix, &f.name));
+                }
             }
         }
-        AstItem::EnumDecl(e) => collect_enum(ctx, e, prefix)?,
-        AstItem::TraitDecl(t) => collect_trait(ctx, t, prefix)?,
+        AstItem::EnumDecl(e) => {
+            collect_enum(ctx, e, prefix)?;
+            if e.is_pub {
+                // 枚举为 `pub` 时，枚举名及其全部变体（Rust 语义：变体继承枚举可见性）
+                // 均对外可达，登记枚举全名与每个变体的 `Enum::Variant` 全名。
+                let base = full_name(prefix, &e.name);
+                ctx.pub_symbols.insert(base.clone());
+                for v in &e.variants {
+                    ctx.pub_symbols.insert(format!("{base}::{}", v.name));
+                }
+            }
+        }
+        AstItem::TraitDecl(t) => {
+            collect_trait(ctx, t, prefix)?;
+            if t.is_pub {
+                ctx.pub_symbols.insert(full_name(prefix, &t.name));
+            }
+        }
         AstItem::ImplBlock(imp) => collect_impl(ctx, imp, prefix)?,
-        AstItem::ActorDecl(a) => collect_actor(ctx, a, prefix)?,
+        AstItem::ActorDecl(a) => {
+            collect_actor(ctx, a, prefix)?;
+            if a.is_pub {
+                ctx.pub_symbols.insert(full_name(prefix, &a.name));
+            }
+        }
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
             // 登记已声明模块路径（供 `resolve_import_path` 区分相对子模块导入与
             // 跨模块绝对路径导入；在声明即登记，不依赖符号收集时机）。
             ctx.modules.insert(new_prefix.clone());
+            if m.is_pub {
+                ctx.pub_module_prefixes.insert(new_prefix.clone());
+            }
             // B-6：登记 `#[memory(gc)]` 模块前缀，供引用→Gc 默认映射判定
             if m.memory.as_deref() == Some("gc") {
                 ctx.gc_modules.insert(new_prefix.clone());
@@ -211,11 +245,25 @@ fn register_use(
     // 与 extern 声明注册名保持一致（`use r#rename` → 目标 "rename"）。
     let norm = |s: &str| s.strip_prefix("r#").unwrap_or(s).to_string();
     // 登记一条 `local → full`；`pub` 时额外登记 `prefix::local → full` 重导出。
-    let register_one = |ctx: &mut TypeContext, local: String, full: String, prefix: &str, is_pub: bool| {
+    let register_one = |ctx: &mut TypeContext, local: String, full: String, prefix: &str, is_pub: bool| -> Result<(), TypeError> {
+        // 冲突：本地名已被「非 pub」显式 import 绑定到不同目标。`pub import` 重导出链
+        // 不计冲突（标准库大量 `pub import` 重导出同名符号，沿用旧版 last-wins 行为）。
+        if let Some(prev) = ctx.use_aliases.get(&local) {
+            let prev_pub = ctx.explicit_import_sources.get(&local).copied().unwrap_or(true);
+            if *prev != full && !prev_pub && !is_pub {
+                return Err(TypeError::NameConflict {
+                    name: local.clone(),
+                    span: u.span,
+                });
+            }
+        }
         ctx.insert_use_alias(local.clone(), full.clone());
         if is_pub {
-            ctx.insert_use_alias(full_name(prefix, &local), full);
+            ctx.insert_use_alias(full_name(prefix, &local), full.clone());
         }
+        ctx.record_explicit_import(local.clone(), is_pub);
+        ctx.import_alias_spans.push((local, full, u.span));
+        Ok(())
     };
     if let Some(members) = &u.group {
         let base = u
@@ -225,7 +273,7 @@ fn register_use(
             .collect::<Vec<String>>()
             .join("::");
         let base = resolve_import_path(ctx, prefix, &base);
-        register_use_group(ctx, members, &base, prefix, u.is_pub);
+        register_use_group(ctx, members, &base, prefix, u.is_pub, u.span)?;
         return Ok(());
     }
     if u.path.last().map(String::as_str) == Some("*") {
@@ -279,7 +327,15 @@ fn register_use(
         }
         for m in members {
             let full = format!("{base}::{m}");
-            register_one(ctx, m.clone(), full, prefix, u.is_pub);
+            // 记录 glob 来源（≥2 即歧义）；插入仅首次生效（显式 / 先到者优先，不遮蔽）。
+            ctx.glob_exports.entry(m.clone()).or_default().push(base.clone());
+            if !ctx.use_aliases.contains_key(&m) {
+                ctx.insert_use_alias(m.clone(), full.clone());
+                if u.is_pub {
+                    ctx.insert_use_alias(full_name(prefix, &m), full.clone());
+                }
+            }
+            ctx.import_alias_spans.push((m.clone(), full.clone(), u.span));
         }
         return Ok(());
     }
@@ -294,7 +350,7 @@ fn register_use(
         None => u.path.last().map(|s| norm(s)).unwrap_or_default(),
     };
     let full = resolve_import_path(ctx, prefix, &path);
-    register_one(ctx, local, full, prefix, u.is_pub);
+    register_one(ctx, local, full, prefix, u.is_pub)?;
     Ok(())
 }
 
@@ -335,26 +391,77 @@ fn register_use_group(
     base: &str,
     prefix: &str,
     is_pub: bool,
-) {
+    span: Span,
+) -> Result<(), TypeError> {
     let norm = |s: &str| s.strip_prefix("r#").unwrap_or(s).to_string();
     for mem in members {
         let m = norm(&mem.name);
         if let Some(nested) = &mem.nested {
             // `name::{ ... }`：name 作为新前缀递归，仅叶子名入作用域
             let child_base = format!("{base}::{m}");
-            register_use_group(ctx, nested, &child_base, prefix, is_pub);
+            register_use_group(ctx, nested, &child_base, prefix, is_pub, span)?;
         } else {
             let full = format!("{base}::{m}");
             let local = match &mem.alias {
                 Some(a) => norm(a),
                 None => m.clone(),
             };
+            // 冲突：本地名已被「非 pub」显式 import 绑定到不同目标（同 register_one 语义）。
+            if let Some(prev) = ctx.use_aliases.get(&local) {
+                let prev_pub = ctx.explicit_import_sources.get(&local).copied().unwrap_or(true);
+                if *prev != full && !prev_pub && !is_pub {
+                    return Err(TypeError::NameConflict {
+                        name: local.clone(),
+                        span,
+                    });
+                }
+            }
             ctx.insert_use_alias(local.clone(), full.clone());
             if is_pub {
-                ctx.insert_use_alias(full_name(prefix, &local), full);
+                ctx.insert_use_alias(full_name(prefix, &local), full.clone());
             }
+            ctx.record_explicit_import(local.clone(), is_pub);
+            ctx.import_alias_spans.push((local, full, span));
         }
     }
+    Ok(())
+}
+
+/// B：全部收集完成后延迟校验 import 目标是否存在。
+///
+/// 收集阶段只登记别名、不校验（模块 / 符号登记顺序不确定，提前校验会误伤标准库等
+/// 「import 早于所引用模块登记」的合法用例）。此处所有符号表与模块前缀均已就绪，
+/// 逐条检查 `import_alias_spans`；目标符号 / 模块均不存在则报 `NameNotFound`（带候选）。
+fn verify_imports(ctx: &mut TypeContext) -> Result<(), TypeError> {
+    for (_local, full, span) in &ctx.import_alias_spans {
+        if import_target_known(ctx, full) {
+            continue;
+        }
+        return Err(TypeError::NameNotFound {
+            name: full.clone(),
+            candidates: ctx.name_candidates(full),
+            span: *span,
+        });
+    }
+    Ok(())
+}
+
+/// import 目标 `full` 是否存在：命中任一符号表，或首段 / 全路径为已知模块前缀。
+fn import_target_known(ctx: &TypeContext, full: &str) -> bool {
+    if ctx.structs.contains_key(full)
+        || ctx.fn_signatures.contains_key(full)
+        || ctx.fn_templates.contains_key(full)
+        || ctx.enum_defs.contains_key(full)
+        || ctx.constants.contains_key(full)
+        || ctx.actors.contains_key(full)
+        || ctx.trait_defs.contains_key(full)
+        || ctx.modules.contains(full)
+    {
+        return true;
+    }
+    // 目标落在某已知模块内（首段为该模块前缀）；成员是否真实存在留给使用处校验。
+    let first = full.split("::").next().unwrap_or(full);
+    ctx.modules.contains(first)
 }
 
 /// 第二遍：检查函数体 / const，生成 HIR 项（递归处理嵌套模块）。

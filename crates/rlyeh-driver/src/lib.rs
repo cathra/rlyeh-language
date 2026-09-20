@@ -94,7 +94,31 @@ pub fn run_source(source: &str) -> Result<String, DriverError> {
 pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;
     let (combined, prelude_len, prelude_lines) = source_with_std(source, false)?;
-    full_pipeline_with_hints(&combined, &Default::default(), prelude_len, prelude_lines)
+    full_pipeline_with_hints(
+        &combined,
+        &Default::default(),
+        prelude_len,
+        prelude_lines,
+        rlyeh_typecheck::VisibilityMode::Off,
+    )
+}
+
+/// 带可见性 / 标准库开关的编译入口（供测试 harness 注入 `--visibility` / `--no-std` 等
+/// 用例级选项，见 `test_runner.rs` 的 `// flag:` 注释解析）。
+pub fn compile_file_to_llvm_with_opts(
+    entry: &Path,
+    visibility: rlyeh_typecheck::VisibilityMode,
+    no_std: bool,
+) -> Result<String, DriverError> {
+    let source = module::load_combined_source(entry)?;
+    let (combined, prelude_len, prelude_lines) = source_with_std(source, no_std)?;
+    full_pipeline_with_hints(
+        &combined,
+        &Default::default(),
+        prelude_len,
+        prelude_lines,
+        visibility,
+    )
 }
 
 /// 解析入口文件（含外部模块与标准库预置）为 AST 文本（`{:#?}` 格式化）。
@@ -118,6 +142,7 @@ pub fn emit_hir(entry: &Path) -> Result<String, DriverError> {
         &combined,
         &std::collections::HashMap::new(),
         prelude_len,
+        rlyeh_typecheck::VisibilityMode::Off,
     )
     .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
     Ok(format!("{:#?}", hir))
@@ -145,6 +170,7 @@ pub fn emit_hir_user(entry: &Path) -> Result<String, DriverError> {
         &combined,
         &std::collections::HashMap::new(),
         prelude_len,
+        rlyeh_typecheck::VisibilityMode::Off,
     )
     .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
     let items: Vec<HirItem> = hir
@@ -297,6 +323,10 @@ pub struct IncrementalDriver {
     /// 标准库预置（prelude）行数：用户源码前的偏移行数，用于 L1 诊断行号还原
     ///（`Span.line` 为合并源码行号，减去本值得到用户文件行号，SH-P2-6）。
     prelude_lines: usize,
+    /// 可见性检查模式（P2）：`--visibility` 控制，默认 `Off`（兼容存量代码 / 标准库）。
+    visibility: rlyeh_typecheck::VisibilityMode,
+    /// 第三方依赖根（`--dep-root pkg=dir`，可多段）：dagon 包集成（P4）注入为扁平名字空间。
+    dep_roots: Vec<(String, PathBuf)>,
 }
 
 impl IncrementalDriver {
@@ -311,6 +341,8 @@ impl IncrementalDriver {
             region_hints: std::collections::HashMap::new(),
             prelude_len: 0,
             prelude_lines: 0,
+            visibility: rlyeh_typecheck::VisibilityMode::Off,
+            dep_roots: Vec::new(),
         }
     }
 
@@ -336,6 +368,18 @@ impl IncrementalDriver {
     /// 指定 LLVM 目标 triple（交叉编译；`None` 为主机目标）。
     pub fn with_target(mut self, target: Option<String>) -> Self {
         self.target = target;
+        self
+    }
+
+    /// 设定可见性检查模式（P2，默认 `Off`）。
+    pub fn with_visibility(mut self, visibility: rlyeh_typecheck::VisibilityMode) -> Self {
+        self.visibility = visibility;
+        self
+    }
+
+    /// 注入第三方依赖根（dagon 包集成 P4）：`--dep-root pkg=dir` 可多段。
+    pub fn with_dep_roots(mut self, dep_roots: Vec<(String, PathBuf)>) -> Self {
+        self.dep_roots = dep_roots;
         self
     }
 
@@ -373,7 +417,13 @@ impl IncrementalDriver {
 
         // 2. 全量编译 + 写入缓存
         self.stats.misses += 1;
-        let llvm = full_pipeline_with_hints(source, &self.region_hints, self.prelude_len, self.prelude_lines)?;
+        let llvm = full_pipeline_with_hints(
+            source,
+            &self.region_hints,
+            self.prelude_len,
+            self.prelude_lines,
+            self.visibility,
+        )?;
         let interface = extract_interface(source)?;
         let interface_hash = compute_interface_hash(&interface);
         cache.store_llvm(file, &source_hash, &interface_hash, &llvm)?;
@@ -417,8 +467,11 @@ impl IncrementalDriver {
     /// 缓存键为入口文件路径；组合源码哈希覆盖全部模块文件与标准库预置，
     /// 任一模块/标准库变更都会触发重新编译。
     pub fn compile_file_to_llvm(&mut self, entry: &Path) -> Result<BuildOutcome, DriverError> {
+        // 解析入口文件（含外部模块）为组合源码，D：注入 `--dep-root` 依赖
+        let mut source = module::load_combined_source(entry)?;
+        source = module::inject_dep_roots(&source, &self.dep_roots)?;
         let (combined, prelude_len, prelude_lines) =
-            source_with_std(module::load_combined_source(entry)?, self.no_std)?;
+            source_with_std(source, self.no_std)?;
         self.prelude_len = prelude_len;
         self.prelude_lines = prelude_lines;
         let key = entry.to_string_lossy().to_string();
@@ -471,7 +524,13 @@ fn source_with_std(source: String, no_std: bool) -> Result<(String, usize, usize
 
 /// 完整流水线：typecheck → borrowck → regionck → MIR(+优化) → LIR → LLVM IR。
 fn full_pipeline(source: &str) -> Result<String, DriverError> {
-    full_pipeline_with_hints(source, &std::collections::HashMap::new(), 0, 0)
+    full_pipeline_with_hints(
+        source,
+        &std::collections::HashMap::new(),
+        0,
+        0,
+        rlyeh_typecheck::VisibilityMode::Off,
+    )
 }
 
 /// 完整流水线，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
@@ -480,10 +539,16 @@ fn full_pipeline_with_hints(
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
     prelude_lines: usize,
+    visibility: rlyeh_typecheck::VisibilityMode,
 ) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR），并收集建议性警告
-    let (hir, warnings) = rlyeh_typecheck::typecheck_source_with_warnings(source, region_hints, prelude_len)
-        .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
+    let (hir, warnings) = rlyeh_typecheck::typecheck_source_with_warnings(
+        source,
+        region_hints,
+        prelude_len,
+        visibility,
+    )
+    .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
 
     // 打印建议性警告（借用简化 RFC B-1：冗余 `*` 等），不阻断编译
     for w in &warnings {

@@ -95,6 +95,24 @@ fn test_memory_gc_module_attr() {
 }
 
 #[test]
+fn test_pub_module_decl() {
+    // SH-IMPORT-A：`pub module` 解析并写入 `AstModDecl.is_pub = true`；
+    // 普通 `module` 为 `false`。
+    let pub_mod = parse_ok("pub module m { fn inner() -> i64 { 1 } }");
+    let AstItem::ModDecl(m) = &pub_mod.items[0] else {
+        panic!("expected mod decl");
+    };
+    assert!(m.is_pub);
+    assert_eq!(m.name, "m");
+
+    let plain = parse_ok("module n { fn inner() -> i64 { 1 } }");
+    let AstItem::ModDecl(m2) = &plain.items[0] else {
+        panic!("expected mod decl");
+    };
+    assert!(!m2.is_pub);
+}
+
+#[test]
 fn test_region_param_suffix() {
     // B-4：`struct/enum/trait Foo 'a { ... }` region 参数化后缀语法应被解析并写入 `region_param`。
     let program = parse_ok(

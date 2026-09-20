@@ -115,3 +115,37 @@ fn load_submodule(
         )))
     }
 }
+
+/// 将 `--dep-root pkg=/path` 指定的第三方依赖注入为主程序的扁平名字空间。
+///
+/// 对每个依赖：定位入口（`src/lib.rl`，回退 `lib.rl` / `module.rl`），按依赖自身目录
+/// 递归展开其内部 `module` 声明（沿用 `load_combined_source_in`），再以 `pub module pkg`
+/// 包裹后前置到主程序源码之前。于是 `import pkg::item;` 即可访问，依赖经 `pub`（工作流 C
+/// 契约）暴露其公共面。
+pub(crate) fn inject_dep_roots(
+    source: &str,
+    dep_roots: &[(String, PathBuf)],
+) -> Result<String, DriverError> {
+    let mut out = String::with_capacity(source.len() + dep_roots.len() * 256);
+    for (pkg, dir) in dep_roots {
+        let lib = resolve_dep_lib(dir)?;
+        let dep_source = load_combined_source_in(&lib, dir)?;
+        out.push_str(&format!("pub module {pkg} {{\n{dep_source}\n}}\n"));
+    }
+    out.push_str(source);
+    Ok(out)
+}
+
+/// 定位依赖根入口：优先 `<dir>/src/lib.rl`，回退 `<dir>/lib.rl` 与 `<dir>/module.rl`。
+fn resolve_dep_lib(dir: &Path) -> Result<PathBuf, DriverError> {
+    for cand in ["src/lib.rl", "lib.rl", "module.rl"] {
+        let p = dir.join(cand);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    Err(DriverError::Module(format!(
+        "依赖根 `{}` 未找到入口（尝试过 src/lib.rl / lib.rl / module.rl）",
+        dir.display()
+    )))
+}

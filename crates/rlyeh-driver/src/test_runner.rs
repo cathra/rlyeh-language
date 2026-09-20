@@ -19,7 +19,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 
-use crate::{compile_file_to_llvm, run_source_file};
+use rlyeh_typecheck::VisibilityMode;
+
+use crate::{compile_file_to_llvm_with_opts, run_source_file};
 
 /// 并行执行用例时启用的最大 worker 线程数。
 ///
@@ -246,7 +248,8 @@ fn run_one(task: &PendingTask) -> TestCaseResult {
 
 /// compile-pass：编译到 LLVM IR 必须成功（不链接、不运行）。
 fn run_compile_pass(file: &Path, name: &str) -> TestCaseResult {
-    match compile_file_to_llvm(file) {
+    let flags = parse_test_flags(file);
+    match compile_file_to_llvm_with_opts(file, flags.visibility, flags.no_std) {
         Ok(_) => TestCaseResult {
             kind: TestKind::CompilePass,
             name: name.to_string(),
@@ -264,8 +267,9 @@ fn run_compile_pass(file: &Path, name: &str) -> TestCaseResult {
 
 /// compile-fail：编译必须失败；`// expect: <片段>` 注释断言错误消息包含片段。
 fn run_compile_fail(file: &Path, name: &str) -> TestCaseResult {
+    let flags = parse_test_flags(file);
     let expects = expected_error_fragments(file);
-    match compile_file_to_llvm(file) {
+    match compile_file_to_llvm_with_opts(file, flags.visibility, flags.no_std) {
         Ok(_) => TestCaseResult {
             kind: TestKind::CompileFail,
             name: name.to_string(),
@@ -331,6 +335,45 @@ fn run_run_pass(file: &Path, name: &str) -> TestCaseResult {
             detail: format!("编译/运行失败: {e}"),
         },
     }
+}
+
+/// 用例级编译选项（由源文件头 `// flag: <token...>` 注释解析）。
+///
+/// 仅解析与可见性相关的开关（覆盖工作流 C 的 `--visibility` 与 `--no-std`），
+/// 其余 CLI 选项沿用默认值。多段 `// flag:` 注释会累加生效。
+#[derive(Default, Clone, Copy)]
+struct TestFlags {
+    visibility: VisibilityMode,
+    no_std: bool,
+}
+
+/// 解析源文件头（前 20 行）的 `// flag: <token...>` 注释，提取用例级编译选项。
+///
+/// 支持：
+/// - `--visibility=error|warn|off`：控制可见性检查严格度；
+/// - `--no-std`：不注入标准库预置（避免 std 内部私有访问干扰可见性用例）。
+fn parse_test_flags(file: &Path) -> TestFlags {
+    let mut flags = TestFlags::default();
+    let Ok(source) = std::fs::read_to_string(file) else {
+        return flags;
+    };
+    for line in source.lines().take(20) {
+        let Some(rest) = line.trim_start().strip_prefix("// flag:") else {
+            continue;
+        };
+        for tok in rest.split_whitespace() {
+            if let Some(v) = tok.strip_prefix("--visibility=") {
+                flags.visibility = match v {
+                    "error" => VisibilityMode::Error,
+                    "warn" => VisibilityMode::Warn,
+                    _ => VisibilityMode::Off,
+                };
+            } else if tok == "--no-std" {
+                flags.no_std = true;
+            }
+        }
+    }
+    flags
 }
 
 /// 提取源文件中所有 `// expect: <片段>` 注释（支持多行，逐行独立断言）。

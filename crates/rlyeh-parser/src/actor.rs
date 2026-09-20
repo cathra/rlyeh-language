@@ -60,6 +60,7 @@ impl<'src> Parser<'src> {
         let end = self.expect(&Token::RBrace, "'}'")?.span;
         Ok(AstActorDecl {
             name,
+            is_pub: false,
             fields,
             methods,
             span: self.merge_span(start, end),

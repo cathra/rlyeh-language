@@ -9,6 +9,35 @@ use rlyeh_ast::{AstActorDecl, AstExpr, AstFnDecl};
 
 use crate::error::TypeError;
 use crate::types::{EnumDef, FnSignature, ImplDef, StructDef, TraitDef, Type};
+
+/// 可见性检查模式（P2 灰度开关，由 `--visibility` 控制）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisibilityMode {
+    /// 关闭（默认）：跨模块私有符号可自由访问，兼容存量代码 / 标准库。
+    Off,
+    /// 告警：发现私有符号跨模块访问时仅警告，不报错（std 迁移期收集缺口用）。
+    Warn,
+    /// 严格：私有符号跨模块访问报错 `PrivateItem`。
+    Error,
+}
+
+impl Default for VisibilityMode {
+    fn default() -> Self {
+        VisibilityMode::Off
+    }
+}
+
+impl VisibilityMode {
+    /// 从 CLI 字符串解析（`off`/`warn`/`error`）。
+    pub fn parse(s: &str) -> Option<VisibilityMode> {
+        match s {
+            "off" | "Off" | "0" => Some(VisibilityMode::Off),
+            "warn" | "Warn" | "1" => Some(VisibilityMode::Warn),
+            "error" | "Error" | "2" => Some(VisibilityMode::Error),
+            _ => None,
+        }
+    }
+}
 use crate::Warning;
 
 /// 延迟闭包值绑定记录（H5 补全：非注解闭包 `let f = |x| body;`）。
@@ -116,6 +145,24 @@ pub struct TypeContext {
     /// 区分相对子模块导入与跨模块绝对路径导入（见 `register_use`）。在 `module X;`
     /// 声明即登记，不依赖符号是否已被收集，从而解耦注册时机。
     pub modules: std::collections::HashSet<String>,
+    /// 对外公共模块面（`pub module` 声明的模块前缀集合），供可见性检查（P2）判定
+    /// 模块本身是否可被外部导入者经 `import parent::name::item` 访问。增量放开语义下
+    /// A 阶段仅记录、不强制；C 阶段 `--visibility=error` 时据此收紧。
+    pub pub_module_prefixes: std::collections::HashSet<String>,
+    /// glob 导入来源记录（`name` → 导入它的模块前缀列表）；同名来自 ≥2 个模块即歧义。
+    pub glob_exports: std::collections::HashMap<String, Vec<String>>,
+    /// 显式 import 的本地别名 → 是否为 `pub` 导入（`pub import` 重导出链不计入冲突，
+    /// 仅非 `pub` 的同名冲突才报 `NameConflict`，避免误伤标准库的重导出链）。用于 glob
+    /// 歧义判定时排除显式命名（显式优先，不视为歧义）。
+    pub explicit_import_sources: std::collections::HashMap<String, bool>,
+    /// import 别名记录（`local` → `full` 目标 + 源位置），供收集全部完成后的延迟校验
+    /// （`verify_imports`）判定目标符号 / 模块是否存在，避免模块收集时序导致的误报。
+    pub import_alias_spans: Vec<(String, String, Span)>,
+    /// 可见性检查模式（P2），默认 `Off`（兼容存量代码 / 标准库）。
+    pub visibility: VisibilityMode,
+    /// 对外公共符号面（`pub fn`/`struct`/`enum`/`const`/`static`/`actor`/`trait`/`import` 的
+    /// 全名）；跨模块访问私有符号（`--visibility=error`）时据此外部可达性判定。
+    pub pub_symbols: std::collections::HashSet<String>,
     /// 当前作用域的泛型参数名（如 `["T"]`）
     pub type_params: Vec<String>,
     /// 当前泛型替换表（泛型参数名 → 具体类型，实例化 body 检查时有效）
@@ -170,6 +217,31 @@ pub struct TypeContext {
     pub extern_fns: std::collections::HashSet<String>,
     /// 类型检查期间收集的建议性警告（非致命；见 [`crate::Warning`]）。
     pub warnings: Vec<Warning>,
+}
+
+/// 编辑距离（Levenshtein，截断到 0..=2 以适配候选建议）。
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let n = a.len();
+    let m = b.len();
+    if n == 0 {
+        return m;
+    }
+    if m == 0 {
+        return n;
+    }
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut cur = vec![0usize; m + 1];
+    for i in 1..=n {
+        cur[0] = i;
+        for j in 1..=m {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[m]
 }
 
 impl TypeContext {
@@ -383,6 +455,71 @@ impl TypeContext {
         self.use_aliases.insert(local, full);
     }
 
+    /// 记录一个显式 import 的本地别名及其 `pub` 属性（用于 glob 歧义 / 冲突判定）。
+    pub fn record_explicit_import(&mut self, local: String, is_pub: bool) {
+        self.explicit_import_sources.insert(local, is_pub);
+    }
+
+    /// 返回 `name` 因两个 glob 导入同名而歧义的源模块列表；无歧义或已被显式
+    /// import 消除时返回 `None`（显式优先于 glob）。
+    pub fn glob_ambiguity_sources(&self, name: &str) -> Option<Vec<String>> {
+        if self.explicit_import_sources.contains_key(name) {
+            return None;
+        }
+        let srcs = self.glob_exports.get(name)?;
+        if srcs.len() >= 2 {
+            Some(srcs.clone())
+        } else {
+            None
+        }
+    }
+
+    /// 为未找到的名称生成拼写相近候选（编辑距离 ≤ 2 的已知符号 / 模块名，取前 3）。
+    pub fn name_candidates(&self, name: &str) -> Vec<String> {
+        let mut all: Vec<String> = Vec::new();
+        all.extend(self.structs.keys().cloned());
+        all.extend(self.fn_signatures.keys().cloned());
+        all.extend(self.fn_templates.keys().cloned());
+        all.extend(self.enum_defs.keys().cloned());
+        all.extend(self.constants.keys().cloned());
+        all.extend(self.actors.keys().cloned());
+        all.extend(self.modules.iter().cloned());
+        all.extend(self.trait_defs.keys().cloned());
+        let mut cand: Vec<(usize, String)> = all
+            .into_iter()
+            .filter(|s| s != name)
+            .map(|s| (edit_distance(name, &s), s))
+            .filter(|(d, _)| *d <= 2)
+            .collect();
+        cand.sort_by_key(|(d, _)| *d);
+        cand.into_iter().map(|(_, s)| s).take(3).collect()
+    }
+
+    /// 可见性检查（P2）：跨模块访问私有符号时按 `--visibility` 模式报错。
+    /// `def_full` 为解析后的完整符号名（如 `m::secret`）；本地 / 同模块符号直接放行。
+    /// `Off` 模式为 no-op（兼容存量代码与标准库）。
+    pub fn check_visibility(&self, def_full: &str, span: Span) -> Result<(), TypeError> {
+        use crate::VisibilityMode::*;
+        if matches!(self.visibility, Off) {
+            return Ok(());
+        }
+        // 本地 / 同作用域符号（无 `::`）不参与跨模块可见性检查。
+        let Some(pos) = def_full.rfind("::") else {
+            return Ok(());
+        };
+        let def_module = &def_full[..pos];
+        let caller = &self.module_prefix;
+        let same_or_descendant =
+            caller == def_module || caller.starts_with(&format!("{def_module}::"));
+        if same_or_descendant || self.pub_symbols.contains(def_full) {
+            return Ok(());
+        }
+        Err(TypeError::PrivateItem {
+            name: def_full.to_string(),
+            span,
+        })
+    }
+
     /// 记录一个模块常量（完整符号名 → (HIR 值, 类型)）。
     pub fn insert_constant(&mut self, name: String, value: HirExpr, type_: Type) {
         self.constants.insert(name, (value, type_));
@@ -503,6 +640,17 @@ impl TypeContext {
         if let Some(alias) = self.type_aliases.get(name) {
             return Ok(alias.clone());
         }
+        // glob 同名歧义：两个 `import a::*` 均导出 `name` 时，作为类型使用处直接报错（惰性）。
+        // 置于类型实参 / 别名解析之后，使同名类型参数优先（不被误判为歧义）。
+        if let Some(srcs) = self.glob_ambiguity_sources(name) {
+            return Err(TypeError::GlobAmbiguity {
+                name: name.to_string(),
+                sources: srcs,
+                span,
+            });
+        }
+        // P2 可见性：跨模块且私有的具名类型，`--visibility=error` 报 PrivateItem。
+        self.check_visibility(name, span)?;
         if self.structs.contains_key(name) {
             return Ok(Type::Named(name.to_string(), Vec::new()));
         }

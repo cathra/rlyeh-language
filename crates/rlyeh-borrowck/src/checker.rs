@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use rlyeh_hir::{
-    HirBlock, HirExpr, HirExprKind, HirItemKind, HirProgram, HirStmt, HirStmtKind,
+    FieldScalar, HirBlock, HirExpr, HirExprKind, HirItemKind, HirProgram, HirStmt, HirStmtKind,
 };
 use rlyeh_lexer::Span;
 
@@ -33,6 +33,29 @@ enum BorrowKind {
     Mut,
 }
 
+/// 引用存放位置（T-7）：根变量名 + 字段/索引访问路径。
+///
+/// 用于追踪「引用存进聚合字段/数组元素」这一此前漏检的内嵌引用
+/// （`let w = Wrapper { inner: &x }; *w.inner`），把字段读写位置与
+/// referent 关联起来。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Place {
+    /// 根变量名（如 `w`，来自 `ref_root`）。
+    root: String,
+    /// 访问路径步：`Field(i)` = 第 `i` 槽（字段/元组元素/枚举负载），
+    /// `Index` = 数组/切片索引槽。
+    steps: Vec<PlaceStep>,
+}
+
+/// 位置访问步（T-7）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PlaceStep {
+    /// 聚合对象槽位。
+    Field(usize),
+    /// 数组 / 切片索引槽。
+    Index,
+}
+
 /// 一条借用记录。
 ///
 /// 活跃期（NLL 近似）为 `born <= pos <= last_use`：借用创建于语句
@@ -59,6 +82,10 @@ struct Borrow {
     /// 块级区间模型（T-6）：本借用所属块的序号；活跃期 = `[born, block_ends[block_id])`
     /// （活跃到最近块/region 边界，取代 NLL 近似 `last_use`）。
     block_id: usize,
+    /// 内嵌引用存放位置（T-7）：当引用被存入字段/索引用 `FieldSet` / `IndexSet`
+    /// （如 `Wrapper { inner: &x }`）时记录其 place（根变量 + 字段/索引路径），
+    /// 供解引用该字段时回溯 referent、校验悬垂。普通具名/临时借用为 `None`。
+    embedded_place: Option<Place>,
 }
 
 /// 借用检查器。
@@ -105,6 +132,8 @@ fn ref_root(expr: &HirExpr) -> Option<String> {
     }
 }
 
+
+
 /// 借用检查器。
 pub struct BorrowChecker {
     scopes: Vec<Scope>,
@@ -139,6 +168,10 @@ pub struct BorrowChecker {
     /// region 退出时暂存的局部变量名（供 `let r = region 'r { &x }` 这类
     /// 「区尾引用逃逸到区外变量」在 `check_stmt` 落点处复用，T-3）。
     recent_region_locals: Option<Vec<String>>,
+    /// 变量名 → 存储根变量别名（T-7）：结构体字面量 desugar 为
+    /// `let __tmp = alloc; __tmp.field = &x; let w = __tmp`，字段写入侧 base 是临时
+    /// 变量 `__tmp` 而读写侧用 `w`，经本表把 `w` 解析回 `__tmp` 以消除 place 根不一致。
+    aliases: HashMap<String, String>,
 }
 
 impl BorrowChecker {
@@ -164,6 +197,123 @@ impl BorrowChecker {
             },
             region_local_stack: Vec::new(),
             recent_region_locals: None,
+            aliases: HashMap::new(),
+        }
+    }
+
+    /// T-7：若 `value` 是引用且 `base` 可解析为字段/索引存放位置，登记一条内嵌引用借用，
+    /// 使后续解引用该字段（或经 `let r = w.inner` 具名化）时能回溯 referent、校验悬垂
+    /// （含 region 边界扫描 T-3 复用）。`step` 为本次写入的槽步（`Field(i)` / `Index`）。
+    fn record_embedded_borrow(&mut self, base: &HirExpr, step: PlaceStep, value: &HirExpr) {
+        if let HirExprKind::Ref { expr, is_mut, .. } = &(value).kind {
+            if let (Some(mut place), Some(referent)) = (self.place_of(base), ref_root(expr)) {
+                place.steps.push(step);
+                let kind = if *is_mut {
+                    BorrowKind::Mut
+                } else {
+                    BorrowKind::Shared
+                };
+                self.borrows.push(Borrow {
+                    source: referent.clone(),
+                    var: None,
+                    kind,
+                    born: self.pos,
+                    last_use: self.pos,
+                    span: self.cur_span,
+                    escapes: self.is_escaping_root(&referent),
+                    block_id: *self.block_stack.last().unwrap_or(&0),
+                    embedded_place: Some(place),
+                });
+            }
+        }
+    }
+
+    /// T-7：解引用「持有引用的字段/索引槽」（`ty`/`elem == Ptr`）时，回溯内嵌引用的
+    /// referent，校验其是否已 `transfer`（move 出作用域 → 悬垂，BC005），并把该内嵌
+    /// 借用的末次使用推进到当前语句序，使 region 边界扫描（T-3）能捕获「referent 为
+    /// region 局部、内嵌引用活到区外」的悬垂。
+    fn check_embedded_deref(&mut self, base: &HirExpr) {
+        let is_ref_slot = match &base.kind {
+            HirExprKind::FieldGet { ty, .. } => *ty == FieldScalar::Ptr,
+            HirExprKind::Index { elem, .. } => *elem == FieldScalar::Ptr,
+            _ => false,
+        };
+        if !is_ref_slot {
+            return;
+        }
+        let Some(place) = self.place_of(base) else {
+            return;
+        };
+        // 先以不可变遍历定位内嵌借用，避免在持有 `&mut Borrow` 时调用 `&self` 方法
+        // （E0502）；定位后再推进 `last_use` 并据 referent 是否转移判定悬垂。
+        let mut hit: Option<(usize, bool)> = None;
+        for (i, b) in self.borrows.iter().enumerate() {
+            if b.embedded_place.as_ref() == Some(&place) {
+                hit = Some((i, self.is_transferred(&b.source)));
+                break;
+            }
+        }
+        if let Some((i, transferred)) = hit {
+            self.borrows[i].last_use = self.pos;
+            if transferred {
+                let src = self.borrows[i].source.clone();
+                self.errors
+                    .push(BorrowError::dangling_reference(&src, self.cur_span));
+            }
+        }
+    }
+
+    /// 表达式求值后的「最终变量」（T-7）：用于 `let w = <expr>` 时把 `w` 关联到
+    /// 其底层存储变量。覆盖 `Variable`、`InRegion { .. }`、块末表达式等形态，
+    /// 从而识别结构体字面量 desugar 出的 `let w = <__tmp>` 别名。
+    fn final_var(&self, expr: &HirExpr) -> Option<String> {
+        match &expr.kind {
+            HirExprKind::Variable(v) => Some(v.clone()),
+            HirExprKind::InRegion { expr, .. } => self.final_var(expr),
+            HirExprKind::Block(block) => block
+                .final_expr
+                .as_ref()
+                .and_then(|e| self.final_var(e)),
+            _ => None,
+        }
+    }
+
+    /// 变量名 → 其「存储根」变量（T-7）：结构体字面量 desugar 为
+    /// `let __tmp = alloc; __tmp.field = &x; let w = __tmp`，字段写入的 base 是
+    /// 临时变量 `__tmp` 而后续读写用 `w`，故需经别名链把 `w` 解析回 `__tmp`
+    /// （存储根），使内嵌引用的 place 在写入侧与读取侧一致。
+    fn resolve_root(&self, name: &str) -> String {
+        let mut cur = name.to_string();
+        let mut seen = std::collections::HashSet::new();
+        while let Some(next) = self.aliases.get(&cur) {
+            if !seen.insert(cur.clone()) {
+                break; // 环保护
+            }
+            cur = next.clone();
+        }
+        cur
+    }
+
+    /// 从 HIR 表达式抽取引用存放位置（T-7）；仅对变量 / 字段读取 / 索引读取
+    /// 有效，其它（字面量 / 调用等）返回 `None`。变量根经 [`Self::resolve_root`]
+    /// 解析为存储根，闭合结构体字面量临时变量别名缺口。
+    fn place_of(&self, expr: &HirExpr) -> Option<Place> {
+        match &expr.kind {
+            HirExprKind::Variable(v) => Some(Place {
+                root: self.resolve_root(v),
+                steps: Vec::new(),
+            }),
+            HirExprKind::FieldGet { base, index, .. } => {
+                let mut p = self.place_of(base)?;
+                p.steps.push(PlaceStep::Field(*index));
+                Some(p)
+            }
+            HirExprKind::Index { base, .. } => {
+                let mut p = self.place_of(base)?;
+                p.steps.push(PlaceStep::Index);
+                Some(p)
+            }
+            _ => None,
         }
     }
 
@@ -191,6 +341,7 @@ impl BorrowChecker {
                     self.block_seq = 0;
                     self.region_local_stack.clear();
                     self.recent_region_locals = None;
+                    self.aliases.clear();
                     self.scopes.push(Scope::default());
                     for param in &f.params {
                         self.insert(
@@ -251,12 +402,21 @@ impl BorrowChecker {
     }
 
     /// 变量名在当前语句序上的活跃借用（T-6 块级区间：`born <= pos < block_ends[block_id]`）。
+    ///
+    /// 跳过「内嵌引用借用」（`embedded_place.is_some()`，见 T-7）：这类借用是引用
+    /// 经字段/索引存放时产生的，仅用于悬垂检测（BC005），其 `source` 指向被引用的
+    /// 根变量（如 `&mut self` 存进 guard 字段）。若参与冲突判定会误伤标准库
+    /// `DerefMut` / `lock_guard` 等把 `&mut self` 存入内部字段的正常代码，产生虚假
+    /// BC003。普通临时借用（`var: None, embedded_place: None`，如 `f(&x)`）仍纳入判定。
     fn active_borrows(&self, source: &str) -> Vec<&Borrow> {
         self.borrows
             .iter()
             .filter(|b| {
                 let end = self.block_ends.get(&b.block_id).copied().unwrap_or(usize::MAX);
-                b.source == source && b.born <= self.pos && self.pos < end
+                b.source == source
+                    && b.born <= self.pos
+                    && self.pos < end
+                    && b.embedded_place.is_none()
             })
             .collect()
     }
@@ -336,6 +496,7 @@ impl BorrowChecker {
             span: self.cur_span,
             escapes: self.is_escaping_root(source),
             block_id: *self.block_stack.last().unwrap_or(&0),
+            embedded_place: None,
         });
     }
 
@@ -382,6 +543,7 @@ impl BorrowChecker {
             span: self.cur_span,
             escapes,
             block_id: *self.block_stack.last().unwrap_or(&0),
+            embedded_place: None,
         });
     }
 
@@ -623,6 +785,46 @@ impl BorrowChecker {
                         }
                     }
                 }
+                // T-7：引用经聚合字段传播（`let r = w.inner;`）。若该字段持有引用
+                // （ty/elem == Ptr）且已在 FieldSet/IndexSet 登记内嵌借用，则把
+                // 该内嵌借用转为具名借用 `r`（复用既有悬垂/冲突/region 边界扫描），
+                // 闭合「字段中存储的引用」追踪缺口。
+                if let HirExprKind::FieldGet { ty, .. } | HirExprKind::Index { elem: ty, .. } =
+                    &(init).kind
+                {
+                    if *ty == FieldScalar::Ptr {
+                        if let Some(place) = self.place_of(&init) {
+                            let idx = self
+                                .borrows
+                                .iter()
+                                .position(|b| b.embedded_place.as_ref() == Some(&place));
+                            if let Some(idx) = idx {
+                                // 把该内嵌借用转为具名借用 `r`：先以不可变遍历定位，
+                                // 释出借用后再改字段，避免持有 `&mut Borrow` 时调用
+                                // `&self` 方法（E0502）。
+                                let src = self.borrows[idx].source.clone();
+                                let last_use = self.last_use_for(name, self.pos);
+                                let block_id = *self.block_stack.last().unwrap_or(&0);
+                                let escapes = self.is_escaping_root(&src);
+                                self.borrows[idx].var = Some(name.clone());
+                                self.borrows[idx].embedded_place = None;
+                                self.borrows[idx].last_use = last_use;
+                                self.borrows[idx].block_id = block_id;
+                                self.borrows[idx].escapes = escapes;
+                                if name != "_" {
+                                    self.insert(
+                                        name.clone(),
+                                        Binding {
+                                            mutable: *mutable,
+                                            transferred: false,
+                                        },
+                                    );
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
                 if let HirExprKind::Ref { expr, is_mut, .. } = &(init).kind {
                     match &(expr.as_ref()).kind {
                         HirExprKind::Variable(src) => {
@@ -660,6 +862,18 @@ impl BorrowChecker {
                     // 登记为 region 局部，供 region 边界悬垂判定。
                     if let Some(top) = self.region_local_stack.last_mut() {
                         top.push(name.clone());
+                    }
+                    // T-7：别名登记——`let w = Wrapper { .. }` 等构造 desugar 为
+                    // `let __tmp = alloc; __tmp.field = &x; let w = __tmp`，需把 `w` 关联到
+                    // 其底层存储变量 `__tmp`，使字段读写侧的 place 根一致（见 `resolve_root`）。
+                    // 跳过引用变量别名（`let r = a`，由 copy_borrow / T-2 处理），避免误伤
+                    // 既有拷贝传播。
+                    if let Some(rhs) = self.final_var(init) {
+                        if rhs != *name
+                            && !self.borrows.iter().any(|b| b.var.as_deref() == Some(rhs.as_str()))
+                        {
+                            self.aliases.insert(name.clone(), self.resolve_root(&rhs));
+                        }
                     }
                 }
             }
@@ -859,7 +1073,8 @@ impl BorrowChecker {
             // 聚合对象构造 / 访问：Alloc 无子表达式；FieldGet / FieldSet 递归检查
             HirExprKind::Alloc { .. } => {}
             HirExprKind::FieldGet { base, .. } => self.check_expr(base),
-            HirExprKind::FieldSet { base, value, .. } => {
+            HirExprKind::FieldSet { base, index, value, .. } => {
+                self.record_embedded_borrow(base, PlaceStep::Field(*index), value);
                 self.check_expr(base);
                 self.check_expr(value);
             }
@@ -874,6 +1089,7 @@ impl BorrowChecker {
                 value,
                 ..
             } => {
+                self.record_embedded_borrow(base, PlaceStep::Index, value);
                 self.check_expr(base);
                 self.check_expr(index);
                 self.check_expr(value);
@@ -897,8 +1113,12 @@ impl BorrowChecker {
                     }
                 }
             }
-            HirExprKind::Deref { expr, .. } => self.check_expr(expr),
+            HirExprKind::Deref { expr, .. } => {
+                self.check_embedded_deref(expr);
+                self.check_expr(expr);
+            }
             HirExprKind::DerefSet { base, value, .. } => {
+                self.check_embedded_deref(base);
                 self.check_expr(base);
                 self.check_expr(value);
             }

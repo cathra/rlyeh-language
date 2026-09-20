@@ -227,6 +227,10 @@ struct CliOpts {
     target: Option<String>,
     profile: Option<PathBuf>,
     emit: Option<EmitTarget>,
+    /// 可见性检查模式（P2）：`--visibility` 控制，默认 `Off`（兼容存量代码 / 标准库）。
+    visibility: rlyeh_typecheck::VisibilityMode,
+    /// 第三方依赖根（`--dep-root pkg=dir`，可多段）：dagon 包集成（P4）注入为扁平名字空间。
+    dep_roots: Vec<(String, PathBuf)>,
 }
 
 impl CliOpts {
@@ -244,10 +248,19 @@ impl CliOpts {
         let mut target = None;
         let mut profile = None;
         let mut emit = None;
+        let mut visibility = rlyeh_typecheck::VisibilityMode::Off;
+        let mut dep_roots: Vec<(String, PathBuf)> = Vec::new();
 
         let mut i = 0;
         while i < args.len() {
-            match args[i].as_str() {
+            let arg = &args[i];
+            if let Some(v) = arg.strip_prefix("--visibility=") {
+                visibility = rlyeh_typecheck::VisibilityMode::parse(v)
+                    .ok_or_else(|| format!("未知可见性模式: {v}（可选 off/warn/error）"))?;
+                i += 1;
+                continue;
+            }
+            match arg.as_str() {
                 "--emit" => {
                     i += 1;
                     let e = args.get(i).ok_or("--emit 需要目标（ir/ast/hir）")?;
@@ -266,6 +279,20 @@ impl CliOpts {
                 "--force" => force = true,
                 "--no-std" => no_std = true,
                 "--verbose" => verbose = true,
+                "--visibility" => {
+                    i += 1;
+                    let v = args.get(i).ok_or("--visibility 需要模式（off/warn/error）")?;
+                    visibility = rlyeh_typecheck::VisibilityMode::parse(v)
+                        .ok_or_else(|| format!("未知可见性模式: {v}（可选 off/warn/error）"))?;
+                }
+                "--dep-root" => {
+                    i += 1;
+                    let v = args.get(i).ok_or("--dep-root 需要参数（pkg=dir）")?;
+                    let (pkg, dir) = v
+                        .split_once('=')
+                        .ok_or("--dep-root 参数格式应为 pkg=dir")?;
+                    dep_roots.push((pkg.to_string(), PathBuf::from(dir)));
+                }
                 "--target" => {
                     i += 1;
                     let t = args.get(i).ok_or("--target 需要 LLVM 目标 triple（如 arm64-apple-macosx / wasm32-wasi）")?;
@@ -289,6 +316,8 @@ impl CliOpts {
             target,
             profile,
             emit,
+            visibility,
+            dep_roots,
         })
     }
 
@@ -370,6 +399,8 @@ fn new_driver(opts: &CliOpts) -> IncrementalDriver {
         .with_force(opts.force)
         .with_no_std(opts.no_std)
         .with_target(opts.target.clone())
+        .with_visibility(opts.visibility)
+        .with_dep_roots(opts.dep_roots.clone())
         .with_region_hints(hints)
 }
 
@@ -717,6 +748,8 @@ fn run_bench(args: &[String]) -> ExitCode {
         target: None,
         profile: None,
         emit: None,
+        visibility: rlyeh_typecheck::VisibilityMode::Off,
+        dep_roots: Vec::new(),
     };
 
     if let Err(e) = build_file(&file, &out, &opts) {

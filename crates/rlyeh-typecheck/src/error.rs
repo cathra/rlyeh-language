@@ -249,6 +249,38 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// import 别名与已有绑定 / 其他显式 import 冲突（不静默遮蔽）
+    NameConflict {
+        /// 冲突的别名
+        name: String,
+        /// 源码位置
+        span: Span,
+    },
+    /// glob 导入同名歧义（两个 `import a::*` 均导出 `name`）
+    GlobAmbiguity {
+        /// 歧义名
+        name: String,
+        /// 导入该名的来源模块前缀列表
+        sources: Vec<String>,
+        /// 源码位置
+        span: Span,
+    },
+    /// import 目标符号 / 模块不存在（附拼写相近候选）
+    NameNotFound {
+        /// 未找到的导入路径
+        name: String,
+        /// 拼写相近候选符号 / 模块名
+        candidates: Vec<String>,
+        /// 源码位置
+        span: Span,
+    },
+    /// 私有符号被跨模块访问（P2 可见性，仅 `--visibility=error` 触发）
+    PrivateItem {
+        /// 被访问的私有符号全名
+        name: String,
+        /// 源码位置
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -292,6 +324,10 @@ impl TypeError {
             | TypeError::GenericBoundMismatch { span, .. }
             | TypeError::GenericArityMismatch { span, .. }
             | TypeError::MissingSupertrait { span, .. }
+            | TypeError::NameConflict { span, .. }
+            | TypeError::GlobAmbiguity { span, .. }
+            | TypeError::NameNotFound { span, .. }
+            | TypeError::PrivateItem { span, .. }
             | TypeError::UnsafeExternCall { span, .. } => *span,
         }
     }
@@ -443,6 +479,25 @@ fn write_message(f: &mut fmt::Formatter<'_>, loc: &str, err: &TypeError) -> fmt:
             f,
             "{loc}: error: type `{type_}` implements protocol `{trait_}` but does not implement its superprotocol `{supertrait_}`"
         ),
+        TypeError::NameConflict { name, .. } => {
+            write!(f, "{loc}: error: import alias `{name}` conflicts with an existing binding or import")
+        }
+        TypeError::GlobAmbiguity { name, sources, .. } => write!(
+            f,
+            "{loc}: error: `{name}` is ambiguous: imported via glob from multiple modules ({})",
+            sources.join(", ")
+        ),
+        TypeError::NameNotFound { name, candidates, .. } => {
+            let hint = if candidates.is_empty() {
+                String::new()
+            } else {
+                format!(" (did you mean: {})", candidates.join(", "))
+            };
+            write!(f, "{loc}: error: cannot import `{name}`{hint}")
+        }
+        TypeError::PrivateItem { name, .. } => {
+            write!(f, "{loc}: error: private item `{name}` is not accessible from this module")
+        }
     }
 }
 
@@ -523,6 +578,10 @@ impl TypeError {
             TypeError::GenericBoundMismatch { .. } => "TC027",
             TypeError::GenericArityMismatch { .. } => "TC028",
             TypeError::MissingSupertrait { .. } => "TC029",
+            TypeError::NameConflict { .. } => "TC030",
+            TypeError::GlobAmbiguity { .. } => "TC031",
+            TypeError::NameNotFound { .. } => "TC032",
+            TypeError::PrivateItem { .. } => "TC033",
         }
     }
 
@@ -593,6 +652,16 @@ impl TypeError {
             }
             TypeError::MissingSupertrait { .. } => {
                 Some("为该类型补上父协议一致性（声明点 `T: .., Super` 或 `extension T: Super { .. }`）")
+            }
+            TypeError::NameConflict { .. } => Some("重命名导入别名（`import a::x as y`），避免与现有绑定冲突"),
+            TypeError::GlobAmbiguity { .. } => {
+                Some("用显式路径消除歧义（如 `import a::x` 而非依赖 glob）")
+            }
+            TypeError::NameNotFound { .. } => {
+                Some("检查模块 / 符号名拼写，确认目标模块已被声明或导入")
+            }
+            TypeError::PrivateItem { .. } => {
+                Some("为该符号添加 `pub` 修饰，或使用同模块 / 子模块内的定义")
             }
         }
     }

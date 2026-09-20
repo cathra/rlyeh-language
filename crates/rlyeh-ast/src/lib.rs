@@ -104,6 +104,8 @@ pub struct AstParam {
 pub struct AstActorDecl {
     /// Actor 名
     pub name: String,
+    /// 是否为 `pub`（可见性导出，P2）
+    pub is_pub: bool,
     /// 字段列表（带默认值）
     pub fields: Vec<AstActorField>,
     /// 方法列表（pub 或私有）
@@ -132,6 +134,8 @@ pub struct AstActorField {
 pub struct AstStructDecl {
     /// 结构体名
     pub name: String,
+    /// 是否为 `pub`（可见性导出，P2）
+    pub is_pub: bool,
     /// 泛型参数名列表
     /// 泛型参数列表
     pub generics: Vec<AstTypeParam>,
@@ -174,6 +178,8 @@ pub struct AstStructField {
 pub struct AstEnumDecl {
     /// 枚举名
     pub name: String,
+    /// 是否为 `pub`（可见性导出，P2）
+    pub is_pub: bool,
     /// 泛型参数名列表
     /// 泛型参数列表
     pub generics: Vec<AstTypeParam>,
@@ -211,8 +217,10 @@ pub struct AstEnumVariant {
 /// Trait 声明。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstTraitDecl {
-    /// Trait 名
+    /// Trait 名（关键字为 `protocol`，`trait` 已从语法移除）
     pub name: String,
+    /// 是否为 `pub`（可见性导出，P2）
+    pub is_pub: bool,
     /// 泛型参数名列表
     /// 泛型参数列表
     pub generics: Vec<AstTypeParam>,
@@ -265,6 +273,8 @@ pub struct AstModDecl {
     pub items: Vec<AstItem>,
     /// 是否为外部文件形式（`module foo;` → 内容在 `foo.rl` 或 `foo/module.rl`）
     pub external: bool,
+    /// 是否为 `pub`（对外暴露，可被外部模块经 `import parent::name::item` 访问；与 `pub import` 对齐）
+    pub is_pub: bool,
     /// 模块属性：`#[memory(gc)]` → `Some("gc")`（B-6 模块级 GC 逃逸舱）
     pub memory: Option<String>,
     /// 源码位置
