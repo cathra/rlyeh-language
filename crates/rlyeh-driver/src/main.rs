@@ -194,6 +194,7 @@ enum EmitTarget {
     Hir,
     AstUser,
     HirUser,
+    Tokens,
 }
 
 impl EmitTarget {
@@ -204,7 +205,10 @@ impl EmitTarget {
             "hir" => Ok(EmitTarget::Hir),
             "ast-user" => Ok(EmitTarget::AstUser),
             "hir-user" => Ok(EmitTarget::HirUser),
-            other => Err(format!("未知 --emit 目标: {other}（支持 ir/ast/hir/ast-user/hir-user）")),
+            "tokens" => Ok(EmitTarget::Tokens),
+            other => Err(format!(
+                "未知 --emit 目标: {other}（支持 ir/ast/hir/ast-user/hir-user/tokens）"
+            )),
         }
     }
     fn name(&self) -> &'static str {
@@ -214,6 +218,7 @@ impl EmitTarget {
             EmitTarget::AstUser => "AST (user-only)",
             EmitTarget::Hir => "HIR",
             EmitTarget::HirUser => "HIR (user-only)",
+            EmitTarget::Tokens => "Tokens",
         }
     }
 }
@@ -335,6 +340,7 @@ fn emit_file(path: &str, target: &EmitTarget) -> Result<String, DriverError> {
         EmitTarget::Hir => rlyeh_driver::emit_hir(Path::new(path)),
         EmitTarget::AstUser => rlyeh_driver::emit_ast_user(Path::new(path)),
         EmitTarget::HirUser => rlyeh_driver::emit_hir_user(Path::new(path)),
+        EmitTarget::Tokens => rlyeh_driver::emit_tokens(Path::new(path)),
     }
 }
 

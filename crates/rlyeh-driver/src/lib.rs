@@ -183,6 +183,138 @@ pub fn emit_hir_user(entry: &Path) -> Result<String, DriverError> {
     Ok(format!("{:#?}", HirProgram { items }))
 }
 
+/// 词法分析入口文件为 Token 文本（每行一个规范化 token，供 M-M1 自举对拍）。
+///
+/// 仅 lex 用户源码（不含标准库预置），与 Rlyeh 版 lexer（`self-host/lexer.rl`）
+/// 对拍时输入同源。规范格式见 `docs/tasks/self-hosting/self-host-lexer.md`。
+pub fn emit_tokens(entry: &Path) -> Result<String, DriverError> {
+    let source = module::load_combined_source(entry)?;
+    emit_tokens_str(&source)
+}
+
+/// 直接对源码字符串做词法分析，返回规范化 token 文本（每行一个 token）。
+///
+/// 供 `tests/` 对拍 harness 直接对内存字符串做 oracle 比对，无需落盘。
+pub fn emit_tokens_str(source: &str) -> Result<String, DriverError> {
+    let mut lexer = rlyeh_lexer::Lexer::new(source);
+    let tokens = lexer
+        .tokenize()
+        .map_err(|e| DriverError::Typecheck(format!("lex error: {e}")))?;
+    let lines: Vec<String> = tokens.iter().map(|t| token_to_canonical(&t.token)).collect();
+    Ok(lines.join("\n"))
+}
+
+/// 将 [`rlyeh_lexer::Token`] 规范化为对拍用的单行文本。
+///
+/// 与 Rlyeh 版 `self-host/lexer.rl` 输出的格式必须逐行一致；新增 token 种类时
+/// 两侧须同步（见 `docs/tasks/self-hosting/self-host-lexer.md` 的规范）。
+fn token_to_canonical(t: &rlyeh_lexer::Token) -> String {
+    use rlyeh_lexer::Token::*;
+    match t {
+        Let => "let".into(),
+        Mut => "mut".into(),
+        Const => "const".into(),
+        Static => "static".into(),
+        Fn => "fn".into(),
+        Return => "return".into(),
+        Pub => "pub".into(),
+        Priv => "priv".into(),
+        If => "if".into(),
+        Else => "else".into(),
+        Match => "match".into(),
+        For => "for".into(),
+        While => "while".into(),
+        Loop => "loop".into(),
+        Break => "break".into(),
+        Continue => "continue".into(),
+        True => "true".into(),
+        False => "false".into(),
+        And => "and".into(),
+        Or => "or".into(),
+        Not => "not".into(),
+        Struct => "struct".into(),
+        Enum => "enum".into(),
+        Impl => "impl".into(),
+        Protocol => "protocol".into(),
+        Type => "type".into(),
+        Where => "where".into(),
+        SelfKw => "Self".into(),
+        Region => "region".into(),
+        GcRegion => "gc_region".into(),
+        In => "in".into(),
+        Transfer => "transfer".into(),
+        Out => "out".into(),
+        Of => "of".into(),
+        Unsafe => "unsafe".into(),
+        Actor => "actor".into(),
+        Async => "async".into(),
+        Await => "await".into(),
+        Spawn => "spawn".into(),
+        Send => "send".into(),
+        Recv => "recv".into(),
+        Mod => "mod".into(),
+        Use => "use".into(),
+        As => "as".into(),
+        Extern => "extern".into(),
+        Dyn => "dyn".into(),
+        Ident(s) => format!("IDENT {}", s),
+        IntLiteral(v) => format!("INT {}", v),
+        FloatLiteral(v) => format!("FLOAT {}", v),
+        StringLiteral(s) => format!("STR {}", s),
+        CharLiteral(c) => format!("CHAR {}", c),
+        BoolLiteral(b) => format!("BOOL {}", b),
+        Lifetime(s) => format!("LIFETIME {}", s),
+        TimeLiteral { hour, minute, .. } => format!("TIME {}:{}", hour, minute),
+        Plus => "+".into(),
+        Minus => "-".into(),
+        Star => "*".into(),
+        Slash => "/".into(),
+        Percent => "%".into(),
+        Eq => "==".into(),
+        Ne => "!=".into(),
+        Lt => "<".into(),
+        Le => "<=".into(),
+        Gt => ">".into(),
+        Ge => ">=".into(),
+        AndAnd => "&&".into(),
+        OrOr => "||".into(),
+        NotNot => "!".into(),
+        BitAnd => "&".into(),
+        BitOr => "|".into(),
+        BitXor => "^".into(),
+        Shl => "<<".into(),
+        Shr => ">>".into(),
+        Assign => "=".into(),
+        PlusEq => "+=".into(),
+        MinusEq => "-=".into(),
+        StarEq => "*=".into(),
+        SlashEq => "/=".into(),
+        PercentEq => "%=".into(),
+        Range => "RANGE".into(),
+        DotDotLt => "DOTDOTLT".into(),
+        DotDotDot => "DOTDOTDOT".into(),
+        LtDotDot => "LTDOTDOT".into(),
+        Arrow => "->".into(),
+        FatArrow => "=>".into(),
+        LParen => "(".into(),
+        RParen => ")".into(),
+        LBrace => "{".into(),
+        RBrace => "}".into(),
+        LBracket => "[".into(),
+        RBracket => "]".into(),
+        Comma => ",".into(),
+        Colon => ":".into(),
+        Semicolon => ";".into(),
+        Dot => ".".into(),
+        At => "@".into(),
+        Dollar => "$".into(),
+        Pound => "#".into(),
+        Question => "?".into(),
+        NotIn => "NOTIN".into(),
+        Eof => "EOF".into(),
+    }
+}
+
 /// 编译入口文件（含外部模块）为可执行文件，无缓存。
 pub fn build_executable_file(entry: &Path, out_path: &Path) -> Result<(), DriverError> {
     build_executable_file_with_target(entry, out_path, None)

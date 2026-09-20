@@ -849,6 +849,7 @@ dependencies = [
  "rlyeh-doc",
  "rlyeh-fmt",
  "rlyeh-hir",
+ "rlyeh-lexer",
  "rlyeh-lir",
  "rlyeh-lsp",
  "rlyeh-mir",
