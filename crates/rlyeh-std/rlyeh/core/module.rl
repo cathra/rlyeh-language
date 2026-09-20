@@ -83,6 +83,15 @@ impl<T> Option<T> {
             Option::None => loop {},
         }
     }
+    // EH-3（0.2.0-AA，2026-09-21）：Some(v) → Ok(v)；None → Err(err)。
+    // 错误类型 E 由实参推断（`E` 出现在形参类型中，方法泛型可推断），
+    // 与 Rust `Option::ok_or` 语义一致。
+    fn ok_or<E>(self, err: E) -> Result<T, E> {
+        match self {
+            Option::Some(v) => Result::Ok(v),
+            Option::None => Result::Err(err),
+        }
+    }
 }
 
 enum Result<T, E> {
@@ -124,6 +133,28 @@ impl<T, E> Result<T, E> {
         match self {
             Result::Ok(v) => v,
             Result::Err(e) => loop {},
+        }
+    }
+    // EH-3（0.2.0-AA，2026-09-21）：Ok(v) → Some(v)；Err(_) → None（错误信息丢弃）。
+    fn ok(self) -> Option<T> {
+        match self {
+            Result::Ok(v) => Option::Some(v),
+            Result::Err(e) => Option::None,
+        }
+    }
+    // EH-3（0.2.0-AA，2026-09-21）：Ok(_) → None；Err(e) → Some(e)。
+    fn err(self) -> Option<E> {
+        match self {
+            Result::Ok(v) => Option::None,
+            Result::Err(e) => Option::Some(e),
+        }
+    }
+    // EH-3（0.2.0-AA，2026-09-21）：期望为 Err——Err(e) 返回 e；Ok 时以 `loop {}`
+    // 充当崩溃替代（与 unwrap/expect 同一 MVP 语义：无 panic 机制）。
+    fn expect_err(self, msg: String) -> E {
+        match self {
+            Result::Ok(v) => loop {},
+            Result::Err(e) => e,
         }
     }
 }

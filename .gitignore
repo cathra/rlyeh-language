@@ -42,6 +42,7 @@ dist/
 !tests/run-pass/cross_module_mut_self.out
 !tests/run-pass/type_alias.out
 !tests/run-pass/toml_io.out
+!tests/run-pass/eh_combinators.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib
