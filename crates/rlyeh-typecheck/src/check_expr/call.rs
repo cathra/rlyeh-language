@@ -416,6 +416,71 @@ pub(super) fn check_call(
         return infer_expr(ctx, &call);
     }
 
+    // U（SH-P2-8 M2）：`mem::replace(&mut a, b)` 内建——写入 b、返回 *a 旧值。
+    // desugar 为 `{ let _tmp = b; mem::swap(&mut a, &mut _tmp); _tmp }`：
+    // 复用 mem::swap（已正确处理标量 / 聚合的统一"指向数据的指针"交换），
+    // 规避泛型返回值 / 聚合 by-value 表示差异（LIR 引用坍缩为 Ptr）。
+    if name == "mem::replace" {
+        if args.len() != 2 {
+            return Err(TypeError::Unsupported {
+                what: "mem::replace 需要恰好 2 个参数 (&mut a, b)".to_string(),
+                span,
+            });
+        }
+        // 参数类型校验：第一个为 &mut T，第二个与 T 兼容（b 被移入 _tmp）。
+        let (_, ta) = infer_expr(ctx, &args[0])?;
+        let t = match &ta {
+            Type::Ref(a, crate::types::Mutability::Mutable, _) => a,
+            _ => {
+                return Err(TypeError::Unsupported {
+                    what: format!("mem::replace 要求第一个参数为 &mut T（得到 `{}`）", ta),
+                    span,
+                });
+            }
+        };
+        let (_, tb) = infer_expr(ctx, &args[1])?;
+        if !tb.compatible_with(t) {
+            return Err(TypeError::Unsupported {
+                what: format!(
+                    "mem::replace 第二个参数类型需为 T（得到 `{}`，期望 `{}`）",
+                    tb, t
+                ),
+                span,
+            });
+        }
+        let tmp = ctx.fresh_temp();
+        let let_stmt = AstStmt::Let {
+            pattern: AstPattern::Ident(tmp.clone()),
+            type_anno: None,
+            init: args[1].clone(),
+            mutable: true,
+        };
+        let swap_arg1 = AstExpr::new(
+            ExprKind::Unary {
+                op: UnaryOp::AddrOfMut,
+                operand: AstExpr::new(ExprKind::Ident(tmp.clone()), Span::dummy()),
+            },
+            Span::dummy(),
+        );
+        let swap_call = AstExpr::new(
+            ExprKind::Call {
+                callee: AstExpr::new(ExprKind::Ident("mem::swap".to_string()), Span::dummy()),
+                args: vec![args[0].clone(), swap_arg1],
+                type_args: Vec::new(),
+            },
+            Span::dummy(),
+        );
+        let block = AstExpr::new(
+            ExprKind::Block(AstBlock {
+                stmts: vec![let_stmt, AstStmt::Expr(swap_call)],
+                final_expr: Some(AstExpr::new(ExprKind::Ident(tmp), Span::dummy())),
+                span: Span::dummy(),
+            }),
+            Span::dummy(),
+        );
+        return infer_expr(ctx, &block);
+    }
+
     // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
     // 按签名检查参数、返回签名类型
     if let Some((params, ret)) = builtin_signature(&name) {
