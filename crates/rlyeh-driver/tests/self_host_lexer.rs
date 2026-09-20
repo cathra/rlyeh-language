@@ -83,4 +83,12 @@ fn m_m1_lexer_matches_rust_oracle() {
          if a == 0 { return -1; }\n    let r = a..b;\n    let s = a..<b;\n    let t = a...b;\n\
          match a { 0 => 1, _ => 2 }\n}\n",
     );
+    // corpus3：M-M1b 切片（char 字面量 / 生命周期 / not in / 时间字面量 / 原始字符串 / 原始标识符）
+    check(
+        "let a = 'x';\nlet b = '0';\nlet c = 'A';\nlet r: &'r i64 = get();\n\
+         fn handler<'a>(x: &'a i64) -> i64 { return 0; }\n\
+         if not in (1, 2, 3) { let y = 1; }\n\
+         let t1 = 9am;\nlet t2 = 6pm;\nlet t3 = 22:00;\nlet t4 = 9:30am;\n\
+         let raw1 = r\"plain text\";\nlet raw2 = r#\"hash raw\"#;\nlet id = r#type;\n",
+    );
 }

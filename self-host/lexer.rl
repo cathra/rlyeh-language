@@ -47,6 +47,15 @@ fn i64_to_string(n: i64) -> String {
     buf
 }
 
+/// 12 小时制转换（与 Rust lexer 一致）：pm +12（12pm→12），am 不变（12am→0）
+fn normalize_hour(h: i64, is_pm: i64) -> i64 {
+    if is_pm == 1 {
+        if h == 12 { 12 } else { h + 12 }
+    } else {
+        if h == 12 { 0 } else { h }
+    }
+}
+
 fn keyword_or_ident(text: String) -> String {
     if text == "let" { return String::from("let"); }
     if text == "mut" { return String::from("mut"); }
@@ -128,12 +137,72 @@ fn lex(src: String) -> Vec<String> {
             }
             continue;
         }
+        if c == 114 {
+            let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
+            if c2 == 34 {
+                i = i + 2;
+                let mut s = String::new();
+                while i < n && src.get(i) != 34 {
+                    s.push_byte(src.get(i));
+                    i = i + 1;
+                }
+                i = i + 1;
+                toks.push("STR " + s);
+                continue;
+            }
+            if c2 == 35 {
+                let mut k = 0;
+                while i + 1 + k < n && src.get(i + 1 + k) == 35 { k = k + 1; }
+                if i + 1 + k < n && src.get(i + 1 + k) == 34 {
+                    i = i + 1 + k + 1;
+                    let mut s = String::new();
+                    loop {
+                        if i < n && src.get(i) == 34 {
+                            let mut ok = 1;
+                            let mut h = 0;
+                            while h < k {
+                                if i + 1 + h < n && src.get(i + 1 + h) == 35 { h = h + 1; } else { ok = 0; break; }
+                            }
+                            if ok == 1 { i = i + 1 + k; break; }
+                        }
+                        if i >= n { break; }
+                        s.push_byte(src.get(i));
+                        i = i + 1;
+                    }
+                    toks.push("STR " + s);
+                    continue;
+                } else {
+                    i = i + 2;
+                    let mut t = String::from("r#");
+                    while i < n && is_ident_cont(src.get(i)) == 1 {
+                        t.push_byte(src.get(i));
+                        i = i + 1;
+                    }
+                    toks.push("IDENT " + t);
+                    continue;
+                }
+            }
+        }
         if c == 95 || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) {
             let start = i;
             while i < n && is_ident_cont(src.get(i)) == 1 {
                 i = i + 1;
             }
             let text = src.substring(start, i);
+            if text == "not" {
+                let mut j = i;
+                while j < n && (src.get(j) == 32 || src.get(j) == 9 || src.get(j) == 13 || src.get(j) == 10) {
+                    j = j + 1;
+                }
+                if j + 1 < n && src.get(j) == 105 && src.get(j + 1) == 110 {
+                    let after = if j + 2 < n { src.get(j + 2) } else { 0 };
+                    if !(after >= 48 && after <= 57) && !(after >= 65 && after <= 90) && !(after >= 97 && after <= 122) && after != 95 {
+                        i = j + 2;
+                        toks.push("NOTIN");
+                        continue;
+                    }
+                }
+            }
             toks.push(keyword_or_ident(text));
             continue;
         }
@@ -160,12 +229,52 @@ fn lex(src: String) -> Vec<String> {
                     idx = idx + 1;
                 } else if d == 95 {
                     idx = idx + 1;
-                } else if d >= 65 && d <= 90 {
-                    idx = idx + 1;
-                } else if d >= 97 && d <= 122 {
-                    idx = idx + 1;
+                } else if base != 10 {
+                    break;
                 } else {
                     break;
+                }
+            }
+            if base == 10 {
+                let d1 = if idx < n { src.get(idx) } else { 0 };
+                let d2 = if idx + 1 < n { src.get(idx + 1) } else { 0 };
+                let d3 = if idx + 2 < n { src.get(idx + 2) } else { 0 };
+                let is_am = d1 == 97 && d2 == 109 && !(d3 >= 48 && d3 <= 57) && !(d3 >= 65 && d3 <= 90) && !(d3 >= 97 && d3 <= 122) && d3 != 95;
+                let is_pm = d1 == 112 && d2 == 109 && !(d3 >= 48 && d3 <= 57) && !(d3 >= 65 && d3 <= 90) && !(d3 >= 97 && d3 <= 122) && d3 != 95;
+                if is_am || is_pm {
+                    let hour = normalize_hour(value, if is_pm { 1 } else { 0 });
+                    idx = idx + 2;
+                    i = idx;
+                    toks.push("TIME " + i64_to_string(hour) + ":" + i64_to_string(0));
+                    continue;
+                }
+                if d1 == 58 {
+                    idx = idx + 1;
+                    let mut minval = 0;
+                    while idx < n {
+                        let d = src.get(idx);
+                        if d >= 48 && d <= 57 { minval = minval * 10 + (d - 48); idx = idx + 1; }
+                        else if d == 95 { idx = idx + 1; }
+                        else { break; }
+                    }
+                    let e1 = if idx < n { src.get(idx) } else { 0 };
+                    let e2 = if idx + 1 < n { src.get(idx + 1) } else { 0 };
+                    let e3 = if idx + 2 < n { src.get(idx + 2) } else { 0 };
+                    let is_am2 = e1 == 97 && e2 == 109 && !(e3 >= 48 && e3 <= 57) && !(e3 >= 65 && e3 <= 90) && !(e3 >= 97 && e3 <= 122) && e3 != 95;
+                    let is_pm2 = e1 == 112 && e2 == 109 && !(e3 >= 48 && e3 <= 57) && !(e3 >= 65 && e3 <= 90) && !(e3 >= 97 && e3 <= 122) && e3 != 95;
+                    let mut hour = value;
+                    if is_am2 || is_pm2 { hour = normalize_hour(value, if is_pm2 { 1 } else { 0 }); idx = idx + 2; }
+                    i = idx;
+                    toks.push("TIME " + i64_to_string(hour) + ":" + i64_to_string(minval));
+                    continue;
+                }
+                while idx < n {
+                    let d = src.get(idx);
+                    if (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 95 {
+                        idx = idx + 1;
+                    } else {
+                        break;
+                    }
                 }
             }
             i = idx;
@@ -182,6 +291,28 @@ fn lex(src: String) -> Vec<String> {
             i = i + 1;
             toks.push("STR " + s);
             continue;
+        }
+        if c == 39 {
+            let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
+            let c3 = if i + 2 < n { src.get(i + 2) } else { 0 };
+            let c2_ident = (c2 >= 65 && c2 <= 90) || (c2 >= 97 && c2 <= 122) || c2 == 95;
+            if c2_ident && c3 != 39 {
+                i = i + 1;
+                let mut ls = String::new();
+                while i < n && is_ident_cont(src.get(i)) == 1 {
+                    ls.push_byte(src.get(i));
+                    i = i + 1;
+                }
+                toks.push("LIFETIME " + ls);
+                continue;
+            } else {
+                i = i + 1;
+                let ch = src.get(i);
+                i = i + 1;
+                if i < n && src.get(i) == 39 { i = i + 1; }
+                toks.push("CHAR " + char_str(ch));
+                continue;
+            }
         }
         let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
         let c3 = if i + 2 < n { src.get(i + 2) } else { 0 };
