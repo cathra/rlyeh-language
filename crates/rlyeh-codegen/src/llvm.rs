@@ -53,6 +53,7 @@ const BUILTIN_FUNCTIONS: &[&str] = &[
     "eprint_string",
     "eprintln_string",
     "hash_value",
+    "panic",
 ];
 
 /// 指令是否读/写了 `aliases` 中任一对象（用于判定 `AllocInRegion`
@@ -107,6 +108,7 @@ pub fn generate_llvm(program: &LirProgram) -> Result<String, CodegenError> {
     // POSIX `dprintf(fd, fmt, ...)`：eprint/eprintln 直写 fd 2（stderr）。
     // 不引用 `stderr` 符号（macOS 为 `__stderrp`，不可移植）；WASI 亦提供 dprintf。
     out.push_str("declare i32 @dprintf(i32, i8*, ...)\n");
+    out.push_str("declare void @abort()\n");
     out.push_str("declare i8* @malloc(i64)\n");
     // calloc 预置声明必须**早于所有调用点**（LLVM IR parser 对 call 自动创建的
     // 隐式声明与后续显式 declare 视为 redefinition 报错）。标准库的

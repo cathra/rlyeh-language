@@ -329,6 +329,51 @@ impl LlvmEmitter {
             }
             return Ok(());
         }
+        // panic!：向 stderr 打印 `panic: <msg>`（msg 为 &str 胖指针或 String 对象）
+        // 后 `abort()`（L1：运行时 panic 函数；L3 never 类型待办）。
+        if callee == "panic" {
+            let arg = &args[0];
+            let aty = local_type(f, arg);
+            let (data_v, len32) = if aty == LirType::StrFat {
+                // &str 胖指针 `{ i8* data, i64 len }`
+                let data_p = self.reg();
+                body.push_str(&format!(
+                    "  %{data_p} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{arg}.addr, i32 0, i32 0\n"
+                ));
+                let data_v = self.reg();
+                body.push_str(&format!("  %{data_v} = load i8*, i8** %{data_p}\n"));
+                let len_p = self.reg();
+                body.push_str(&format!(
+                    "  %{len_p} = getelementptr {{ i8*, i64 }}, {{ i8*, i64 }}* %{arg}.addr, i32 0, i32 1\n"
+                ));
+                let len_v = self.reg();
+                body.push_str(&format!("  %{len_v} = load i64, i64* %{len_p}\n"));
+                let len32 = self.reg();
+                body.push_str(&format!("  %{len32} = trunc i64 %{len_v} to i32\n"));
+                (data_v, len32)
+            } else {
+                // String 对象（指针）：槽 0 = data i8*（偏移 0），槽 1 = len i64（偏移 8）
+                let p =
+                    self.operand_value(&LirOperand::Local(arg.clone()), LirType::Ptr, body, f)?;
+                let len_a = self.reg();
+                body.push_str(&format!("  %{len_a} = getelementptr i8, i8* {p}, i64 8\n"));
+                let len_v = self.reg();
+                body.push_str(&format!("  %{len_v} = load i64, i64* %{len_a}\n"));
+                let len32 = self.reg();
+                body.push_str(&format!("  %{len32} = trunc i64 %{len_v} to i32\n"));
+                let data_a = self.reg();
+                body.push_str(&format!("  %{data_a} = bitcast i8* {p} to i8**\n"));
+                let data_v = self.reg();
+                body.push_str(&format!("  %{data_v} = load i8*, i8** %{data_a}\n"));
+                (data_v, len32)
+            };
+            let fmt = self.emit_fmt_global("panic: %.*s\n")?;
+            body.push_str(&format!(
+                "  call i32 (i32, i8*, ...) @dprintf(i32 2, i8* {fmt}, i32 %{len32}, i8* %{data_v})\n"
+            ));
+            body.push_str("  call void @abort()\n");
+            return Ok(());
+        }
         // String 打印：读 String 对象槽 0（data 指针）与槽 1（字节长度），
         // 以 `printf("%.*s", len, data)` 输出（支持任意字节内容，遇 \0 截断）；
         // eprint*_string 输出到 stderr（`fprintf(@stderr, ...)`）。

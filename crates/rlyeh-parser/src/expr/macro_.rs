@@ -90,7 +90,7 @@ impl <'src> Parser<'src> {
         }
         Err(ParseError::Macro {
             msg: format!(
-                "未定义的宏 `{name}`（内置宏：println!/print!/format!/dbg!/eprintln!/eprint!/arr!/vec!/map!）"
+                "未定义的宏 `{name}`（内置宏：println!/print!/format!/dbg!/eprintln!/eprint!/arr!/vec!/map!/assert!/assert_eq!/assert_ne!/panic!/unreachable!/todo!）"
             ),
             line: start.line,
             col: start.col,

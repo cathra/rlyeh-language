@@ -605,7 +605,21 @@ fn binary_op(tok: &Token) -> BinaryOp {
 /// 内置格式化宏（I2：由 typecheck 层 desugar 为字符串拼接 + 打印内建；
 /// `eprintln!`/`eprint!` 输出到 stderr，desugar 目标为 `eprint`/`eprintln` 内建）。
 pub(crate) fn is_builtin_macro(name: &str) -> bool {
-    matches!(name, "println" | "print" | "format" | "dbg" | "eprintln" | "eprint")
+    matches!(
+        name,
+        "println"
+            | "print"
+            | "format"
+            | "dbg"
+            | "eprintln"
+            | "eprint"
+            | "assert"
+            | "assert_eq"
+            | "assert_ne"
+            | "panic"
+            | "unreachable"
+            | "todo"
+    )
 }
 
 /// I3 集合宏名（`arr!`/`vec!`/`map!`，parse 期 desugar 为数组字面量或块表达式）

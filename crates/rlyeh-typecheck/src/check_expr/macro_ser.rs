@@ -14,11 +14,117 @@ pub(crate) fn check_macro_call(
             check_format_macro(ctx, name, args, span)
         }
         "dbg!" => check_dbg_macro(ctx, args, span),
+        // W（SH-P2-10）：断言与 panic 宏——desugar 为对内置 `panic` 的调用。
+        "panic!" => check_panic_macro(ctx, args, span),
+        "unreachable!" | "todo!" => check_unreachable_macro(ctx, name, span),
+        "assert!" => check_assert_like(ctx, args, AssertKind::Plain, span),
+        "assert_eq!" => check_assert_like(ctx, args, AssertKind::Eq, span),
+        "assert_ne!" => check_assert_like(ctx, args, AssertKind::Ne, span),
         _ => Err(TypeError::Unsupported {
             what: format!("未实现的宏 `{name}`"),
             span,
         }),
     }
+}
+
+/// `panic!` 系列 desugar 的目标内建（codegen 输出到 stderr 后 `abort`）。
+enum AssertKind {
+    /// `assert!(cond, msg?)`：条件为假时 panic。
+    Plain,
+    /// `assert_eq!(a, b, msg?)`：等价于 `assert!(a == b)`。
+    Eq,
+    /// `assert_ne!(a, b, msg?)`：等价于 `assert!(a != b)`。
+    Ne,
+}
+
+fn empty_str(span: Span) -> AstExpr {
+    AstExpr::new(ExprKind::StringLiteral(String::new()), span)
+}
+
+/// `panic!(msg?)` → 调用内置 `panic(msg)`（缺省空串）。
+fn check_panic_macro(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let msg = args.first().cloned().unwrap_or_else(|| empty_str(span));
+    let call = mk_ident_call("panic".to_string(), vec![msg], span);
+    infer_expr(ctx, &call)
+}
+
+/// `unreachable!()` / `todo!()` → `panic!("<提示>")`。
+fn check_unreachable_macro(
+    ctx: &mut TypeContext,
+    name: &str,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    let lit = AstExpr::new(ExprKind::StringLiteral(format!("{name} 不可达")), span);
+    let call = mk_ident_call("panic".to_string(), vec![lit], span);
+    infer_expr(ctx, &call)
+}
+
+/// `assert!` / `assert_eq!` / `assert_ne!` desugar：
+/// `if !(cond) { panic!(msg) } else { () }`。
+fn check_assert_like(
+    ctx: &mut TypeContext,
+    args: &[AstExpr],
+    kind: AssertKind,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 构造被断言成立的条件表达式 `cond`。
+    let cmp_eq = |a: AstExpr, b: AstExpr| -> AstExpr {
+        AstExpr::new(
+            ExprKind::ComparisonChain {
+                elements: vec![a, b],
+                operators: vec![CompareOp::Eq],
+            },
+            span,
+        )
+    };
+    let cond = match kind {
+        AssertKind::Plain => args[0].clone(),
+        AssertKind::Eq => cmp_eq(args[0].clone(), args[1].clone()),
+        AssertKind::Ne => AstExpr::new(
+            ExprKind::Unary {
+                op: UnaryOp::Not,
+                operand: cmp_eq(args[0].clone(), args[1].clone()),
+            },
+            span,
+        ),
+    };
+    // `if !cond { panic!(msg) } else { () }`
+    let not_cond = AstExpr::new(
+        ExprKind::Unary {
+            op: UnaryOp::Not,
+            operand: cond,
+        },
+        span,
+    );
+    let msg_idx = match kind {
+        AssertKind::Plain => 1,
+        AssertKind::Eq | AssertKind::Ne => 2,
+    };
+    let msg = args.get(msg_idx).cloned().unwrap_or_else(|| empty_str(span));
+    let panic_call = mk_ident_call("panic".to_string(), vec![msg], span);
+    let then_block = AstBlock {
+        stmts: vec![AstStmt::Semi(panic_call)],
+        final_expr: None,
+        span,
+    };
+    let else_block = AstBlock {
+        stmts: vec![],
+        final_expr: Some(AstExpr::new(ExprKind::Unit, span)),
+        span,
+    };
+    let if_expr = AstExpr::new(
+        ExprKind::If {
+            cond: not_cond,
+            then_block,
+            else_block: Some(else_block),
+        },
+        span,
+    );
+    infer_expr(ctx, &if_expr)
 }
 
 pub(crate) fn parse_format_string(s: &str, span: Span) -> Result<Vec<FormatSeg>, TypeError> {

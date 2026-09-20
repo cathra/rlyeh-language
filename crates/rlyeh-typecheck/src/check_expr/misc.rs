@@ -9,6 +9,8 @@ pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
     let dyn_arr = || Type::Array(Box::new(Type::Infer), 0);
     match name {
         "print" | "println" | "eprint" | "eprintln" => Some((vec![Type::Infer], Type::Unit)),
+        // panic!：接收一条 &str 消息（或空），返回单元；codegen 输出到 stderr 后 abort()。
+        "panic" => Some((vec![Type::Infer], Type::Unit)),
         "alloc_array" => Some((vec![Type::I64], dyn_arr())),
         "array_copy" => Some((vec![dyn_arr(), dyn_arr(), Type::I64], Type::Unit)),
         "array_free" => Some((vec![dyn_arr()], Type::Unit)),
