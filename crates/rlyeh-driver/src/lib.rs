@@ -417,14 +417,17 @@ impl IncrementalDriver {
 
         // 2. 全量编译 + 写入缓存
         self.stats.misses += 1;
+        // D（P4）：字符串源码路径同样注入 `--dep-root` 依赖，使 `dep_roots`
+        // 在所有编译路径一致生效（磁盘路径见 `compile_file_to_llvm`）。
+        let source = module::inject_dep_roots(source, &self.dep_roots)?;
         let llvm = full_pipeline_with_hints(
-            source,
+            &source,
             &self.region_hints,
             self.prelude_len,
             self.prelude_lines,
             self.visibility,
         )?;
-        let interface = extract_interface(source)?;
+        let interface = extract_interface(&source)?;
         let interface_hash = compute_interface_hash(&interface);
         cache.store_llvm(file, &source_hash, &interface_hash, &llvm)?;
         let _ = cache.clean_stale();

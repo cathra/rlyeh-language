@@ -121,6 +121,20 @@
 - 端到端：`examples/` 或 `tests/` 下新建含 `Rlyeh.toml` + 本地 `--dep-root` 指向的示例库项目，`rlyeh build --dep-root demo=/tmp/demo` 编译通过，`main.rl` 经 `import demo::api::foo` 调用并运行输出正确。
 - 全量套件回归 0 失败（无 `--dep-root` 时行为不变）。
 
+### 实施状态（2026-09-20）：D 已落地
+
+`--dep-root pkg=dir` 端到端可用：`main.rs` 解析重复参数 → `CliOpts.dep_roots` →
+`IncrementalDriver::with_dep_roots` → `compile_file_to_llvm` 经
+`module::inject_dep_roots` 将依赖入口（`src/lib.rl`，回退 `lib.rl` / `module.rl`）以
+`pub module pkg { ... }` 包裹前置。`import pkg::item;` 正确解析（依赖经工作流 C 的
+`pub` 契约暴露公共面）。
+
+**补充修复**：`IncrementalDriver::compile_to_llvm(file, source)`（字符串源码路径，
+供 `run_source` 等使用）此前绕过 `inject_dep_roots`，导致 `dep_roots` 仅磁盘路径生效、
+字符串路径被忽略；现统一在编译前注入。回归用例：
+`crates/rlyeh-driver/tests/dep_root_test.rs`（`dep_root_injection_resolves_pub_module`
+输出 49、`dep_root_missing_entry_errors` 缺失入口报错）。
+
 ---
 
 ### 实施状态（2026-09-20）：`pub` 覆盖 struct / enum / protocol / actor
