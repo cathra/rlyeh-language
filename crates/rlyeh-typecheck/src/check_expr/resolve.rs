@@ -2,6 +2,8 @@
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
 use super::*;
+use std::collections::HashMap;
+use crate::check_expr::substitute;
 
 pub(super) fn resolve_callable(ctx: &TypeContext, name: &str) -> String {
     // `r#` 原始标识符：显式引用根命名空间（如 fs 模块内 `r#rename(...)`
@@ -112,6 +114,16 @@ pub(crate) fn resolve_ast_type(
                     .resolve_full_name(name)
                     .or_else(|| ctx.resolve_named_type_suffix(name))
                     .unwrap_or_else(|| name.to_string());
+                // 泛型类型别名展开：`Alias<Args>` → 按实参代入目标类型
+                if let Some((params, target)) = ctx.generic_aliases.get(&full) {
+                    if params.len() == args.len() {
+                        let mut subst: HashMap<String, Type> = HashMap::new();
+                        for (p, a) in params.iter().zip(args.iter()) {
+                            subst.insert(p.clone(), resolve_ast_type(ctx, a, span)?);
+                        }
+                        return Ok(substitute(target, &subst));
+                    }
+                }
                 let mut resolved = Vec::with_capacity(args.len());
                 for a in args {
                     resolved.push(resolve_ast_type(ctx, a, span)?);

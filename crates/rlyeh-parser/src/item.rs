@@ -7,6 +7,7 @@ use rlyeh_ast::{
     AstStructDecl, AstStructField, AstProtocolDecl, AstType, AstTypeParam, AstUseDecl, AstUseMember,
 };
 use rlyeh_lexer::Token;
+use rlyeh_ast::AstTypeAlias;
 
 impl<'src> Parser<'src> {
     /// 解析函数声明（含 pub / async / unsafe / extern 前置修饰符）
@@ -378,6 +379,23 @@ impl<'src> Parser<'src> {
             assoc_types,
             derive: Vec::new(),
             repr_c: false,
+            span: self.merge_span(start, end),
+        })
+    }
+
+    /// 类型别名声明（`type Name<T> = Type;`，`is_pub` 由调用方（pub 前缀分支）设置）
+    pub(crate) fn parse_type_alias(&mut self) -> Result<AstTypeAlias, ParseError> {
+        let start = self.expect(&Token::Type, "'type'")?.span;
+        let name = self.expect_ident()?;
+        let generics = self.parse_generics()?;
+        self.expect(&Token::Assign, "'='")?;
+        let target = self.parse_type()?;
+        let end = self.expect(&Token::Semicolon, "';'")?.span;
+        Ok(AstTypeAlias {
+            name,
+            is_pub: false,
+            generics,
+            target,
             span: self.merge_span(start, end),
         })
     }

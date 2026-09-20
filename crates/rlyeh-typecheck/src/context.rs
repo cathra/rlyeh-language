@@ -124,8 +124,10 @@ pub struct TypeContext {
     pub impl_defs: Vec<ImplDef>,
     /// 变体名索引（变体名 → (枚举名, 变体名)，支持裸名 `Some(x)` 构造）
     pub variant_index: HashMap<String, (String, String)>,
-    /// 类型别名表
+    /// 类型别名表（非泛型别名：名称 → 目标类型）
     pub type_aliases: HashMap<String, Type>,
+    /// 泛型类型别名表（名称 → (泛型参数名列表, 目标类型，含 Generic 占位)）
+    pub generic_aliases: HashMap<String, (Vec<String>, Type)>,
     /// use 导入别名表（本地名 → 完整符号名，如 `"add"` → `"math::add"`）
     pub use_aliases: HashMap<String, String>,
     /// 模块常量表（完整符号名 → (HIR 值, 类型)，如 `"math::MAX"`）
@@ -456,6 +458,11 @@ impl TypeContext {
     #[allow(dead_code)]
     pub fn insert_type_alias(&mut self, name: String, type_: Type) {
         self.type_aliases.insert(name, type_);
+    }
+
+    /// 登记泛型类型别名（目标类型中可能含 `Type::Generic` 占位，使用时按实参替换）
+    pub fn insert_generic_type_alias(&mut self, name: String, params: Vec<String>, type_: Type) {
+        self.generic_aliases.insert(name, (params, type_));
     }
 
     /// 记录一个 use 导入别名（本地名 → 完整符号名）。

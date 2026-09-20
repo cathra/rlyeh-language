@@ -122,28 +122,34 @@ pub(crate) fn eval_const_value(expr: &HirExpr) -> Option<ConstValue> {
     }
 }
 
-/// 第一遍：收集结构体 / 函数签名 / use 导入（递归处理嵌套模块）。
+/// 收集声明：分三遍以正确处理类型别名与函数签名间的引用顺序。
+///
+/// - 第一遍：结构体 / 枚举 / protocol / impl / actor / use / const / 模块
+///   （**不含**函数签名与类型别名），先登记全部类型名。
+/// - 第二遍：类型别名（不动点循环支持别名→别名前向引用；目标可引用第一遍
+///   已登记的类型名）。
+/// - 第三遍：函数签名（此时别名已登记，签名中的别名类型可正确解析）。
 fn collect_declarations(ctx: &mut TypeContext, program: &AstProgram) -> Result<(), TypeError> {
+    // 第一遍：结构 / 枚举 / protocol / impl / actor / use / const / 模块
+    // （不含 fn 签名与 type 别名）
     for item in &program.items {
         collect_item_decls(ctx, item, "")?;
+    }
+    // 第二遍：类型别名（支持别名→别名前向引用；目标可引用第一遍已登记类型名）
+    collect_type_aliases_pass(ctx, &program.items, "")?;
+    // 第三遍：函数签名（此时别名已登记，签名中的别名类型可正确解析）
+    for item in &program.items {
+        collect_fn_sigs_pass(ctx, item, "")?;
     }
     Ok(())
 }
 
-/// 收集单个项的声明（带模块前缀）。
-fn collect_item_decls(
-    ctx: &mut TypeContext,
-    item: &AstItem,
-    prefix: &str,
-) -> Result<(), TypeError> {
+/// 第三遍：收集顶层函数签名（类型别名已在第二遍登记，签名中的别名可正确解析）。
+///
+/// 仅处理顶层 `fn`；模块内函数签名由各自模块收集路径处理（保持既有行为不变）。
+/// 逻辑与原 `collect_item_decls` 的 `FnDecl` 分支一致，仅拆出以调整收集时序。
+fn collect_fn_sigs_pass(ctx: &mut TypeContext, item: &AstItem, prefix: &str) -> Result<(), TypeError> {
     match item {
-        AstItem::StructDecl(s) => {
-            collect_struct(ctx, s, prefix)?;
-            expand_derives_for_struct(ctx, s, prefix)?;
-            if s.is_pub {
-                ctx.pub_symbols.insert(full_name(prefix, &s.name));
-            }
-        }
         AstItem::FnDecl(f) => {
             if !f.generics.is_empty() {
                 // 泛型函数注册为模板，调用点按实参实例化
@@ -196,6 +202,34 @@ fn collect_item_decls(
                 }
             }
         }
+        AstItem::ModDecl(m) => {
+            // 登记模块内函数签名，使模块内跨函数调用（如 `io::file::open` 调 `io::base::c_str`）
+            // 能在 check_item 阶段解析（M0：补齐模块函数签名登记）。
+            let new_prefix = full_name(prefix, &m.name);
+            collect_mod_fn_sigs(ctx, m, &new_prefix, &mut Vec::new())?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// 收集单个项的声明（带模块前缀）。
+fn collect_item_decls(
+    ctx: &mut TypeContext,
+    item: &AstItem,
+    prefix: &str,
+) -> Result<(), TypeError> {
+    match item {
+        AstItem::StructDecl(s) => {
+            collect_struct(ctx, s, prefix)?;
+            expand_derives_for_struct(ctx, s, prefix)?;
+            if s.is_pub {
+                ctx.pub_symbols.insert(full_name(prefix, &s.name));
+            }
+        }
+        // fn 签名收集延后至第三遍（collect_fn_sigs_pass），确保类型别名已登记，
+        // 避免签名中的别名（如 `fn f() -> Int`）因别名尚未收集而报 undefined type。
+        AstItem::FnDecl(_) => {}
         AstItem::EnumDecl(e) => {
             collect_enum(ctx, e, prefix)?;
             if e.is_pub {
@@ -221,6 +255,7 @@ fn collect_item_decls(
                 ctx.pub_symbols.insert(full_name(prefix, &a.name));
             }
         }
+        AstItem::TypeAlias(_) => {}
         AstItem::ModDecl(m) => {
             let new_prefix = full_name(prefix, &m.name);
             // 登记已声明模块路径（供 `resolve_import_path` 区分相对子模块导入与
@@ -627,7 +662,7 @@ pub(crate) fn check_item(
         // use 导入在收集阶段（第一遍）已注册；其余项 MVP 阶段不生成 HIR
         AstItem::UseDecl(_) | AstItem::StructDecl(_) | AstItem::ProtocolDecl(_)
         | AstItem::ImplBlock(_) | AstItem::EnumDecl(_)
-        | AstItem::MacroDecl(_) | AstItem::Statement(_) => {}
+        | AstItem::MacroDecl(_) | AstItem::TypeAlias(_) | AstItem::Statement(_) => {}
     }
     Ok(())
 }

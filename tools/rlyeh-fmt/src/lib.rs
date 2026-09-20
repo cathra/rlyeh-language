@@ -182,6 +182,7 @@ impl Printer {
             AstItem::UseDecl(u) => self.print_use_decl(u),
             AstItem::ConstDecl(c) => self.print_const_decl(c),
             AstItem::ActorDecl(a) => self.print_actor_decl(a),
+            AstItem::TypeAlias(ta) => self.print_type_alias(ta),
             AstItem::MacroDecl(m) => {
                 let params = if m.params.is_empty() {
                     String::new()
@@ -359,6 +360,27 @@ impl Printer {
             Some(a) => self.line(&format!("use {} as {};", path, a)),
             None => self.line(&format!("use {};", path)),
         }
+    }
+
+    fn print_type_alias(&mut self, ta: &AstTypeAlias) {
+        let mut head = String::from("type ");
+        if ta.is_pub {
+            head.insert_str(0, "pub ");
+        }
+        head.push_str(&ta.name);
+        if !ta.generics.is_empty() {
+            let gens = ta
+                .generics
+                .iter()
+                .map(|g| g.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            head.push_str(&format!("<{gens}>"));
+        }
+        head.push_str(" = ");
+        head.push_str(&fmt_type(&ta.target));
+        head.push(';');
+        self.line(&head);
     }
 
     fn print_const_decl(&mut self, c: &AstConstDecl) {

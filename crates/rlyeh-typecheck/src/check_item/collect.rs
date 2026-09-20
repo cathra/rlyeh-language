@@ -2,6 +2,7 @@
 //! （由 mod.rs 二次拆分而来，保持语义等价）
 
 use super::*;
+use rlyeh_ast::AstTypeAlias;
 
 pub(crate) fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &str) -> Result<(), TypeError> {
     ctx.insert_struct(
@@ -13,6 +14,79 @@ pub(crate) fn collect_struct(ctx: &mut TypeContext, s: &AstStructDecl, prefix: &
             repr_c: s.repr_c,
         },
     );
+    Ok(())
+}
+
+/// 收集类型别名：解析目标类型并登记到 `type_aliases` / `generic_aliases`。
+/// 泛型别名的目标类型保留 `Type::Generic` 占位，于使用点经 `substitute` 按实参展开。
+pub(crate) fn collect_type_alias(
+    ctx: &mut TypeContext,
+    ta: &AstTypeAlias,
+    prefix: &str,
+) -> Result<(), TypeError> {
+    let full = full_name(prefix, &ta.name);
+    let saved_params = std::mem::take(&mut ctx.type_params);
+    let saved_subst = std::mem::take(&mut ctx.generic_subst);
+    ctx.type_params = ta.generics.iter().map(|p| p.name.clone()).collect();
+    let target = resolve_ast_type(ctx, &ta.target, ta.span)?;
+    ctx.type_params = saved_params;
+    ctx.generic_subst = saved_subst;
+    if ta.generics.is_empty() {
+        ctx.insert_type_alias(full.clone(), target);
+    } else {
+        ctx.insert_generic_type_alias(
+            full.clone(),
+            ta.generics.iter().map(|p| p.name.clone()).collect(),
+            target,
+        );
+    }
+    if ta.is_pub {
+        ctx.pub_symbols.insert(full);
+    }
+    Ok(())
+}
+
+/// 收集作用域内全部类型别名（不动点循环以支持别名→别名前向引用）。
+///
+/// 必须在结构体 / 枚举 / protocol / impl / 模块等类型名登记之后调用，
+/// 故别名目标类型可引用这些已登记类型；别名之间若互为前向引用，则经多轮
+/// 重试解析——目标尚为未登记别名时 `resolve_ast_type` 报 `UndefinedType`，
+/// 视为待定、下一轮再试，直至收敛。仍无法解析者（引用不存在类型 / 循环别名）
+/// 在末轮显式报错。
+pub(crate) fn collect_type_aliases_pass(
+    ctx: &mut TypeContext,
+    items: &[AstItem],
+    prefix: &str,
+) -> Result<(), TypeError> {
+    let aliases: Vec<&AstTypeAlias> = items
+        .iter()
+        .filter_map(|it| if let AstItem::TypeAlias(ta) = it { Some(&**ta) } else { None })
+        .collect();
+    if aliases.is_empty() {
+        return Ok(());
+    }
+    let mut pending: Vec<&AstTypeAlias> = aliases;
+    let mut progress = true;
+    while progress {
+        progress = false;
+        let mut next = Vec::new();
+        for ta in pending {
+            match collect_type_alias(ctx, ta, prefix) {
+                Ok(()) => progress = true,
+                // 前向引用（目标别名尚未登记）→ 下一轮重试
+                Err(TypeError::UndefinedType { .. }) => next.push(ta),
+                Err(e) => return Err(e),
+            }
+        }
+        pending = next;
+        if !progress {
+            break;
+        }
+    }
+    if !pending.is_empty() {
+        // 仍无法解析（引用不存在的类型或存在循环别名）→ 报错
+        return collect_type_alias(ctx, pending[0], prefix);
+    }
     Ok(())
 }
 
@@ -388,6 +462,7 @@ pub(crate) fn collect_mod_types_inner(
             AstItem::EnumDecl(e) => collect_enum(ctx, e, &new_prefix)?,
             AstItem::ProtocolDecl(t) => collect_protocol(ctx, t, &new_prefix)?,
             AstItem::ImplBlock(imp) => collect_impl(ctx, imp, &new_prefix)?,
+            AstItem::TypeAlias(ta) => collect_type_alias(ctx, ta, &new_prefix)?,
             AstItem::ModDecl(inner_mod) => collect_mod_types_inner(ctx, inner_mod, &new_prefix)?,
             _ => {}
         }
@@ -406,7 +481,14 @@ pub(crate) fn collect_mod_fn_sigs(
         match inner {
             AstItem::FnDecl(f) => {
                 let sig = fn_signature(ctx, f, f.span)?;
-                sigs.push((full_name(prefix, &f.name), sig));
+                let full = full_name(prefix, &f.name);
+                // 登记进主 ctx，使模块内跨函数调用（如 `io::file::open` 调 `io::base::c_str`）
+                // 能在 check_item 阶段经 `lookup_fn_signature` 解析（M0：补齐模块函数签名登记）。
+                ctx.insert_fn_signature(full.clone(), sig.clone());
+                if f.is_extern {
+                    ctx.extern_fns.insert(full.clone());
+                }
+                sigs.push((full, sig));
             }
             AstItem::ModDecl(inner_mod) => {
                 let new_prefix = full_name(prefix, &inner_mod.name);

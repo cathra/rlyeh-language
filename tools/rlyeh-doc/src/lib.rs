@@ -225,6 +225,7 @@ fn category(item: &AstItem) -> &'static str {
         AstItem::ConstDecl(_) => "常量",
         AstItem::ActorDecl(_) => "Actor",
         AstItem::MacroDecl(_) => "其他项",
+        AstItem::TypeAlias(_) => "类型别名",
         AstItem::Statement(_) => "其他项",
     }
 }
@@ -308,6 +309,7 @@ fn item_title(item: &AstItem) -> String {
             }
             s
         }
+        AstItem::TypeAlias(ta) => format!("type {}", ta.name),
         AstItem::Statement(_) => "顶层语句".to_string(),
     }
 }
@@ -421,6 +423,18 @@ pub fn item_signature(item: &AstItem) -> String {
             if !m.params.is_empty() {
                 s.push_str(&format!("({})", m.params.join(", ")));
             }
+            s
+        }
+        AstItem::TypeAlias(ta) => {
+            let mut s = String::from("type ");
+            if ta.is_pub {
+                s.push_str("pub ");
+            }
+            s.push_str(&ta.name);
+            if !ta.generics.is_empty() {
+                s.push_str(&format!("<{}>", fmt_generics(&ta.generics)));
+            }
+            s.push_str(&format!(" = {}", fmt_type(&ta.target)));
             s
         }
         AstItem::Statement(_) => item_title(item),
@@ -628,6 +642,7 @@ fn item_span(item: &AstItem) -> &rlyeh_lexer::Span {
         AstItem::ConstDecl(c) => &c.span,
         AstItem::ActorDecl(a) => &a.span,
         AstItem::MacroDecl(m) => &m.span,
+        AstItem::TypeAlias(ta) => &ta.span,
         AstItem::Statement(s) => stmt_span(s),
     }
 }

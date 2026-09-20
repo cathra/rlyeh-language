@@ -40,6 +40,10 @@ pub fn collect_fn_signatures(
             _ => {}
         }
     }
+    // 类型别名须在函数签名解析前登记（含别名→别名前向引用的不动点处理），
+    // 否则签名中的别名（如 `fn f() -> Int`）会因别名尚未收集而报 undefined type。
+    collect_type_aliases_pass(&mut ctx, &program.items, "")?;
+
     let mut sigs = Vec::new();
     for item in &program.items {
         match item {

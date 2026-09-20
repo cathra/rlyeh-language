@@ -205,6 +205,8 @@ impl<'src> Parser<'src> {
                 Ok(AstItem::ConstDecl(Box::new(self.parse_const()?)))
             }
             Some(Token::Actor) => Ok(AstItem::ActorDecl(Box::new(self.parse_actor()?))),
+            // 顶层类型别名声明 `type Name = Type;`
+            Some(Token::Type) => Ok(AstItem::TypeAlias(Box::new(self.parse_type_alias()?))),
             // `pub` 后按实际关键字分派：mod / const / static / struct / enum /
             // protocol / impl / use / actor 消费 pub 后进入各自解析器；
             // `fn`（及 async / unsafe / extern 前缀）**不消费 pub**，交给
@@ -252,6 +254,12 @@ impl<'src> Parser<'src> {
                         let mut a = self.parse_actor()?;
                         a.is_pub = true;
                         Ok(AstItem::ActorDecl(Box::new(a)))
+                    }
+                    Some(Token::Type) => {
+                        self.bump();
+                        let mut ta = self.parse_type_alias()?;
+                        ta.is_pub = true;
+                        Ok(AstItem::TypeAlias(Box::new(ta)))
                     }
                     _ => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
                 }

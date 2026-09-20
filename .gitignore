@@ -40,6 +40,7 @@ dist/
 !tests/run-pass/import_nested_group.out
 !tests/run-pass/copy_clone.out
 !tests/run-pass/cross_module_mut_self.out
+!tests/run-pass/type_alias.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib

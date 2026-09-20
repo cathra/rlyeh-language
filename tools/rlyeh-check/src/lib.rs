@@ -382,6 +382,7 @@ impl Checker {
                 }
             }
             AstItem::MacroDecl(_) => {}
+            AstItem::TypeAlias(_) => {}
             AstItem::Statement(stmt) => self.walk_stmt(stmt),
         }
     }

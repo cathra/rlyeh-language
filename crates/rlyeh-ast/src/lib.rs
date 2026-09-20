@@ -25,6 +25,21 @@ pub struct AstProgram {
     pub items: Vec<AstItem>,
 }
 
+/// 类型别名声明（`type Name<T> = Type;`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct AstTypeAlias {
+    /// 别名名
+    pub name: String,
+    /// 是否为 `pub`
+    pub is_pub: bool,
+    /// 泛型参数列表（非泛型别名为空）
+    pub generics: Vec<AstTypeParam>,
+    /// 目标类型
+    pub target: AstType,
+    /// 源码位置
+    pub span: Span,
+}
+
 /// 顶层项。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstItem {
@@ -48,6 +63,8 @@ pub enum AstItem {
     ActorDecl(Box<AstActorDecl>),
     /// 宏声明
     MacroDecl(Box<AstMacroDecl>),
+    /// 类型别名声明
+    TypeAlias(Box<AstTypeAlias>),
     /// 顶层语句
     Statement(Box<AstStmt>),
 }
