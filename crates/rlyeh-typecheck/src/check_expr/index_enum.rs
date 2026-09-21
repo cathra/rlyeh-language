@@ -246,19 +246,46 @@ pub(super) fn check_array_lit(
     }
     let mut hir_elems = Vec::with_capacity(elems.len());
     let mut elem_ty: Option<Type> = None;
+    // type-union §9 ②：切片/数组元素为联合（`[i64 | String; N]`）时，父级类型标注的
+    // 元素类型即 union；此时逐元素按各自成员类型包进匿名 enum 构造（`make_union_ctor`），
+    // 使数组缓冲区真正存「union 值（2-slot 堆指针）」而非裸成员值，避免 unsize coercion
+    // 把不同大小的元素 reinterpret（导致未定义行为）。无此分支时 array literal 行为不变。
+    let expected_union: Option<Vec<Type>> = match &ctx.expected_type {
+        Some(Type::Array(inner, _)) => match &**inner {
+            Type::Union(us) => Some(us.clone()),
+            _ => None,
+        },
+        _ => None,
+    };
     for e in elems {
-        let (hir, ty) = infer_expr(ctx, e)?;
+        let (mut hir, ty) = infer_expr(ctx, e)?;
+        // 元素类型：若期望为 union，则整体元素类型为 union（逐元素包裹）；否则沿用推断
+        let elem = if let Some(us) = &expected_union {
+            let idx = us
+                .iter()
+                .position(|u| ty.compatible_with(u))
+                .ok_or_else(|| TypeError::WrongType {
+                    expected: format!("union 成员（{}）", us.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(" | ")),
+                    found: ty.to_string(),
+                    span: e.span,
+                    related: vec![],
+                })?;
+            hir = crate::check_stmt::make_union_ctor(ctx, hir, idx, &us[idx]);
+            Type::Union(us.clone())
+        } else {
+            ty
+        };
         if let Some(prev) = &elem_ty {
-            if !ty.compatible_with(prev) {
+            if !elem.compatible_with(prev) {
                 return Err(TypeError::WrongType {
                     expected: prev.to_string(),
-                    found: ty.to_string(),
+                    found: elem.to_string(),
                     span: e.span,
                     related: vec![],
                 });
             }
         } else {
-            elem_ty = Some(ty);
+            elem_ty = Some(elem.clone());
         }
         hir_elems.push(hir);
     }

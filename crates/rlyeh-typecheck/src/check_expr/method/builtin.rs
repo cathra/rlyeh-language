@@ -126,12 +126,23 @@ pub(super) fn try_builtin_method_call(
                         ty: FieldScalar::Int,
                     }, Span::dummy())), Span::dummy()),
                 ];
+                // 指针元素切片（`String` / 联合等 Ptr 槽宽类型）：`IterRef` 的
+                // `next() -> Option<&T>` 返回元素槽地址 E，而方法接收者需要元素槽中
+                // 直接存放的对象指针 O，二者不一致（指针元素切片 for 迭代 pre-existing
+                // bug）。改用值迭代器 `Iter<T>`（`next() -> Option<T>` 产出 O），使
+                // `for x in cs.iter()` 中 `x` 即为可用作方法接收者的对象指针；非指针
+                // 元素（i64 等）仍走 `IterRef` 以保留原地写回语义。
+                let iter_ty = if field_scalar_of(&elem_ty) == FieldScalar::Ptr {
+                    "Iter"
+                } else {
+                    "IterRef"
+                };
                 return Ok(BuiltinOutcome::Handled(
                     HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
                         stmts,
                         final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
                     })), Span::dummy()),
-                    Type::Named("IterRef".to_string(), vec![elem_ty]),
+                    Type::Named(iter_ty.to_string(), vec![elem_ty]),
                 ));
             }
             // `as_ptr()` / `as_mut_ptr()` → `*const T` / `*mut T`：取胖指针槽 0 的

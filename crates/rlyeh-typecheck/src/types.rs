@@ -230,10 +230,14 @@ impl Type {
                         || (matches!(**a, Type::Str) && is_named_string(b))
                         || (is_named_string(a) && matches!(**b, Type::Str))
                         // S2 unsize coercion：`&[T; N]` → `&[T]`（数组引用可降级为
-                        // 切片胖指针，元素类型须兼容；codegen 侧在调用点构造 `{data, len}`）
+                        // 切片胖指针，codegen 侧在调用点构造 `{data, len}`）。
+                        // **切片为布局敏感类型，元素类型必须完全相同**（`ae == be`）——
+                        // 步长由元素大小决定；`&[i64; N]` 不可 coerce 成 `&[i64 | String]`
+                        // 之类「成员类型 → 联合」形态（会按不同大小 reinterpret 缓冲区，
+                        // 属未定义行为，见 type-union §9 ②）。
                         || matches!(
                             (&**a, &**b),
-                            (Type::Array(ae, _), Type::Slice(be)) if ae.compatible_with(be)
+                            (Type::Array(ae, _), Type::Slice(be)) if ae == be
                         );
                     inner_ok
                         && matches!(

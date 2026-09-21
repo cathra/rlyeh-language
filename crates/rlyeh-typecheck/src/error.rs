@@ -244,6 +244,19 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 类型联合方法分发：方法未在**全部**成员上存在（type-union §9 开放问题①）。
+    ///
+    /// 受限制的类型联合方法分发要求方法对联合的**每一个**成员都存在（且签名一致）；
+    /// 若某成员类型没有该方法（或经 `protocol_hint` 找不到），报本错误，并指出
+    /// 缺失于哪个成员。
+    UnionMethodNotCommon {
+        /// 方法名
+        method: String,
+        /// 缺失该方法的成员类型
+        missing_on: String,
+        /// 源码位置
+        span: Span,
+    },
     /// 泛型实参不满足 protocol bound（U3）
     GenericBoundMismatch {
         /// 泛型参数名
@@ -349,6 +362,7 @@ impl TypeError {
             | TypeError::NonConstantBound { span }
             | TypeError::Unsupported { span, .. }
             | TypeError::UnionMembersNotDisjoint { span, .. }
+            | TypeError::UnionMethodNotCommon { span, .. }
             | TypeError::GenericBoundMismatch { span, .. }
             | TypeError::GenericArityMismatch { span, .. }
             | TypeError::MissingSuperprotocol { span, .. }
@@ -499,6 +513,14 @@ fn write_message(f: &mut fmt::Formatter<'_>, loc: &str, err: &TypeError) -> fmt:
             f,
             "{loc}: error: union members `{first}` and `{second}` are not disjoint ({why})"
         ),
+        TypeError::UnionMethodNotCommon {
+            method,
+            missing_on,
+            ..
+        } => write!(
+            f,
+            "{loc}: error: method `{method}` is not available on all union members (missing on `{missing_on}`)"
+        ),
         TypeError::GenericBoundMismatch {
             param,
             bound,
@@ -626,6 +648,7 @@ impl TypeError {
             TypeError::NonConstantBound { .. } => "TC024",
             TypeError::Unsupported { .. } => "TC025",
             TypeError::UnionMembersNotDisjoint { .. } => "TC026",
+            TypeError::UnionMethodNotCommon { .. } => "TC026a",
             TypeError::GenericBoundMismatch { .. } => "TC027",
             TypeError::GenericArityMismatch { .. } => "TC028",
             TypeError::MissingSuperprotocol { .. } => "TC029",
@@ -706,6 +729,9 @@ impl TypeError {
             }
             TypeError::UnionMembersNotDisjoint { .. } => {
                 Some("调整联合成员，使其两两互不相交（如避免 `&T | &mut T`）")
+            }
+            TypeError::UnionMethodNotCommon { .. } => {
+                Some("确保联合的每个成员类型都实现了该方法，且签名一致（参数与返回类型相同）")
             }
             TypeError::GenericBoundMismatch { .. } => {
                 Some("为类型实现所需 protocol，或放宽 `where` 约束")

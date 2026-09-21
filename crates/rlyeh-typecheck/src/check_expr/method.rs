@@ -1,6 +1,7 @@
 //! 表达式检查子模块：方法调用与动态分派。
 //! （由 check_expr/mod.rs 拆分而来，保持语义等价）
 
+use rlyeh_ast::{AstExpr, AstPattern, ExprKind, MatchArm};
 use rlyeh_hir::{HirExprKind, HirStmtKind};
 use rlyeh_lexer::Span;
 use super::*;
@@ -320,6 +321,13 @@ pub(super) fn check_method_call(
     // 下方 `unify(cand.self_type, self_ty)` 无法绑定泛型 `T`，方法体 / 返回类型
     // 中的 `T` 会泄漏为未定义类型。
     self_ty = ctx.canonical_type(&self_ty);
+    // 受限制的类型联合方法分发（type-union §9 开放问题①）：接收者为 `Type::Union`
+    // 且方法对所有成员都存在时，desugar 为「按成员类型臂分发」的 `match`（零新增
+    // IR 节点，复用现有 union type-arm 收窄）。某成员缺方法 / 签名不一致时，本分支
+    // 直接返回 `UnionMethodNotCommon`（或 per-arm 解析的具体诊断）。
+    if let Type::Union(_) = &self_ty {
+        return try_union_method_call(ctx, receiver, method, args, protocol_hint, span);
+    }
     // J3 迭代器适配器：map / filter / fold / collect / take / skip
     // （数组或自定义迭代器 receiver → 内建 desugar，优先于通用方法解析）
     if let Some(res) = try_check_adapter(ctx, receiver, &self_ty, method, args, span)? {
@@ -656,5 +664,89 @@ pub(super) fn check_method_call(
         }, Span::dummy()),
         ret_ty,
     ))
+}
+
+/// 受限制的类型联合方法分发（type-union §9 开放问题①）。
+///
+/// 接收者为 `Type::Union(members)` 时，若 `method` 对**每一个**成员都存在、且各成员的
+/// 方法签名一致，则把 `recv.method(args)` desugar 为：
+///
+/// ```text
+/// match recv {
+///     M_0 => M_0.method(args),
+///     M_1 => M_1.method(args),
+///     ...
+/// }
+/// ```
+///
+/// 复用现有 union type-arm 收窄（`check_pattern` 的 `Ident` 分支按 `member.to_string()`
+/// 绑定同名变量），per-arm 的方法调用走常规 `check_method_call`，故无需新增 IR 节点、
+/// 也无需新增 codegen 通道。各臂返回类型须一致（由 `check_match` 强制）；不一致 /
+/// 某成员缺方法时，由本函数前置检查报 `UnionMethodNotCommon`，或由 per-arm 解析产出
+/// 具体诊断。
+fn try_union_method_call(
+    ctx: &mut TypeContext,
+    receiver: &AstExpr,
+    method: &str,
+    args: &[AstExpr],
+    protocol_hint: Option<&str>,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 推断接收者类型，取出联合成员列表
+    let (_, recv_ty) = infer_expr(ctx, receiver)?;
+    let self_ty = ctx.canonical_type(&peel_refs_and_heap(&recv_ty));
+    let members = match &self_ty {
+        Type::Union(ms) => ms,
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: "联合方法分发要求接收者为类型联合".to_string(),
+                span,
+            })
+        }
+    };
+    // 前置检查：方法须对**所有**成员存在（带 `protocol_hint` 时按 protocol 候选集判定）
+    for m in members {
+        let has = if let Some(hint) = protocol_hint {
+            ctx.find_protocol_method_candidates(m, hint, method)
+                .into_iter()
+                .next()
+                .is_some()
+        } else {
+            ctx.find_impl_candidates(m, method).into_iter().next().is_some()
+        };
+        if !has {
+            return Err(TypeError::UnionMethodNotCommon {
+                method: method.to_string(),
+                missing_on: m.to_string(),
+                span,
+            });
+        }
+    }
+    // desugar 为按成员类型臂分发的 match
+    let arms = members
+        .iter()
+        .map(|m| {
+            let name = m.to_string();
+            MatchArm {
+                pattern: AstPattern::Ident(name.clone()),
+                guard: None,
+                body: AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: AstExpr::new(ExprKind::Ident(name), span),
+                        method: method.to_string(),
+                        args: args.to_vec(),
+                        protocol_hint: protocol_hint.map(|s| s.to_string()),
+                    },
+                    span,
+                ),
+                span,
+            }
+        })
+        .collect();
+    let match_expr = AstExpr::new(ExprKind::Match {
+        expr: receiver.clone(),
+        arms,
+    }, span);
+    infer_expr(ctx, &match_expr)
 }
 

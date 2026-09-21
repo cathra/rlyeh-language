@@ -779,7 +779,10 @@ impl<T> Iter<T> {
         if self.len == 0 {
             return Option::None;
         }
-        let v = *self.data;
+        // 取当前元素值（值拷贝 / 对象指针）：指针元素切片中元素槽直接存对象指针
+        // O，索引 `self.data[0]` 即读出 O（而非槽地址 E），与 `cs[0]` 索引语义一致，
+        // 故迭代产出可用作方法接收者的对象指针（修复指针元素切片 for 迭代 pre-existing bug）。
+        let v = self.data[0];
         self.data = self.data + 1;
         self.len = self.len - 1;
         Option::Some(v)
@@ -801,7 +804,10 @@ impl<T> Iter<T>: Iterator {
         if self.len == 0 {
             return Option::None;
         }
-        let v = *self.data;
+        // 取当前元素值（值拷贝 / 对象指针）：指针元素切片中元素槽直接存对象指针
+        // O，索引 `self.data[0]` 即读出 O（而非槽地址 E），与 `cs[0]` 索引语义一致，
+        // 故迭代产出可用作方法接收者的对象指针（修复指针元素切片 for 迭代 pre-existing bug）。
+        let v = self.data[0];
         self.data = self.data + 1;
         self.len = self.len - 1;
         Option::Some(v)
@@ -820,7 +826,10 @@ impl<T> IterMut<T> {
         if self.len == 0 {
             return Option::None;
         }
-        let v = *self.data;
+        // 取当前元素值（值拷贝 / 对象指针）：指针元素切片中元素槽直接存对象指针
+        // O，索引 `self.data[0]` 即读出 O（而非槽地址 E），与 `cs[0]` 索引语义一致，
+        // 故迭代产出可用作方法接收者的对象指针（修复指针元素切片 for 迭代 pre-existing bug）。
+        let v = self.data[0];
         self.cur = self.data;
         self.data = self.data + 1;
         self.len = self.len - 1;
@@ -845,7 +854,10 @@ impl<T> IterMut<T>: Iterator {
         if self.len == 0 {
             return Option::None;
         }
-        let v = *self.data;
+        // 取当前元素值（值拷贝 / 对象指针）：指针元素切片中元素槽直接存对象指针
+        // O，索引 `self.data[0]` 即读出 O（而非槽地址 E），与 `cs[0]` 索引语义一致，
+        // 故迭代产出可用作方法接收者的对象指针（修复指针元素切片 for 迭代 pre-existing bug）。
+        let v = self.data[0];
         self.cur = self.data;
         self.data = self.data + 1;
         self.len = self.len - 1;

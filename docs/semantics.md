@@ -469,7 +469,7 @@ MVP 中不能独立存储、不能作值类型、也不能作函数返回值类�
 |------|------|
 | `.len()` | 返回槽 1 的长度（i64） |
 | `.first()` / `.last()` | 等价于 `s[0]` / `s[len - 1]`；空切片取元素为越界读（MVP 不额外检查，与数组索引一致） |
-| `.iter()` | 零拷贝构造 `IterRef<T>`（与切片布局同构），可用 `for r in s.iter()` 迭代 |
+| `.iter()` | 构造迭代器供 `for r in s.iter()` 迭代；**指针元素类型**（`String` / 联合等 `field_scalar_of == Ptr`）走**值迭代器 `Iter<T>`**（产出对象指针，可直接作方法接收者），非指针元素走 `IterRef<T>`（保留原地写回） |
 | `.as_ptr()` / `.as_mut_ptr()` | 取槽 0 的 data 指针，得 `*const T` / `*mut T`（供 extern / FFI 传缓冲区首址） |
 
 **MVP 限制**：不支持 `split_at`（返回切片二元组）；`&[u8]` 与 `&str` 之间无视角转换；
@@ -517,12 +517,76 @@ match x {
 **优先级**：`&` / `*` 前缀构造的内层不含联合，故 `&T | &mut U` 为 `(&T) | (&mut U)`；
 括号 / 泛型实参 / 元组 / 数组 / fn 签名内仍可写联合（`Vec<i64 | String>` 合法）。
 
+**方法分发（开放问题① ✅ 已实现，2026-09-21）**：当方法对联合的**每一个**成员都存在且
+签名一致（参数类型与返回类型全部相同）时，可不经显式 `match` 直接经联合调用，编译器
+desugar 为按成员类型臂分发的 `match`（零新增 IR 节点，复用 §8.4 的类型臂收窄）：
+
+```rlyeh
+struct Cat { v: i64 }
+struct Dog { v: i64 }
+impl Cat  { fn sound(&self) -> i64 { self.v } }
+impl Dog  { fn sound(&self) -> i64 { self.v + 100 } }
+
+fn main() {
+  let u: Cat | Dog = Cat { v: 1 };
+  println(u.sound());          // 1（desugar: match u { Cat => Cat.sound(), Dog => Dog.sound() }）
+}
+```
+
+要点：① desugar 后每臂把 payload（按成员类型绑定的同名变量）作为接收者调用
+`member.method(args)`，实参在每臂各重新推断一次（仅一臂执行，无副作用重复）；
+② 返回类型由各臂一致约束（`check_match` 强制），签名不一致时由 per-arm 解析报出具体诊断；
+③ 若某成员**没有**该方法，报 `UnionMethodNotCommon`（指出缺失于哪个成员，错误码 `TC026a`）；
+④ `protocol_hint` 路径（如 `fmt::Display::fmt`）按 protocol 候选集判定方法存在性。
+
 **MVP 限制**：
 
 - payload 绑定到**类型名同名变量**（`i64 => println(i64)`）；后续可引入 `x @ T`
   绑定语法（需 parser 支持）以免类型名 / 变量名混用。
 - 不支持 `split_at`（返回切片二元组）；`&[u8]` 与 `&str` 之间无视角转换。
-- 联合的方法分发未实现（规划中标注为开放问题）。
+- 联合的方法分发已支持（见上文，2026-09-21）；联合嵌套切片元素已支持（见 §8.4.1，
+  2026-09-21）；开放问题仅余**联合含 `dyn Protocol` 成员**待规划。
+
+---
+
+### 8.4.1 联合嵌套切片元素（开放问题② ✅ 已实现，2026-09-21）
+
+切片元素可为联合类型，如 `&[i64 | String]`。数组字面量在期望元素类型为 union 时，
+逐元素 `make_union_ctor` 包成真正的 `[union; N]`（每个元素即匿名 enum 值，即 2-slot
+堆对象指针，`field_scalar_of(union) = Ptr`，故切片步长恒为 8 字节）：
+
+```rlyeh
+fn first(xs: &[i64 | String]) -> i64 {
+    match xs[0] { i64 => 1, String => 2, _ => 3 }
+}
+fn main() {
+    let a: [i64 | String; 3] = [1i64, 2i64, 3i64];
+    println(first(&a));     // 1：首元素 i64 命中 i64 臂
+    let cs: &[i64 | String] = &a;
+    println(cs.len());      // 3
+    let sub: &[i64 | String] = cs[1..<3];   // 再切片（sub-slice）仍按 union 步长
+}
+```
+
+**unsize coercion 约束（布局安全）**：切片为布局敏感类型，`&[T; N] → &[U]` 的 unsize
+降级**仅当 `T == U`（元素类型完全相同）**方可成立——降级只改写「指针 + 长度」，不改元素
+布局。故 `&[i64; 3]` **不可** coerce 成 `&[i64 | String]`（步长同 8 字节但元素语义不同，
+按值 reinterpret 缓冲区属未定义行为，MVP 之前的实现会据此产生段错误）。该约束在
+`types.rs` 的 `compatible_with` S2 规则与 `call.rs` / `check_stmt.rs` 的 unsize 站点
+同步收紧；违反时类型检查拒绝（`TC018`）。
+
+**切片迭代 pre-existing bug 已修复（2026-09-21）**：此前 `for x in xs.iter()` 对
+「指针元素切片」（`&[String]`、`&[i64 | String]` 等）错位读取——`Slice::iter()` 被
+desugar 成 `IterRef<T>`，其 `next() -> Option<&T>` 经 `&self.data[0]` 返回**元素槽地址 E**
+（指向存「对象指针 O」的 8 字节槽），而方法接收者需直接的对象指针 O，致 `x.len()` 读
+`*(E+8)` 垃圾（属通用语言 bug，与联合无关）。修复：`iter()` desugar 对
+`field_scalar_of(elem_ty) == Ptr` 的元素改走**值迭代器 `Iter<T>`**（`next() -> Option<T>`
+经 `self.data[0]` 索引直接读出 O，与 `cs[0]` 索引语义一致），`Iter::next` / `IterMut::next`
+同步由 `*self.data` 改为 `self.data[0]`（值类型语义等价、指针类型修正为读出 O）；
+非指针元素保留 `IterRef<T>` 以留原地写回语义。故 `for x in cs.iter()` 对 `&[String]` /
+`&[i64 | String]` 现已可正确迭代并在循环体内调用方法 / `match`。**残余限制**：`iter_ref()`
+（显式 `IterRef<T>`）对指针元素仍返回槽地址 E，方法分发 / 原地写回不可用，改用 `.iter()`
+值迭代即可规避。主路径（索引 + match 类型臂收窄）始终不受影响。
 
 ### 8.5 受限标量枚举语义（U3 ✅ 已实现，2026-08-30）
 

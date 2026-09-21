@@ -884,10 +884,12 @@ pub(crate) fn check_stmt_inner(
                     }
                     // S2 unsize coercion：let s: &[T] = &arr; —— &[T; N] 经 unsize
                     // 降级为切片胖指针 {data, len}（len = 编译期数组长度），与
-                    // check_expr::call 实参位置同构；仅当元素类型兼容时转换。
+                    // check_expr::call 实参位置同构。**切片为布局敏感类型，元素类型
+                    // 必须完全相同**（`ae == be`）方可降级（见 call.rs 同款收紧，
+                    // type-union §9 ②：`&[i64; 3]` 不可 coerce 成 `&[i64 | String]`）。
                     if let (Type::Ref(ia, _, _), Type::Ref(ib, _, _)) = (&ty, &at) {
-                        if let (Type::Array(_, n), Type::Slice(_)) = (&**ia, &**ib) {
-                            if ty.compatible_with(&at) {
+                        if let (Type::Array(ae, n), Type::Slice(be)) = (&**ia, &**ib) {
+                            if ae == be {
                                 h_init = make_slice_fat(ctx, h_init, *n as i128);
                                 ty = at.clone();
                             }

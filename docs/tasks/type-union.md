@@ -71,7 +71,7 @@
 
 - **复用**：`EnumDef`/`VariantDef`/`check_match`/`field_scalar_of`、现有 enum codegen。
 - **不影响**：具名 `enum`、`Option`/`Result`（仍是具名 enum）；联合是它们的匿名补充。
-- **与切片正交**（见 `slice-type-system.md`）：可组合 `&[i64 | String]`，但 MVP 暂不允许联合嵌套于切片元素，标注为开放问题。
+- **与切片正交**（见 `slice-type-system.md`）：可组合 `&[i64 | String]`，联合嵌套于切片元素已支持（见 §9 ②，2026-09-21）。
 
 ## 7. 验收标准
 
@@ -94,5 +94,7 @@
 ## 9. 风险与开放问题
 
 - `|` 在类型上下文的解析优先级（与闭包 `|x|`、位或区分——类型上下文无歧义，但需明确 `fn(T | U) -> R` 的括号规则）。
-- 联合的方法分发（MVP 不做，标注为开放问题）。
+- 联合的方法分发（MVP 不做，标注为开放问题）。**✅ 已实现（2026-09-21）**：`check_method_call` 在接收者为 `Type::Union` 时 desugar 为按成员类型臂分发的 `match`（零新增 IR / codegen 通道），方法须对所有成员存在且签名一致，否则报 `UnionMethodNotCommon`（`TC026a`）；验收 `tests/run-pass/union_method_dispatch.rl` + `tests/compile-fail/union_method_missing_member.rl`，全量套件零回归。
+- 联合嵌套于切片元素（MVP 限制）。**✅ 已实现（2026-09-21）**：`&[i64 | String]` 等「切片元素为联合」已支持——数组字面量在期望元素类型为 union 时逐元素 `make_union_ctor` 包成真正的 `[union; N]`；切片索引 / match 类型臂收窄 / 再切片（`xs[1..<3]`）/ `.len()` 均工作（验收 `tests/run-pass/union_slice_element.rl`）。核心设计约束：**切片为布局敏感类型，unsize coercion `&[T; N] → &[U]` 仅当 `T == U`（元素类型完全相同）方可降级**，故 `&[i64; 3]` 不可 coerce 成 `&[i64 | String]`（步长不同，按值 reinterpret 属未定义行为）；违反时类型检查拒绝（`TC018`，见 `tests/compile-fail/union_slice_coerce_mismatch.rl`）。该约束同时收紧于 `types.rs` 的 `compatible_with` S2 规则与 `call.rs` / `check_stmt.rs` 的 unsize coercion 站点。
+  - **切片迭代 pre-existing bug 已修复（2026-09-21）**：此前「指针元素切片」（`&[String]`、`&[i64 | String]` 等）的 `for x in xs.iter()` 错位读取——`Slice::iter()` 被 desugar 成 `IterRef<T>`，其 `next() -> Option<&T>` 经 `&self.data[0]` 返回**元素槽地址 E**（指向存「对象指针 O」的 8 字节槽），而方法接收者需要直接的对象指针 O，二者不一致导致 `x.len()` 读 `*(E+8)` 垃圾（与联合无关，属通用语言 bug）。修复：`method/builtin.rs` 的 `iter()` desugar 对 `field_scalar_of(elem_ty) == Ptr` 的元素改走**值迭代器 `Iter<T>`**（`next() -> Option<T>` 经 `self.data[0]` 索引直接读出 O，与 `cs[0]` 索引语义一致），故 `x` 即为可用作方法接收者的对象指针；`Iter::next` / `IterMut::next` 同步由 `*self.data` 改为 `self.data[0]`（对值类型语义等价，对指针类型修正为读出 O）。非指针元素（i64 等）保持 `IterRef<T>` 以保留原地写回语义。验收 `tests/run-pass/union_slice_iterate.{rl,out}`（`&[i64|String]` for 迭代 + match，输出 `32`）+ `tests/run-pass/string_slice_iterate.{rl,out}`（`&[String]` for 迭代 `.len()`，输出 `1/1/2/3`）；全量 `rlyeh test tests` **350/350 通过**。**残余限制**：`iter_ref()`（显式 `IterRef<T>`、`next() -> Option<&T>`）对指针元素切片仍返回槽地址 E，方法分发 / 原地写回不可用（指针元素切片槽仅 8 字节存 O，本身无法承载完整对象写回）——改用 `.iter()` 值迭代即可规避；主路径（索引 + match 收窄）不受影响。
 - 联合与泛型/`dyn Protocol` 的组合边界（MVP 限制：联合成员不含 `dyn Protocol`）。

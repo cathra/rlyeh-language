@@ -1033,11 +1033,16 @@ pub(super) fn check_call(
             });
         }
         // S2 unsize coercion：`&[T; N]` 实参传给 `&[T]` / `&mut [T]` 形参时构造
-        // 切片胖指针 `{data, len}`（len 为编译期数组长度，data 为数组首元素指针）
+        // 切片胖指针 `{data, len}`（len 为编译期数组长度，data 为数组首元素指针）。
+        // 切片为布局敏感类型，**元素类型必须完全相同**（`T == U`）方可降级——
+        // 步长由元素大小决定，`&[i64; 3] → &[i64 | String]` 之类「成员类型 → 联合」
+        // 的 coerce 会按不同大小 reinterpret 缓冲区，属未定义行为（type-union §9 ②）。
         let mut hir = hir;
         if let (Type::Ref(ia, _, _), Type::Ref(ib, _, _)) = (&ty, param_ty) {
-            if let (Type::Array(_, n), Type::Slice(_)) = (&**ia, &**ib) {
-                hir = make_slice_fat(ctx, hir, *n as i128);
+            if let (Type::Array(ae, n), Type::Slice(be)) = (&**ia, &**ib) {
+                if ae == be {
+                    hir = make_slice_fat(ctx, hir, *n as i128);
+                }
             }
         }
         hir_args.push(hir);
