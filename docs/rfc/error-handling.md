@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、eh-8 边界硬化（M4）✅ |
+| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、eh-8 边界硬化（M4）✅ |
 | 日期 | 2026-09-20 |
 | 范围 | 语言/标准库层的**可恢复错误处理**与**不可恢复失败（panic）策略**完善：错误类型体系、`?` 自动转换、错误组合子、`Error` protocol 完整化、泛型错误类型、错误 derive、错误聚合、以及面向 ASIL/TCL2 的确定性 panic 策略。 |
 | 关联文档 | [`std-lib.md` §12](../std-lib.md)（现状）、[`docs/tasks/leaf/sh-p1-6-question-from.md`](../tasks/leaf/sh-p1-6-question-from.md)（?+From）、[`docs/tasks/leaf/k1-question.md`](../tasks/leaf/k1-question.md)（? 运算符）、[`docs/rfc/tcl2-certification.md`](./tcl2-certification.md)（ASIL/TCL2 关联）、[`docs/manual/std/result.md`](../manual/std/result.md) |
@@ -95,10 +95,14 @@ Rlyeh **没有异常（exception）机制**，错误通过返回类型显式表�
   3. **parser**：`|| expr` 零参闭包**表达式前缀位置未分派**（`unwrap_or_else(|| ..)` 报 `unexpected token: found OrOr`）；
   4. **typecheck**：闭包字面量实参对方法泛型的反推——形参泛型可由接收者 / 其它实参反推时（`map(|x| ..)`）直接可用；泛型**仅出现在闭包返回位置**时（`ok_or_else(|| ..)` 的 `E`、`Result::or_else(|| ..)` 的 `F`）由闭包体推断类型回填。
 
-### 4.4 泛型错误类型（eh-4，anyhow 式便捷）
-- 提供 `DynError`（内部 `Box<dyn Error + Send + Sync>` 或等价）作为"我不关心具体类型、只想传播"的便捷错误类型，降低样板。
-- 提供 `Result<T>` 别名（`Result<T, DynError>`）。
-- 可选：`anyhow!`/`bail!` 风格宏用于构造/早返错误。
+### 4.4 泛型错误类型（eh-4，anyhow 式便捷，🟢 部分完成 2026-09-21）
+- 提供 `DynError`（内部 `Box<dyn Error + Send + Sync>` 或等价）作为"我不关心具体类型、只想传播"的便捷错误类型，降低样板。**✅ 已落地**——`rlyeh-std/rlyeh/io/error.rl` 的 `struct DynError { inner: Box<dyn Error> }`：`IoError::into_dyn()` / `DynError::from_io()` 装箱构造，`message()`/`source()` 经内层 `Box<dyn Error>` 虚调用转发，且 `impl DynError: Error` 使自身可参与背链 / 上转为 `&dyn Error`。
+  - 实现取舍：采用**结构体包装**而非类型别名。原因：① `type` 声明仅在**根单元**参与收集（子模块文件里的 `type` 不注册）；② parser 的 `dyn` 只接受**单段名**（`dyn io::error::Error` 报 `expected '>' or ',', found Colon`），而根单元处裸名 `Error` 尚不可见。结构体形态还更稳（可作字段 / `Result<_, DynError>` 错误位）。
+  - 连带修复 2 处编译器缺口：**①** `type_slot_count` 为 `dyn Protocol` 返回 2 槽（此前 `Box::new(<dyn 值>)` 报「该类型不支持堆装箱」）；**②** `check_method_call` 的 dyn 虚调用识别**堆包裹**的 protocol 对象（`Box<dyn P>` 接收者先解出指向 2 槽胖指针的对象指针，再按槽 0 = data / 槽 1 = vtable 间接调用）。`&*b`（`Box<T>` → `&T`）一并验证可用。
+  - 精简约定：`Box<dyn Error + Send + Sync>` 的 auto-protocol 约束未纳入（`Send`/`Sync` 为标记 protocol，`dyn` 侧尚未参与约束求解）；外层箱释放不回收内层箱（沿用 `Box` 既有析构约定）。
+- 提供 `Result<T>` 别名（`Result<T, DynError>`）。**✅ 已落地**（用户侧 `type LoadResult<T> = Result<T, DynError>;`；泛型类型别名本身早已支持，无需新机制）。
+- 可选：`anyhow!`/`bail!` 风格宏用于构造/早返错误。**⚠️ 用户侧落地**——宏注册表按**编译单元**隔离，std 模块文件中 `macro_rules!` 定义的宏**不对用户代码可见**（实测报「未定义的宏」），故 `bail!`/`ensure!` 以用户侧宏形式提供（见 `tests/run-pass/eh_dyn_error.rl`）。实测宏系统四处约束已登记（见下「宏系统缺口」）。
+- **宏系统缺口（本轮实测，待专项）**：① 宏不可从 std / 模块文件导出（无 `pub macro` 或等价机制）；② `$e:expr` 元变量**不匹配含 `::` 的路径调用**（`bail!(IoError::from_kind(..))` 报「规则均不匹配」），须用 `$($t:tt)*` 重复；③ transcriber 须展开为**单个表达式**（`return Result::Err(..)` 不能带结尾分号）；④ 元变量展开的优先级不高于一元 `!`，条件须显式加括号 `!($cond)`。
 
 ### 4.5 错误 derive（eh-5，thiserror 式）
 - `#[derive(Error)]`：为枚举/结构体自动实现 `Error` + `message()`（基于 `#[error("...")]` 消息模板）+ `source()`（基于 `#[source]`/`from` 字段）。

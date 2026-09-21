@@ -269,10 +269,22 @@ pub(super) fn try_builtin_method_call(
             Type::Dyn(t) => Some(t.clone()),
             _ => None,
         },
-        _ => None,
+        // EH-4（2026-09-21）：堆包裹的 protocol 对象（`Box<dyn Protocol>` /
+        // `Rc` / `Arc` / `Gc`）。`Box<dyn P>` 是指向 2 槽区域（槽 0 = 数据指针、
+        // 槽 1 = vtable 指针）的对象指针，与 `Box<Point>` 字段访问同为
+        // 「指针指向对象」布局，故下方 FieldGet(obj, 0/1) 直接读到胖指针两槽。
+        _ => heap_wrapper_inner(&recv_ty).and_then(|inner| match inner {
+            Type::Dyn(t) => Some(t),
+            _ => None,
+        }),
     };
     if let Some(protocol_name) = dyn_protocol_name.as_ref() {
         let protocol_name = protocol_name.clone();
+        // EH-4（2026-09-21）：堆包裹接收者（`Box<dyn P>` 等）先取槽 0 得堆对象指针
+        // ——`Box<T>` 局部为 1 槽聚合（槽 0 = 指向堆对象的指针），须解出后再按
+        // 「指针指向 2 槽胖指针」读 槽 0/1。对非堆包裹类型 `heap_ptr_hir` 为恒等
+        // （裸 `dyn` / `&dyn` 接收者行为不变）。
+        let recv_hir = heap_ptr_hir(recv_hir, &recv_ty);
         // H4 去虚拟化：接收者为 dyn 局部变量且绑定源具体类型已知时，静态分派到
         // 具体类型方法（vtable 调用在循环中受间接调用屏障阻止优化，静态调用
         // 可被 LLVM 内联 / 常量折叠；dyn 变量被重新赋值时映射已失效回退 vtable）

@@ -650,6 +650,11 @@ pub(super) fn type_slot_count(ctx: &TypeContext, ty: &Type, span: Span) -> Resul
             }
         }
         Type::Ref(..) | Type::Fn(..) | Type::Closure { .. } => Ok(1),
+        // EH-4（2026-09-21）：`dyn Protocol` 胖指针占 2 槽（槽 0 = 数据指针、
+        // 槽 1 = vtable 指针）。此前未列此分支，致 `Box::new(d)`（d: dyn P）
+        // 报「该类型不支持堆装箱（`dyn P`）」——`Box<dyn Protocol>`（拥有型
+        // protocol 对象，`DynError` 的表示）无法构造。
+        Type::Dyn(_) => Ok(2),
         _ => Err(TypeError::Unsupported {
             what: format!("该类型不支持堆装箱（`{ty}`）"),
             span,

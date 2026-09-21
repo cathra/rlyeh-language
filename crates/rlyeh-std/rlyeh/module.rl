@@ -62,6 +62,14 @@ pub import time::system::SystemTime;
 pub import io::error::IoErrorKind;
 pub import io::error::IoError;
 pub import io::error::Error;
+
+// EH-4（0.2.0-AA，2026-09-21）：**拥有型动态错误** `DynError`（RFC §4.4，anyhow 式便捷）。
+// 实现形态为 `io/error.rl` 的**结构体** `DynError { inner: Box<dyn Error> }`（非类型别名），
+// 理由：① `type` 声明仅在根单元参与收集，子模块文件里的 `type` 不注册；② 别名需写
+// `Box<dyn Error>`，而 parser 的 `dyn` 只接受**单段名**（`dyn io::error::Error` 报
+// `expected '>' or ',', found Colon`），根单元处裸名 `Error` 又尚不可见。
+// 结构体形态反而更稳（可作字段 / 泛型实参 / `Result<_, DynError>` 的错误位）。
+pub import io::error::DynError;
 pub import io::base::OpenMode;
 pub import io::file::File;
 pub import io::console::Stdout;

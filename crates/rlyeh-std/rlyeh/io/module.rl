@@ -27,3 +27,5 @@ module console;
 pub import base::OpenMode;
 pub import base::open_mode_str;
 pub import base::c_str;
+// EH-4（2026-09-21）：拥有型动态错误抽象 `DynError` 的别名定义在根单元
+// （`rlyeh/module.rl`）——子模块文件中的 `type` 声明不参与收集。
