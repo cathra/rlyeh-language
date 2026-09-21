@@ -97,4 +97,8 @@ fn m_m1_lexer_matches_rust_oracle() {
          let s4 = \"backslash\\\\end\";\nlet s5 = \"hex\\x41byte\";\n\
          let c1 = '\\n';\nlet c2 = '\\t';\nlet c3 = '\\\\';\nlet c4 = '\\'';\n",
     );
+    // corpus5：M-M1c① 浮点字面量（原始拼写对拍：FLOAT 1.0 / 1e10 / 2.5e-10 / 0.5）
+    check(
+        "let pi = 3.14;\nlet big = 1e10;\nlet small = 2.5e-10;\nlet half = 0.5f64;\nlet rate = 1.5e3;\n",
+    );
 }

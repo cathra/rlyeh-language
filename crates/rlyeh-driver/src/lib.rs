@@ -260,7 +260,7 @@ fn token_to_canonical(t: &rlyeh_lexer::Token) -> String {
         Dyn => "dyn".into(),
         Ident(s) => format!("IDENT {}", s),
         IntLiteral(v) => format!("INT {}", v),
-        FloatLiteral(v) => format!("FLOAT {}", v),
+        FloatLiteral { value: _, raw } => format!("FLOAT {}", raw),
         StringLiteral(s) => format!("STR {}", s),
         CharLiteral(c) => format!("CHAR {}", c),
         BoolLiteral(b) => format!("BOOL {}", b),

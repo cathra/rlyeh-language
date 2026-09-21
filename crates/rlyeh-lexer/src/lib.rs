@@ -421,7 +421,10 @@ impl<'src> Lexer<'src> {
         let clean: String = digits.chars().filter(|c| *c != '_').collect();
         if digits.contains('.') || digits.contains('e') || digits.contains('E') {
             match clean.parse::<f64>() {
-                Ok(v) => Ok(Token::FloatLiteral(v)),
+                Ok(v) => Ok(Token::FloatLiteral {
+                    value: v,
+                    raw: digits.clone(),
+                }),
                 Err(_) => Err(LexError::IntTooLarge { line, col }),
             }
         } else {

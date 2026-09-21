@@ -70,7 +70,7 @@ impl<'src> Parser<'src> {
                 self.bump();
                 Ok(AstPattern::Literal(LiteralValue::Int(v)))
             }
-            Some(Token::FloatLiteral(f)) => {
+            Some(Token::FloatLiteral { value: f, .. }) => {
                 self.bump();
                 Ok(AstPattern::Literal(LiteralValue::Float(f)))
             }

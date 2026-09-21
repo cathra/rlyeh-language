@@ -153,14 +153,38 @@ fn test_hex_bin_oct_radix() {
 #[test]
 fn test_number_suffixes() {
     assert_eq!(tokens("42i32"), vec![Token::IntLiteral(42)]);
-    assert_eq!(tokens("3.14f64"), vec![Token::FloatLiteral(3.14)]);
+    assert_eq!(
+        tokens("3.14f64"),
+        vec![Token::FloatLiteral {
+            value: 3.14,
+            raw: "3.14".to_string()
+        }]
+    );
 }
 
 #[test]
 fn test_exponent_floats() {
-    assert_eq!(tokens("1e10"), vec![Token::FloatLiteral(1e10)]);
-    assert_eq!(tokens("2.5e-10"), vec![Token::FloatLiteral(2.5e-10)]);
-    assert_eq!(tokens("1.0f32"), vec![Token::FloatLiteral(1.0)]);
+    assert_eq!(
+        tokens("1e10"),
+        vec![Token::FloatLiteral {
+            value: 1e10,
+            raw: "1e10".to_string()
+        }]
+    );
+    assert_eq!(
+        tokens("2.5e-10"),
+        vec![Token::FloatLiteral {
+            value: 2.5e-10,
+            raw: "2.5e-10".to_string()
+        }]
+    );
+    assert_eq!(
+        tokens("1.0f32"),
+        vec![Token::FloatLiteral {
+            value: 1.0,
+            raw: "1.0".to_string()
+        }]
+    );
 }
 
 #[test]

@@ -103,8 +103,13 @@ pub enum Token {
     Ident(String),
     /// 整数字面量
     IntLiteral(i128),
-    /// 浮点字面量
-    FloatLiteral(f64),
+    /// 浮点字面量（`value` 供编译器求值；`raw` 为源码原始拼写，对拍规范化用）
+    FloatLiteral {
+        /// 解析后的浮点数值，供后续编译阶段求值使用
+        value: f64,
+        /// 源码中的原始拼写（如 `1.0` / `1e10`），差分对拍规范化输出使用
+        raw: String,
+    },
     /// 字符串字面量
     StringLiteral(String),
     /// 字符字面量

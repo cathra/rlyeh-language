@@ -17,7 +17,7 @@ impl <'src> Parser<'src> {
                     self.span_until_current(start),
                 ))
             }
-            Some(Token::FloatLiteral(f)) => {
+            Some(Token::FloatLiteral { value: f, .. }) => {
                 self.bump();
                 Ok(AstExpr::new(
                     ExprKind::FloatLiteral(f),

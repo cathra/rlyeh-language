@@ -15,7 +15,7 @@
 - **M-M1（中）** 用 Rlyeh 重写 `lexer`（依赖 N 元组值 / O `if let` / P `match` 守卫），经 Rust driver 编译 + 差分对拍 token 一致。
   - **M-M1a（✅ 已落地，2026-09-20）** 切片1：标识符/全量关键字/整数（十进制·hex·bin·oct·`_`·后缀）/字符串（无转义）/单字符+多字符运算符/空白与行·块注释（嵌套）。Rlyeh 版 `self-host/lexer.rl` 经 `crates/rlyeh-driver/tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）对拍，corpus1/corpus2 token 逐行一致。
   - **M-M1b（✅ 已落地，2026-09-20）** 字符字面量 `'x'`、生命周期 `'r`/`'a`（`'` 后非 `'` 即生命周期）、`not in`→`NOTIN`、原始字符串 `r"..."`/`r#"..."#`、原始标识符 `r#kw`、时间字面量（`9am`→`TIME 9:0`、`6pm`→`TIME 18:0`、`22:00`→`TIME 22:0`、`9:30am`→`TIME 9:30`，canonical 不含 is_pm）。`tests/self-host-lexer/corpus3.rl` 对拍一致。
-  - **M-M1c（转义解码 ✅ 已落地，2026-09-20；浮点/非法字符 ⏳ 推迟）** 字符串/字符转义解码（`\n`/`\t`/`\r`/`\\`/`\"`/`\'`/`\xHH`，仅 ASCII 范围；`\u{...}` 在 >127 时落 U+FFFD 替换符，与 oracle 一致）已落地，`tests/self-host-lexer/corpus4.rl` 对拍一致。剩余：① 浮点字面量（oracle 用 Rust `f64` Display，`1.0`→`1`、`1e10`→`10000000000`，Rlyeh 侧难精确复刻，需改 oracle canonical 为原始拼写或单独处理）；② 非法字符报错而非静默 `?` token（Rlyeh 侧暂缺 panic 机制）。
+  - **M-M1c（转义解码 ✅ 已落地，2026-09-20；浮点 ✅ 已落地，2026-09-21；非法字符 ⏳ 推迟）** 字符串/字符转义解码（`\n`/`\t`/`\r`/`\\`/`\"`/`\'`/`\xHH`，仅 ASCII 范围；`\u{...}` 在 >127 时落 U+FFFD 替换符，与 oracle 一致）已落地，`tests/self-host-lexer/corpus4.rl` 对拍一致。① 浮点字面量：✅ 已落地（2026-09-21）——按本计划背书方式，oracle canonical 改为发射**原始拼写**（`FLOAT 1.0`/`FLOAT 1e10`/`FLOAT 2.5e-10`/`FLOAT 0.5` 等，类型后缀 `f64`/`f32` 吸收不计入），`Token::FloatLiteral` 增 `raw: String` 字段携带原始拼写，`crates/rlyeh-driver/tests/self_host_lexer.rs` 新增 corpus5 内联用例对拍一致；② 非法字符报错而非静默 `?` token（Rlyeh 侧暂缺 panic 机制，⏳ 推迟）。
 - **M-M2（中）** 用 Rlyeh 重写 `parser`（依赖 N/O/P + 递归下降），对拍 AST 一致。
 - **M-M3（中）** 用 Rlyeh 重写 `ast` + `macro`（依赖 C derive / I 内部可变性），对拍 AST 节点构造一致。
 - **M-M4（中）** 串联 M1–M3，经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）。
@@ -47,7 +47,7 @@ Rlyeh 版 `self-host/lexer.rl` 与 Rust oracle（`rlyeh run <f> --emit tokens`�
 - 对拍测试 `tests/self-host-*`：同 `.rl` 输入，Rlyeh 版与 Rust 版 token/AST 一致。
 
 ## 状态
-🟡 进行中（0.2.0 必须项，阶段 M；交付物 dogfood）。M-M1 切片1(a+b+c) 已落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）经 `tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）差分对拍，corpus1/2/3/4 token 逐行一致；剩余 M-M1c 浮点/非法字符报错、M-M2/M-M3/M-M4 待推进。
+🟡 进行中（0.2.0 必须项，阶段 M；交付物 dogfood）。M-M1 切片1(a+b+c) 已落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）经 `tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）差分对拍，corpus1/2/3/4/5 token 逐行一致；剩余 M-M1c 非法字符报错、M-M2/M-M3/M-M4 待推进（浮点已于 2026-09-21 落地）。
 
 ## 变更记录
 | 日期 | 变更 |

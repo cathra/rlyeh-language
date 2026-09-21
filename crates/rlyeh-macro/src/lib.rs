@@ -460,7 +460,7 @@ fn consume_operand(input: &[Token], mut pos: usize) -> Option<usize> {
         | Token::True
         | Token::False
         | Token::IntLiteral(_)
-        | Token::FloatLiteral(_)
+        | Token::FloatLiteral { .. }
         | Token::StringLiteral(_)
         | Token::CharLiteral(_)
         | Token::BoolLiteral(_)

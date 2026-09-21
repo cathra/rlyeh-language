@@ -84,7 +84,7 @@ impl<'src> Parser<'src> {
                         if self.eat(&Token::Ident("growth_factor".to_string())) {
                             self.expect(&Token::Assign, "'='")?;
                             match self.current().cloned() {
-                                Some(Token::FloatLiteral(f)) => {
+                                Some(Token::FloatLiteral { value: f, .. }) => {
                                     opts.growth_factor = Some(f);
                                     self.bump();
                                 }

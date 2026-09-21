@@ -22,7 +22,13 @@ fn test_numbers() {
     let mut lexer = Lexer::new("42 3.14 0xFF 0b1010 1_000_000");
     let tokens = lexer.tokenize().unwrap();
     assert_eq!(tokens[0].token, Token::IntLiteral(42));
-    assert_eq!(tokens[1].token, Token::FloatLiteral(3.14));
+    assert_eq!(
+        tokens[1].token,
+        Token::FloatLiteral {
+            value: 3.14,
+            raw: "3.14".to_string()
+        }
+    );
     assert_eq!(tokens[2].token, Token::IntLiteral(255));
     assert_eq!(tokens[3].token, Token::IntLiteral(10));
     assert_eq!(tokens[4].token, Token::IntLiteral(1000000));

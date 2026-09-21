@@ -5,13 +5,14 @@
 // （每行一个），格式与 `rlyeh run <f> --emit tokens` 的 Rust oracle 逐行对齐，
 // 由 `crates/rlyeh-driver/tests/self_host_lexer.rs` 差分对拍。
 //
-// 切片1 范围（M-M1a，已落地）：
+// 切片1 范围（M-M1a/b/c，已落地）：
 //   跳过：空格/制表/\r/\n、行注释 `//`、块注释 `/* */`（支持嵌套）
 //   标识符 + 全量关键字表
 //   整数：十进制、0x(hex)/0b(bin)/0o(oct)、`_` 分隔、尾随类型后缀（吸收）
-//   字符串：`"..."`（切片1 不含转义，corpus 避免转义字符）
+//   浮点（M-M1c①）：`123.456` / `1e10` / `2.5e-10` / `0.5f64`（原始拼写对拍，后缀吸收）
+//   字符串：`"..."`（含转义 `\n \t \r \\ \" \' \xHH \u{...}`）
+//   字符/生命周期/`not in`/时间字面量/原始字符串/原始标识符（M-M1b）
 //   运算符：单字符 + 多字符（== != <= >= && || -> => += -= *= /= %= << >> .. ..< ... <..）
-// 切片1 不含（后续切片）：浮点、字符/生命周期、时间字面量、原始字符串、转义解码。
 //
 // Rlyeh 语言注意点（已踩坑）：
 //   * 字符串字面量是 `string` 值类型，需用 `String::from(...)` 转成 `String` 对象
@@ -215,6 +216,7 @@ fn lex(src: String) -> Vec<String> {
             continue;
         }
         if c >= 48 && c <= 57 {
+            let num_start = i;
             let mut value = 0;
             let mut base = 10;
             let mut idx = i;
@@ -276,9 +278,51 @@ fn lex(src: String) -> Vec<String> {
                     toks.push("TIME " + i64_to_string(hour) + ":" + i64_to_string(minval));
                     continue;
                 }
+                // 浮点检测（仅十进制）：`.` 后接数字，或 `e`/`E` 后接数字 / ±数字
+                // 必须在整数后缀吸收之前，否则 `e` 会被误判为类型后缀
+                let dot_f = src.get(idx) == 46 && idx + 1 < n && src.get(idx + 1) >= 48 && src.get(idx + 1) <= 57;
+                let cexp = src.get(idx);
+                let exp_f = (cexp == 101 || cexp == 69) && (
+                    (idx + 1 < n && src.get(idx + 1) >= 48 && src.get(idx + 1) <= 57) ||
+                    (idx + 1 < n && (src.get(idx + 1) == 43 || src.get(idx + 1) == 45) && idx + 2 < n && src.get(idx + 2) >= 48 && src.get(idx + 2) <= 57)
+                );
+                if dot_f || exp_f {
+                    let mut raw = src.substring(num_start, idx);
+                    if dot_f {
+                        raw = raw + ".";
+                        idx = idx + 1;
+                        while idx < n {
+                            let d = src.get(idx);
+                            if (d >= 48 && d <= 57) || d == 95 { raw.push_byte(d); idx = idx + 1; } else { break; }
+                        }
+                    }
+                    let c2 = src.get(idx);
+                    let exp2 = (c2 == 101 || c2 == 69) && (
+                        (idx + 1 < n && src.get(idx + 1) >= 48 && src.get(idx + 1) <= 57) ||
+                        (idx + 1 < n && (src.get(idx + 1) == 43 || src.get(idx + 1) == 45) && idx + 2 < n && src.get(idx + 2) >= 48 && src.get(idx + 2) <= 57)
+                    );
+                    if exp2 {
+                        if c2 == 101 { raw = raw + "e"; } else { raw = raw + "E"; }
+                        idx = idx + 1;
+                        if idx < n && (src.get(idx) == 43 || src.get(idx) == 45) { raw.push_byte(src.get(idx)); idx = idx + 1; }
+                        while idx < n {
+                            let d = src.get(idx);
+                            if (d >= 48 && d <= 57) || d == 95 { raw.push_byte(d); idx = idx + 1; } else { break; }
+                        }
+                    }
+                    // 类型后缀（f64/f32 等，含数字，不入 raw）
+                    while idx < n {
+                        let d = src.get(idx);
+                        if (d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 95 { idx = idx + 1; } else { break; }
+                    }
+                    i = idx;
+                    toks.push("FLOAT " + raw);
+                    continue;
+                }
+                // 整数类型后缀（吸收，含数字）
                 while idx < n {
                     let d = src.get(idx);
-                    if (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 95 {
+                    if (d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 95 {
                         idx = idx + 1;
                     } else {
                         break;
