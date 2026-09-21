@@ -152,6 +152,8 @@ pub fn gen_struct(
             name: f.name.clone(),
             type_: f.ty.clone(),
             is_pub: false,
+            // EH-5：desugar 合成的字段无属性。
+            attrs: Vec::new(),
             span,
         })
         .collect();
@@ -162,6 +164,7 @@ pub fn gen_struct(
         generics: a.decl.generics.clone(),
         fields,
         derive: Vec::new(),
+        attrs: Vec::new(),
         repr_c: false,
         region_param: None,
         conformances: Vec::new(),

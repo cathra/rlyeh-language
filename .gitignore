@@ -44,6 +44,7 @@ dist/
 !tests/run-pass/toml_io.out
 !tests/run-pass/eh_combinators.out
 !tests/run-pass/eh_dyn_error.out
+!tests/run-pass/eh_derive_error.out
 *.o
 tests/run-pass/_tmp_*
 *.dylib

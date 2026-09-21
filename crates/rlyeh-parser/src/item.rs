@@ -348,6 +348,8 @@ impl<'src> Parser<'src> {
                 continue;
             }
             let fstart = self.peek().expect("non-eof").span;
+            // EH-5：字段级属性（`#[from]` / `#[source]` / `#[error("..")]`），可空。
+            let fattrs = self.parse_member_attrs()?;
             let is_pub = self.eat(&Token::Pub);
             let fname = self.expect_ident()?;
             self.expect(&Token::Colon, "':'")?;
@@ -356,6 +358,7 @@ impl<'src> Parser<'src> {
                 name: fname,
                 type_,
                 is_pub,
+                attrs: fattrs,
                 span: self.span_until_current(fstart),
             });
             // 字段间以 `,` 分隔；字段后允许直接接 `fn` / `type` / `}`（混排）
@@ -378,6 +381,8 @@ impl<'src> Parser<'src> {
             methods,
             assoc_types,
             derive: Vec::new(),
+            // EH-5：项级属性由 `parse_item` 回填（同 `derive` / `repr_c`）。
+            attrs: Vec::new(),
             repr_c: false,
             span: self.merge_span(start, end),
         })
@@ -440,6 +445,8 @@ impl<'src> Parser<'src> {
                 continue;
             }
             let vstart = self.peek().expect("non-eof").span;
+            // EH-5：变体级属性（`#[error("..")]` / `#[from]`），可空。
+            let vattrs = self.parse_member_attrs()?;
             let vname = self.expect_ident()?;
             let mut tuple_fields = Vec::new();
             let mut struct_fields = Vec::new();
@@ -468,6 +475,7 @@ impl<'src> Parser<'src> {
                         name: fname,
                         type_,
                         is_pub: false,
+                        attrs: Vec::new(),
                         span: self.span_until_current(vstart),
                     });
                     if !self.eat(&Token::Comma) {
@@ -493,6 +501,7 @@ impl<'src> Parser<'src> {
                 name: vname,
                 tuple_fields,
                 struct_fields,
+                attrs: vattrs,
                 discriminant,
                 span: self.span_until_current(vstart),
             });
@@ -512,6 +521,10 @@ impl<'src> Parser<'src> {
             generics,
             conformances,
             variants,
+            // EH-5：项级 derive / attrs 由 `parse_item` 的 `parse_attributes` 结果回填
+            //（与 struct 的 `derive` 同构）。
+            derive: Vec::new(),
+            attrs: Vec::new(),
             methods,
             assoc_types,
             span: self.merge_span(start, end),

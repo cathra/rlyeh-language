@@ -234,6 +234,8 @@ fn collect_item_decls(
         AstItem::FnDecl(_) => {}
         AstItem::EnumDecl(e) => {
             collect_enum(ctx, e, prefix)?;
+            // EH-5：`#[derive(Error)]` 展开（枚举版）。
+            expand_derives_for_enum(ctx, e, prefix)?;
             if e.is_pub {
                 // 枚举为 `pub` 时，枚举名及其全部变体（Rust 语义：变体继承枚举可见性）
                 // 均对外可达，登记枚举全名与每个变体的 `Enum::Variant` 全名。
@@ -786,7 +788,7 @@ mod derive;
 use collect::*;
 use actor::*;
 use fn_sig::*;
-use derive::expand_derives_for_struct;
+use derive::{expand_derives_for_enum, expand_derives_for_struct};
 
 // 对外 API：被 lib.rs / check_expr / check_stmt 经 `crate::check_item::` 访问
 pub use fn_sig::collect_fn_signatures;

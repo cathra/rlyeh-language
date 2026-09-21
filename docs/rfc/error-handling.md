@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、eh-8 边界硬化（M4）✅ |
+| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、**eh-5 ✅**（`#[derive(Error)]` + `#[error]`/`#[from]`/`#[source]`，struct 与 enum 双形态；连带修复 parser 元素级属性、枚举 derive 回填、`From`/`Into` 根导出、fmt 属性回写）、eh-8 边界硬化（M4）✅ |
 | 日期 | 2026-09-20 |
 | 范围 | 语言/标准库层的**可恢复错误处理**与**不可恢复失败（panic）策略**完善：错误类型体系、`?` 自动转换、错误组合子、`Error` protocol 完整化、泛型错误类型、错误 derive、错误聚合、以及面向 ASIL/TCL2 的确定性 panic 策略。 |
 | 关联文档 | [`std-lib.md` §12](../std-lib.md)（现状）、[`docs/tasks/leaf/sh-p1-6-question-from.md`](../tasks/leaf/sh-p1-6-question-from.md)（?+From）、[`docs/tasks/leaf/k1-question.md`](../tasks/leaf/k1-question.md)（? 运算符）、[`docs/rfc/tcl2-certification.md`](./tcl2-certification.md)（ASIL/TCL2 关联）、[`docs/manual/std/result.md`](../manual/std/result.md) |
@@ -104,9 +104,15 @@ Rlyeh **没有异常（exception）机制**，错误通过返回类型显式表�
 - 可选：`anyhow!`/`bail!` 风格宏用于构造/早返错误。**⚠️ 用户侧落地**——宏注册表按**编译单元**隔离，std 模块文件中 `macro_rules!` 定义的宏**不对用户代码可见**（实测报「未定义的宏」），故 `bail!`/`ensure!` 以用户侧宏形式提供（见 `tests/run-pass/eh_dyn_error.rl`）。实测宏系统四处约束已登记（见下「宏系统缺口」）。
 - **宏系统缺口（本轮实测，待专项）**：① 宏不可从 std / 模块文件导出（无 `pub macro` 或等价机制）；② `$e:expr` 元变量**不匹配含 `::` 的路径调用**（`bail!(IoError::from_kind(..))` 报「规则均不匹配」），须用 `$($t:tt)*` 重复；③ transcriber 须展开为**单个表达式**（`return Result::Err(..)` 不能带结尾分号）；④ 元变量展开的优先级不高于一元 `!`，条件须显式加括号 `!($cond)`。
 
-### 4.5 错误 derive（eh-5，thiserror 式）
-- `#[derive(Error)]`：为枚举/结构体自动实现 `Error` + `message()`（基于 `#[error("...")]` 消息模板）+ `source()`（基于 `#[source]`/`from` 字段）。
+### 4.5 错误 derive（eh-5，thiserror 式，✅ 2026-09-21）
+- `#[derive(Error)]`：为枚举/结构体自动实现 `Error` + `message()`（基于 `#[error("...")]` 消息模板）+ `source()`（基于 `#[source]`/`from` 字段）。**✅ 已落地**
+  - **属性语法**（parser 新增元素级属性解析）：项级 `#[error("模板")]`（struct 整体消息 / enum 兜底消息）、字段级 `#[error(..)]` / `#[from]` / `#[source]`、变体级 `#[error(..)]` / `#[from]`；未知属性名**显式报错**（不做宽松忽略）。`AstAttr { name, value, span }` 为统一的紧凑形态。
+  - **`message()`**：模板占位符 `{0}`/`{1}`…（元组字段）与 `{name}`（具名字段），展开为 `String::from("lit") + <占位> + …`；支持整型（`int_to_string`）、`f64`（`float_to_string`）、`bool`、`char`、`String`。enum 逐变体 `match` 生成（各臂绑定名**逐变体唯一** `__err<vi>_f<j>`——同一 `match` 共享函数级局部命名空间，同名跨类型复用会触发 LIR「变量类型冲突」）。
+  - **`source()`**：首个 `#[source]` 字段 → `self.<f>.source()`；无则 `Option::None`；多个 `#[source]` 报 `Unsupported`。
+  - **`#[from]`** → `impl X: From<T>`：struct 要求该字段为**唯一**字段；enum 要求该变体**仅含一个元组字段**。配合 `?` 运算符自动转换。
 - 大幅减少手写错误枚举样板，是库作者友好性的关键。
+- **连带修复**：`From` / `Into` 协议此前**未导出到根命名空间**，用户侧 `impl X: From<T>` 的协议名无法解析为规范名 `io::error::From`，致 `?` 的 `From` 自动转换报「找不到 `io::error::From::from` 的可用 protocol impl」——现随 std 根导出补齐。
+- **已知限制**：① `Enum::from(x)` 直接静态调用不可用（**枚举静态 / 固有方法调用**为既有缺口，与 derive 无关；`#[from]` 经 `?` 与 `impl From` 注册生效）；② enum 变体级 `#[source]` 待办（`source()` 恒 `None`）；③ `rlyeh-fmt` 此前**丢弃** `#[derive(..)]`（AST 重建未回写），本轮一并补齐属性回写（derive / `#[error]` / `#[from]` / `#[source]` / `#[repr(C)]`）。
 
 ### 4.6 错误聚合 / `try` 块（eh-6）
 - `try` 块：`try { ...; Ok(x) }` 内部 `?` 冒泡到块尾 `Result`（对齐 Rust `try`/返回块）。

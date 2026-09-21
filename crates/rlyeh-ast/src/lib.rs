@@ -146,6 +146,22 @@ pub struct AstActorField {
     pub span: Span,
 }
 
+/// 字段 / 变体级属性（EH-5，0.2.0-AA）：`#[error("模板")]` / `#[from]` / `#[source]`。
+///
+/// 与项级 `#[derive(..)]`（见 `AstStructDecl::derive` / `AstEnumDecl::derive`）区分：
+/// 元素级属性只承载「错误消息模板」与「来源 / 转换标记」三种，故以
+/// `name` + 可选字符串实参的紧凑形态表达，避免为单用途引入完整属性语法树。
+#[derive(Debug, Clone, PartialEq)]
+pub struct AstAttr {
+    /// 属性名（`error` / `from` / `source`）
+    pub name: String,
+    /// 唯一字符串实参（`#[error("msg {0}")]` 的模板原文，含占位符）；
+    /// 无实参（`#[from]` / `#[source]`）或非字符串实参时为 `None`。
+    pub value: Option<String>,
+    /// 源码位置
+    pub span: Span,
+}
+
 /// 结构体声明。
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstStructDecl {
@@ -160,6 +176,8 @@ pub struct AstStructDecl {
     pub fields: Vec<AstStructField>,
     /// 派生 protocol 名列表（`#[derive(Serialize, Deserialize)]`，阶段 Q1b）
     pub derive: Vec<String>,
+    /// 项级属性（EH-5：`#[error("模板")]`——struct 的整体错误消息模板）；无属性为空
+    pub attrs: Vec<AstAttr>,
     /// 是否 `#[repr(C)]`（SH-P0-1 E2：C ABI 内存布局标记；当前基础设施已解析并存储，
     /// 真布局（sub-8 字节字段打包）待 MIR/LIR/codegen 字段尺寸下传专项落地）
     pub repr_c: bool,
@@ -186,6 +204,8 @@ pub struct AstStructField {
     pub type_: AstType,
     /// 是否为 `pub`
     pub is_pub: bool,
+    /// 字段级属性（EH-5：`#[error("..")]` / `#[from]` / `#[source]`；无属性为空）
+    pub attrs: Vec<AstAttr>,
     /// 源码位置
     pub span: Span,
 }
@@ -202,6 +222,11 @@ pub struct AstEnumDecl {
     pub generics: Vec<AstTypeParam>,
     /// 变体列表
     pub variants: Vec<AstEnumVariant>,
+    /// 派生 protocol 名列表（EH-5：`#[derive(Error)]`；与 struct 的 `derive` 同构）
+    pub derive: Vec<String>,
+    /// 项级属性（EH-5：`#[error("模板")]`——enum 的**兜底**消息模板，
+    /// 变体自身无 `#[error(..)]` 时使用）；无属性为空
+    pub attrs: Vec<AstAttr>,
     /// region 参数（B-4：`enum E 'a { ... }` 后缀生命参数，region 参数化语法）
     pub region_param: Option<String>,
     /// 声明点一致性列表（PC-1：`enum E: P { .. }`），desugar 归一为 `AstImplBlock`。
@@ -223,6 +248,8 @@ pub struct AstEnumVariant {
     pub tuple_fields: Vec<AstType>,
     /// 命名负载字段（`Variant { x: u32 }`）
     pub struct_fields: Vec<AstStructField>,
+    /// 变体级属性（EH-5：`#[error("..")]` / `#[from]`；无属性为空）
+    pub attrs: Vec<AstAttr>,
     /// 显式判别值（`Variant = 42`，U3 受限标量枚举）
     ///
     /// 未标注时为 `None`，判别值按变体声明序号（既有行为）。

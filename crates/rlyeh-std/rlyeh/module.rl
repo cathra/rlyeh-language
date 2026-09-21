@@ -62,6 +62,12 @@ pub import time::system::SystemTime;
 pub import io::error::IoErrorKind;
 pub import io::error::IoError;
 pub import io::error::Error;
+// EH-5（2026-09-21）：`From` / `Into` 协议导出到根命名空间——此前仅 `io/error.rl`
+// 内部可见，用户侧 `impl X: From<T>` 的协议名无法解析为规范名 `io::error::From`，
+// 致 `?` 运算符的 `From` 自动转换找不到 impl（报「找不到 `io::error::From::from`
+// 的可用 protocol impl」），`#[derive(Error)]` 的 `#[from]` 亦不可用。
+pub import io::error::From;
+pub import io::error::Into;
 
 // EH-4（0.2.0-AA，2026-09-21）：**拥有型动态错误** `DynError`（RFC §4.4，anyhow 式便捷）。
 // 实现形态为 `io/error.rl` 的**结构体** `DynError { inner: Box<dyn Error> }`（非类型别名），

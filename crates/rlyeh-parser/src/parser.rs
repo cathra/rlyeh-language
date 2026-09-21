@@ -187,16 +187,25 @@ impl<'src> Parser<'src> {
     pub(crate) fn parse_item(&mut self) -> Result<AstItem, ParseError> {
         // `#[derive(Serialize, Deserialize)]` attribute（阶段 Q1b）：MVP 仅支持
         // struct 声明前的 derive 标记；其它项宽松忽略（typecheck 不感知 derive）。
-        let (derive, repr_c, memory) = self.parse_attributes()?;
+        let (derive, repr_c, memory, item_attrs) = self.parse_attributes()?;
         match self.current() {
             Some(Token::Fn) => Ok(AstItem::FnDecl(Box::new(self.parse_fn()?))),
             Some(Token::Struct) => {
                 let mut s = self.parse_struct()?;
                 s.derive = derive;
                 s.repr_c = repr_c;
+                // EH-5：项级 `#[error("模板")]`（struct 整体消息模板）。
+                s.attrs = item_attrs;
                 Ok(AstItem::StructDecl(Box::new(s)))
             }
-            Some(Token::Enum) => Ok(AstItem::EnumDecl(Box::new(self.parse_enum()?))),
+            Some(Token::Enum) => {
+                let mut e = self.parse_enum()?;
+                // EH-5：枚举项级 `#[derive(..)]` 回填（此前仅 struct 接收 derive，
+                // 枚举的 derive 标记被丢弃）。
+                e.derive = derive;
+                e.attrs = item_attrs;
+                Ok(AstItem::EnumDecl(Box::new(e)))
+            }
             Some(Token::Protocol) => Ok(AstItem::ProtocolDecl(Box::new(self.parse_protocol()?))),
             Some(Token::Impl) => Ok(AstItem::ImplBlock(Box::new(self.parse_impl()?))),
             Some(Token::Mod) => Ok(AstItem::ModDecl(Box::new(self.parse_mod(memory.clone(), false)?))),
@@ -227,12 +236,15 @@ impl<'src> Parser<'src> {
                         let mut s = self.parse_struct()?;
                         s.derive = derive;
                         s.is_pub = true;
+                        s.attrs = item_attrs;
                         Ok(AstItem::StructDecl(Box::new(s)))
                     }
                     Some(Token::Enum) => {
                         self.bump();
                         let mut e = self.parse_enum()?;
                         e.is_pub = true;
+                        e.derive = derive;
+                        e.attrs = item_attrs;
                         Ok(AstItem::EnumDecl(Box::new(e)))
                     }
                     Some(Token::Protocol) => {
@@ -280,16 +292,22 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// 解析 `#[derive(Serialize, Deserialize)]` 与 `#[repr(C)]` attribute（阶段 Q1b / SH-P0-1 E2）。
+    /// 解析项级 attribute（`#[derive(..)]` / `#[repr(C)]` / `#[memory(gc)]` /
+    /// `#[error("模板")]`；阶段 Q1b / SH-P0-1 E2 / EH-5）。
     ///
-    /// MVP 仅支持 struct 声明前的 `derive` 标记（`#[derive(..)]`，可多个、可空
-    /// `#[derive]`）与 `#[repr(C)]`；其它 attribute 名报错。返回
-    /// `(derive protocol 名列表, 是否 repr(C))`。
-    fn parse_attributes(&mut self) -> Result<(Vec<String>, bool, Option<String>), ParseError> {
+    /// 返回 `(derive protocol 名列表, 是否 repr(C), memory 模式, 元素级同构属性列表)`。
+    /// 第四项承载**项级** `#[error("模板")]`（EH-5：struct 的整体消息模板 / enum 的兜底
+    /// 模板），复用 `AstAttr` 形态以便与字段 / 变体级属性统一处理；其它 attribute 名报错。
+    fn parse_attributes(
+        &mut self,
+    ) -> Result<(Vec<String>, bool, Option<String>, Vec<rlyeh_ast::AstAttr>), ParseError> {
         let mut derives = Vec::new();
         let mut repr_c = false;
         let mut memory = None;
-        while self.eat(&Token::Pound) {
+        let mut attrs: Vec<rlyeh_ast::AstAttr> = Vec::new();
+        while self.check(&Token::Pound) {
+            let astart = self.peek().expect("non-eof").span;
+            self.bump(); // `#`
             self.expect(&Token::LBracket, "'['")?;
             let attr_name = self.expect_ident()?;
             match attr_name.as_str() {
@@ -324,15 +342,78 @@ impl<'src> Parser<'src> {
                     memory = Some("gc".to_string());
                     self.expect(&Token::RParen, "')'")?;
                 }
+                "error" => {
+                    // EH-5：项级错误消息模板（struct 整体 / enum 兜底）。
+                    self.expect(&Token::LParen, "'('")?;
+                    let s = match self.current().cloned() {
+                        Some(Token::StringLiteral(s)) => {
+                            self.bump();
+                            s
+                        }
+                        _ => return Err(self.unexpected("消息模板字符串字面量（`#[error(\"..\")]`）")),
+                    };
+                    self.expect(&Token::RParen, "')'")?;
+                    let aend = self.peek().expect("non-eof").span;
+                    attrs.push(rlyeh_ast::AstAttr {
+                        name: "error".to_string(),
+                        value: Some(s),
+                        span: self.merge_span(astart, aend),
+                    });
+                }
                 _ => {
                     return Err(self.unexpected(
-                        "'#[derive(..)]' / '#[repr(C)]' / '#[memory(gc)]'",
+                        "'#[derive(..)]' / '#[repr(C)]' / '#[memory(gc)]' / '#[error(\"..\")]'",
                     ))
                 }
             }
             self.expect(&Token::RBracket, "']'")?;
         }
-        Ok((derives, repr_c, memory))
+        Ok((derives, repr_c, memory, attrs))
+    }
+
+    /// 解析**字段 / 变体级**属性（EH-5，0.2.0-AA）：`#[error("模板")]` / `#[from]` / `#[source]`。
+    ///
+    /// 与项级 [`Self::parse_attributes`]（`derive` / `repr` / `memory`）区分：元素级属性只
+    /// 出现在 struct 字段与 enum 变体上，仅这三种；未知属性名**显式报错**（不做宽松忽略，
+    /// 避免拼写错误静默失效）。可连续多个（`#[from] #[source]`）。
+    ///
+    /// 返回顺序与源码一致；`#[error]` 的模板原文存入 `value`（含 `{0}` / `{name}` 占位符，
+    /// 由 typecheck 的 derive 展开阶段解释）。
+    pub(crate) fn parse_member_attrs(&mut self) -> Result<Vec<rlyeh_ast::AstAttr>, ParseError> {
+        let mut attrs = Vec::new();
+        while self.check(&Token::Pound) {
+            let start = self.peek().expect("non-eof").span;
+            self.bump(); // `#`
+            self.expect(&Token::LBracket, "'['")?;
+            let name = self.expect_ident()?;
+            let value = match name.as_str() {
+                "error" => {
+                    self.expect(&Token::LParen, "'('")?;
+                    let s = match self.current().cloned() {
+                        Some(Token::StringLiteral(s)) => {
+                            self.bump();
+                            s
+                        }
+                        _ => return Err(self.unexpected("消息模板字符串字面量（`#[error(\"..\")]`）")),
+                    };
+                    self.expect(&Token::RParen, "')'")?;
+                    Some(s)
+                }
+                "from" | "source" => None,
+                _ => {
+                    return Err(self.unexpected(
+                        "'#[error(\"..\")]' / '#[from]' / '#[source]'",
+                    ))
+                }
+            };
+            let end = self.expect(&Token::RBracket, "']'")?.span;
+            attrs.push(rlyeh_ast::AstAttr {
+                name,
+                value,
+                span: self.merge_span(start, end),
+            });
+        }
+        Ok(attrs)
     }
 
     /// 解析 `macro_rules! name { (matcher) => { transcriber }; ... }`（MVP）。

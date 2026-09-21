@@ -159,6 +159,18 @@ fn fmt_field(f: &AstStructField) -> String {
     format!("{}{}: {}", vis, f.name, fmt_type(&f.type_))
 }
 
+/// 成员属性逐条渲染（EH-5）：`#[error("..")]`（模板按 Rust 字符串字面量重新转义）
+/// 与 `#[from]` / `#[source]` 标记属性。
+fn fmt_member_attrs(attrs: &[AstAttr]) -> Vec<String> {
+    attrs
+        .iter()
+        .map(|a| match (&*a.name, &a.value) {
+            ("error", Some(v)) => format!("#[error({:?})]", v),
+            _ => format!("#[{}]", a.name),
+        })
+        .collect()
+}
+
 // ==================== 程序 / 顶层项 ====================
 
 impl Printer {
@@ -238,6 +250,17 @@ impl Printer {
     }
 
     fn print_struct_decl(&mut self, s: &AstStructDecl) {
+        // EH-5 / Q1b：属性先行——`#[derive(..)]`（逐条一行）与项级 `#[error("..")]` /
+        // `#[repr(C)]`。此前 fmt **丢弃** derive（AST 重建未回写），此处补齐。
+        for d in &s.derive {
+            self.line(&format!("#[derive({})]", d));
+        }
+        for a in fmt_member_attrs(&s.attrs) {
+            self.line(&a);
+        }
+        if s.repr_c {
+            self.line("#[repr(C)]");
+        }
         let mut head = format!("struct {}", s.name);
         head.push_str(&region_suffix(&s.region_param));
         if !s.generics.is_empty() {
@@ -245,8 +268,10 @@ impl Printer {
         }
         head.push_str(&conformance_suffix(&s.conformances));
         head.push(' ');
-        // 无内联成员：保持单行 `struct X { fields }`（兼容既有输出）。
-        if s.methods.is_empty() && s.assoc_types.is_empty() {
+        // 无内联成员且字段无属性：保持单行 `struct X { fields }`（兼容既有输出）；
+        // 字段带属性时须展开多行（属性无法内联）。
+        let any_field_attrs = s.fields.iter().any(|f| !f.attrs.is_empty());
+        if s.methods.is_empty() && s.assoc_types.is_empty() && !any_field_attrs {
             let fields = s.fields.iter().map(fmt_field).collect::<Vec<_>>().join(", ");
             self.line(&format!("{}{{ {} }}", head, fields));
             return;
@@ -254,6 +279,9 @@ impl Printer {
         self.line(&format!("{}{{", head));
         self.with_indent(|p| {
             for f in &s.fields {
+                for a in fmt_member_attrs(&f.attrs) {
+                    p.line(&a);
+                }
                 p.line(&format!("{},", fmt_field(f)));
             }
             for (tn, ty) in &s.assoc_types {
@@ -267,6 +295,12 @@ impl Printer {
     }
 
     fn print_enum_decl(&mut self, e: &AstEnumDecl) {
+        for d in &e.derive {
+            self.line(&format!("#[derive({})]", d));
+        }
+        for a in fmt_member_attrs(&e.attrs) {
+            self.line(&a);
+        }
         let mut head = format!("enum {}", e.name);
         head.push_str(&region_suffix(&e.region_param));
         if !e.generics.is_empty() {
@@ -276,6 +310,9 @@ impl Printer {
         self.line(&format!("{} {{", head));
         self.with_indent(|p| {
             for v in &e.variants {
+                for a in fmt_member_attrs(&v.attrs) {
+                    p.line(&a);
+                }
                 p.line(&fmt_enum_variant(v));
             }
             for (tn, ty) in &e.assoc_types {
