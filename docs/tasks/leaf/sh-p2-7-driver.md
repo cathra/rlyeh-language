@@ -1,6 +1,6 @@
 # SH-P2-7 前端自举 PoC（driver 自举）
 
-> **级别**：P2（集成建设） · **风险**：🔴 高 · **状态**：🟡 进行中（M-M1 已落地、M-M2a 已落地、M-M2b 已落地） · **归属**：0.2.0-M
+> **级别**：P2（集成建设） · **风险**：🔴 高 · **状态**：🟡 进行中（M-M1 已落地、M-M2a 已落地、M-M2b 已落地（b1 语句骨架 + b2 模式/类型标注）） · **归属**：0.2.0-M
 > **索引**：[`../self-hosting-p2.md`](../self-hosting-p2.md) · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.13
 
 ## 目标
@@ -18,7 +18,7 @@
   - **M-M1c（转义解码 ✅ 已落地，2026-09-20；浮点 ✅ 已落地，2026-09-21；非法字符 ✅ 已落地，2026-09-21）** 字符串/字符转义解码（`\n`/`\t`/`\r`/`\\`/`\"`/`\'`/`\xHH`，仅 ASCII 范围；`\u{...}` 在 >127 时落 U+FFFD 替换符，与 oracle 一致）已落地，`tests/self-host-lexer/corpus4.rl` 对拍一致。① 浮点字面量：✅ 已落地（2026-09-21）——按本计划背书方式，oracle canonical 改为发射**原始拼写**（`FLOAT 1.0`/`FLOAT 1e10`/`FLOAT 2.5e-10`/`FLOAT 0.5` 等，类型后缀 `f64`/`f32` 吸收不计入），`Token::FloatLiteral` 增 `raw: String` 字段携带原始拼写，`crates/rlyeh-driver/tests/self_host_lexer.rs` 新增 corpus5 内联用例对拍一致；② 非法字符报错：✅ 已落地（2026-09-21）——Rlyeh 版 lexer 在非法字符兜底分支 `panic!`（W 阶段已落地的内建，子进程 abort），由 `tests/self_host_lexer.rs` 负向用例验证 oracle（`Err(InvalidChar)`）与 Rlyeh 版两侧均报错（反引号 / `~` / 裸反斜杠等）。
 - **M-M2（中）** 用 Rlyeh 重写 `parser`（依赖 N/O/P + 递归下降），对拍 AST 一致。
   - **M-M2a（✅ 已落地，2026-09-21）** 切片1：表达式 → 规范 S-表达式 AST。`self-host/parser.rl` 采用 **shunting-yard + RPN 迭代建树（无递归）**，规避 Rlyeh 的共享 `Vec` 传递/递归语义问题，覆盖整数/标识符/一元负号/括号/二元 `+ - * / %` 与比较（`< <= > >= == !=`）/逻辑（`&& ||`）/位（`& | ^ << >>`）运算，括号透明（不产生节点）。`crates/rlyeh-driver` 新增 `emit_ast_canonical_expr` oracle（渲染为与 Rlyeh 版逐字节对齐的规范文本），`tests/self_host_parser.rs` 差分对拍一致。
-  - **M-M2b（✅ 已落地，2026-09-21）** 切片2：语句/块 → 程序级规范 S-表达式 AST。`self-host/parser.rl` 在 M-M2a 基础上新增 `tokenize` + `parse_expr`（对 token 流 shunting-yard）+ `parse_program`，**迭代式 buffer 栈**处理块（`{` 入栈新 buffer、`}` 出栈包成 `(block ...)`，不引入递归）；覆盖 `let`/`let mut`（模式仅标识符、类型标注忽略）、表达式语句（带 `;` → `(semi ...)`）、块尾裸表达式（`}` 前末位 → 裸）、`return`/`return;`。`crates/rlyeh-driver` 新增 `emit_ast_canonical` + `render_program/stmt/block_canonical`（保留 `emit_ast_canonical_expr`），`tests/self_host_parser.rs` 新增 `m_m2b_statement_ast_matches_rust_oracle` 差分对拍一致（含嵌套块、块尾表达式、return、混合 let+块+裸表达式）。
+  - **M-M2b（✅ 已落地，2026-09-21）** 切片2：语句/块 → 程序级规范 S-表达式 AST。`self-host/parser.rl` 在 M-M2a 基础上新增 `tokenize` + `parse_expr`（对 token 流 shunting-yard）+ `parse_program`，**迭代式 buffer 栈**处理块（`{` 入栈新 buffer、`}` 出栈包成 `(block ...)`，不引入递归）。**b1（2026-09-21）**：覆盖 `let`/`let mut`（模式仅标识符、类型标注忽略）、表达式语句（带 `;` → `(semi ...)`）、块尾裸表达式（`}` 前末位 → 裸）、`return`/`return;`，`crates/rlyeh-driver` 新增 `emit_ast_canonical` + `render_program/stmt/block_canonical`（保留 `emit_ast_canonical_expr`），`tests/self_host_parser.rs` 新增 `m_m2b_statement_ast_matches_rust_oracle` 差分对拍一致（含嵌套块、块尾表达式、return、混合 let+块+裸表达式）。**b2（2026-09-21）**：补齐 `let` **模式**（扁平元组 `(a, b)` / `_` 通配，非递归，`parse_pattern_tokens`）与**类型标注**（`i64` / `&T` / `&mut T` / `Vec<T>` 泛型，迭代式 `@GEN@` 栈，嵌套泛型 `Vec<Result<i64,String>>` 正确收束；元组类型 `(A,B)` 与数组 `[T;N]` 留待后续切片）；Rust oracle 同步新增 `render_pattern_canonical` / `render_type_canonical`；b1 既有用例（无类型标注）输出不变，新增类型/模式用例逐字节对拍一致。
 - **M-M3（中）** 用 Rlyeh 重写 `ast` + `macro`（依赖 C derive / I 内部可变性），对拍 AST 节点构造一致。
 - **M-M4（中）** 串联 M1–M3，经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）。
 - **L1（低）** 验收即「前端逻辑主体已是 Rlyeh 源码、可被自身工具链编译」；接入 K 的三阶段 bootstrap 做 dogfood。
@@ -50,7 +50,7 @@ Rlyeh 版 `self-host/parser.rl` 与 Rust oracle（`rlyeh_driver::emit_ast_canoni
 Rlyeh 版 `self-host/parser.rl` 的 `parse_program` 与 Rust oracle（`rlyeh_driver::emit_ast_canonical`，**非** `{:#?}` dump）输出**逐字节一致**的规范 S-表达式文本：
 
 - 程序 → `(program <STMT> ...)`；块 → `(block <STMT> ... [<FINAL-EXPR>?])`（`FINAL-EXPR` 仅块内末位、紧跟 `}` 的裸表达式，裸渲染）。
-- `let` → `(let <NAME> <INIT>)`；`let mut` → `(let mut <NAME> <INIT>)`（M-M2b 模式仅标识符，类型标注忽略）。
+- `let` → `(let <PAT> [<TYPE>] <INIT>)`；`let mut` → `(let mut <PAT> [<TYPE>] <INIT>)`（M-M2b2 起：`<PAT>` 为标识符 / `_` / `(tuple-pat <E1> <E2> ...)` 扁平元组；`<TYPE>` 可选，存在时渲染为类型节点）。类型节点：`(type <NAME> <ARG>...)`（路径，泛型实参递归渲染）/ `(ref <T>)` / `(ref mut <T>)` / `(tuple-type <T1> <T2> ...)` / `(array <T> <N>)` / `(infer)`。`<TYPE>` 缺失时不输出（与 M-M2b1 兼容）。
 - 表达式语句：带 `;` → `(semi <EXPR>)`；块内末位裸表达式（紧跟 `}`）→ 裸 `<EXPR>`（即块 `final_expr`）；顶层裸表达式 / 块后接更多语句 → `(semi <EXPR>)`。
 - `return <EXPR>;` → `(semi (return <EXPR>))`；`return;` → `(semi (return))`；块内末位裸 `return` → 裸 `(return ...)`。
 - 表达式中 `return` 前缀由 Rlyeh 版 `parse_expr` 识别为 `(return ...)` 节点（与 oracle `ExprKind::Return` 一致）。
@@ -64,6 +64,11 @@ Rlyeh 版 `self-host/parser.rl` 的 `parse_program` 与 Rust oracle（`rlyeh_dri
 - **元组字面量构造 `(a, b)` 作为表达式当前不支持**（typecheck 报「复杂被调用表达式（类型 `()` 不可调用）」）；但 `let (a, b) = ...` 解构绑定可用。需从函数返回多值时改用**结构体**（如 `struct PRes { s: String, ti: i64 }` + `PRes { s: x, ti: y }` + `r.s`/`r.ti` 字段访问），本切片 `parse_expr` 即如此实现。
 - `String` 无 `to_string()` 方法；构造字符串用 `String::from("...")` 或 `+` 拼接（已实证：M-M2b 初版因此编译失败）。
 - `out` 是保留关键字（region `transfer ... out of 'r` 语法），**不能**用作变量名；M-M2a 曾因此编译失败，已改用 `rpn`/`opstack` 等。
+- **`&&` / `||` 不短路**：Rlyeh 的逻辑与/或会**求值两侧**，不能用于边界短路（如 `i < n && arr.get(i)` 在 `i >= n` 时仍访问越界 → 段错误）。边界保护一律改用嵌套 `if`（`if i < n { if arr.get(i) == ... {} }`），M-M2b2 据此修正 `parse_type_core` 的泛型基类型前瞻与 ref-mut 判定。
+- **返回 `String` 的函数禁用 `return` 提前返回**：会生成错误的 `ret i64`（函数声明 `ptr` 却返回 i64，整模块 LLVM 校验失败，所有依赖该模块的测试连带失败）。统一用「累加变量 + 尾部表达式」返回（`let mut r = ...; ...; r`），M-M2b2 据此重写 `typename_of`/`parse_pattern_tokens`/`parse_type_core`/`parse_type_tokens`，彻底消除 `return` 与 `if`-表达式作为返回值。
+- **`if`/`else` 表达式作为返回值（且 then 分支含循环）会错误返回条件布尔值**：Rlyeh 的 if-表达式代码生成在 else 分支会返回**条件值**而非 else 表达式值（`ret i64` = 条件）。一律改用语句式 `if`（赋值或提前 return），不把 `if/else` 当值使用。
+- **前向调用被推断为 `i64`**：被调用函数若定义在其**调用方之后**，Rlyeh 会把它当作返回 `i64`，导致调用方类型错配（同 `ret i64` vs `ptr` 故障）。被调用方须定义在调用方之前（`parse_type_core` 须在 `parse_type_tokens` 之前定义）。
+- **类型泛型闭合 `>>` 词法记为右移 `shr`**：`Vec<Result<T,E>>` 的 `>>` 被 tokenize 成单个 `shr` token，导致外层泛型无法闭合（输出 `(type shr)`）。类型上下文须把 `shr` 拆成两个 `gt`（或整体上把 `>>` 视为两个 `>`）；M-M2b2 在收集类型 token 后做此拆分。
 
 ## 受影响组件
 `rlyeh-lexer`、`rlyeh-parser`、`rlyeh-ast`、`rlyeh-macro`（待建）、`rlyeh-driver`（编译入口）、`tests/`。
@@ -73,7 +78,7 @@ Rlyeh 版 `self-host/parser.rl` 的 `parse_program` 与 Rust oracle（`rlyeh_dri
 - 对拍测试 `tests/self-host-*`：同 `.rl` 输入，Rlyeh 版与 Rust 版 token/AST 一致。
 
 ## 状态
-🟡 进行中（0.2.0 必须项，阶段 M；交付物 dogfood）。M-M1 切片1(a+b+c) 与 M-M2a/M-M2b 已落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）经 `tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）差分对拍 corpus1..5 逐行一致，M-M1c 非法字符报错（✅ 2026-09-21，负向对拍）已落地；Rlyeh 版 parser `self-host/parser.rl`（M-M2a 表达式切片 shunting-yard+RPN 建树；M-M2b 程序/语句切片 tokenize+迭代 buffer 栈）经 `tests/self_host_parser.rs` 与 Rust oracle `emit_ast_canonical_expr`/`emit_ast_canonical` 差分对拍一致；剩余 M-M2c/M-M3/M-M4 待推进。
+🟡 进行中（0.2.0 必须项，阶段 M；交付物 dogfood）。M-M1 切片1(a+b+c) 与 M-M2a/M-M2b（b1 语句骨架 + b2 模式/类型标注）已落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）经 `tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）差分对拍 corpus1..5 逐行一致，M-M1c 非法字符报错（✅ 2026-09-21，负向对拍）已落地；Rlyeh 版 parser `self-host/parser.rl`（M-M2a 表达式切片 shunting-yard+RPN 建树；M-M2b 程序/语句切片 tokenize+迭代 buffer 栈+模式/类型解析）经 `tests/self_host_parser.rs` 与 Rust oracle `emit_ast_canonical_expr`/`emit_ast_canonical`/`render_pattern_canonical`/`render_type_canonical` 差分对拍一致（含嵌套泛型 `Vec<Result<i64,String>>`、`&`/`&mut`、扁平元组模式 `(a, _)` 等）；剩余 M-M2c/M-M3/M-M4 待推进。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -85,3 +90,4 @@ Rlyeh 版 `self-host/parser.rl` 的 `parse_program` 与 Rust oracle（`rlyeh_dri
 | 2026-09-21 | M-M1c② 非法字符报错落地：Rlyeh 版 lexer 非法字符兜底分支由静默 `?` token 改为 `panic!`（W 阶段内建，子进程 abort）；`tests/self_host_lexer.rs` 新增 `m_m1c2_illegal_char_panics` 负向用例，验证 oracle（`Err(InvalidChar)`）与 Rlyeh 版两侧均报错（反引号 / `~` / 裸反斜杠）；修复并行用例共享临时产物的偶发失败（加全局互斥锁 + 唯一临时文件名） |
 | 2026-09-21 | M-M2a 落地：新增 `self-host/parser.rl`（Rlyeh 版 parser 切片1，表达式 → 规范 S-表达式 AST；shunting-yard + RPN 迭代建树，**无递归**，规避 Rlyeh 共享 `Vec`/递归语义限制），覆盖整数/标识符/一元负号/括号/二元算术与比较/逻辑/位运算；`crates/rlyeh-driver` 新增 `emit_ast_canonical_expr` oracle（渲染为与 Rlyeh 版逐字节对齐的规范文本，非 `{:#?}` dump），`tests/self_host_parser.rs` 差分对拍一致；踩坑点补充 `out` 为保留关键字 |
 | 2026-09-21 | M-M2b 落地：扩展 `self-host/parser.rl` 新增 `tokenize` + `parse_expr`（token 流 shunting-yard）+ `parse_program`（迭代式 buffer 栈处理块，不递归），覆盖 `let`/`let mut`/表达式语句/块尾裸表达式/`return`；`crates/rlyeh-driver` 新增 `emit_ast_canonical` + `render_program/stmt/block_canonical`（保留 `emit_ast_canonical_expr`），`tests/self_host_parser.rs` 新增 `m_m2b_statement_ast_matches_rust_oracle` 差分对拍一致；踩坑点补充「元组字面量构造不支持（改用结构体）/ `String` 无 `to_string()`」，并修正「块尾 final 以 `nxt == "}"` 判定」 |
+| 2026-09-21 | M-M2b2 落地：补齐 `let` **模式**（`parse_pattern_tokens`：标识符 / `_` / 扁平元组 `(a, b)`，非递归）与**类型标注**（`parse_type_tokens` + `parse_type_core`：迭代式 `@GEN@` 栈处理泛型 `<...>` 收束，支持 `i64` / `&T` / `&mut T` / `Vec<T>` 嵌套泛型，元组类型 `(A,B)` 与数组 `[T;N]` 留待后续）；`crates/rlyeh-driver` 新增 `render_pattern_canonical` / `render_type_canonical` 与 `AstPattern`/`AstType` 渲染；`tests/self_host_parser.rs` 扩展 b2 用例（`Vec<Result<i64,String>>`/`&mut`/扁平元组/混合）逐字节对拍一致。实证 Rlyeh 5 项关键约束并写入踩坑点：`&&`/`||` 不短路（须嵌套 if 做边界保护）、返回 `String` 的函数禁用 `return`（须累加变量+尾部返回）、if-表达式含循环时 else 错误返回条件值、`>>` 词法记为 `shr`（类型上下文须拆成两个 `gt`）、前向调用被推断为 `i64`（被调用方须先定义） |

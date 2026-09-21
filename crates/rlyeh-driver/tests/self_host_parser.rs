@@ -150,8 +150,21 @@ fn m_m2b_statement_ast_matches_rust_oracle() {
     check_program("let mut y = x * 3;");
     check_program("let a = 1; let b = 2; a + b");
     check_program("let n = 10; n - 1");
-    // 带类型标注（M-M2b1 忽略 anno，规范输出与无标注一致）
+    // 类型标注（M-M2b2：渲染为 (type ...) 节点）
     check_program("let x: i64 = 1 + 2;");
+    check_program("let x: u32 = 10;");
+    check_program("let x: String = 0;");
+    check_program("let x: &i64 = 0;");
+    check_program("let x: &mut i64 = 0;");
+    check_program("let x: Vec<i64> = 0;");
+    check_program("let x: Result<i64, String> = 0;");
+    check_program("let x: Vec<Result<i64, String>> = 0;");   // 嵌套泛型
+    check_program("let x: _ = 0;");                          // 推断
+    check_program("let mut y: Vec<i64> = 0;");
+    // 模式：扁平元组解构与 _ 通配（M-M2b2）
+    check_program("let (a, b) = 1 + 2;");
+    check_program("let (a, _, c) = 1;");
+    check_program("let mut (a, b) = 1;");
     // 嵌套块 + 块尾表达式
     check_program("{ let x = 1; x }");
     check_program("{ let x = 1; let y = 2; x + y }");
@@ -165,4 +178,6 @@ fn m_m2b_statement_ast_matches_rust_oracle() {
     check_program("{ let x = 7; return x + 1; }");
     // 混合：let + 块表达式 + 顶层裸表达式
     check_program("let n = 10; { let m = n * 2; m } n + 1");
+    // 混合：模式 + 类型标注 + 嵌套块
+    check_program("let (a, b) = 1 + 2; { let (c, _) = a; c }");
 }

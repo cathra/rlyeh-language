@@ -302,23 +302,80 @@ fn render_stmt_canonical(stmt: &rlyeh_ast::AstStmt) -> String {
     match stmt {
         rlyeh_ast::AstStmt::Let {
             pattern,
-            type_anno: _,
+            type_anno,
             init,
             mutable,
         } => {
-            let name = match pattern {
-                rlyeh_ast::AstPattern::Ident(n) => n.as_str(),
-                _ => return "(let (unsupported-pattern))".to_string(),
-            };
-            if *mutable {
-                format!("(let mut {name} {})", render_expr_canonical(init))
+            let pat = render_pattern_canonical(pattern);
+            let mut head = if *mutable {
+                format!("(let mut {pat}")
             } else {
-                format!("(let {name} {})", render_expr_canonical(init))
+                format!("(let {pat}")
+            };
+            if let Some(ta) = type_anno {
+                head = format!("{head} {}", render_type_canonical(&ta.ty));
             }
+            format!("{head} {})", render_expr_canonical(init))
         }
         rlyeh_ast::AstStmt::Expr(e) => format!("(semi {})", render_expr_canonical(e)),
         rlyeh_ast::AstStmt::Semi(e) => format!("(semi {})", render_expr_canonical(e)),
         rlyeh_ast::AstStmt::Item(_) => "(item-unsupported)".to_string(),
+    }
+}
+
+/// 渲染模式为规范串：标识符 -> 裸名；`_` -> "_"；元组 -> `(tuple-pat ...)`。
+fn render_pattern_canonical(p: &rlyeh_ast::AstPattern) -> String {
+    match p {
+        rlyeh_ast::AstPattern::Ident(n) => n.clone(),
+        rlyeh_ast::AstPattern::Wildcard => "_".to_string(),
+        rlyeh_ast::AstPattern::Tuple(elems, _) => {
+            let mut s = "(tuple-pat".to_string();
+            for e in elems {
+                s = format!("{s} {}", render_pattern_canonical(e));
+            }
+            s.push(')');
+            s
+        }
+        _ => "(pat-unsupported)".to_string(),
+    }
+}
+
+/// 渲染类型为规范串（M-M2b2）：路径 `(type NAME ARG...)` / 引用 `(ref ...)` /
+/// 元组类型 `(tuple-type ...)` / 数组 `(array T N)` / 推断 `(infer)`。
+fn render_type_canonical(t: &rlyeh_ast::AstType) -> String {
+    match t {
+        rlyeh_ast::AstType::Path(name, args) => {
+            let mut s = format!("(type {name}");
+            for a in args {
+                s = format!("{s} {}", render_type_canonical(a));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::AstType::Ref(inner, is_mut, _) => {
+            if *is_mut {
+                format!("(ref mut {})", render_type_canonical(inner))
+            } else {
+                format!("(ref {})", render_type_canonical(inner))
+            }
+        }
+        rlyeh_ast::AstType::Tuple(ts) => {
+            let mut s = "(tuple-type".to_string();
+            for a in ts {
+                s = format!("{s} {}", render_type_canonical(a));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::AstType::Array(inner, len_opt) => {
+            let n = match len_opt {
+                Some(e) => render_expr_canonical(e),
+                None => "?".to_string(),
+            };
+            format!("(array {} {n})", render_type_canonical(inner))
+        }
+        rlyeh_ast::AstType::Infer => "(infer)".to_string(),
+        _ => "(type-unsupported)".to_string(),
     }
 }
 

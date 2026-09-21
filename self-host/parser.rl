@@ -221,12 +221,23 @@ struct PRes { s: String, ti: i64 }
 //   - 语句/块：迭代式 buffer 栈（遇 `{` 入栈新 buffer，遇 `}` 出栈包成 (block ...)），
 //     不引入递归，规避 Rlyeh 的共享 Vec 传递/递归语义风险。
 //
-// 规范格式（M-M2b1）：
+// 规范格式（M-M2b1 + M-M2b2）：
 //   (program STMT ...)                         顶层
 //   (block STMT ... [FINAL-EXPR?])             块（FINAL-EXPR 仅块内末位裸表达式，裸渲染）
-//   (let NAME INIT) / (let mut NAME INIT)       let（M-M2b1 忽略类型标注）
+//   (let PAT [TYPE] INIT) / (let mut PAT [TYPE] INIT)
+//                                                  let（M-M2b2 起：PAT=标识符/_/(tuple-pat ...)，
+//                                                  TYPE 可选，存在时渲染为 (type ...) 节点）
 //   (semi EXPR)                                带 `;` 表达式语句 / 顶层裸表达式 / 顶层裸块
 //   (return EXPR) / (return)                   return 表达式
+//
+// 类型规范（M-M2b2，迭代式 @GEN@ 栈，见 parse_type_core）：
+//   (type NAME ARG...)     路径类型，泛型实参递归渲染
+//   (ref (type T))          &T
+//   (ref mut (type T))      &mut T
+//   (tuple-type T1 T2 ...)  (T1, T2) 元组类型
+//   (array T N)             [T; N]（N 为长度表达式规范串）
+//   (infer)                 _
+// 模式规范（M-M2b2）：标识符裸名 / "_" / "(tuple-pat E1 E2 ...)"（扁平元组）。
 // ============================================================================
 
 // 将源码词法化为 token 流（每个 token 为字符串）：
@@ -271,6 +282,10 @@ fn tokenize(src: String) -> Vec<String> {
         if c == 125 { toks.push(String::from("}")); prev_op = 0; i = i + 1; continue; }
         if c == 59 { toks.push(String::from(";")); prev_op = 0; i = i + 1; continue; }
         if c == 58 { toks.push(String::from(":")); prev_op = 0; i = i + 1; continue; }
+        // 逗号 / 方括号（M-M2b2：模式与类型标注使用；表达式解析中作停止符）
+        if c == 44 { toks.push(String::from(",")); prev_op = 0; i = i + 1; continue; }
+        if c == 91 { toks.push(String::from("[")); prev_op = 0; i = i + 1; continue; }
+        if c == 93 { toks.push(String::from("]")); prev_op = 0; i = i + 1; continue; }
         // = 与 ==
         if c == 61 {
             let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
@@ -352,6 +367,9 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
         if tok == ":" { break; }
         if tok == "{" { break; }
         if tok == "let" { break; }
+        if tok == "," { break; }
+        if tok == "[" { break; }
+        if tok == "]" { break; }
         // 操作数：(int ...)/(var ...) 起于 '(' 但非 "("
         let first = tok.get(0);
         if first == 40 && tok != "(" {
@@ -439,6 +457,140 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
     PRes { s: res, ti: ti }
 }
 
+// 从 token 串提取类型/模式名："(var Foo)" -> "Foo"，其余原样返回。
+// 注意：Rlyeh 对"返回 String 的函数使用 early return"会生成错误 IR（ret i64），
+// 故全部改用累加变量 + 尾部表达式，绝不使用 return / if-表达式作为返回值。
+fn typename_of(t: String) -> String {
+    let mut res = String::from("");
+    if t.len > 5 && t.substring(0, 5) == "(var " {
+        res = t.substring(5, t.len - 1);
+    } else {
+        res = t;
+    }
+    res
+}
+
+// 迭代解析类型核心（不含前置 ref）。所有原子压入 stk；`<` 压 @GEN@，`>` 弹出 @GEN@ 之上
+// 的全部实参 + @GEN@ 之下的基类型，包成 (type BASE ARG...)。实参逆序弹出后反转还原。
+// 必须在 parse_type_tokens 之前定义，避免前向调用导致返回类型被推断为 i64。
+fn parse_type_core(ts: Vec<String>, start: i64) -> String {
+    let n = ts.len;
+    let mut k = start;
+    let mut stk: Vec<String> = Vec::new();
+    while k < n {
+        let t = ts.get(k);
+        if t == "lt" {
+            stk.push(String::from("@GEN@"));
+            k = k + 1; continue;
+        }
+        if t == "gt" {
+            let mut args: Vec<String> = Vec::new();
+            while stk.len() > 0 {
+                let top_opt = stk.pop();
+                let top = match top_opt { Option::Some(x) => x, Option::None => String::new() };
+                if top == "@GEN@" { break; }
+                args.push(top);
+            }
+            // 反转（弹出顺序为逆序）
+            let mut ai = 0;
+            let mut aj = args.len - 1;
+            while ai < aj {
+                let tmp = args.get(ai);
+                args.set(ai, args.get(aj));
+                args.set(aj, tmp);
+                ai = ai + 1; aj = aj - 1;
+            }
+            let base_opt = stk.pop();
+            let base = match base_opt { Option::Some(x) => x, Option::None => String::from("(type ?)") };
+            let mut w = base;
+            let mut xi = 0;
+            while xi < args.len {
+                w = w + " " + args.get(xi);
+                xi = xi + 1;
+            }
+            w = w + ")";
+            stk.push(w);
+            k = k + 1; continue;
+        }
+        if t == "," { k = k + 1; continue; }
+        let mut atom = String::from("");
+        if t == "(var _)" {
+            atom = String::from("(infer)");
+        } else {
+            let nm = typename_of(t);
+            atom = "(type " + nm;
+            let mut is_gen_base = 0;
+            if k + 1 < n {
+                if ts.get(k + 1) == "lt" { is_gen_base = 1; }
+            }
+            if is_gen_base == 1 {
+                // 泛型基类型：保持开放（不加闭合括号），由后续 gt 收束
+            } else {
+                atom = atom + ")";
+            }
+        }
+        stk.push(atom);
+        k = k + 1;
+    }
+    let mut result = String::from("?");
+    if stk.len() > 0 {
+        let r_opt = stk.pop();
+        result = match r_opt { Option::Some(x) => x, Option::None => String::new() };
+    }
+    result
+}
+
+// 解析类型标注 token 序列 -> 规范类型串（M-M2b2：路径 / & / &mut / 泛型，迭代式 @GEN@ 栈）。
+//   泛型 `<BASE ARG1 ARG2>` 以 @GEN@ 标记收束，支持任意嵌套。
+fn parse_type_tokens(ts: Vec<String>) -> String {
+    let n = ts.len;
+    let mut k = 0;
+    let mut ref_kind = 0;   // 0 无 / 1 & / 2 &mut
+    if n > 0 && ts.get(0) == "bitand" {
+        ref_kind = 1; k = 1;
+        if k < n {
+            if ts.get(k) == "mut" { ref_kind = 2; k = k + 1; }
+        }
+    }
+    let core = parse_type_core(ts, k);
+    let mut result = core;
+    if ref_kind == 1 { result = "(ref " + core + ")"; }
+    if ref_kind == 2 { result = "(ref mut " + core + ")"; }
+    result
+}
+
+// 解析 let 模式 token 序列 -> 规范模式串（非递归，M-M2b2 仅扁平元组）。
+//   单标识符 "(var x)" -> "x"；通配 "(var _)" -> "_"；
+//   元组 "( a , b )" -> "(tuple-pat a b)"（元素为单标识符或 _）。
+//   全程语句式 if + 累加变量，不使用 return / if-表达式作为返回值。
+fn parse_pattern_tokens(ts: Vec<String>) -> String {
+    let n = ts.len;
+    let mut result = String::from("?");
+    if n > 0 {
+        let first = ts.get(0);
+        if first != "(" {
+            let t = ts.get(0);
+            if t == "(var _)" { result = String::from("_"); }
+            else { result = typename_of(t); }
+        } else {
+            let mut s = String::from("(tuple-pat");
+            let mut k = 1;
+            while k < n {
+                let t = ts.get(k);
+                if t == ")" { break; }
+                if t == "," { k = k + 1; continue; }
+                let mut elem = String::from("");
+                if t == "(var _)" { elem = String::from("_"); }
+                else { elem = typename_of(t); }
+                s = s + " " + elem;
+                k = k + 1;
+            }
+            result = s + ")";
+        }
+    }
+    result
+}
+
 // 解析整段程序源码，返回规范 S-表达式程序文本（见本文件顶部"规范格式"）。
 fn parse_program(src: String) -> String {
     let tokens = tokenize(src);
@@ -482,20 +634,46 @@ fn parse_program(src: String) -> String {
             bufstack.push("");
             continue;
         }
-        // let 语句
+        // let 语句（M-M2b2：支持模式（扁平元组 / _）与类型标注）
         if tok == "let" {
             ti = ti + 1;
             let mut is_mut = 0;
             if ti < n && tokens.get(ti) == "mut" { is_mut = 1; ti = ti + 1; }
-            let raw = tokens.get(ti); ti = ti + 1;
-            let name = raw.substring(5, raw.len - 1);
-            // 跳过类型标注（M-M2b1 忽略）：从 ':' 跳到 '='
+            // 收集模式 token，直到 ':' 或 '='
+            let mut pat_toks: Vec<String> = Vec::new();
+            while ti < n {
+                let p = tokens.get(ti);
+                if p == ":" { break; }
+                if p == "=" { break; }
+                pat_toks.push(p);
+                ti = ti + 1;
+            }
+            let pattern = parse_pattern_tokens(pat_toks);
+            // 类型标注（可选）
+            let mut type_sexpr = String::from("");
             if ti < n && tokens.get(ti) == ":" {
-                loop {
-                    if ti >= n { break; }
-                    if tokens.get(ti) == "=" { break; }
+                let mut typ_toks: Vec<String> = Vec::new();
+                ti = ti + 1;
+                while ti < n {
+                    let q = tokens.get(ti);
+                    if q == "=" { break; }
+                    typ_toks.push(q);
                     ti = ti + 1;
                 }
+                // 类型上下文：嵌套泛型闭合的 ">>" 被词法记为右移 shr，需拆成两个 '>'
+                let mut fixed: Vec<String> = Vec::new();
+                let mut fi = 0;
+                while fi < typ_toks.len {
+                    let ft = typ_toks.get(fi);
+                    if ft == "shr" {
+                        fixed.push(String::from("gt"));
+                        fixed.push(String::from("gt"));
+                    } else {
+                        fixed.push(ft);
+                    }
+                    fi = fi + 1;
+                }
+                type_sexpr = parse_type_tokens(fixed);
             }
             // 越过 '='
             if ti < n && tokens.get(ti) == "=" { ti = ti + 1; }
@@ -503,11 +681,11 @@ fn parse_program(src: String) -> String {
             let init = r.s;
             ti = r.ti;
             if ti < n && tokens.get(ti) == ";" { ti = ti + 1; }
-            let node = if is_mut == 1 {
-                "(let mut " + name + " " + init + ")"
-            } else {
-                "(let " + name + " " + init + ")"
-            };
+            let mut node = String::new();
+            if is_mut == 1 { node = "(let mut " + pattern; }
+            else { node = "(let " + pattern; }
+            if type_sexpr.len > 0 { node = node + " " + type_sexpr; }
+            node = node + " " + init + ")";
             let p_opt = bufstack.pop();
             let mut p = match p_opt { Option::Some(x) => x, Option::None => String::new() };
             p = p + " " + node;
