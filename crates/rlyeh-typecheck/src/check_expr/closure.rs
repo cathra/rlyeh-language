@@ -730,8 +730,16 @@ pub(crate) fn check_closure_expected(
         }
         Err(e) => return Err(e),
     };
+    // EH-3（2026-09-21）：期望返回类型仍含**未定泛型**（如
+    // `Option::ok_or_else(err: fn() -> E)` 的 E，E 只出现在闭包返回位置，
+    // 无法由接收者反推）时，无期望可依——改以闭包体推断类型作为该匿名函数
+    // 返回类型，并由调用方（`check_method_call` 实参循环）用返回的 `fn` 类型
+    // 回填泛型。否则 `body_ty.compatible_with(Type::Generic(..))` 恒为 false
+    // （`compatible_with` 不识别 `Generic`），合法调用被误报类型不匹配。
+    let generic_ret = contains_any_generic(&return_type) && body_ty != Type::Never;
+    let sig_ret = if generic_ret { body_ty.clone() } else { return_type.clone() };
     // 返回类型兼容性：body 尾部表达式须兼容预期返回类型
-    if body_ty != Type::Never && !body_ty.compatible_with(&return_type) {
+    if !generic_ret && body_ty != Type::Never && !body_ty.compatible_with(&return_type) {
         return Err(TypeError::WrongType {
             expected: return_type.to_string(),
             found: body_ty.to_string(),
@@ -746,7 +754,7 @@ pub(crate) fn check_closure_expected(
         FnSignature {
             params: sig_params.clone(),
             param_spans: vec![Span::dummy(); sig_params.len()],
-            return_type: return_type.clone(),
+            return_type: sig_ret.clone(),
         },
     );
     ctx.mono_items.push(HirItem {
@@ -770,7 +778,9 @@ pub(crate) fn check_closure_expected(
         Type::Fn(Box::new(FnSignature {
             param_spans: vec![Span::dummy(); sig_params.len()],
             params: sig_params,
-            return_type,
+            // 含未定泛型的期望返回类型已由闭包体类型替代（见上方 `generic_ret`），
+            // 供调用方据此回填泛型。
+            return_type: sig_ret,
         })),
     ))
 }

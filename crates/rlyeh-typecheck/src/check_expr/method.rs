@@ -542,6 +542,15 @@ pub(super) fn check_method_call(
     // K、V 都定型为第一个实参类型，导致后续参数误报类型不匹配。
     let mut hir_args = vec![recv_hir];
     let mut arg_tys = Vec::with_capacity(args.len());
+    // EH-3（2026-09-21）：闭包实参回填泛型所需的 impl / 方法级泛型参数名集合。
+    let mut all_generics = impl_def.type_params.clone();
+    if let Some(b) = &method_def.body {
+        for g in &b.generics {
+            if !all_generics.contains(&g.name) {
+                all_generics.push(g.name.clone());
+            }
+        }
+    }
     let raw_params: Vec<&Type> = method_def.sig.params.iter().skip(1).collect();
     for (raw_p, a) in raw_params.iter().zip(args.iter()) {
         let pty = substitute(raw_p, &subst);
@@ -552,7 +561,17 @@ pub(super) fn check_method_call(
         // 具体参数类型检查。
         let (hir, ty) =
             if matches!(pty, Type::Fn(_)) && matches!(&*a.kind, ExprKind::Closure { .. }) {
-                check_closure_expected(ctx, a, &pty, a.span)?
+                let (h, t) = check_closure_expected(ctx, a, &pty, a.span)?;
+                // EH-3（2026-09-21）：形参仍是未定泛型时，用闭包体类型回填——
+                // 如 `Option::ok_or_else(|| String::from("x"))` 的 `E`、
+                // `Result::or_else(|| Result::Err(..))` 的 `F`，它们只出现在
+                // 闭包返回位置，接收者 / 其它实参均无从反推。`check_closure_expected`
+                // 已把该泛型返回位置替换为体推断类型（`fn() -> i64`），此处 unify
+                // `fn() -> E` × `fn() -> i64` 即令 `E = i64`。
+                if crate::check_expr::generic::contains_generic_named(&pty, &all_generics) {
+                    let _ = unify(&pty, &t, &mut subst);
+                }
+                (h, t)
             } else {
                 infer_expr(ctx, a)?
             };

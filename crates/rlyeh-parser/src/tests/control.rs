@@ -371,6 +371,39 @@ fn test_move_closure() {
 }
 
 #[test]
+fn test_zero_arg_borrow_closure() {
+    // EH-3（2026-09-21）：`|| expr` 零参**借用**闭包。此前前缀分派只处理
+    // `Token::BitOr`（`|x| ..`）与 `move` 前缀，裸 `||` 落入
+    // `unexpected("expression")`（`o.unwrap_or_else(|| 7)` 报 `found OrOr`）。
+    let program = parse_ok("let f = || 42;");
+    let AstItem::Statement(stmt) = &program.items[0] else {
+        panic!();
+    };
+    let AstStmt::Let { init, .. } = &**stmt else {
+        panic!();
+    };
+    let ExprKind::Closure {
+        params, capture, ..
+    } = &*init.kind
+    else {
+        panic!("expected closure");
+    };
+    assert!(params.is_empty());
+    assert!(matches!(capture, rlyeh_ast::CaptureMode::Borrow));
+
+    // 作为调用实参（前缀位置分派）：闭包体仍可含短路二元 `||`，二者不冲突。
+    let program = parse_ok("foo(|| a || b);");
+    let e = top_expr(&program);
+    let ExprKind::Call { args, .. } = &*e.kind else {
+        panic!("expected call");
+    };
+    let ExprKind::Closure { body, .. } = &*args[0].kind else {
+        panic!("expected closure argument");
+    };
+    assert!(matches!(&*body.kind, ExprKind::Binary { .. }));
+}
+
+#[test]
 fn test_else_if() {
     let program = parse_ok("if a { 1 } else if b { 2 } else { 3 }");
     let e = top_expr(&program);

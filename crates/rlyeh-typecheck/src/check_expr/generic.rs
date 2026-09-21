@@ -645,6 +645,28 @@ pub(super) fn contains_infer(ty: &Type) -> bool {
     }
 }
 
+/// 类型是否包含**任意**未定泛型参数（`Type::Generic`）。
+/// EH-3（2026-09-21）：闭包期望签名中若返回类型仍是未定泛型（如
+/// `Option::ok_or_else(err: fn() -> E)` 的 E），无法据期望定型闭包体——
+/// 调用方改用「体推断类型」并为该泛型回填（`Type::Generic` 不满足
+/// `compatible_with`，故须显式识别以免误报类型不匹配）。
+pub(super) fn contains_any_generic(ty: &Type) -> bool {
+    match ty {
+        Type::Generic(_) => true,
+        Type::Named(_, ps) => ps.iter().any(contains_any_generic),
+        Type::Ref(inner, _, _) => contains_any_generic(inner),
+        Type::RawPtr(inner, _) => contains_any_generic(inner),
+        Type::Fn(sig) => {
+            sig.params.iter().any(contains_any_generic) || contains_any_generic(&sig.return_type)
+        }
+        Type::Tuple(ts) => ts.iter().any(contains_any_generic),
+        Type::Array(inner, _) => contains_any_generic(inner),
+        Type::Slice(inner) => contains_any_generic(inner),
+        Type::Union(ts) => ts.iter().any(contains_any_generic),
+        _ => false,
+    }
+}
+
 /// 类型是否包含名为 `names` 之一的泛型参数（`Type::Generic`）。
 /// A2：判断方法预期参数类型中是否还存在未绑定的 impl / 方法级泛型参数，
 /// 以决定能否由对应实参类型反推绑定。

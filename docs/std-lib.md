@@ -16,7 +16,7 @@
 
 | 章节 | 状态 | MVP 实际形态 | 规划阶段 |
 |------|------|--------------|---------|
-| §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + `is_some/is_none/unwrap/unwrap_or/expect` 等 | — |
+| §2.1 Option / §2.2 Result | ✅ 已实现 | 泛型 enum + 完整组合子（**EH-3 ✅ 2026-09-21**）：`is_some/is_none/unwrap/unwrap_or/expect`、`ok_or/ok_or_else`、`map/and_then/or_else/filter`、`flatten/transpose`、`copied/cloned`；`Result` 侧 `is_ok/is_err`、`ok/err/expect_err`、`map/map_err/and_then/or_else/unwrap_or_else`、`flatten/transpose`、`copied/cloned`。**`propagate()` 不提供**（与 `?` 重复） | — |
 | §2.3 Iterator | ✅ 已实现（MVP 退化 + V3 默认方法） | `protocol Iterator { fn next(&mut self) -> Option<i64>; }`（T2 ✅，core/module.rl 顶部；关联类型 `type Item` 规划——parser/typecheck 无 protocol `type` 成员载体，归属 **U2/V3**）；自定义迭代器 `impl T: Iterator` 经 for 接入（J2）；**V3 默认方法 ✅ 2026-08-26**——`count`/`sum`/`any`/`all`（protocol 默认实现 + typecheck protocol 默认方法回退机制）；适配器 map/filter/fold/collect/take/skip 保持内建 desugar（迁移为 protocol 默认方法仍 **V3** 规划，需 `Iterator::Item` + 包装迭代器） | U2/V3 |
 | §3.1 Vec / §3.2 HashMap / §3.3 String | ✅ 已实现（目标 API 补齐，T1 ✅） | 目标 API 清单补齐：Vec `iter`/`iter_mut`（**V1 瘦指针迭代器**，2026-08：`Iter<T>`/`IterMut<T>` 裸指针 + 剩余长度，`next()` 值拷贝 + `IterMut::write` 真实写回）/`get_mut`（**V4 引用语义**，2026-08-25：`Option<&mut T>` 命中原槽可变引用 + 越界 None）/`sort_by`（比较器闭包）；String `chars`（字节级）/`lines`/`to_uppercase`/`to_lowercase`（别名）；HashMap `iter`（退化键缓冲）/`get_mut`（**V4 引用语义**，`Option<&mut V>` 写回真实槽）；详见 §3.1/§3.2/§3.3 差异注记（借用迭代器（引用元素）**V1**、码点迭代器 **V2**、`get_mut` 引用语义 **V4**） | V1/V2/V4 |
 | §4.1 File | ✅ 已实现 | `File::open/create/close` + `read_to_string/read/write/write_all/flush/metadata/size`（N1 ✅）+ 自由函数 `read_file/write_file/append_file`（`Result<T, IoError>`）；目标 API `open_with`/`read(&mut [u8])`/`write(&[u8])`/完整 `Metadata` 归属 **Y1** | Y1 |
@@ -34,7 +34,7 @@
 | §9 序列化 | 🔧 部分 | **`json::stringify`/`json::parse::<T>` 编译器内建已实现**（L2 ✅，含 HashMap + struct 反序列化）；`Serialize` protocol + `#[derive(Serialize, Deserialize)]` 标记 + 手写 impl 已实现（Q1 ✅，`serde/module.rl`）；**泛型 API 入口 `to_string`/`from_str` + 流式 `to_writer`/`from_reader` 已实现**（Q2 ✅，typecheck 内建别名/desugar）；**TOML 轻量模块已实现**（Q4 ✅，`toml::to_string`/`from_str`：基础标量/嵌套表（内联表）/数组/HashMap stringify/parse，§9.4）；`Deserialize` protocol（**`-> Self` 返回已支持**，U4 ✅，2026-09-21 修正原「未支持」标注）归属 **U4/X3**、标准 TOML + 解析鲁棒性归属 **X2** | U4/X2/X3 |
 | §10 异步运行时 | ✅ 已实现（MVP） | 线程（S0 ✅）、`Future`/`Poll`/`block_on`/`async fn` 状态机（S1 ✅）、**W1 ✅（2026-08-25）`Future::poll` 泛型化**（关联类型 `type Output` + `cx: &mut Context` 参数，`fn poll(&mut self, cx: &mut Context) -> Poll<Self::Output>`，desugar 与手写 impl 均支持）、`join_all`/`timeout`/`sleep`（S2 ✅）、`recv_async`/HTTP async（S3 ✅）；**W2 ✅（2026-08-25）await 控制流图展开**（if/while/for/loop/match 内 await + 嵌套 await 提取）；**W4 ✅（2026-08-25）`future::join_all<F: Future>(Vec<F>) -> Vec<F::Output>` + `timeout<F: Future> -> Result<F::Output, TimeoutError>`**（`F::Output` 关联类型投影落地，输出泛型化不再限 i64）；**W3 ✅（2026-08-25）事件驱动 executor 两步完成**——定时器唤醒：`Context` 携带 `deadline` 槽，`block_on`/`timeout` 据此 `thread::sleep` 到唤醒时刻再轮询（非忙等）+ `future::sleep` 定时器 future；fd 事件唤醒：`Context` 携带 `fd`/`interest` 槽，`block_on` `Pending` 且 `fd>0` 时构造 `Poller`（poll(2)）注册并等待就绪（非忙等）+ `future::wait_fd(fd, interest)`**；**W5 ✅（2026-08-25）`recv_async` + `get_async` + `post_async` 真异步——`Channel` socketpair 唤醒 fd + `RecvAsync` future（`try_recv` + `cx.fd` 挂起）；`GetAsync` future（connect/写同步 + 非阻塞读响应 wait_fd 挂起，POST 带 body + Content-Length），`block_on` 泛型化返回 `F::Output`**；actor 的 `async` 方法 + `.await`/`send` 已实现（独立机制）；**W6 🔧（2026-08-26）泛型 async fn ✅（Part 1a）**——`async fn echo<T>(x: T) -> T` 泛型参数/返回透传到 Future 结构体 `__Fut_echo<T>`/impl `impl<T> Future`（`type Output = T`）/构造器 `fn echo<T>(...) -> __Fut_echo<T>`，独立 `block_on` 多类型实例化（i64/f64/String）；泛型 async fn 作为子 future await 暂不支持（清晰报错）；跨 await 泛型变量限具体类型（泛型参数不跨 await）；async 递归 + 跨线程闭包捕获归属 W6 Part 1b/2（依赖 R1 Poller） | W6 |
 | §11 智能指针 | ✅ 已实现 | `Box<T>`（K2，含 **`Box::leak`**（T3a ✅，返回 `*mut T` 裸指针，目标 `&'static mut T` 归属 **U5/Y5**））/ `Rc<T>`/`Arc<T>`/`Weak<T>`（K3 全覆盖：`strong_count`/`weak_count`/`downgrade`/`try_unwrap`/`upgrade`，T3b ✅ 核对）/ `Gc<T>`（K4）✅ 已实现（MVP，见 §11） | U5/Y5 |
-| §12 错误处理 | ✅ 已实现 | `Option`/`Result` + `expect/unwrap_or`；**`?` 运算符**（K1 ✅）；**`IoError`/`IoErrorKind`**（M1 ✅，`io/error.rl`）+ **`Error` protocol**（M2a ✅ `fn message(&self) -> String`；**`fn source(&self) -> Option<&dyn Error>` 真实错误链 ✅**，Y6a 起步 → P7d-1 升级，`error_source.rl`）；`From`/`Into` 泛型 protocol + **`-> Self` 返回已支持**（M2b/U4 ✅，2026-09-21 修正原「未支持」标注）+ `Into::into()` / `?` 经 `From` 自动转换 ✅；**组合子 ✅（EH-3，2026-09-21）**：非闭包 `Option::ok_or`、`Result::ok`/`err`/`expect_err`；接收函数值（`fn(..) -> ..`）`Option::map`/`and_then`、`Result::map`/`map_err`/`and_then`（方法泛型由实参 fn 类型反推，typecheck 缺口已修）；嵌套泛型 `Option::flatten`/`transpose`、`Result::flatten`/`transpose`（parser 保留 impl 泛型实参 + typecheck 按实参构建嵌套 self 类型，缺口已修）；引用侧 `Option::copied`/`cloned`、`Result::copied`/`cloned`（`impl<T> Option<&T>` / `impl<T, E> Result<&T, E>`）。暂缓：`or_else`/`unwrap_or_else`/`ok_or_else`（需闭包或 0 参 `fn` 实参）。见 EH-3 叶子 | U4/Y6 ✅ · EH-3 🟠 |
+| §12 错误处理 | ✅ 已实现 | `Option`/`Result` + `expect/unwrap_or`；**`?` 运算符**（K1 ✅）；**`IoError`/`IoErrorKind`**（M1 ✅，`io/error.rl`）+ **`Error` protocol**（M2a ✅ `fn message(&self) -> String`；**`fn source(&self) -> Option<&dyn Error>` 真实错误链 ✅**，Y6a 起步 → P7d-1 升级，`error_source.rl`）；`From`/`Into` 泛型 protocol + **`-> Self` 返回已支持**（M2b/U4 ✅，2026-09-21 修正原「未支持」标注）+ `Into::into()` / `?` 经 `From` 自动转换 ✅；**组合子 ✅（EH-3，2026-09-21）**：非闭包 `Option::ok_or`、`Result::ok`/`err`/`expect_err`；接收函数值（`fn(..) -> ..`）`Option::map`/`and_then`、`Result::map`/`map_err`/`and_then`（方法泛型由实参 fn 类型反推，typecheck 缺口已修）；嵌套泛型 `Option::flatten`/`transpose`、`Result::flatten`/`transpose`（parser 保留 impl 泛型实参 + typecheck 按实参构建嵌套 self 类型，缺口已修）；引用侧 `Option::copied`/`cloned`、`Result::copied`/`cloned`（`impl<T> Option<&T>` / `impl<T, E> Result<&T, E>`）；惰性 / 零参闭包 `Option::unwrap_or_else`/`or_else`/`ok_or_else`/`filter`、`Result::unwrap_or_else`/`or_else`（2026-09-21 补 parser `||` 零参闭包前缀分派 + typecheck 由闭包体回填仅出现于返回位置的泛型）。见 EH-3 叶子 | U4/Y6 ✅ · EH-3 ✅ |
 
 > 状态标记：✅ 已实现　🔧 部分实现（注明差异）　📋 规划中（目标 API，MVP 未实现）
 
@@ -153,26 +153,64 @@ enum Option<T> {
 }
 
 impl<T> Option<T> {
-    /// 返回 Some(value)，如果 value 不为 null
-    fn from(value: T) -> Option<T>;
-    
-    /// 解包，若为 None 则 panic
-    fn unwrap(self) -> T;
-    
-    /// 解包，若为 None 则返回默认值
-    fn unwrap_or(self, default: T) -> T;
-    
-    /// 映射内部值
-    fn map<U>(self, f: Fn(T) -> U) -> Option<U>;
-    
-    /// 扁平映射
-    fn and_then<U>(self, f: Fn(T) -> Option<U>) -> Option<U>;
-    
     /// 是否为 Some
     fn is_some(&self) -> bool;
-    
+
     /// 是否为 None
     fn is_none(&self) -> bool;
+
+    /// 解包，若为 None 则以 `loop {}` 崩溃（MVP 无 panic 机制）
+    fn unwrap(self) -> T;
+
+    /// 解包，若为 None 则返回默认值
+    fn unwrap_or(self, default: T) -> T;
+
+    /// 解包，若为 None 则调用 `f()`（惰性默认值，零参闭包）
+    fn unwrap_or_else(self, f: fn() -> T) -> T;
+
+    /// 期望值：Some 返回 v；None 崩溃（消息参数对齐 Rust，当前不打印）
+    fn expect(self, msg: String) -> T;
+
+    // ---- 转换（EH-3 ✅ 2026-09-21）----
+
+    /// Some(v) → Ok(v)；None → Err(err)
+    fn ok_or<E>(self, err: E) -> Result<T, E>;
+
+    /// Some(v) → Ok(v)；None → Err(err())（惰性错误）
+    fn ok_or_else<E>(self, err: fn() -> E) -> Result<T, E>;
+
+    // ---- 组合子（EH-3 ✅ 2026-09-21）----
+
+    /// 映射内部值（`U` 由实参 fn 反推；形参泛型可由接收者反推时闭包字面量可用）
+    fn map<U>(self, f: fn(T) -> U) -> Option<U>;
+
+    /// 扁平映射
+    fn and_then<U>(self, f: fn(T) -> Option<U>) -> Option<U>;
+
+    /// None → f()（替代选择）
+    fn or_else(self, f: fn() -> Option<T>) -> Option<T>;
+
+    /// Some(v) 且 `pred(v)` 为真 → Some(v)；否则 None
+    fn filter(self, pred: fn(T) -> bool) -> Option<T>;
+}
+
+// 嵌套泛型组合子（独立 impl 块）
+impl<T> Option<Option<T>> {
+    /// Some(Some(v)) → Some(v)；其余 → None
+    fn flatten(self) -> Option<T>;
+}
+
+impl<T, E> Option<Result<T, E>> {
+    /// Some(Ok(v)) → Ok(Some(v))；Some(Err(e)) → Err(e)；None → Ok(None)
+    fn transpose(self) -> Result<Option<T>, E>;
+}
+
+impl<T> Option<&T> {
+    /// `Some(&v)` → `Some(v)`（按值取出）
+    fn copied(self) -> Option<T>;
+
+    /// 同 `copied`，经 `T: Clone` 深拷贝
+    fn cloned(self) -> Option<T> where T: Clone;
 }
 ```
 
@@ -185,25 +223,67 @@ enum Result<T, E> {
 }
 
 impl<T, E> Result<T, E> {
-    /// 解包 Ok 值，若为 Err 则 panic
+    /// 是否为 Ok / Err
+    fn is_ok(self) -> i64;
+    fn is_err(self) -> i64;
+
+    /// 解包 Ok 值，若为 Err 则以 `loop {}` 崩溃（MVP 无 panic 机制）
     fn unwrap(self) -> T;
-    
+
     /// 解包 Ok 值，若为 Err 则返回默认值
     fn unwrap_or(self, default: T) -> T;
-    
-    /// 映射 Ok 值
-    fn map<U>(self, f: Fn(T) -> U) -> Result<U, E>;
-    
+
+    /// 解包 Ok 值，若为 Err 则调用 `f(e)`
+    fn unwrap_or_else(self, f: fn(E) -> T) -> T;
+
+    /// 期望值 / 期望为 Err（均以 `loop {}` 作崩溃替代）
+    fn expect(self, msg: String) -> T;
+    fn expect_err(self, msg: String) -> E;
+
+    // ---- 转换（EH-3 ✅ 2026-09-21）----
+
+    /// Ok(v) → Some(v)；Err(_) → None
+    fn ok(self) -> Option<T>;
+
+    /// Ok(_) → None；Err(e) → Some(e)
+    fn err(self) -> Option<E>;
+
+    // ---- 组合子（EH-3 ✅ 2026-09-21）----
+
+    /// 映射 Ok 值（`U` 由实参 fn 反推）
+    fn map<U>(self, f: fn(T) -> U) -> Result<U, E>;
+
     /// 映射 Err 值
-    fn map_err<F>(self, f: Fn(E) -> F) -> Result<T, F>;
-    
+    fn map_err<F>(self, f: fn(E) -> F) -> Result<T, F>;
+
     /// 扁平映射
-    fn and_then<U>(self, f: Fn(T) -> Result<U, E>) -> Result<U, E>;
-    
-    /// 错误传播
-    fn propagate(self) -> Result<T, E>;  // 等价于 ? 运算符
+    fn and_then<U>(self, f: fn(T) -> Result<U, E>) -> Result<U, E>;
+
+    /// Err(e) → f(e)（错误恢复）；Ok(v) → Ok(v)
+    fn or_else<F>(self, f: fn(E) -> Result<T, F>) -> Result<T, F>;
+}
+
+// 嵌套泛型组合子（独立 impl 块）
+impl<T, E> Result<Result<T, E>, E> {
+    /// Ok(Ok(v)) → Ok(v)；Ok(Err(e)) → Err(e)；Err(e) → Err(e)
+    fn flatten(self) -> Result<T, E>;
+}
+
+impl<T, E> Result<Option<T>, E> {
+    /// Ok(Some(v)) → Some(Ok(v))；Ok(None) → None；Err(e) → Some(Err(e))
+    fn transpose(self) -> Option<Result<T, E>>;
+}
+
+impl<T, E> Result<&T, E> {
+    /// `Ok(&v)` → `Ok(v)`（按值取出）；`Err` 原样
+    fn copied(self) -> Result<T, E>;
+
+    /// 同 `copied`，经 `T: Clone` 深拷贝
+    fn cloned(self) -> Result<T, E> where T: Clone;
 }
 ```
+
+> **错误传播**：`?` 运算符即传播语义（K1 ✅，经 `From` 自动转换）；Rust 风格的 `propagate()` 方法**不提供**（与 `?` 重复，RFC `error-handling.md` §4.3 核实其从未实现）。
 
 ### 2.3 Iterator
 

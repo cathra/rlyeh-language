@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、eh-3 🟠（非闭包 + 函数值型 + 嵌套泛型 + 引用侧组合子 ✅；typecheck「fn 形参泛型推断」与 parser/typecheck「嵌套 self 类型」两处缺口已修；仅剩依赖闭包/0 参 `fn` 实参的 `or_else`/`unwrap_or_else`/`ok_or_else`）、eh-8 边界硬化（M4）✅ |
+| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、eh-8 边界硬化（M4）✅ |
 | 日期 | 2026-09-20 |
 | 范围 | 语言/标准库层的**可恢复错误处理**与**不可恢复失败（panic）策略**完善：错误类型体系、`?` 自动转换、错误组合子、`Error` protocol 完整化、泛型错误类型、错误 derive、错误聚合、以及面向 ASIL/TCL2 的确定性 panic 策略。 |
 | 关联文档 | [`std-lib.md` §12](../std-lib.md)（现状）、[`docs/tasks/leaf/sh-p1-6-question-from.md`](../tasks/leaf/sh-p1-6-question-from.md)（?+From）、[`docs/tasks/leaf/k1-question.md`](../tasks/leaf/k1-question.md)（? 运算符）、[`docs/rfc/tcl2-certification.md`](./tcl2-certification.md)（ASIL/TCL2 关联）、[`docs/manual/std/result.md`](../manual/std/result.md) |
@@ -84,10 +84,16 @@ Rlyeh **没有异常（exception）机制**，错误通过返回类型显式表�
 - 可选 `fn kind(&self) -> ErrorKind`（分类，供程序分支处理）。
 - 让 `IoError` 等实现 `source()`（如 IO 错误包装底层 `errno`）。
 
-### 4.3 组合子补全（eh-3）
-- `Result`：`or_else`/`unwrap_or_else`/`expect_err`/`ok()`/`err()`/`transpose`（Result<Option> ↔ Option<Result>）/`flatten`。
-- `Option`：`ok_or`/`ok_or_else`/`filter`/`flatten`/`transpose`。
-- 均为协议默认方法或 inherent 方法，零新增 IR。
+### 4.3 组合子补全（eh-3，✅ 2026-09-21 落地）
+- `Result`：`or_else`/`unwrap_or_else`/`expect_err`/`ok()`/`err()`/`transpose`（Result<Option> ↔ Option<Result>）/`flatten`。**全部 ✅**
+- `Option`：`ok_or`/`ok_or_else`/`filter`/`flatten`/`transpose`。**全部 ✅**（另附 `map`/`and_then`/`or_else`/`unwrap_or_else`/`copied`/`cloned`）
+- 均为 inherent 方法（`core/module.rl` 的 `impl<T> Option<T>` / `impl<T, E> Result<T, E>` 及嵌套 / 引用侧 impl），零新增 IR。
+- **核实校正**：本节早期清单中的 `Result::propagate()` 从未实现，且与 `?` 运算符（K1 ✅）语义重复，**决定不提供**；`Option::from` 亦不存在（已从 `std-lib.md` §2.1 移除）。
+- **连带修复的编译器缺口**（详见 [`../tasks/leaf/eh-3-combinators.md`](../tasks/leaf/eh-3-combinators.md)）：
+  1. **typecheck**：`fn(..)` 形参中的方法级泛型推断（`Option::map(inc)` 的 `U`）；
+  2. **parser + typecheck**：嵌套泛型 self 类型 `impl<T> Option<Option<T>>`（`flatten`/`transpose` 前置）；
+  3. **parser**：`|| expr` 零参闭包**表达式前缀位置未分派**（`unwrap_or_else(|| ..)` 报 `unexpected token: found OrOr`）；
+  4. **typecheck**：闭包字面量实参对方法泛型的反推——形参泛型可由接收者 / 其它实参反推时（`map(|x| ..)`）直接可用；泛型**仅出现在闭包返回位置**时（`ok_or_else(|| ..)` 的 `E`、`Result::or_else(|| ..)` 的 `F`）由闭包体推断类型回填。
 
 ### 4.4 泛型错误类型（eh-4，anyhow 式便捷）
 - 提供 `DynError`（内部 `Box<dyn Error + Send + Sync>` 或等价）作为"我不关心具体类型、只想传播"的便捷错误类型，降低样板。

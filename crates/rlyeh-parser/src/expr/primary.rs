@@ -174,6 +174,11 @@ impl <'src> Parser<'src> {
             }
             Some(Token::Send) => self.parse_send_expr(),
             Some(Token::BitOr) => self.parse_closure(CaptureMode::Borrow),
+            // EH-3（2026-09-21）：零参借用闭包 `|| expr`。`||` 是独立 token
+            // （`Token::OrOr`，不与 `BitOr` 混淆），此前**表达式前缀位置未分派**，
+            // `o.unwrap_or_else(|| 7)` 报 `unexpected token: found OrOr`。
+            // 前缀位置不存在二元 `||`（其左操作数必须先有表达式），故无歧义。
+            Some(Token::OrOr) => self.parse_closure(CaptureMode::Borrow),
             _ => Err(self.unexpected("expression")),
         }
     }

@@ -11,10 +11,19 @@
 //   连解析都失败）。
 // 第四批（引用侧）：Option::copied / cloned、Result::copied / cloned
 //   （`impl<T> Option<&T>` / `impl<T, E> Result<&T, E>`；`cloned` 需 `T: Clone`）。
+// 第五批（惰性 / 闭包字面量）：Option::unwrap_or_else / or_else / ok_or_else /
+//   filter、Result::unwrap_or_else / or_else——依赖 2026-09-21 两项修复：
+//   ① parser 补 `|| expr` 零参闭包前缀分派（此前 `||` 在表达式位置报
+//      `unexpected token: found OrOr`）；
+//   ② typecheck 对「泛型仅出现在闭包返回位置」的 fn 形参按闭包体定型并回填
+//      （`check_closure_expected` + `check_method_call` 实参循环）。
+//   同时放宽了旧的「闭包字面量不能反推方法泛型」限制：形参泛型已由接收者 /
+//   其它实参可推时（`Option::map(|x| ..)`、`Result::map_err(|e| ..)`），
+//   闭包字面量可直接使用。
 //
 // 已知约束：
-// 1. 闭包字面量实参（`|x| ..`）不能反推方法泛型（闭包体类型无法脱离上下文
-//    定型），请传具名函数 / `fn` 值；
+// 1. 闭包捕获外部变量仍不支持（H3 规划，报 TC025）；方法泛型若只出现在
+//    **闭包形参**位置且接收者无法反推时，仍无法定型，请传具名函数 / `fn` 值；
 // 2. 同一函数内同名绑定不得跨类型复用——typecheck 变量环境按名全局索引、无作用域
 //    隔离（docs/std-lib.md §12 已知限制），LIR 亦按名记录类型并直接报冲突。
 
@@ -198,7 +207,68 @@ fn main() {
     // 21. Result::cloned
     let c5: Result<&Pair, String> = Result::Ok(rp);
     println(c5.cloned().is_ok());             // 1
+
+    // ---------- 第五批：惰性 / 闭包字面量组合子 ----------
+    // 22. Option::unwrap_or_else（None → 惰性默认值；Some → 原值）
+    let e1: Option<i64> = Option::None;
+    println(e1.unwrap_or_else(|| 7));         // 7
+    let e2: Option<i64> = Option::Some(3);
+    println(e2.unwrap_or_else(|| 7));         // 3
+    // 23. Option::or_else（None → 替代；Some → 原值）
+    let e3: Option<i64> = Option::None;
+    match e3.or_else(|| Option::Some(9)) {
+        Option::Some(ve3) => println(ve3),    // 9
+        Option::None => println(-1),
+    }
+    let e4: Option<i64> = Option::Some(4);
+    match e4.or_else(|| Option::Some(9)) {
+        Option::Some(ve4) => println(ve4),    // 4
+        Option::None => println(-1),
+    }
+    // 24. Option::ok_or_else（E 仅在闭包返回位置 → 由闭包体回填）
+    let e5: Option<i64> = Option::None;
+    println(e5.ok_or_else(|| String::from("missing")).is_err());  // 1
+    let e6: Option<i64> = Option::Some(5);
+    println(e6.ok_or_else(|| String::from("missing")).unwrap());  // 5
+    // 25. Result::unwrap_or_else（Err → 由错误值派生默认值）
+    let e7: Result<i64, i64> = Result::Err(1);
+    println(e7.unwrap_or_else(|err| err + 100));                  // 101
+    let e8: Result<i64, i64> = Result::Ok(5);
+    println(e8.unwrap_or_else(|err| err + 100));                  // 5
+    // 26. Result::or_else（Err → 错误恢复；F 由闭包体回填）
+    let e9: Result<i64, String> = Result::Err(String::from("boom"));
+    match e9.or_else(|err| {
+        let n = err.len();
+        Result::Ok(n)
+    }) {
+        Result::Ok(ve9) => println(ve9),      // 4
+        Result::Err(_) => println(-1),
+    }
+    let e10: Result<i64, String> = Result::Ok(6);
+    match e10.or_else(|err| Result::Ok(err.len())) {
+        Result::Ok(ve10) => println(ve10),    // 6
+        Result::Err(_) => println(-1),
+    }
+    // 27. 闭包字面量直接用于形参泛型可由接收者反推的组合子（旧限制已放宽）
+    let e11: Option<i64> = Option::Some(5);
+    println(e11.map(|x| x + 1).unwrap());                         // 6
+    let e12: Result<i64, String> = Result::Ok(3);
+    println(e12.map(|x| x * 2).unwrap());                         // 6
+    // 28. Option::filter（形参无方法级泛型：闭包字面量与 fn 值均可用）
+    let e13: Option<i64> = Option::Some(5);
+    println(e13.filter(|x| x > 1).is_some());                     // 1
+    let e14: Option<i64> = Option::Some(0);
+    println(e14.filter(|x| x > 1).is_none());                     // 1
+    let e15: Option<i64> = Option::None;
+    println(e15.filter(positive).is_none());                      // 1
+    let e16: Option<i64> = Option::Some(9);
+    match e16.filter(positive) {
+        Option::Some(ve16) => println(ve16),  // 9
+        Option::None => println(-1),
+    }
 }
+
+fn positive(x: i64) -> bool { x > 1 }
 
 fn len_or_err(s: Option<String>) -> i64 {
     match s.ok_or(String::from("absent")) {

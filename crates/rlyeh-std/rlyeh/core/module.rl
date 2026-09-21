@@ -83,6 +83,14 @@ impl<T> Option<T> {
             Option::None => loop {},
         }
     }
+    // EH-3（2026-09-21）：`unwrap_or_else`——Some(v) → v；None → f()（惰性默认值）。
+    // T 由接收者反推，闭包为**零参** `fn() -> T`（`|| ..` 语法，2026-09-21 补齐解析）。
+    fn unwrap_or_else(self, f: fn() -> T) -> T {
+        match self {
+            Option::Some(v) => v,
+            Option::None => f(),
+        }
+    }
     // EH-3（0.2.0-AA，2026-09-21）：Some(v) → Ok(v)；None → Err(err)。
     // 错误类型 E 由实参推断（`E` 出现在形参类型中，方法泛型可推断），
     // 与 Rust `Option::ok_or` 语义一致。
@@ -90,6 +98,15 @@ impl<T> Option<T> {
         match self {
             Option::Some(v) => Result::Ok(v),
             Option::None => Result::Err(err),
+        }
+    }
+    // EH-3（2026-09-21）：`ok_or_else`——Some(v) → Ok(v)；None → Err(err())（惰性错误）。
+    // E 只出现在闭包**返回**位置（接收者 / 其它实参无从反推），由闭包体推断类型回填
+    // （typecheck `check_method_call` 闭包实参回填 + `check_closure_expected` 泛型返回处理）。
+    fn ok_or_else<E>(self, err: fn() -> E) -> Result<T, E> {
+        match self {
+            Option::Some(v) => Result::Ok(v),
+            Option::None => Result::Err(err()),
         }
     }
     // EH-3（2026-09-21）：`map`——Some(v) → Some(f(v))；None → None。
@@ -107,6 +124,22 @@ impl<T> Option<T> {
     fn and_then<U>(self, f: fn(T) -> Option<U>) -> Option<U> {
         match self {
             Option::Some(v) => f(v),
+            Option::None => Option::None,
+        }
+    }
+    // EH-3（2026-09-21）：`or_else`——Some(v) → Some(v)；None → f()（替代选择）。
+    // T 由接收者反推，闭包为**零参** `fn() -> Option<T>`。
+    fn or_else(self, f: fn() -> Option<T>) -> Option<T> {
+        match self {
+            Option::Some(v) => Option::Some(v),
+            Option::None => f(),
+        }
+    }
+    // EH-3（2026-09-21）：`filter`——Some(v) 且 pred(v) 为真 → Some(v)；否则 None。
+    // 形参无方法级泛型（T 由接收者反推），闭包字面量可直接使用。
+    fn filter(self, pred: fn(T) -> bool) -> Option<T> {
+        match self {
+            Option::Some(v) => if pred(v) { Option::Some(v) } else { Option::None },
             Option::None => Option::None,
         }
     }
@@ -236,6 +269,22 @@ impl<T, E> Result<T, E> {
         match self {
             Result::Ok(v) => f(v),
             Result::Err(e) => Result::Err(e),
+        }
+    }
+    // EH-3（2026-09-21）：`unwrap_or_else`——Ok(v) → v；Err(e) → f(e)（惰性默认值）。
+    // T、E 均由接收者反推，闭包形参类型具体（`fn(E) -> T`）。
+    fn unwrap_or_else(self, f: fn(E) -> T) -> T {
+        match self {
+            Result::Ok(v) => v,
+            Result::Err(e) => f(e),
+        }
+    }
+    // EH-3（2026-09-21）：`or_else`——Ok(v) → Ok(v)；Err(e) → f(e)（错误恢复）。
+    // F 只出现在闭包**返回**位置，由闭包体推断类型回填（同 `ok_or_else`）。
+    fn or_else<F>(self, f: fn(E) -> Result<T, F>) -> Result<T, F> {
+        match self {
+            Result::Ok(v) => Result::Ok(v),
+            Result::Err(e) => f(e),
         }
     }
 }
