@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、**eh-5 ✅**（`#[derive(Error)]` + `#[error]`/`#[from]`/`#[source]`，struct 与 enum 双形态；连带修复 parser 元素级属性、枚举 derive 回填、`From`/`Into` 根导出、fmt 属性回写）、eh-8 边界硬化（M4）✅ |
+| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、**eh-5 ✅**（`#[derive(Error)]` + `#[error]`/`#[from]`/`#[source]`，struct 与 enum 双形态；连带修复 parser 元素级属性、枚举 derive 回填、`From`/`Into` 根导出、fmt 属性回写）、**eh-6 🟢**（集合错误累积 `Vec<Result<T,E>>::try_collect`/`collect_errors` + `Vec<DynError>` 聚合 ✅；`try { .. }` 块 ⏳ 未落地，需 `try` 关键字 + `?` 残差上下文 + `break <value>` codegen 验证，分析已登记）、eh-8 边界硬化（M4）✅ |
 | 日期 | 2026-09-20 |
 | 范围 | 语言/标准库层的**可恢复错误处理**与**不可恢复失败（panic）策略**完善：错误类型体系、`?` 自动转换、错误组合子、`Error` protocol 完整化、泛型错误类型、错误 derive、错误聚合、以及面向 ASIL/TCL2 的确定性 panic 策略。 |
 | 关联文档 | [`std-lib.md` §12](../std-lib.md)（现状）、[`docs/tasks/leaf/sh-p1-6-question-from.md`](../tasks/leaf/sh-p1-6-question-from.md)（?+From）、[`docs/tasks/leaf/k1-question.md`](../tasks/leaf/k1-question.md)（? 运算符）、[`docs/rfc/tcl2-certification.md`](./tcl2-certification.md)（ASIL/TCL2 关联）、[`docs/manual/std/result.md`](../manual/std/result.md) |
@@ -114,10 +114,14 @@ Rlyeh **没有异常（exception）机制**，错误通过返回类型显式表�
 - **连带修复**：`From` / `Into` 协议此前**未导出到根命名空间**，用户侧 `impl X: From<T>` 的协议名无法解析为规范名 `io::error::From`，致 `?` 的 `From` 自动转换报「找不到 `io::error::From::from` 的可用 protocol impl」——现随 std 根导出补齐。
 - **已知限制**：① `Enum::from(x)` 直接静态调用不可用（**枚举静态 / 固有方法调用**为既有缺口，与 derive 无关；`#[from]` 经 `?` 与 `impl From` 注册生效）；② enum 变体级 `#[source]` 待办（`source()` 恒 `None`）；③ `rlyeh-fmt` 此前**丢弃** `#[derive(..)]`（AST 重建未回写），本轮一并补齐属性回写（derive / `#[error]` / `#[from]` / `#[source]` / `#[repr(C)]`）。
 
-### 4.6 错误聚合 / `try` 块（eh-6）
-- `try` 块：`try { ...; Ok(x) }` 内部 `?` 冒泡到块尾 `Result`（对齐 Rust `try`/返回块）。
-- 迭代器/集合错误累积：`Iterator::collect::<Result<Vec<T>, E>>()`、`Vec` 批量 `?`；可选 `try_for_each`。
-- 多错误合并类型（记录首个/全部错误）。
+### 4.6 错误聚合 / `try` 块（eh-6，🟢 部分完成 2026-09-21）
+- `try` 块：`try { ...; Ok(x) }` 内部 `?` 冒泡到块尾 `Result`（对齐 Rust `try`/返回块）。**⏳ 未落地**（见下「实现分析与阻塞」）。
+- 迭代器/集合错误累积：`Iterator::collect::<Result<Vec<T>, E>>()`、`Vec` 批量 `?`；可选 `try_for_each`。**✅ 已落地（方法形态）**——`rlyeh-std/rlyeh/core/module.rl` 的 `impl<T, E> Vec<Result<T, E>>`：
+  - `try_collect() -> Result<Vec<T>, E>`：**首错短路**，语义等价 `collect::<Result<Vec<T>, E>>()`；
+  - `collect_errors() -> Vec<E>`：忽略 `Ok`，按原序累积**全部**错误（多错误合并形态）。
+  - 依赖嵌套泛型 self 类型 `impl<T, E> Vec<Result<T, E>>`（EH-3 期间修复的 parser 保留 impl 泛型实参 + typecheck 按实参构建嵌套 self 类型）。`try_for_each` 未落地（需接收 `Result<T, E>` 的函数值 / 闭包，价值低于前两者）。
+- 多错误合并类型（记录首个/全部错误）。**✅**——首个用 `try_collect`，全部用 `collect_errors`；异质错误经 `Vec<DynError>`（EH-4）统一聚合。
+- **实现分析与阻塞（`try` 块）**：Rlyeh 的 `?` 由 typecheck 在 `check_question` 中**合成 `match … { Err(e) => return Err(e) }` AST**——即**硬编码到函数边界**；`try` 块需要「残差（residual）目标」上下文（该 `?` 改为 `break`/赋值到块级累加器）。因此需：① 新增 `try` 关键字（lexer + parser，注意 `try` 当前可作普通标识符）；② AST 新表达式形态；③ typecheck 的残差上下文（`check_question` 分流 + `ctx.current_return_type` 之外再引入块级 `Result` 目标类型）；④ 若走 `loop { … break <value> }` 方案，需验证 `break <value>` 的 HIR→LIR→codegen 通路（typecheck 已有 `ExprKind::Break(Some(..))` 处理，codegen 未验证）；⑤ 隐藏函数 + 参数传递方案受阻于**闭包捕获不支持**（H3）。
 
 ### 4.7 context / 背链附加（eh-7，可选）
 - `Result::with_context(f)` / `Context` protocol：为错误附加调用现场信息（如文件路径、行号），便于诊断。

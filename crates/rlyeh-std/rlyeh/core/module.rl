@@ -722,6 +722,42 @@ impl<T> Vec<T> {
 }
 
 // ---------------------------------------------------------------------------
+// EH-6（0.2.0-AA，2026-09-21）：**集合错误累积**（RFC error-handling §4.6）。
+// `Vec<Result<T, E>>` 两种聚合语义：
+//   - `try_collect()` → `Result<Vec<T>, E>`：遇到首个 `Err` 即短路返回该错误
+//     （对齐 Rust `collect::<Result<Vec<T>, E>>()`）；
+//   - `collect_errors()` → `Vec<E>`：忽略全部 `Ok`，按原序累积**全部** `Err`
+//     （多错误合并：调用方可用 `Vec<DynError>` 统一聚合，见 EH-4）。
+// 依赖嵌套泛型 self 类型 `impl<T, E> Vec<Result<T, E>>`（EH-3 期间修复的
+// parser 保留 impl 泛型实参 + typecheck 按实参构建嵌套 self 类型）。
+// ---------------------------------------------------------------------------
+
+impl<T, E> Vec<Result<T, E>> {
+    // 首错短路：全部 Ok → `Ok(Vec<T>)`；任一 Err → 立即返回该 Err（后续元素不再检查）。
+    fn try_collect(self) -> Result<Vec<T>, E> {
+        let mut acc: Vec<T> = Vec::new();
+        for r in self {
+            match r {
+                Result::Ok(v) => acc.push(v),
+                Result::Err(e) => return Result::Err(e),
+            }
+        }
+        Result::Ok(acc)
+    }
+    // 全错聚合：忽略 Ok，按原序收集**全部** Err（无错误时返回空 Vec）。
+    fn collect_errors(self) -> Vec<E> {
+        let mut acc: Vec<E> = Vec::new();
+        for r in self {
+            match r {
+                Result::Ok(v) => {}
+                Result::Err(e) => acc.push(e),
+            }
+        }
+        acc
+    }
+}
+
+// ---------------------------------------------------------------------------
 // V1 瘦指针迭代器（2026-08）：`Iter<T>` / `IterMut<T>` 零分配零拷贝迭代视图。
 // 布局：data = 首元素裸指针（*const T / *mut T，V1 `&arr[i]` 真实 GEP 地址），
 // len = 剩余元素数。元素按值拷贝读取（MVP 无 `Option<&T>` / `Option<&mut T>`
