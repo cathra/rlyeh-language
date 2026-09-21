@@ -707,6 +707,22 @@ pub enum ExprKind {
     /// `unsafe` 块表达式（SH-P0-1：受控手动内存管理作用域）
     UnsafeBlock(AstBlock),
 
+    /// `try { .. }` 错误聚合块（EH-6 M1）。
+    ///
+    /// 语义：块内 `?` **不再从函数早返回**，而是把失败值就地跳出该块；块
+    /// 正常结束时以 `Ok`/`Some` 包裹块尾值。块的类型即外层函数的错误位
+    /// 类型（`Result<T, E_fn>` / `Option<T>`）——见 typecheck 的
+    /// `check_try_block`（desugar 为 `loop { ..; break <Kind>::<OkVariant>(..) }`）。
+    TryBlock(AstBlock),
+
+    /// `?` 在 `try` 块内的**残留式跳出**（typecheck 合成，用户不可书写）。
+    ///
+    /// `check_question` 合成的失败臂在 `try` 块内用本节点替代
+    /// `ExprKind::Return`；它降低为 `break <Err/None>(..)`，但**不参与**
+    /// 隐式循环的 break 值类型登记（`ExprKind::TryBreak(inner)` 的
+    /// `inner` 已是待跳出的失败值），以免其 Ok 位未定而污染块类型。
+    TryBreak(Box<AstExpr>),
+
     /// return 语句
     Return(Option<AstExpr>),
 

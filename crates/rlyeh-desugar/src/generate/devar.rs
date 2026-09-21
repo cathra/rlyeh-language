@@ -275,6 +275,15 @@ pub(super) fn devar(e: &AstExpr) -> AstExpr {
             ExprKind::UnsafeBlock(devar_block(block)),
             e.span,
         ),
+        // EH-6 M1：递归展开 `try` 块体，使块内 await / 变量重命名一并处理。
+        ExprKind::TryBlock(block) => AstExpr::new(
+            ExprKind::TryBlock(devar_block(block)),
+            e.span,
+        ),
+        ExprKind::TryBreak(inner) => AstExpr::new(
+            ExprKind::TryBreak(Box::new(devar(inner))),
+            e.span,
+        ),
         ExprKind::Return(Some(v)) => AstExpr::new(
             ExprKind::Return(Some(devar(v))),
             e.span,

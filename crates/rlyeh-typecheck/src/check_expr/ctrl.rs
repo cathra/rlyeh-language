@@ -442,6 +442,11 @@ pub(crate) fn infer_expr_tail(
             ))
         }
 
+        // EH-6 M1（2026-09-21）：`try { .. }` 错误聚合块——desugar 为
+        // `loop { <body>; break <Kind>::<OkVariant>(<tail>) }`，块内 `?` 改为
+        // 残留式 `break`。块的类型取外层函数的错误位类型。
+        ExprKind::TryBlock(block) => check_try_block(ctx, block, span),
+
         ExprKind::Call {
             callee,
             args,
@@ -536,9 +541,35 @@ pub(crate) fn infer_expr_tail(
                     *slot = Some(Type::Unit);
                 }
             }
+            // EH-6 M1：若位于 `try` 块的隐式循环层（即当前循环栈深度恰等于
+            // try 块入口记录的基准），说明这是**裸 `break`**，会越界跳到隐式
+            // 循环而非用户预期的目标——直接拒绝（嵌套的真实循环深度更深，
+            // 不受影响，见 check_try_block 的越界拦截）。
+            if let Some(&base) = ctx.try_loop_bases.last() {
+                if ctx.loop_break_types.len() == base + 1 {
+                    return Err(TypeError::BreakOutsideLoop { span });
+                }
+            }
             Ok((HirExpr::new(HirExprKind::Break(None), Span::dummy()), Type::Never))
         }
-        ExprKind::Continue => Ok((HirExpr::new(HirExprKind::Continue, Span::dummy()), Type::Never)),
+        // EH-6 M1：`?` 在 `try` 块内合成的残留式跳出。desugar 为 `break
+        // <Err/None>(..)`，但**不登记**循环 break 值类型（`Break(Some)` 会
+        // 把 Ok 位未定的 `Result<?, E>` 登记进去，污染 `try` 块类型）——其
+        // 值类型由 `check_try_block` 显式组装，此处只负责降低为 `Never`。
+        ExprKind::TryBreak(e) => {
+            let (hir, _) = infer_expr(ctx, e.as_ref())?;
+            Ok((HirExpr::new(HirExprKind::Break(Some(Box::new(hir))), Span::dummy()), Type::Never))
+        }
+        ExprKind::Continue => {
+            // EH-6 M1：裸 `continue` 位于 `try` 块隐式循环层会重启 try 体，
+            // 属静默错误，直接拒绝（嵌套真实循环的 continue 不受影响）。
+            if let Some(&base) = ctx.try_loop_bases.last() {
+                if ctx.loop_break_types.len() == base + 1 {
+                    return Err(TypeError::BreakOutsideLoop { span });
+                }
+            }
+            Ok((HirExpr::new(HirExprKind::Continue, Span::dummy()), Type::Never))
+        }
 
         ExprKind::Send { actor, method, args } => {
             // `send actor.method(a, b)` → `rlyeh_actor_send(recv, kind, a, b, 0)`
@@ -602,4 +633,88 @@ pub(crate) fn infer_expr_tail(
             span,
         }),
     }
+}
+
+/// EH-6 M1（2026-09-21）：`try { .. }` 错误聚合块。
+///
+/// **desugar**：`try { <stmts>; <tail> }` →
+/// `loop { <stmts>; break <Kind>::<OkVariant>(<tail>) }`，块内 `?` 在
+/// `check_question` 中改为残留式 `break`（见 `ExprKind::TryBreak`）。块的类型 =
+/// 外层函数的错误位类型 `Result<T, E_fn>` / `Option<T>`（`E_fn` 取自
+/// `current_return_type`，与 `?` 的 `From` 转换目标一致，**无需类型推断**）。
+///
+/// **块值类型组装**：隐式循环的 break 值类型由 `break Ok(tail)` 登记为
+/// `Result<T_tail, ?>`（`?` 残留用 `TryBreak` 不登记，避免 Ok 位未定污染类型），
+/// 故循环类型已是 `Result<T_tail, _>`，这里仅把 `_` 用 `E_fn` 显式替换。
+///
+/// **越界拦截**：进块时记录 `loop_break_types` 深度基准，块内裸 `break` /
+/// `continue` 落在该层即拒绝（`infer_expr_tail` 的 `Break`/`Continue` 分支处理）。
+pub(super) fn check_try_block(
+    ctx: &mut TypeContext,
+    block: &AstBlock,
+    span: Span,
+) -> Result<(HirExpr, Type), TypeError> {
+    // 1. 函数须返回 Result / Option（错误位类型来自外层函数）。
+    let (rt_name, ok_variant) = match &ctx.current_return_type {
+        Some(Type::Named(n, _)) if n.ends_with("Result") => (n.clone(), "Ok"),
+        Some(Type::Named(n, _)) if n.ends_with("Option") => (n.clone(), "Some"),
+        _ => {
+            return Err(TypeError::Unsupported {
+                what: "`try` 块必须位于返回 `Result<T, E>` 或 `Option<T>` 的函数内".to_string(),
+                span,
+            })
+        }
+    };
+
+    // 2. 组装 desugar AST：`loop { <stmts>; break <Kind>::<OkVariant>(<tail>) }`。
+    let tail = block
+        .final_expr
+        .clone()
+        .unwrap_or_else(|| AstExpr::new(ExprKind::Unit, span));
+    let ok_callee = AstExpr::new(
+        ExprKind::Path(vec![rt_name.clone(), ok_variant.to_string()]),
+        span,
+    );
+    let ok_arg = AstExpr::new(
+        ExprKind::Call {
+            callee: ok_callee,
+            args: vec![tail],
+            type_args: vec![],
+        },
+        span,
+    );
+    let final_break = AstExpr::new(ExprKind::Break(Some(ok_arg)), span);
+    let loop_body = AstBlock {
+        stmts: block.stmts.clone(),
+        final_expr: Some(final_break),
+        span: block.span,
+    };
+    let loop_ast = AstExpr::new(
+        ExprKind::Loop {
+            body: loop_body,
+        },
+        span,
+    );
+
+    // 3. 进入隐式循环：压入越界基准，检查（含块内 `?` → `TryBreak`），弹出。
+    ctx.try_loop_bases.push(ctx.loop_break_types.len());
+    let (hir, loop_ty) = infer_expr(ctx, &loop_ast)?;
+    ctx.try_loop_bases.pop();
+
+    // 4. 组装块类型：取循环 break 值的第 0 位作 T，错误位 E 取自外层函数。
+    let tail_ty = match &loop_ty {
+        Type::Named(_, args) => args.first().cloned().unwrap_or(Type::Unit),
+        _ => Type::Unit,
+    };
+    let result_ty = match &ctx.current_return_type {
+        Some(Type::Named(n, args)) if n.ends_with("Result") => Type::Named(
+            n.clone(),
+            vec![tail_ty, args.get(1).cloned().unwrap_or(Type::Unit)],
+        ),
+        Some(Type::Named(n, _)) if n.ends_with("Option") => {
+            Type::Named(n.clone(), vec![tail_ty])
+        }
+        _ => unreachable!("rt_name 已保证 Result/Option"),
+    };
+    Ok((hir, result_ty))
 }

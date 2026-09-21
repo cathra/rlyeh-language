@@ -166,6 +166,18 @@ impl <'src> Parser<'src> {
         Ok(AstExpr::new(ExprKind::Loop { body }, span))
     }
 
+    /// `try { .. }`：错误聚合块（EH-6 M1）。
+    ///
+    /// 语法与普通块一致，**语义由 typecheck 承载**（`check_try_block`）：
+    /// 块内 `?` 跳出自该块（而非函数），块尾值被 `Ok`/`Some` 包裹，块的类型
+    /// 为外层函数的错误位类型。故 parser 只产出 `ExprKind::TryBlock`。
+    pub(super) fn parse_try_block(&mut self) -> Result<AstExpr, ParseError> {
+        let start = self.expect(&Token::Try, "'try'")?.span;
+        let block = self.parse_block()?;
+        let span = self.merge_span(start, block.span);
+        Ok(AstExpr::new(ExprKind::TryBlock(block), span))
+    }
+
     pub(super) fn parse_for_expr(&mut self) -> Result<AstExpr, ParseError> {
         let start = self.expect(&Token::For, "'for'")?.span;
         let pattern = self.parse_pattern()?;

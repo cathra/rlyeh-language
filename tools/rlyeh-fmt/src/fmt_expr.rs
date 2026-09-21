@@ -12,6 +12,7 @@ pub(crate) fn is_block_like(e: &AstExpr) -> bool {
         e.kind.as_ref(),
         ExprKind::Block(_)
             | ExprKind::UnsafeBlock(_)
+            | ExprKind::TryBlock(_)
             | ExprKind::If { .. }
             | ExprKind::Match { .. }
             | ExprKind::For { .. }
@@ -237,6 +238,8 @@ pub(crate) fn fmt_expr(e: &AstExpr) -> String {
         ),
         ExprKind::Block(b) => fmt_block_compact(b),
         ExprKind::UnsafeBlock(b) => format!("unsafe {}", fmt_block_compact(b)),
+        ExprKind::TryBlock(b) => format!("try {}", fmt_block_compact(b)),
+        ExprKind::TryBreak(inner) => format!("break {}", fmt_operand(inner, PREC_ASSIGN, false)),
         ExprKind::Question(inner) => format!("{}?", fmt_operand(inner, PREC_POSTFIX, false)),
         ExprKind::Return(Some(v)) => format!("return {}", fmt_operand(v, PREC_ASSIGN, false)),
         ExprKind::Return(None) => "return".to_string(),
@@ -259,6 +262,8 @@ pub(crate) fn fmt_expr_compact_block(e: &AstExpr) -> String {
     match e.kind.as_ref() {
         ExprKind::Block(b) => fmt_block_compact(b),
         ExprKind::UnsafeBlock(b) => format!("unsafe {}", fmt_block_compact(b)),
+        ExprKind::TryBlock(b) => format!("try {}", fmt_block_compact(b)),
+        ExprKind::TryBreak(inner) => format!("break {}", fmt_operand(inner, PREC_ASSIGN, false)),
         ExprKind::If {
             cond,
             then_block,

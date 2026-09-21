@@ -35,6 +35,8 @@ pub enum Token {
     Break,
     /// `continue`
     Continue,
+    /// `try`（EH-6 M1：`try { .. }` 错误聚合块）
+    Try,
     /// `true`
     True,
     /// `false`

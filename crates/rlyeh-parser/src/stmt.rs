@@ -42,6 +42,7 @@ impl<'src> Parser<'src> {
                     | ExprKind::GcRegion { .. }
                     | ExprKind::Block(_)
                     | ExprKind::UnsafeBlock(_)
+                    | ExprKind::TryBlock(_)
             ) {
                 // 语句式 if / match / for / while / loop / region / gc_region：无分号时，
                 // 若块到此结束则作为块尾表达式，否则按语句处理（允许后续继续跟语句）

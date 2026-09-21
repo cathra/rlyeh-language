@@ -521,7 +521,15 @@ pub(super) fn check_question(
     } else {
         callee
     };
-    let ret_body = AstExpr::new(ExprKind::Return(Some(ret_inner)), span);
+    let ret_body = if ctx.try_loop_bases.last().is_some() {
+        // EH-6 M1（2026-09-21）：`?` 位于 `try` 块内——失败臂改为残留式
+        // `break`（不函数级 `return`）。错误类型仍取外层函数 `current_return_type`
+        // 的 E（`target_err` 逻辑不变），`From` 自动转换原样复用，无需类型推断。
+        // 详见 `check_try_block` 与 EH-6 叶子。
+        AstExpr::new(ExprKind::TryBreak(Box::new(ret_inner)), span)
+    } else {
+        AstExpr::new(ExprKind::Return(Some(ret_inner)), span)
+    };
     let err_arm = rlyeh_ast::MatchArm {
         pattern: none_pat,
         guard: None,

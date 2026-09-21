@@ -47,6 +47,7 @@ dist/
 !tests/run-pass/eh_derive_error.out
 !tests/run-pass/eh_aggregate_errors.out
 !tests/run-pass/loop_break_value.out
+!tests/run-pass/eh_try_block.out
 !tests/run-pass/eh_context.out
 *.o
 tests/run-pass/_tmp_*

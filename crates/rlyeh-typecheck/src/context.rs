@@ -233,6 +233,14 @@ pub struct TypeContext {
     /// 为 `Never` 且运行期无值。`while` 循环同样压栈占位（其 `break` 不得
     /// 误写入外层 `loop` 的槽），但循环类型仍固定为 `Type::Unit`。
     pub loop_break_types: Vec<Option<Type>>,
+    /// `try { .. }` 块隐式循环的 `loop_break_types` 深度基准栈（EH-6 M1，2026-09-21）。
+    ///
+    /// 进入 `try` 块时压入**当前** `loop_break_types.len()`；`try` 块经 desugar
+    /// 为 `loop { .. break <Ok>(..) }`，该隐式循环会把 `loop_break_types` 推到
+    /// `base + 1` 层。块内**裸 `break` / `continue`**（用户书写，非 `?` 合成）若落在
+    /// 该层，即会越界跳到隐式循环而非预期目标——`check_expr` 据此拦截并报
+    /// `BreakOutsideLoop`（嵌套真实循环推到更深层级，不受影响）。出块时弹出。
+    pub try_loop_bases: Vec<usize>,
     /// 当前是否处于 `unsafe` 块内（SH-P0-1 E3：extern 调用门禁上下文）
     pub in_unsafe: bool,
     /// 标准库预置（prelude）源码字节长度（含末尾换行）：

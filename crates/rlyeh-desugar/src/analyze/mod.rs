@@ -528,7 +528,7 @@ fn expr_children_mut(e: &mut AstExpr) -> Vec<&mut AstExpr> {
             }
             v
         }
-        ExprKind::Block(block) | ExprKind::UnsafeBlock(block) => {
+        ExprKind::Block(block) | ExprKind::UnsafeBlock(block) | ExprKind::TryBlock(block) => {
             let mut v = Vec::new();
             for s in &mut block.stmts {
                 if let AstStmt::Semi(e) | AstStmt::Expr(e) = s {

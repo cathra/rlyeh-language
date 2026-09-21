@@ -227,6 +227,7 @@ fn token_to_canonical(t: &rlyeh_lexer::Token) -> String {
         Loop => "loop".into(),
         Break => "break".into(),
         Continue => "continue".into(),
+        Try => "try".into(),
         True => "true".into(),
         False => "false".into(),
         And => "and".into(),

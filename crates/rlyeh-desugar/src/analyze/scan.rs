@@ -81,7 +81,8 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
         | ExprKind::BoolLiteral(_)
         | ExprKind::CharLiteral(_)
         | ExprKind::TimeLiteral { .. }
-        | ExprKind::Unit => Ok(()),
+        | ExprKind::Unit
+        | ExprKind::TryBreak(_) => Ok(()),
         ExprKind::Set(items) | ExprKind::ArrayLit(items) | ExprKind::TupleLit(items) => {
             for it in items {
                 scan_expr(it, uses)?;
@@ -193,7 +194,7 @@ pub(super) fn scan_expr(e: &AstExpr, uses: &mut HashSet<String>) -> Result<(), (
             }
             Ok(())
         }
-        ExprKind::Block(block) | ExprKind::UnsafeBlock(block) => scan_block(block, uses),
+        ExprKind::Block(block) | ExprKind::UnsafeBlock(block) | ExprKind::TryBlock(block) => scan_block(block, uses),
         ExprKind::Loop { body } => scan_block(body, uses),
         ExprKind::While { cond, body } => {
             scan_expr(cond, uses)?;

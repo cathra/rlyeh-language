@@ -843,6 +843,9 @@ fn keyword_or_ident(text: &str) -> Token {
         "loop" => Token::Loop,
         "break" => Token::Break,
         "continue" => Token::Continue,
+        // EH-6 M1（2026-09-21）：`try { .. }` 错误聚合块关键字。此前 `try`
+        // 是普通标识符（已核实 std / tests 未使用），故升级为关键字无迁移成本。
+        "try" => Token::Try,
         "true" => Token::True,
         "false" => Token::False,
         "and" => Token::And,

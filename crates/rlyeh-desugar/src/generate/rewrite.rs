@@ -364,6 +364,15 @@ pub(super) fn rewrite_expr(e: &AstExpr, lifted: &HashSet<String>, span: Span) ->
             ExprKind::UnsafeBlock(rewrite_block(block, lifted, span)),
             span,
         ),
+        // EH-6 M1：递归展开 `try` 块体。
+        ExprKind::TryBlock(block) => AstExpr::new(
+            ExprKind::TryBlock(rewrite_block(block, lifted, span)),
+            span,
+        ),
+        ExprKind::TryBreak(inner) => AstExpr::new(
+            ExprKind::TryBreak(Box::new(rewrite_expr(inner, lifted, span))),
+            span,
+        ),
         ExprKind::Return(Some(v)) => AstExpr::new(
             ExprKind::Return(Some(rewrite_expr(v, lifted, span))),
             span,

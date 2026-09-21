@@ -414,7 +414,8 @@ impl Checker {
             | ExprKind::TimeLiteral { .. }
             | ExprKind::Set(_)
             | ExprKind::Unit => {}
-            ExprKind::Block(b) | ExprKind::UnsafeBlock(b) => self.walk_block(b),
+            ExprKind::Block(b) | ExprKind::UnsafeBlock(b) | ExprKind::TryBlock(b) => self.walk_block(b),
+            ExprKind::TryBreak(inner) => self.walk_expr(inner),
             ExprKind::Ident(name) => self.mark_used(name),
             ExprKind::Path(_) => {} // 模块路径，非变量引用
             ExprKind::Range {

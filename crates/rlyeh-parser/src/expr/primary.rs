@@ -173,6 +173,8 @@ impl <'src> Parser<'src> {
                 ))
             }
             Some(Token::Send) => self.parse_send_expr(),
+            // EH-6 M1（2026-09-21）：`try { .. }` 错误聚合块。
+            Some(Token::Try) => self.parse_try_block(),
             Some(Token::BitOr) => self.parse_closure(CaptureMode::Borrow),
             // EH-3（2026-09-21）：零参借用闭包 `|| expr`。`||` 是独立 token
             // （`Token::OrOr`，不与 `BitOr` 混淆），此前**表达式前缀位置未分派**，

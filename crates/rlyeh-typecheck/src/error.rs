@@ -144,6 +144,13 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// `break` / `continue` 位于 `try { .. }` 块内（EH-6 M1，2026-09-21）：
+    /// `try` 经 desugar 为隐式循环，裸 `break`/`continue` 会越界跳到该循环
+    /// （`continue` 将重启 try 体，静默错误），故直接拒绝。
+    BreakOutsideLoop {
+        /// 源码位置
+        span: Span,
+    },
     /// `static` / `static mut` 初始值不是编译期常量表达式
     NonConstStaticInit {
         /// 全局变量名
@@ -352,6 +359,7 @@ impl TypeError {
             | TypeError::UnsafeExternCall { span, .. }
             | TypeError::CannotAssignStatic { span, .. }
             | TypeError::StaticMutOutsideUnsafe { span, .. }
+            | TypeError::BreakOutsideLoop { span, .. }
             | TypeError::NonConstStaticInit { span, .. } => *span,
         }
     }
@@ -432,6 +440,10 @@ fn write_message(f: &mut fmt::Formatter<'_>, loc: &str, err: &TypeError) -> fmt:
         TypeError::NonConstStaticInit { name, .. } => write!(
             f,
             "{loc}: error: `static` initializer for `{name}` is not a compile-time constant"
+        ),
+        TypeError::BreakOutsideLoop { .. } => write!(
+            f,
+            "{loc}: error: `break` / `continue` 不能位于 `try {{ .. }}` 块内（会跳到隐式聚合循环，改用 `?` 或调整块结构）"
         ),
         TypeError::UnexpectedArgumentCount {
             name,
@@ -603,6 +615,7 @@ impl TypeError {
             TypeError::CannotAssignStatic { .. } => "TC016a",
             TypeError::StaticMutOutsideUnsafe { .. } => "TC016b",
             TypeError::NonConstStaticInit { .. } => "TC016c",
+            TypeError::BreakOutsideLoop { .. } => "TC016d",
             TypeError::UnexpectedArgumentCount { .. } => "TC017",
             TypeError::ArgumentTypeMismatch { .. } => "TC018",
             TypeError::MissingPartialEq { .. } => "TC019",
@@ -667,6 +680,9 @@ impl TypeError {
             TypeError::NonConstStaticInit { .. } => {
                 Some("`static` 初始值必须是编译期常量（字面量或字面量算术组合）")
             }
+            TypeError::BreakOutsideLoop { .. } => Some(
+                "`try` 块经 desugar 为隐式循环：块内用 `?` 表达失败退出，或改用命名循环 / 调整块边界",
+            ),
             TypeError::UnexpectedArgumentCount { .. } => Some("按函数签名调整实参数量"),
             TypeError::ArgumentTypeMismatch { .. } => Some("调整该实参类型以匹配形参"),
             TypeError::MissingPartialEq { .. } => {
