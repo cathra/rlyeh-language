@@ -259,8 +259,81 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
                 "(cmpchain-unsupported)".to_string()
             }
         }
+        rlyeh_ast::ExprKind::Return(opt) => match opt {
+            Some(e) => format!("(return {})", render_expr_canonical(e)),
+            None => "(return)".to_string(),
+        },
+        rlyeh_ast::ExprKind::Block(b) => render_block_canonical(b),
         _ => "(unsupported)".to_string(),
     }
+}
+
+/// 解析源码为规范 S-表达式 AST 文本（M-M2b 自举对拍 oracle，程序级）。
+///
+/// 在 [`emit_ast_canonical_expr`]（M-M2a，单表达式）基础上扩展为整程序：
+/// 渲染 `(program ...)` / `(block ...)` / `(let ...)` / `(semi ...)` / `(return ...)`
+/// 等节点，与 Rlyeh 版 parser（`self-host/parser.rl` 的 `parse_program`）逐字节对齐。
+/// 当前切片（M-M2b1）：块 + `let`/`let mut`/表达式语句/`return`，类型标注忽略。
+pub fn emit_ast_canonical(source: &str) -> Result<String, DriverError> {
+    let ast = rlyeh_parser::parse(source)
+        .map_err(|e| DriverError::Typecheck(format!("parse error: {e}")))?;
+    Ok(render_program_canonical(&ast))
+}
+
+fn render_program_canonical(ast: &rlyeh_ast::AstProgram) -> String {
+    let mut s = String::from("(program");
+    for item in &ast.items {
+        match item {
+            rlyeh_ast::AstItem::Statement(stmt) => {
+                s.push(' ');
+                s.push_str(&render_stmt_canonical(stmt));
+            }
+            _ => {
+                // M-M2b1 不覆盖项声明，渲染为占位以便对拍不崩溃
+                s.push_str(" (item-unsupported)");
+            }
+        }
+    }
+    s.push(')');
+    s
+}
+
+fn render_stmt_canonical(stmt: &rlyeh_ast::AstStmt) -> String {
+    match stmt {
+        rlyeh_ast::AstStmt::Let {
+            pattern,
+            type_anno: _,
+            init,
+            mutable,
+        } => {
+            let name = match pattern {
+                rlyeh_ast::AstPattern::Ident(n) => n.as_str(),
+                _ => return "(let (unsupported-pattern))".to_string(),
+            };
+            if *mutable {
+                format!("(let mut {name} {})", render_expr_canonical(init))
+            } else {
+                format!("(let {name} {})", render_expr_canonical(init))
+            }
+        }
+        rlyeh_ast::AstStmt::Expr(e) => format!("(semi {})", render_expr_canonical(e)),
+        rlyeh_ast::AstStmt::Semi(e) => format!("(semi {})", render_expr_canonical(e)),
+        rlyeh_ast::AstStmt::Item(_) => "(item-unsupported)".to_string(),
+    }
+}
+
+fn render_block_canonical(block: &rlyeh_ast::AstBlock) -> String {
+    let mut s = String::from("(block");
+    for stmt in &block.stmts {
+        s.push(' ');
+        s.push_str(&render_stmt_canonical(stmt));
+    }
+    if let Some(fe) = &block.final_expr {
+        s.push(' ');
+        s.push_str(&render_expr_canonical(fe));
+    }
+    s.push(')');
+    s
 }
 
 /// 词法分析入口文件为 Token 文本（每行一个规范化 token，供 M-M1 自举对拍）。
