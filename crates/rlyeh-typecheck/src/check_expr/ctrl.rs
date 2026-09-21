@@ -371,7 +371,11 @@ pub(crate) fn infer_expr_tail(
                     span,
                 });
             }
+            // EH-6 M1 前置：压入 break 值槽占位——`while` 内的 `break` 不得
+            // 写入外层 `loop` 的槽（循环类型仍为 Unit，槽值不使用）。
+            ctx.loop_break_types.push(None);
             let (b_hir, _) = check_block(ctx, body)?;
+            ctx.loop_break_types.pop();
             Ok((
                 HirExpr::new(HirExprKind::While{
                     cond: Box::new(c_hir),
@@ -381,12 +385,16 @@ pub(crate) fn infer_expr_tail(
             ))
         }
         ExprKind::Loop { body, .. } => {
+            // EH-6 M1 前置：循环类型由 `break` 携带的值决定——
+            // 无 `break` → `Never`；`break;` → `Unit`；`break e` → `typeof(e)`。
+            ctx.loop_break_types.push(None);
             let (b_hir, _) = check_block(ctx, body)?;
+            let break_ty = ctx.loop_break_types.pop().flatten();
             Ok((
                 HirExpr::new(HirExprKind::Loop{
                     body: Box::new(b_hir),
                 }, Span::dummy()),
-                Type::Never,
+                break_ty.unwrap_or(Type::Never),
             ))
         }
 
@@ -511,10 +519,25 @@ pub(crate) fn infer_expr_tail(
         ExprKind::Return(None) => Ok((HirExpr::new(HirExprKind::Return(None), Span::dummy()), Type::Never)),
         ExprKind::Question(inner) => check_question(ctx, inner, span),
         ExprKind::Break(Some(e)) => {
-            let (hir, _) = infer_expr(ctx, e)?;
+            let (hir, ty) = infer_expr(ctx, e)?;
+            // EH-6 M1 前置：把值类型登记到最内层循环（首次登记为准；多臂
+            // `break` 类型不一致属用户错误，交由下游按变量类型冲突报出）。
+            if let Some(slot) = ctx.loop_break_types.last_mut() {
+                if slot.is_none() {
+                    *slot = Some(ty);
+                }
+            }
             Ok((HirExpr::new(HirExprKind::Break(Some(Box::new(hir))), Span::dummy()), Type::Never))
         }
-        ExprKind::Break(None) => Ok((HirExpr::new(HirExprKind::Break(None), Span::dummy()), Type::Never)),
+        ExprKind::Break(None) => {
+            // `break;` 携带单元值——循环类型为 `()`（而非 `Never`）。
+            if let Some(slot) = ctx.loop_break_types.last_mut() {
+                if slot.is_none() {
+                    *slot = Some(Type::Unit);
+                }
+            }
+            Ok((HirExpr::new(HirExprKind::Break(None), Span::dummy()), Type::Never))
+        }
         ExprKind::Continue => Ok((HirExpr::new(HirExprKind::Continue, Span::dummy()), Type::Never)),
 
         ExprKind::Send { actor, method, args } => {

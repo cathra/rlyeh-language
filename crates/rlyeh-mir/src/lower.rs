@@ -21,6 +21,16 @@ struct LoopCtx {
     had_break: bool,
     /// `continue` 跳转的头部块
     continue_target: usize,
+    /// `break <value>` 的承载槽（EH-6 M1 前置）。
+    ///
+    /// `loop` 循环在降低循环体**之前**分配该临时变量，携带值的 `break` 先把
+    /// 值写入该槽再跳出口块，出口块以该槽作为循环表达式的值——支持
+    /// `let x = loop { break 5 };`（类型为 `i64`）。`while` 循环的 `break`
+    /// 在语言语义中无值（循环类型恒为 `()`），故为 `None`。
+    break_value: Option<Local>,
+    /// 是否出现过**携带值**的 `break`（决定出口块返回该槽还是单元值；
+    /// 仅 `break;` 的循环保持既有 `()` 值路径）。
+    break_has_value: bool,
 }
 
 /// HIR → MIR 降低器（每函数复用，降低前重置状态）。
@@ -265,17 +275,30 @@ impl MirLowerer {
                 None
             }
             HirExprKind::Break(e) => {
-                if let Some(inner) = e {
-                    let _ = self.lower_expr(inner); // break 携带的值 MVP 阶段丢弃
-                }
-                let break_target = {
+                // EH-6 M1 前置（2026-09-21）：`break <value>` 的值不再丢弃——
+                // 先求值，再写入循环上下文的 `break_value` 槽，出口块以该槽为
+                // 循环表达式的值（`while` 无槽，值仍丢弃，语义为 `()`）。
+                let val = match e {
+                    Some(inner) => self.lower_expr(inner),
+                    None => None,
+                };
+                let (break_target, slot) = {
                     let ctx = self
                         .loop_stack
                         .last_mut()
                         .expect("break 出现在循环之外（typecheck 应已拒绝）");
                     ctx.had_break = true;
-                    ctx.break_target
+                    if val.is_some() {
+                        ctx.break_has_value = true;
+                    }
+                    (ctx.break_target, ctx.break_value.clone())
                 };
+                if let (Some(slot), Some(v)) = (slot, val) {
+                    self.emit(MirStmt::Assign {
+                        target: slot,
+                        value: MirValue::Place(v),
+                    });
+                }
                 self.terminate(MirTerminator::Jump(break_target));
                 None
             }
@@ -733,10 +756,13 @@ impl MirLowerer {
 
         // body：块尾回跳 head
         self.cur = body_id;
+        // EH-6 M1 前置：`while` 的 `break` 无值（循环类型恒为 `()`），故无承载槽。
         self.loop_stack.push(LoopCtx {
             break_target: after_id,
             continue_target: head_id,
             had_break: false,
+            break_value: None,
+            break_has_value: false,
         });
         let _ = self.lower_block(body);
         self.loop_stack.pop();
@@ -764,17 +790,19 @@ impl MirLowerer {
         self.terminate(MirTerminator::Jump(body_id));
 
         self.cur = body_id;
+        // EH-6 M1 前置：先分配 `break <value>` 承载槽，再降低循环体——
+        // 循环体内任意位置（含嵌套 if / match 分支）的带值 `break` 都写入该槽。
+        let break_slot = self.fresh_temp();
         self.loop_stack.push(LoopCtx {
             break_target: after_id,
             continue_target: body_id,
             had_break: false,
+            break_value: Some(break_slot.clone()),
+            break_has_value: false,
         });
         let _ = self.lower_block(body);
-        let had_break = self
-            .loop_stack
-            .pop()
-            .expect("lower_loop 的 LoopCtx 应存在")
-            .had_break;
+        let ctx = self.loop_stack.pop().expect("lower_loop 的 LoopCtx 应存在");
+        let (had_break, break_has_value) = (ctx.had_break, ctx.break_has_value);
         if !self.cur_closed() {
             self.terminate(MirTerminator::Jump(body_id));
         }
@@ -785,6 +813,10 @@ impl MirLowerer {
         }
 
         self.cur = after_id;
+        if break_has_value {
+            // 带值 break：出口块的值即承载槽（各 break 路径已在跳转前写入）。
+            return Some(MirValue::Place(break_slot));
+        }
         let unit = self.fresh_temp();
         self.emit(MirStmt::Assign {
             target: unit.clone(),

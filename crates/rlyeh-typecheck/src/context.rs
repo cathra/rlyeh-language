@@ -223,6 +223,16 @@ pub struct TypeContext {
     /// 当前函数/方法声明返回类型（P6c，`?` 运算符 From 自动转换用于确定目标错误类型）。
     /// 在函数/actor 方法体检查入口设置，退出时恢复。
     pub current_return_type: Option<Type>,
+    /// 循环 `break` 值类型栈（EH-6 M1 前置，2026-09-21）：每进入 `loop` / `while`
+    /// 压入 `None`；`break [e]` 把**最内层**置为 `Some(ty)`（`break;` 为
+    /// `Some(Type::Unit)`）；退出循环时弹出，`loop` 表达式的类型即该值
+    /// （仍为 `None` → `Type::Never`，即无 `break` 的无限循环）。
+    ///
+    /// 此前 `ExprKind::Loop` 恒返回 `Type::Never`，`break <value>` 的值在
+    /// typecheck 与 MIR 两处均被丢弃，致 `let x = loop { break 5 };` 中 `x`
+    /// 为 `Never` 且运行期无值。`while` 循环同样压栈占位（其 `break` 不得
+    /// 误写入外层 `loop` 的槽），但循环类型仍固定为 `Type::Unit`。
+    pub loop_break_types: Vec<Option<Type>>,
     /// 当前是否处于 `unsafe` 块内（SH-P0-1 E3：extern 调用门禁上下文）
     pub in_unsafe: bool,
     /// 标准库预置（prelude）源码字节长度（含末尾换行）：
