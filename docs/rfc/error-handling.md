@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、eh-3 🟠（非闭包 + 函数值型 + 嵌套泛型组合子 ✅；typecheck「fn 形参泛型推断」与 parser/typecheck「嵌套 self 类型」两处缺口已修；仅剩闭包字面量实参与 `copied`/`cloned`）、eh-8 边界硬化（M4）✅ |
+| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、eh-3 🟠（非闭包 + 函数值型 + 嵌套泛型 + 引用侧组合子 ✅；typecheck「fn 形参泛型推断」与 parser/typecheck「嵌套 self 类型」两处缺口已修；仅剩依赖闭包/0 参 `fn` 实参的 `or_else`/`unwrap_or_else`/`ok_or_else`）、eh-8 边界硬化（M4）✅ |
 | 日期 | 2026-09-20 |
 | 范围 | 语言/标准库层的**可恢复错误处理**与**不可恢复失败（panic）策略**完善：错误类型体系、`?` 自动转换、错误组合子、`Error` protocol 完整化、泛型错误类型、错误 derive、错误聚合、以及面向 ASIL/TCL2 的确定性 panic 策略。 |
 | 关联文档 | [`std-lib.md` §12](../std-lib.md)（现状）、[`docs/tasks/leaf/sh-p1-6-question-from.md`](../tasks/leaf/sh-p1-6-question-from.md)（?+From）、[`docs/tasks/leaf/k1-question.md`](../tasks/leaf/k1-question.md)（? 运算符）、[`docs/rfc/tcl2-certification.md`](./tcl2-certification.md)（ASIL/TCL2 关联）、[`docs/manual/std/result.md`](../manual/std/result.md) |

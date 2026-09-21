@@ -137,6 +137,23 @@ impl<T, E> Option<Result<T, E>> {
     }
 }
 
+// `Option<&T>` → `Option<T>`：按值取出引用内容。
+// `copied` 依赖 Rlyeh 聚合默认按值拷贝语义；`cloned` 经 `T: Clone` 深拷贝。
+impl<T> Option<&T> {
+    fn copied(self) -> Option<T> {
+        match self {
+            Option::Some(r) => Option::Some(*r),
+            Option::None => Option::None,
+        }
+    }
+    fn cloned(self) -> Option<T> where T: Clone {
+        match self {
+            Option::Some(r) => Option::Some(r.clone()),
+            Option::None => Option::None,
+        }
+    }
+}
+
 enum Result<T, E> {
     Ok(T),
     Err(E),
@@ -242,6 +259,22 @@ impl<T, E> Result<Option<T>, E> {
                 Option::None => Option::None,
             },
             Result::Err(e) => Option::Some(Result::Err(e)),
+        }
+    }
+}
+
+// `Result<&T, E>` → `Result<T, E>`：按值取出 Ok 侧的引用内容（Err 原样保留）。
+impl<T, E> Result<&T, E> {
+    fn copied(self) -> Result<T, E> {
+        match self {
+            Result::Ok(r) => Result::Ok(*r),
+            Result::Err(e) => Result::Err(e),
+        }
+    }
+    fn cloned(self) -> Result<T, E> where T: Clone {
+        match self {
+            Result::Ok(r) => Result::Ok(r.clone()),
+            Result::Err(e) => Result::Err(e),
         }
     }
 }

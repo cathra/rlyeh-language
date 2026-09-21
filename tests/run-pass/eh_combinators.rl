@@ -9,13 +9,14 @@
 //   Result::transpose——依赖 2026-09-21 的「parser 保留 impl 泛型实参 +
 //   typecheck 按实参构建嵌套 self 类型」修复（此前 `impl<T> Option<Option<T>>`
 //   连解析都失败）。
+// 第四批（引用侧）：Option::copied / cloned、Result::copied / cloned
+//   （`impl<T> Option<&T>` / `impl<T, E> Result<&T, E>`；`cloned` 需 `T: Clone`）。
 //
 // 已知约束：
 // 1. 闭包字面量实参（`|x| ..`）不能反推方法泛型（闭包体类型无法脱离上下文
 //    定型），请传具名函数 / `fn` 值；
 // 2. 同一函数内同名绑定不得跨类型复用——typecheck 变量环境按名全局索引、无作用域
-//    隔离（docs/std-lib.md §12 已知限制），LIR 亦按名记录类型并直接报冲突；
-// 3. `copied` / `cloned`（`Option<&T>` → `Option<T>`）尚未落地。
+//    隔离（docs/std-lib.md §12 已知限制），LIR 亦按名记录类型并直接报冲突。
 
 fn inc(x: i64) -> i64 { x + 1 }
 fn dbl(x: i64) -> i64 { x + x }
@@ -25,6 +26,10 @@ fn even_half(x: i64) -> Option<i64> {
 fn err_if_zero(x: i64) -> Result<i64, String> {
     if x == 0 { Result::Err(String::from("zero")) } else { Result::Ok(x) }
 }
+
+// 第四批（引用侧组合子）所用类型：`cloned` 需 `T: Clone`。
+#[derive(Clone)]
+struct Pair { a: i64 }
 
 fn main() {
     // ---------- 第一批：非闭包组合子 ----------
@@ -167,6 +172,32 @@ fn main() {
         },
         Option::None => println(-1),
     }
+
+    // ---------- 第四批：引用侧组合子（`&T` → `T`）----------
+    let src = 7;
+    let rs = &src;
+    // 18. Option::copied / none
+    let c1: Option<&i64> = Option::Some(rs);
+    match c1.copied() {
+        Option::Some(vc1) => println(vc1),    // 7
+        Option::None => println(-1),
+    }
+    let c2: Option<&i64> = Option::None;
+    println(c2.copied().is_none());           // 1
+    // 19. Option::cloned（T: Clone）
+    let pr = Pair { a: 9 };
+    let rp = &pr;
+    let c3: Option<&Pair> = Option::Some(rp);
+    println(c3.cloned().is_some());           // 1
+    // 20. Result::copied
+    let c4: Result<&i64, String> = Result::Ok(rs);
+    match c4.copied() {
+        Result::Ok(vc4) => println(vc4),      // 7
+        Result::Err(_) => println(-1),
+    }
+    // 21. Result::cloned
+    let c5: Result<&Pair, String> = Result::Ok(rp);
+    println(c5.cloned().is_ok());             // 1
 }
 
 fn len_or_err(s: Option<String>) -> i64 {
