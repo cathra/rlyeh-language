@@ -6,6 +6,8 @@
 // 由 `crates/rlyeh-driver/tests/self_host_lexer.rs` 差分对拍。
 //
 // 切片1 范围（M-M1a/b/c，已落地）：
+//   非法字符（M-M1c②）：oracle 返回 Err(InvalidChar)；Rlyeh 侧经 `panic!` 终止，
+//       由 `self_host_lexer.rs` 负向用例验证两侧均报错（如 `` ` ``、`~`、单独 `\`）
 //   跳过：空格/制表/\r/\n、行注释 `//`、块注释 `/* */`（支持嵌套）
 //   标识符 + 全量关键字表
 //   整数：十进制、0x(hex)/0b(bin)/0o(oct)、`_` 分隔、尾随类型后缀（吸收）
@@ -480,7 +482,12 @@ fn lex(src: String) -> Vec<String> {
         else if c == 35 { toks.push("#"); }
         else if c == 36 { toks.push("$"); }
         else if c == 63 { toks.push("?"); }
-        else { toks.push("?"); }
+        else {
+            // M-M1c②：非法字符报错。oracle 在此分支返回 Err(InvalidChar)，
+            // Rlyeh 侧经 `panic!`（W 阶段已落地的内建）终止子进程，
+            // 由对拍 harness 的负向用例验证两侧均报错。
+            panic(String::from("illegal character"));
+        }
     }
     toks
 }

@@ -8,6 +8,15 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// 串行化锁：两个对拍用例默认并行执行，但它们复用同一份临时产物
+/// （`rlyeh_selfhost_lexer.rl` 源文件与 driver 内部 `temp_dir()/rlyeh-run` 可执行文件），
+/// 并行会互相覆盖导致偶发失败，故统一加锁串行执行。
+static LEXER_RUN_LOCK: Mutex<()> = Mutex::new(());
+/// 每次调用的唯一序号，避免并行残留文件干扰。
+static LEXER_RUN_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// 读取 Rlyeh 版 lexer 源码（仅 `fn lex` 等函数，无 `main`）。
 fn lexer_src() -> String {
@@ -32,17 +41,23 @@ fn escape_rl(src: &str) -> String {
 }
 
 /// 用 Rlyeh 版 lexer 对 corpus 做词法分析，返回规范化 token 文本。
-fn run_rlyeh_lexer(corpus: &str) -> String {
+///
+/// 合法输入返回 `Ok`，若 lexer 内 `panic!`（如遇到非法字符）则子进程 abort，
+/// `run_source_file` 返回 `Err`，此处一并透传（供负向用例断言）。
+fn run_rlyeh_lexer_result(corpus: &str) -> Result<String, rlyeh_driver::error::DriverError> {
+    // 串行化：两个用例并行时共享临时产物，加锁避免互相覆盖。
+    let _guard = LEXER_RUN_LOCK.lock().unwrap();
     let src = format!(
         "{}fn main() {{ let src = String::from(\"{}\"); let toks = lex(src); for t in toks {{ println(t); }} }}\n",
         lexer_src(),
         escape_rl(corpus),
     );
-    let tmp: PathBuf = std::env::temp_dir().join("rlyeh_selfhost_lexer.rl");
+    let seq = LEXER_RUN_SEQ.fetch_add(1, Ordering::SeqCst);
+    let tmp: PathBuf = std::env::temp_dir().join(format!("rlyeh_selfhost_lexer_{seq}.rl"));
     fs::write(&tmp, src).expect("write temp lexer");
     // 与 driver 顶层 `run_source` 一致：在 64MB 栈线程中编译+运行，
     // 避免大函数 typecheck 在小测试线程栈上溢出。
-    let (out, _outcome) = std::thread::Builder::new()
+    let res = std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
             let mut driver =
@@ -51,9 +66,13 @@ fn run_rlyeh_lexer(corpus: &str) -> String {
         })
         .unwrap()
         .join()
-        .unwrap()
-        .expect("rlyeh lexer run");
-    out
+        .unwrap()?;
+    Ok(res.0)
+}
+
+/// 用 Rlyeh 版 lexer 对 corpus 做词法分析，返回规范化 token 文本（合法输入）。
+fn run_rlyeh_lexer(corpus: &str) -> String {
+    run_rlyeh_lexer_result(corpus).expect("rlyeh lexer run")
 }
 
 /// 去除末尾换行，使 oracle 与 Rlyeh 输出可比（后者每行 `println` 自带换行）。
@@ -101,4 +120,30 @@ fn m_m1_lexer_matches_rust_oracle() {
     check(
         "let pi = 3.14;\nlet big = 1e10;\nlet small = 2.5e-10;\nlet half = 0.5f64;\nlet rate = 1.5e3;\n",
     );
+}
+
+/// M-M1c② 负向对拍：非法字符在 oracle 与 Rlyeh 版 lexer 中均应报错。
+///
+/// - oracle：`emit_tokens_str` 返回 `Err(InvalidChar)`；
+/// - Rlyeh 版：遇非法字符 `panic!` → 子进程 abort → `run_source_file` 返回 `Err`。
+#[test]
+fn m_m1c2_illegal_char_panics() {
+    // 反引号：oracle 与 Rlyeh 版均未定义该字符的 token。
+    let corpus = "let x = `;";
+    assert!(
+        rlyeh_driver::emit_tokens_str(corpus).is_err(),
+        "oracle 应对非法字符返回 Err"
+    );
+    assert!(
+        run_rlyeh_lexer_result(corpus).is_err(),
+        "Rlyeh 版 lexer 遇非法字符应 panic (Err)"
+    );
+    // 波浪号：同样是 oracle 的 InvalidChar 兜底字符。
+    let corpus2 = "fn f() { ~ }";
+    assert!(rlyeh_driver::emit_tokens_str(corpus2).is_err());
+    assert!(run_rlyeh_lexer_result(corpus2).is_err());
+    // 单独反斜杠（源码中写为 `\\`）：不在任何 token 分支内。
+    let corpus3 = "let s = \\;";
+    assert!(rlyeh_driver::emit_tokens_str(corpus3).is_err());
+    assert!(run_rlyeh_lexer_result(corpus3).is_err());
 }
