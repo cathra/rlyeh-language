@@ -73,6 +73,11 @@ impl IoError: Error {
 //   fn load() -> Result<i64, DynError> { ... }
 struct DynError {
     inner: Box<dyn Error>,
+    // EH-7（0.2.0-AA，2026-09-21）：语义上下文前缀（空串 = 无上下文）。
+    // `message()` 把非空前缀与内层消息拼为 `"<ctx>: <inner message>"`；
+    // 逐层 `context(..)` 经「把当前 DynError 装箱再上转为 dyn Error」累积，
+    // 形成 `outer: inner: root` 的可读背链（`source()` 仍直达根因）。
+    context: String,
 }
 
 // 装箱为拥有型动态错误。四步：① `Box::new(self)` 把具体错误移入堆（拥有）；
@@ -85,7 +90,7 @@ impl IoError {
         let b: Box<io::error::IoError> = Box::new(self);
         let r: &io::error::IoError = &*b;
         let d: dyn Error = r;
-        io::error::DynError { inner: Box::new(d) }
+        io::error::DynError { inner: Box::new(d), context: String::new() }
     }
 }
 
@@ -94,19 +99,50 @@ impl DynError {
     fn from_io(e: io::error::IoError) -> io::error::DynError {
         e.into_dyn()
     }
-    // 转发到内层 `Box<dyn Error>` 的虚调用（`message` 为主要用途）。
+    // 转发到内层 `Box<dyn Error>` 的虚调用；有上下文前缀时拼为 `<ctx>: <inner>`。
+    // EH-7：`context` 非空 → 前置上下文（背链可读形态 `outer: inner: root`）。
     fn message(&self) -> String {
-        self.inner.message()
+        if self.context.len() == 0 {
+            self.inner.message()
+        } else {
+            self.context + String::from(": ") + self.inner.message()
+        }
     }
     fn source(&self) -> Option<&dyn Error> {
         self.inner.source()
     }
+    // EH-7（0.2.0-AA，2026-09-21）：附加语义上下文，形成可读背链。
+    // 实现同 `into_dyn`：把**当前** `DynError`（含其既有上下文与消息）装箱 → `&*b`
+    // 取引用 → 上转 `dyn Error` → 以新上下文重新包装。逐层调用即累积为
+    // `outer: inner: root`（`source()` 仍直达根因）。
+    fn context(self, ctx: String) -> io::error::DynError {
+        let b: Box<io::error::DynError> = Box::new(self);
+        let r: &io::error::DynError = &*b;
+        let d: dyn Error = r;
+        io::error::DynError { inner: Box::new(d), context: ctx }
+    }
 }
 
+// EH-7（0.2.0-AA，2026-09-21）：`Result<T, DynError>` 的上下文附加组合子
+// （RFC §4.7）——`Err` 分支附加语义上下文，`Ok` 直通。
+// 注：`with_context` 的函数值**不可捕获**外部变量（H2 限制），
+// 如需引用现场数据请用 `String::from(..)` 等字面量表达式。
+// 位置说明：该 impl **必须定义在根单元**（`rlyeh/module.rl`）——`collect_impl` 会把
+// impl 的 `type_name` 拼上**当前模块前缀**（本文件是 `io::error`），
+// 写成 `io::error::Result` 与真正的 `Result`（根单元定义）不匹配，方法永远找不到。
+// 故本文件仅提供 `DynError::context`（自身类型，前缀正确），`Result` 侧见根单元。
+
 // 使 `DynError` 自身也是 `Error`——可再参与 `source()` 背链 / `&dyn Error` 上转。
+// 注意：**协议实现**的 `message` 是 vtable 分派目标（`Box<dyn Error>` 虚调用走这里），
+// 故必须与固有 `impl DynError::message` **保持同一上下文语义**——否则经 `dyn` 视图
+// 读取时会丢掉上下文前缀（EH-7 初版即因此把 `a: b: root` 退化为 `b: root`）。
 impl DynError: Error {
     fn message(&self) -> String {
-        self.inner.message()
+        if self.context.len() == 0 {
+            self.inner.message()
+        } else {
+            self.context + String::from(": ") + self.inner.message()
+        }
     }
     fn source(&self) -> Option<&dyn Error> {
         self.inner.source()

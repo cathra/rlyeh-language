@@ -76,6 +76,27 @@ pub import io::error::Into;
 // `expected '>' or ',', found Colon`），根单元处裸名 `Error` 又尚不可见。
 // 结构体形态反而更稳（可作字段 / 泛型实参 / `Result<_, DynError>` 的错误位）。
 pub import io::error::DynError;
+
+// EH-7（0.2.0-AA，2026-09-21）：`Result<T, DynError>` 的上下文附加组合子（RFC §4.7）。
+// `Err` 分支经 `DynError::context(ctx)` 附加语义上下文（`Ok` 直通），逐层调用累积为
+// `outer: inner: root` 的可读背链；`with_context` 惰性求值（`fn() -> String`，须无捕获）。
+// **位置约束**：必须定义在本文件（根单元）——`collect_impl` 以「当前模块前缀 + impl 类型名」
+// 构造 self 类型，写在子模块（如 `io/error.rl`）里会得到 `io::error::Result`，
+// 与根单元定义的 `Result` 不匹配，方法永远找不到。
+impl<T> Result<T, DynError> {
+    fn context(self, msg: String) -> Result<T, DynError> {
+        match self {
+            Result::Ok(v) => Result::Ok(v),
+            Result::Err(e) => Result::Err(e.context(msg)),
+        }
+    }
+    fn with_context(self, f: fn() -> String) -> Result<T, DynError> {
+        match self {
+            Result::Ok(v) => Result::Ok(v),
+            Result::Err(e) => Result::Err(e.context(f())),
+        }
+    }
+}
 pub import io::base::OpenMode;
 pub import io::file::File;
 pub import io::console::Stdout;

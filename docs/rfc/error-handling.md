@@ -2,7 +2,7 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、**eh-5 ✅**（`#[derive(Error)]` + `#[error]`/`#[from]`/`#[source]`，struct 与 enum 双形态；连带修复 parser 元素级属性、枚举 derive 回填、`From`/`Into` 根导出、fmt 属性回写）、**eh-6 🟢**（集合错误累积 `Vec<Result<T,E>>::try_collect`/`collect_errors` + `Vec<DynError>` 聚合 ✅；`try { .. }` 块 ⏳ 未落地，需 `try` 关键字 + `?` 残差上下文 + `break <value>` codegen 验证，分析已登记）、eh-8 边界硬化（M4）✅ |
+| 状态 | 评审通过（Accepted）；已并入 0.2.0 计划（阶段 AA：eh-1…eh-8）。**进度（2026-09-21）**：eh-1 ✅、eh-2 ✅、**eh-3 ✅**（组合子全量落地：非闭包 / 函数值型 / 嵌套泛型 / 引用侧 / 惰性零参闭包；连带修复 4 处编译器缺口——typecheck「fn 形参泛型推断」、parser+typecheck「嵌套 self 类型」、parser「`||` 零参闭包前缀分派」、typecheck「闭包字面量反推方法泛型」）、**eh-4 🟢**（`DynError` 结构体 + `Result<T, DynError>` 别名 ✅；连带修复 2 处缺口——`dyn Protocol` 槽数 2 / 堆包裹 dyn 接收者虚调用；`bail!`/`ensure!` 因宏注册表按编译单元隔离而落在**用户侧**，宏系统 4 项约束已登记）、**eh-5 ✅**（`#[derive(Error)]` + `#[error]`/`#[from]`/`#[source]`，struct 与 enum 双形态；连带修复 parser 元素级属性、枚举 derive 回填、`From`/`Into` 根导出、fmt 属性回写）、**eh-6 🟢**（集合错误累积 `Vec<Result<T,E>>::try_collect`/`collect_errors` + `Vec<DynError>` 聚合 ✅；`try { .. }` 块 ⏳ 未落地，需 `try` 关键字 + `?` 残差上下文 + `break <value>` codegen 验证，分析已登记）、**eh-7 ✅**（`Result<T, DynError>::context` / `with_context` + `DynError::context` 逐层**累积**为 `outer: inner: root` 可读背链；`source()` 仍直达根因；连带定位「协议 impl 的 `message` 是 vtable 目标，须与固有方法同语义」与「`impl Result<..>` 必须写在根单元」两处约束）、eh-8 边界硬化（M4）✅ —— **阶段 AA（eh-1…eh-8）全部收口**（eh-6 的 `try` 块为唯一未落地子项，已登记） |
 | 日期 | 2026-09-20 |
 | 范围 | 语言/标准库层的**可恢复错误处理**与**不可恢复失败（panic）策略**完善：错误类型体系、`?` 自动转换、错误组合子、`Error` protocol 完整化、泛型错误类型、错误 derive、错误聚合、以及面向 ASIL/TCL2 的确定性 panic 策略。 |
 | 关联文档 | [`std-lib.md` §12](../std-lib.md)（现状）、[`docs/tasks/leaf/sh-p1-6-question-from.md`](../tasks/leaf/sh-p1-6-question-from.md)（?+From）、[`docs/tasks/leaf/k1-question.md`](../tasks/leaf/k1-question.md)（? 运算符）、[`docs/rfc/tcl2-certification.md`](./tcl2-certification.md)（ASIL/TCL2 关联）、[`docs/manual/std/result.md`](../manual/std/result.md) |
@@ -123,9 +123,15 @@ Rlyeh **没有异常（exception）机制**，错误通过返回类型显式表�
 - 多错误合并类型（记录首个/全部错误）。**✅**——首个用 `try_collect`，全部用 `collect_errors`；异质错误经 `Vec<DynError>`（EH-4）统一聚合。
 - **实现分析与阻塞（`try` 块）**：Rlyeh 的 `?` 由 typecheck 在 `check_question` 中**合成 `match … { Err(e) => return Err(e) }` AST**——即**硬编码到函数边界**；`try` 块需要「残差（residual）目标」上下文（该 `?` 改为 `break`/赋值到块级累加器）。因此需：① 新增 `try` 关键字（lexer + parser，注意 `try` 当前可作普通标识符）；② AST 新表达式形态；③ typecheck 的残差上下文（`check_question` 分流 + `ctx.current_return_type` 之外再引入块级 `Result` 目标类型）；④ 若走 `loop { … break <value> }` 方案，需验证 `break <value>` 的 HIR→LIR→codegen 通路（typecheck 已有 `ExprKind::Break(Some(..))` 处理，codegen 未验证）；⑤ 隐藏函数 + 参数传递方案受阻于**闭包捕获不支持**（H3）。
 
-### 4.7 context / 背链附加（eh-7，可选）
-- `Result::with_context(f)` / `Context` protocol：为错误附加调用现场信息（如文件路径、行号），便于诊断。
+### 4.7 context / 背链附加（eh-7，可选，✅ 2026-09-21）
+- `Result::with_context(f)` / `Context` protocol：为错误附加调用现场信息（如文件路径、行号），便于诊断。**✅ 已落地（`DynError` 侧形态）**：
+  - `Result<T, DynError>::context(msg: String)` / `with_context(f: fn() -> String)`——`Err` 分支附加语义上下文，`Ok` 直通；`with_context` 惰性求值（受 H2 限制，函数值不可捕获外部变量）。
+  - `DynError::context(self, ctx: String) -> DynError`：把**当前** `DynError`（含既有上下文与消息）装箱 → `&*b` → 上转 `dyn Error` → 以新上下文重新包装；逐层调用**累积**为 `outer: inner: root` 的可读背链，`source()` 仍直达根因。
+  - `DynError` 新增 `context: String` 字段：`message()` 在非空时拼为 `"<ctx>: <inner message>"`。
 - 与 `source()` 链组合形成完整诊断。
+- **实现踩坑（已修）**：`impl DynError: Error` 的 `message` 是 **vtable 分派目标**（`Box<dyn Error>` 虚调用走它），必须与固有 `DynError::message` 保持同一上下文语义——初版只改了固有方法，致经 `dyn` 视图读取时把 `a: b: root` 退化为 `b: root`。
+- **位置约束（重要）**：`impl<T> Result<T, DynError>` **必须定义在根单元**（`rlyeh-std/rlyeh/module.rl`）。`collect_impl` 以「**当前模块前缀** + impl 的 `type_name`」构造 self 类型，写在子模块（如 `io/error.rl`）会得到 `io::error::Result`，与根单元定义的 `Result` 不匹配 → 方法永远找不到（报 `FunctionNotFound`）。同理，impl 目标类型若为「本模块定义的类型」则无此问题（`impl IoError` / `impl DynError` 在 `io/error.rl` 正常）。
+- **未落地**：跨具体错误类型（`Result<T, E>` 中 `E` 为任意实现 `Error` 的类型）的 `context`——需泛型 `E: Error` 约束 + 泛型装箱上转（当前仅有各具体类型的 `into_dyn()` 构造器）；`Context` protocol 化亦待办。
 
 ### 4.8 panic 策略与可认证性（eh-8，呼应 TCL2/ASIL）
 - **文档化 panic 模型**：明确哪些操作 panic（unwrap/expect/数组越界/整数溢出在认证模式/actor -1/OOM）。
