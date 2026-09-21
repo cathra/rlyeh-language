@@ -1,6 +1,6 @@
 # SH-P2-7 前端自举 PoC（driver 自举）
 
-> **级别**：P2（集成建设） · **风险**：🔴 高 · **状态**：🟡 进行中（M-M1 切片1(a+b) 已落地） · **归属**：0.2.0-M
+> **级别**：P2（集成建设） · **风险**：🔴 高 · **状态**：🟡 进行中（M-M1 已落地、M-M2a 已落地） · **归属**：0.2.0-M
 > **索引**：[`../self-hosting-p2.md`](../self-hosting-p2.md) · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.13
 
 ## 目标
@@ -17,6 +17,7 @@
   - **M-M1b（✅ 已落地，2026-09-20）** 字符字面量 `'x'`、生命周期 `'r`/`'a`（`'` 后非 `'` 即生命周期）、`not in`→`NOTIN`、原始字符串 `r"..."`/`r#"..."#`、原始标识符 `r#kw`、时间字面量（`9am`→`TIME 9:0`、`6pm`→`TIME 18:0`、`22:00`→`TIME 22:0`、`9:30am`→`TIME 9:30`，canonical 不含 is_pm）。`tests/self-host-lexer/corpus3.rl` 对拍一致。
   - **M-M1c（转义解码 ✅ 已落地，2026-09-20；浮点 ✅ 已落地，2026-09-21；非法字符 ✅ 已落地，2026-09-21）** 字符串/字符转义解码（`\n`/`\t`/`\r`/`\\`/`\"`/`\'`/`\xHH`，仅 ASCII 范围；`\u{...}` 在 >127 时落 U+FFFD 替换符，与 oracle 一致）已落地，`tests/self-host-lexer/corpus4.rl` 对拍一致。① 浮点字面量：✅ 已落地（2026-09-21）——按本计划背书方式，oracle canonical 改为发射**原始拼写**（`FLOAT 1.0`/`FLOAT 1e10`/`FLOAT 2.5e-10`/`FLOAT 0.5` 等，类型后缀 `f64`/`f32` 吸收不计入），`Token::FloatLiteral` 增 `raw: String` 字段携带原始拼写，`crates/rlyeh-driver/tests/self_host_lexer.rs` 新增 corpus5 内联用例对拍一致；② 非法字符报错：✅ 已落地（2026-09-21）——Rlyeh 版 lexer 在非法字符兜底分支 `panic!`（W 阶段已落地的内建，子进程 abort），由 `tests/self_host_lexer.rs` 负向用例验证 oracle（`Err(InvalidChar)`）与 Rlyeh 版两侧均报错（反引号 / `~` / 裸反斜杠等）。
 - **M-M2（中）** 用 Rlyeh 重写 `parser`（依赖 N/O/P + 递归下降），对拍 AST 一致。
+  - **M-M2a（✅ 已落地，2026-09-21）** 切片1：表达式 → 规范 S-表达式 AST。`self-host/parser.rl` 采用 **shunting-yard + RPN 迭代建树（无递归）**，规避 Rlyeh 的共享 `Vec` 传递/递归语义问题，覆盖整数/标识符/一元负号/括号/二元 `+ - * / %` 与比较（`< <= > >= == !=`）/逻辑（`&& ||`）/位（`& | ^ << >>`）运算，括号透明（不产生节点）。`crates/rlyeh-driver` 新增 `emit_ast_canonical_expr` oracle（渲染为与 Rlyeh 版逐字节对齐的规范文本），`tests/self_host_parser.rs` 差分对拍一致。
 - **M-M3（中）** 用 Rlyeh 重写 `ast` + `macro`（依赖 C derive / I 内部可变性），对拍 AST 节点构造一致。
 - **M-M4（中）** 串联 M1–M3，经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）。
 - **L1（低）** 验收即「前端逻辑主体已是 Rlyeh 源码、可被自身工具链编译」；接入 K 的三阶段 bootstrap 做 dogfood。
@@ -33,11 +34,22 @@ Rlyeh 版 `self-host/lexer.rl` 与 Rust oracle（`rlyeh run <f> --emit tokens`�
 
 > Rlyeh 版与 Rust 版对「值」的呈现必须一致：`INT` 打印十进制数值（hex/bin/oct 解析后的值），`STR` 打印解码后内容。新增 token 种类时两侧须同步。
 
+## M-M2 对拍规范（切片1，S-表达式 AST）
+
+Rlyeh 版 `self-host/parser.rl` 与 Rust oracle（`rlyeh_driver::emit_ast_canonical_expr`，**非** `{:#?}` 调试 dump）输出**逐字节一致**的规范 S-表达式文本：
+
+- 整数 → `(int <十进制>)`；标识符 → `(var <名>)`；布尔 → `(bool <true|false>)`；字符串 → `(str <内容>)`。
+- 一元负号 → `(neg <操作数>)`。
+- 二元/比较运算 → `(bin <op> <左> <右>)`，`op` ∈ `add sub mul div mod and or bitand bitor bitxor shl shr lt le gt ge eq ne`（比较在 oracle AST 中为 `ComparisonChain`，统一渲染为 `bin` 以与 Rlyeh 版对齐）。
+- **括号透明**：不产生节点（oracle AST 无 Paren 节点），与 shunting-yard 行为一致。
+- 该格式为本次切片自定义规范；后续切片（语句/项/模式）将沿用并可扩展节点类型。
+
 ### Rlyeh 语言踩坑点（已实证的约束，供 M-M2/M-M3 复用）
 - **字符串字面量是 `string` 值类型**，需 `String::from("...")` 转成 `String` 对象才能调用 `.len`/`.get`/`.substring`；从声明为 `-> String` 的函数返回字面量必须用 `String::from` 包裹（直接 `return "x";` 会返回槽类型错配 → 运行时崩溃），但 `Vec<String>.push("x")` 可自动转换。
 - `String` 的 `.len` 是**字段**（无括号），`.get(i)`/`.substring(a,b)` 是**方法**（带括号）。
 - 大函数 / 长输入在默认小栈线程做 typecheck 会栈溢出；`driver` 顶层 `run_source` 与对拍 harness 均在 **64MB 栈线程**中编译+运行。
 - `continue` / `while` / 元组返回 / `Vec<String>` 迭代均可用（已验证）。
+- `out` 是保留关键字（region `transfer ... out of 'r` 语法），**不能**用作变量名；M-M2a 曾因此编译失败，已改用 `rpn`/`opstack` 等。
 
 ## 受影响组件
 `rlyeh-lexer`、`rlyeh-parser`、`rlyeh-ast`、`rlyeh-macro`（待建）、`rlyeh-driver`（编译入口）、`tests/`。
@@ -47,7 +59,7 @@ Rlyeh 版 `self-host/lexer.rl` 与 Rust oracle（`rlyeh run <f> --emit tokens`�
 - 对拍测试 `tests/self-host-*`：同 `.rl` 输入，Rlyeh 版与 Rust 版 token/AST 一致。
 
 ## 状态
-🟡 进行中（0.2.0 必须项，阶段 M；交付物 dogfood）。M-M1 切片1(a+b+c) 已落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）经 `tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）差分对拍，corpus1/2/3/4/5 token 逐行一致；M-M1c 非法字符报错（✅ 2026-09-21，负向对拍）已落地；剩余 M-M2/M-M3/M-M4 待推进。
+🟡 进行中（0.2.0 必须项，阶段 M；交付物 dogfood）。M-M1 切片1(a+b+c) 与 M-M2a 已落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）经 `tests/self_host_lexer.rs` 与 Rust oracle（`--emit tokens`）差分对拍 corpus1..5 逐行一致，M-M1c 非法字符报错（✅ 2026-09-21，负向对拍）已落地；Rlyeh 版 parser `self-host/parser.rl`（表达式切片，shunting-yard+RPN 建树）经 `tests/self_host_parser.rs` 与 Rust oracle `emit_ast_canonical_expr` 差分对拍一致；剩余 M-M2b/M-M2c/M-M3/M-M4 待推进。
 
 ## 变更记录
 | 日期 | 变更 |
@@ -57,3 +69,4 @@ Rlyeh 版 `self-host/lexer.rl` 与 Rust oracle（`rlyeh run <f> --emit tokens`�
 | 2026-09-20 | M-M1b 落地：Rlyeh 版 lexer 扩展 char 字面量 / 生命周期（`'` 消歧）/ `not in`→NOTIN / 原始字符串 `r"..."`+`r#"..."#` / 原始标识符 `r#kw` / 时间字面量（`9am`/`6pm`/`22:00`/`9:30am`）；新增 `tests/self-host-lexer/corpus3.rl`，对拍 harness 扩展至 corpus3（三组全部逐行一致） |
 | 2026-09-20 | M-M1c 转义解码落地：Rlyeh 版 lexer 字符串/字符分支支持 `\n \t \r \\ \" \' \xHH` 解码（ASCII 范围，`\u{...}`>127 落 U+FFFD 与 oracle 一致）；新增 `tests/self-host-lexer/corpus4.rl`，对拍 harness 扩展至 corpus4（四组全部逐行一致）。浮点字面量与非法字符报错暂推迟（见 M-M1c 说明） |
 | 2026-09-21 | M-M1c② 非法字符报错落地：Rlyeh 版 lexer 非法字符兜底分支由静默 `?` token 改为 `panic!`（W 阶段内建，子进程 abort）；`tests/self_host_lexer.rs` 新增 `m_m1c2_illegal_char_panics` 负向用例，验证 oracle（`Err(InvalidChar)`）与 Rlyeh 版两侧均报错（反引号 / `~` / 裸反斜杠）；修复并行用例共享临时产物的偶发失败（加全局互斥锁 + 唯一临时文件名） |
+| 2026-09-21 | M-M2a 落地：新增 `self-host/parser.rl`（Rlyeh 版 parser 切片1，表达式 → 规范 S-表达式 AST；shunting-yard + RPN 迭代建树，**无递归**，规避 Rlyeh 共享 `Vec`/递归语义限制），覆盖整数/标识符/一元负号/括号/二元算术与比较/逻辑/位运算；`crates/rlyeh-driver` 新增 `emit_ast_canonical_expr` oracle（渲染为与 Rlyeh 版逐字节对齐的规范文本，非 `{:#?}` dump），`tests/self_host_parser.rs` 差分对拍一致；踩坑点补充 `out` 为保留关键字 |

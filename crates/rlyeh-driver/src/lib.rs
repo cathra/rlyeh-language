@@ -183,6 +183,86 @@ pub fn emit_hir_user(entry: &Path) -> Result<String, DriverError> {
     Ok(format!("{:#?}", HirProgram { items }))
 }
 
+/// 解析源码为规范 S-表达式 AST 文本（M-M2 自举对拍 oracle）。
+///
+/// 与 [`emit_ast`] 的 `{:#?}` 调试 dump 不同：此处渲染为与 Rlyeh 版 parser
+/// （`self-host/parser.rl`）可逐字节对齐的规范文本，便于差分对拍。
+/// 当前切片（M-M2a）：整数/标识符/一元负号/括号/二元算术与比较/逻辑/位运算，
+/// 括号透明（不产生节点）。
+pub fn emit_ast_canonical_expr(source: &str) -> Result<String, DriverError> {
+    let ast = rlyeh_parser::parse(source)
+        .map_err(|e| DriverError::Typecheck(format!("parse error: {e}")))?;
+    let item = ast
+        .items
+        .first()
+        .ok_or_else(|| DriverError::Typecheck("空程序".to_string()))?;
+    let expr = match item {
+        rlyeh_ast::AstItem::Statement(s) => match &**s {
+            rlyeh_ast::AstStmt::Expr(e) => e,
+            rlyeh_ast::AstStmt::Semi(e) => e,
+            _ => return Err(DriverError::Typecheck("顶层非表达式语句".to_string())),
+        },
+        _ => return Err(DriverError::Typecheck("顶层非语句项".to_string())),
+    };
+    Ok(render_expr_canonical(expr))
+}
+
+fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
+    match &*e.kind {
+        rlyeh_ast::ExprKind::IntLiteral(v) => format!("(int {v})"),
+        rlyeh_ast::ExprKind::Ident(name) => format!("(var {name})"),
+        rlyeh_ast::ExprKind::BoolLiteral(b) => format!("(bool {b})"),
+        rlyeh_ast::ExprKind::StringLiteral(s) => format!("(str {s})"),
+        rlyeh_ast::ExprKind::Unary { op, operand } => match op {
+            rlyeh_ast::UnaryOp::Neg => format!("(neg {})", render_expr_canonical(operand)),
+            _ => format!("(unary-unsupported {})", render_expr_canonical(operand)),
+        },
+        rlyeh_ast::ExprKind::Binary { op, left, right } => {
+            let sop = match op {
+                rlyeh_ast::BinaryOp::Add => "add",
+                rlyeh_ast::BinaryOp::Sub => "sub",
+                rlyeh_ast::BinaryOp::Mul => "mul",
+                rlyeh_ast::BinaryOp::Div => "div",
+                rlyeh_ast::BinaryOp::Mod => "mod",
+                rlyeh_ast::BinaryOp::And => "and",
+                rlyeh_ast::BinaryOp::Or => "or",
+                rlyeh_ast::BinaryOp::BitAnd => "bitand",
+                rlyeh_ast::BinaryOp::BitOr => "bitor",
+                rlyeh_ast::BinaryOp::BitXor => "bitxor",
+                rlyeh_ast::BinaryOp::Shl => "shl",
+                rlyeh_ast::BinaryOp::Shr => "shr",
+            };
+            format!(
+                "(bin {sop} {} {})",
+                render_expr_canonical(left),
+                render_expr_canonical(right)
+            )
+        }
+        // 比较在 AST 中为 ComparisonChain（单比较 = 2 元素 1 运算符；多比较链由后续切片处理）。
+        // 切片1 仅覆盖单比较，规范格式统一为 `(bin OP ...)`，与 Rlyeh 版 parser 对齐。
+        rlyeh_ast::ExprKind::ComparisonChain { elements, operators } => {
+            if operators.len() == 1 {
+                let name = match &operators[0] {
+                    rlyeh_ast::CompareOp::Lt => "lt",
+                    rlyeh_ast::CompareOp::Le => "le",
+                    rlyeh_ast::CompareOp::Gt => "gt",
+                    rlyeh_ast::CompareOp::Ge => "ge",
+                    rlyeh_ast::CompareOp::Eq => "eq",
+                    rlyeh_ast::CompareOp::Ne => "ne",
+                };
+                format!(
+                    "(bin {name} {} {})",
+                    render_expr_canonical(&elements[0]),
+                    render_expr_canonical(&elements[1])
+                )
+            } else {
+                "(cmpchain-unsupported)".to_string()
+            }
+        }
+        _ => "(unsupported)".to_string(),
+    }
+}
+
 /// 词法分析入口文件为 Token 文本（每行一个规范化 token，供 M-M1 自举对拍）。
 ///
 /// 仅 lex 用户源码（不含标准库预置），与 Rlyeh 版 lexer（`self-host/lexer.rl`）
