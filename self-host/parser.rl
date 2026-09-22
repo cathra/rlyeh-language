@@ -216,6 +216,9 @@ struct FHdr { h: String, ti: i64 }
 // 类型项（struct/enum）解析结果（M-M8）：规范串 + 新位置。
 struct DRes { s: String, ti: i64 }
 
+// 泛型参数解析结果（M-M10）：`(generics T U)` 串（无泛型为 ""）+ 新位置。
+struct GRes { s: String, ti: i64 }
+
 // ============================================================================
 // M-M2（SH-P2-7）切片2（M-M2b1）：程序/语句级解析 → 规范 S-表达式 AST 文本。
 //
@@ -1308,6 +1311,10 @@ fn parse_fn_header(tokens: Vec<String>, ti0: i64, is_pub: i64) -> FHdr {
     let mut ti = ti0;
     let name = typename_of(tokens.get(ti));
     ti = ti + 1;
+    // 泛型参数（M-M10）：`fn f<T, U>(...)`
+    let g = parse_generics(tokens, ti);
+    let generics = g.s;
+    ti = g.ti;
     // 参数列表：越过 '('，收集至匹配的 ')'（&& 不短路，故用嵌套 if 保护 get）
     if ti < n {
         if tokens.get(ti) == "(" { ti = ti + 1; }
@@ -1364,7 +1371,7 @@ fn parse_fn_header(tokens: Vec<String>, ti0: i64, is_pub: i64) -> FHdr {
     }
     let mut header = String::new();
     if is_pub == 1 { header = String::from("pub "); }
-    header = header + name + " (params" + pstr + ")";
+    header = header + name + generics + " (params" + pstr + ")";
     if ret.len > 0 { header = header + " " + ret; }
     FHdr { h: header, ti: ti }
 }
@@ -1381,12 +1388,37 @@ fn type_of_tokens(ts: Vec<String>) -> String {
     parse_type_tokens(fixed)
 }
 
+// 解析泛型参数列表（M-M10）：`<T, U>` -> `(generics T U)`；非 `<` 起始返回空串 + 原位置。
+//   仅处理无 bound 的简单形参（`T: Bound` 超出 M-M10a）。
+fn parse_generics(tokens: Vec<String>, ti0: i64) -> GRes {
+    let n = tokens.len;
+    let mut i = ti0;
+    let mut has_lt = 0;
+    if i < n {
+        if tokens.get(i) == "lt" { has_lt = 1; i = i + 1; }
+    }
+    if has_lt == 0 { return GRes { s: String::new(), ti: ti0 }; }
+    let mut names = String::new();
+    while i < n {
+        let t = tokens.get(i);
+        if t == "gt" { i = i + 1; break; }
+        if t == "," { i = i + 1; continue; }
+        names = names + " " + typename_of(t);
+        i = i + 1;
+    }
+    GRes { s: " (generics" + names + ")", ti: i }
+}
+
 // 解析结构体声明（M-M8）：`<name> { <field>: <Type>, ... }` -> `(struct [pub] NAME (field NAME TYPE) ...)`
 fn parse_struct_decl(tokens: Vec<String>, ti0: i64, is_pub: i64) -> DRes {
     let n = tokens.len;
     let mut i = ti0;
     let name = typename_of(tokens.get(i));
     i = i + 1;
+    // 泛型参数（M-M10）：`struct P<T> { ... }`
+    let g = parse_generics(tokens, i);
+    let generics = g.s;
+    i = g.ti;
     // 越过 '{'
     if i < n {
         if tokens.get(i) == "{" { i = i + 1; }
@@ -1416,7 +1448,7 @@ fn parse_struct_decl(tokens: Vec<String>, ti0: i64, is_pub: i64) -> DRes {
     }
     let mut s = String::from("(struct ");
     if is_pub == 1 { s = s + "pub "; }
-    s = s + name + fields + ")";
+    s = s + name + generics + fields + ")";
     DRes { s: s, ti: i }
 }
 
@@ -1427,6 +1459,10 @@ fn parse_enum_decl(tokens: Vec<String>, ti0: i64, is_pub: i64) -> DRes {
     let mut i = ti0;
     let name = typename_of(tokens.get(i));
     i = i + 1;
+    // 泛型参数（M-M10）：`enum E<T> { ... }`
+    let g = parse_generics(tokens, i);
+    let generics = g.s;
+    i = g.ti;
     // 越过 '{'
     if i < n {
         if tokens.get(i) == "{" { i = i + 1; }
@@ -1499,7 +1535,7 @@ fn parse_enum_decl(tokens: Vec<String>, ti0: i64, is_pub: i64) -> DRes {
     }
     let mut s = String::from("(enum ");
     if is_pub == 1 { s = s + "pub "; }
-    s = s + name + variants + ")";
+    s = s + name + generics + variants + ")";
     DRes { s: s, ti: i }
 }
 

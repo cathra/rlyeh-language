@@ -445,3 +445,17 @@ fn m_m9_path_ast_matches_rust_oracle() {
     check_program("fn main() { let d: Option<i64> = Option::Some(1); }");
     check_program("let e = Foo::Bar(1);");
 }
+
+#[test]
+fn m_m10_generics_ast_matches_rust_oracle() {
+    // M-M10 泛型参数（fn/struct/enum 的 <T>，无 bound）
+    check_program("fn id<T>(x: T) -> T { x }");
+    check_program("fn pair<A, B>(a: A, b: B) -> i64 { 0 }");
+    check_program("fn one<T>() {}");
+    check_program("struct P<T> { x: T }");
+    check_program("struct Two<A, B> { a: A, b: B }");
+    check_program("enum Opt<T> { None, Some(T) }");
+    check_program("enum E<A, B> { X, Y(A, B) }");
+    check_program("pub struct W<T> { v: T }");
+    check_program("struct P<T> { x: T } fn f<U>(u: U) -> i64 { 0 }");
+}

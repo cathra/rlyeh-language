@@ -490,6 +490,14 @@ fn render_fn_canonical(decl: &rlyeh_ast::AstFnDecl) -> String {
         s.push_str("pub ");
     }
     s.push_str(&decl.name);
+    if !decl.generics.is_empty() {
+        s.push_str(" (generics");
+        for g in &decl.generics {
+            s.push(' ');
+            s.push_str(&g.name);
+        }
+        s.push(')');
+    }
     s.push_str(" (params");
     for p in &decl.params {
         s.push_str(" (param ");
@@ -521,6 +529,14 @@ fn render_struct_decl_canonical(decl: &rlyeh_ast::AstStructDecl) -> String {
         s.push_str("pub ");
     }
     s.push_str(&decl.name);
+    if !decl.generics.is_empty() {
+        s.push_str(" (generics");
+        for g in &decl.generics {
+            s.push(' ');
+            s.push_str(&g.name);
+        }
+        s.push(')');
+    }
     for f in &decl.fields {
         s.push_str(" (field ");
         if f.is_pub {
@@ -542,6 +558,14 @@ fn render_enum_decl_canonical(decl: &rlyeh_ast::AstEnumDecl) -> String {
         s.push_str("pub ");
     }
     s.push_str(&decl.name);
+    if !decl.generics.is_empty() {
+        s.push_str(" (generics");
+        for g in &decl.generics {
+            s.push(' ');
+            s.push_str(&g.name);
+        }
+        s.push(')');
+    }
     for v in &decl.variants {
         s.push_str(" (variant ");
         s.push_str(&v.name);
