@@ -327,6 +327,26 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
             s.push(')');
             s
         }
+        // M-M3：元组字面量 / 数组字面量 / 单元类型
+        rlyeh_ast::ExprKind::TupleLit(elements) => {
+            let mut s = String::from("(tuple");
+            for e in elements {
+                s.push(' ');
+                s.push_str(&render_expr_canonical(e));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::ExprKind::ArrayLit(elements) => {
+            let mut s = String::from("(array-lit");
+            for e in elements {
+                s.push(' ');
+                s.push_str(&render_expr_canonical(e));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::ExprKind::Unit => "(unit)".to_string(),
         _ => "(unsupported)".to_string(),
     }
 }

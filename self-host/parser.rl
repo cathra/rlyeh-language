@@ -356,11 +356,12 @@ fn tokenize(src: String) -> Vec<String> {
 }
 
 // ============================================================================
-// M-M2e：表达式后缀统一标记化（字段 .field / 索引 [ ] / 调用 ( )）。
+// M-M2e + M-M3：表达式后缀统一标记化（字段 .field / 索引 [ ] / 调用 ( ) /
+//   元组字面量 ( a, b ) / 数组字面量 [ a, b ]）。
 //   设计：shunting-yard 主循环把每个后缀转成 RPN 标记，末位建树阶段归约。
 //   规避 Rlyeh 编译器对前向递归 / if-表达式返回值的已知限制——全程迭代，
-//   索引/调用的子表达式直接在 RPN 内展开（靠 opstack 括号界定的运算符冲刷），
-//   不需要递归调用 parse_expr。
+//   索引/调用/元组/数组的子表达式直接在 RPN 内展开（靠 opstack 括号界定的
+//   运算符冲刷），不需要递归调用 parse_expr。
 // 与 oracle（render_expr_canonical）逐字节对齐：
 //   a.b        -> (field (var a) b)
 //   a.b.c      -> (field (field (var a) b) c)
@@ -373,6 +374,11 @@ fn tokenize(src: String) -> Vec<String> {
 //   a.b(1)     -> (call (field (var a) b) (int 1))
 //   add(1,2).scale(3) -> (call (field (call (var add) (int 1) (int 2)) scale) (int 3))
 //   f(g(x))    -> (call (var f) (call (var g) (var x)))
+//   (1, 2)     -> (tuple (int 1) (int 2))
+//   (1 + 2, 3) -> (tuple (bin add (int 1) (int 2)) (int 3))
+//   ((1, 2))   -> (tuple (int 1) (int 2))
+//   [1, 2, 3]  -> (array-lit (int 1) (int 2) (int 3))
+//   [(1, 2), 3] -> (array-lit (tuple (int 1) (int 2)) (int 3))
 // RPN 标记约定（均以 '@' 起头，归约时 f==64）：
 //   @field@NAME  : 字段访问后缀，弹栈顶节点包裹
 //   @open-index@: 索引开始，建树时压 @OPEN@ 哨兵
@@ -380,12 +386,19 @@ fn tokenize(src: String) -> Vec<String> {
 //   @open-call@ : 调用开始，建树时压 @OPEN@ 哨兵
 //   @argsep@    : 调用实参分隔，建树时压 @ARGSEP@ 哨兵
 //   @close-call@: 调用结束，弹至 @OPEN@ 拆 @ARGSEP@ 得实参 + 接收者包裹
-// opstack 括号：'(' 分组 / '(c' 调用 / '[' 索引（仅用于 ')''}' 冲刷运算符时定界）。
+//   @open-paren@: 分组/元组左圆括号，建树时压 @PARENSENT@ 哨兵（元组用其定位起点）
+//   @tupsep@    : 元组元素分隔，建树时压 @TUPSEP@ 哨兵
+//   @close-tup@ : 元组结束，弹至 @PARENSENT@ 拆 @TUPSEP@ 得元素包裹 (tuple ...)
+//   @open-arr@  : 数组字面量开始，建树时压 @ARRSENT@ 哨兵
+//   @arrsep@    : 数组元素分隔，建树时压 @ARRSEP@ 哨兵
+//   @close-arr@ : 数组结束，弹至 @ARRSENT@ 拆 @ARRSEP@ 得元素包裹 (array-lit ...)
+// opstack 括号：'(' 分组 / '(c' 调用 / '(t' 元组 / '[' 索引 / '[a' 数组字面量
+//   （仅用于 ')'']' 冲刷运算符时定界）；',' 依栈顶括号类型决定分隔标记。
 // ============================================================================
 
 // 对 token 流从位置 ti 起解析一个表达式，返回 PRes{ s: S-表达式, ti: 新位置 }。
 // 表达式在以下 token 处停止：';' '}' '=' ':' '{' 'let' 及 EOF；顶层 ','（非调用
-//   上下文）亦停止（交由语句层处理）。
+//   元组/数组上下文）亦停止（交由语句层处理）。
 fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
     let n = tokens.len;
     let mut ti = ti0;
@@ -393,6 +406,8 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
     let mut rpn: Vec<String> = Vec::new();
     let mut prev_op = 0;     // 1 = 刚见到操作数 / 右括号 / 字段 / 索引闭 / 调用闭
     let mut call_depth = 0;  // 当前处于第几层调用括号（区分 ',' 是否实参分隔）
+    let mut tuple_depth = 0; // 当前处于第几层元组字面量括号
+    let mut arr_depth = 0;   // 当前处于第几层数组字面量括号
     let mut ret_flag = 0;
     // return 前缀
     if ti < n && tokens.get(ti) == "return" {
@@ -408,26 +423,49 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
         if tok == ":" { break; }
         if tok == "{" { break; }
         if tok == "let" { break; }
-        // 逗号：调用上下文作实参分隔；否则停止（语句层处理元组）
+        // 逗号：调用/元组/数组上下文作元素分隔；否则停止（语句层处理）
         if tok == "," {
-            if call_depth > 0 {
-                // 冲刷运算符栈直到括号
-                let mut flush = 1;
-                while flush == 1 {
-                    if opstack.len() == 0 { flush = 0; break; }
-                    let t = opstack.pop();
-                    let v = match t { Option::Some(x) => x, Option::None => String::new() };
-                    if v == "" { flush = 0; break; }
-                    if v == "(" || v == "(c" || v == "[" { opstack.push(v); flush = 0; break; }
-                    rpn.push(v);
+            // 冲刷运算符栈直到栈顶括号（公共逻辑）
+            let mut flush = 1;
+            while flush == 1 {
+                if opstack.len() == 0 { flush = 0; break; }
+                let t = opstack.pop();
+                let v = match t { Option::Some(x) => x, Option::None => String::new() };
+                if v == "" { flush = 0; break; }
+                if v == "(" || v == "(c" || v == "(t" || v == "[" || v == "[a" {
+                    opstack.push(v); flush = 0; break;
                 }
-                rpn.push(String::from("@argsep@"));
-                prev_op = 0;
-                ti = ti + 1;
-                continue;
-            } else {
+                rpn.push(v);
+            }
+            // 依栈顶括号类型决定分隔标记（peek = pop+push）
+            if opstack.len() == 0 {
+                // 顶层裸逗号：停止（语句层处理元组/数组声明）
                 break;
             }
+            let mut top_o = opstack.pop();
+            let top = match top_o { Option::Some(x) => x, Option::None => String::new() };
+            if top == "(c" {
+                opstack.push(top);
+                rpn.push(String::from("@argsep@"));
+            } else if top == "(t" {
+                opstack.push(top);
+                rpn.push(String::from("@tupsep@"));
+            } else if top == "[a" {
+                opstack.push(top);
+                rpn.push(String::from("@arrsep@"));
+            } else if top == "(" {
+                // 分组转元组：首个逗号出现，将 '(' 升级为 '(t'
+                opstack.push(String::from("(t"));
+                tuple_depth = tuple_depth + 1;
+                rpn.push(String::from("@tupsep@"));
+            } else {
+                // 顶层裸逗号：停止（语句层处理元组/数组声明）
+                opstack.push(top);
+                break;
+            }
+            prev_op = 0;
+            ti = ti + 1;
+            continue;
         }
         // 右圆括号：弹运算符直到匹配 ( 或 (c
         if tok == ")" {
@@ -441,6 +479,13 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 if v == "(c" {
                     rpn.push(String::from("@close-call@"));
                     call_depth = call_depth - 1;
+                    prev_op = 1;
+                    un = 0;
+                    break;
+                }
+                if v == "(t" {
+                    rpn.push(String::from("@close-tup@"));
+                    tuple_depth = tuple_depth - 1;
                     prev_op = 1;
                     un = 0;
                     break;
@@ -459,6 +504,13 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 let v = match t { Option::Some(x) => x, Option::None => String::new() };
                 if v == "" { un = 0; break; }
                 if v == "[" { rpn.push(String::from("@close-index@")); prev_op = 1; un = 0; break; }
+                if v == "[a" {
+                    rpn.push(String::from("@close-arr@"));
+                    arr_depth = arr_depth - 1;
+                    prev_op = 1;
+                    un = 0;
+                    break;
+                }
                 rpn.push(v);
             }
             ti = ti + 1;
@@ -478,21 +530,28 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
             prev_op = 1;
             continue;
         }
-        // 左方括号：索引后缀开始
+        // 左方括号：前接操作数 -> 索引后缀；否则数组字面量
         if tok == "[" {
-            rpn.push(String::from("@open-index@"));
-            opstack.push(String::from("["));
+            if prev_op == 1 {
+                rpn.push(String::from("@open-index@"));
+                opstack.push(String::from("["));
+            } else {
+                rpn.push(String::from("@open-arr@"));
+                opstack.push(String::from("[a"));
+                arr_depth = arr_depth + 1;
+            }
             prev_op = 0;
             ti = ti + 1;
             continue;
         }
-        // 左圆括号：前接操作数 -> 调用后缀；否则分组
+        // 左圆括号：前接操作数 -> 调用后缀；否则分组（亦可能是元组，待 ',' 转 (t）
         if tok == "(" {
             if prev_op == 1 {
                 rpn.push(String::from("@open-call@"));
                 opstack.push(String::from("(c"));
                 call_depth = call_depth + 1;
             } else {
+                rpn.push(String::from("@open-paren@"));
                 opstack.push(String::from("("));
             }
             prev_op = 0;
@@ -532,7 +591,7 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
         let t = opstack.pop();
         let v = match t { Option::Some(x) => x, Option::None => String::new() };
         if v == "" { dr = 0; break; }
-        if v == "(" || v == "(c" || v == "[" { /* 丢弃未匹配括号 */ }
+        if v == "(" || v == "(c" || v == "(t" || v == "[" || v == "[a" { /* 丢弃未匹配括号 */ }
         else { rpn.push(v); }
     }
     // 由 RPN 迭代建树
@@ -544,11 +603,19 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
         if f == 40 {
             ast.push(tk);
         } else if tk == "u-" {
-            let a = ast.pop();
-            match a {
-                Option::Some(av) => { ast.push("(neg " + av + ")"); }
-                Option::None => { ast.push("(neg ?)"); }
+            // 弹出操作数（跳过分组/元组/调用/数组等哨兵，它们非真实节点）
+            let mut a = String::from("?");
+            let mut sk = 1;
+            while sk == 1 {
+                let ao = ast.pop();
+                let av = match ao { Option::Some(x) => x, Option::None => String::new() };
+                if av == "" { a = String::from("?"); sk = 0; break; }
+                if av == "@PARENSENT@" || av == "@TUPSEP@" || av == "@ARGSEP@" || av == "@OPEN@" || av == "@ARRSENT@" || av == "@ARRSEP@" {
+                    continue;
+                }
+                a = av; sk = 0; break;
             }
+            ast.push("(neg " + a + ")");
         } else if f == 64 {
             // '@' 起头的后缀标记
             if tk.substring(0, 7) == "@field@" {
@@ -567,8 +634,16 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                     ast.push(String::from("?"));   // 空索引（异常输入）
                 } else {
                     let _open = ast.pop();   // 丢弃 @OPEN@
-                    let rcv_o = ast.pop();
-                    let rcv = match rcv_o { Option::Some(x) => x, Option::None => String::from("?") };
+                    // 接收者可能位于嵌套分组哨兵 @PARENSENT@ 之下，跳过之
+                    let mut rcv = String::from("?");
+                    let mut sk = 1;
+                    while sk == 1 {
+                        let ro = ast.pop();
+                        let rv = match ro { Option::Some(x) => x, Option::None => String::new() };
+                        if rv == "" { sk = 0; break; }
+                        if rv == "@PARENSENT@" { continue; }
+                        rcv = rv; sk = 0; break;
+                    }
                     ast.push("(index " + rcv + " " + idx + ")");
                 }
             } else if tk == "@open-call@" {
@@ -585,6 +660,7 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                     let top = match top_o { Option::Some(x) => x, Option::None => String::new() };
                     if top == "@OPEN@" { col = 0; break; }
                     if top == "@ARGSEP@" { continue; }
+                    if top == "@PARENSENT@" { continue; }   // 跳过分组哨兵（如 f((a+b))）
                     args.push(top);
                 }
                 // 反转还原实参顺序
@@ -606,21 +682,98 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 }
                 s = s + ")";
                 ast.push(s);
+            } else if tk == "@open-paren@" {
+                ast.push(String::from("@PARENSENT@"));
+            } else if tk == "@tupsep@" {
+                ast.push(String::from("@TUPSEP@"));
+            } else if tk == "@close-tup@" {
+                // 收集元组元素（逆序弹出，遇 @TUPSEP@ 分拆，遇 @PARENSENT@ 终止）
+                let mut elems: Vec<String> = Vec::new();
+                let mut col = 1;
+                while col == 1 {
+                    if ast.len() == 0 { col = 0; break; }
+                    let top_o = ast.pop();
+                    let top = match top_o { Option::Some(x) => x, Option::None => String::new() };
+                    if top == "@PARENSENT@" { col = 0; break; }
+                    if top == "@TUPSEP@" { continue; }
+                    elems.push(top);
+                }
+                let mut ai = 0;
+                let mut aj = elems.len - 1;
+                while ai < aj {
+                    let tmp = elems.get(ai);
+                    elems.set(ai, elems.get(aj));
+                    elems.set(aj, tmp);
+                    ai = ai + 1; aj = aj - 1;
+                }
+                let mut s = String::from("(tuple");
+                let mut ai2 = 0;
+                while ai2 < elems.len {
+                    s = s + " " + elems.get(ai2);
+                    ai2 = ai2 + 1;
+                }
+                s = s + ")";
+                ast.push(s);
+            } else if tk == "@open-arr@" {
+                ast.push(String::from("@ARRSENT@"));
+            } else if tk == "@arrsep@" {
+                ast.push(String::from("@ARRSEP@"));
+            } else if tk == "@close-arr@" {
+                let mut elems: Vec<String> = Vec::new();
+                let mut col = 1;
+                while col == 1 {
+                    if ast.len() == 0 { col = 0; break; }
+                    let top_o = ast.pop();
+                    let top = match top_o { Option::Some(x) => x, Option::None => String::new() };
+                    if top == "@ARRSENT@" { col = 0; break; }
+                    if top == "@ARRSEP@" { continue; }
+                    elems.push(top);
+                }
+                let mut ai = 0;
+                let mut aj = elems.len - 1;
+                while ai < aj {
+                    let tmp = elems.get(ai);
+                    elems.set(ai, elems.get(aj));
+                    elems.set(aj, tmp);
+                    ai = ai + 1; aj = aj - 1;
+                }
+                let mut s = String::from("(array-lit");
+                let mut ai2 = 0;
+                while ai2 < elems.len {
+                    s = s + " " + elems.get(ai2);
+                    ai2 = ai2 + 1;
+                }
+                s = s + ")";
+                ast.push(s);
             } else {
                 ast.push(tk);
             }
         } else {
-            let b = ast.pop();
-            let a = ast.pop();
-            match b {
-                Option::Some(bv) => {
-                    match a {
-                        Option::Some(av) => { ast.push("(bin " + tk + " " + av + " " + bv + ")"); }
-                        Option::None => { ast.push("(bin " + tk + " ? ?)"); }
-                    }
+            // 弹出右操作数（跳过分组/元组/调用/数组等哨兵，它们非真实节点）
+            let mut b = String::from("?");
+            let mut sk = 1;
+            while sk == 1 {
+                let bo = ast.pop();
+                let bv = match bo { Option::Some(x) => x, Option::None => String::new() };
+                if bv == "" { b = String::from("?"); sk = 0; break; }
+                if bv == "@PARENSENT@" || bv == "@TUPSEP@" || bv == "@ARGSEP@" || bv == "@OPEN@" || bv == "@ARRSENT@" || bv == "@ARRSEP@" {
+                    continue;
                 }
-                Option::None => { ast.push("(bin " + tk + " ? ?)"); }
+                b = bv; sk = 0; break;
             }
+            // 弹出左操作数（跳过哨兵）
+            let mut a = String::from("?");
+            let mut sk2 = 1;
+            while sk2 == 1 {
+                let ao = ast.pop();
+                let av = match ao { Option::Some(x) => x, Option::None => String::new() };
+                if av == "" { a = String::from("?"); sk2 = 0; break; }
+                if av == "@PARENSENT@" || av == "@TUPSEP@" || av == "@ARGSEP@" || av == "@OPEN@" || av == "@ARRSENT@" || av == "@ARRSEP@" {
+                    continue;
+                }
+                a = av; sk2 = 0; break;
+            }
+            ast.push("(bin " + tk + " " + a + " " + b + ")");
         }
         k = k + 1;
     }

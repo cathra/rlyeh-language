@@ -271,3 +271,28 @@ fn m_m2e_index_call_ast_matches_rust_oracle() {
     check_program("let r = foo(1, 2);");
     check_program("if a[i].ok { b.call() } else { c[0] }");
 }
+
+#[test]
+fn m_m3_tuple_array_literal_ast_matches_rust_oracle() {
+    // 元组字面量
+    check("(1, 2)");
+    check("(1, 2, 3)");
+    check("(1 + 2, 3)");
+    check("((1, 2))");
+    check("(a, b)");
+    check("(x.y, z.w)");
+    check("(1, 2) + (3, 4)");
+    // 数组字面量
+    check("[1, 2, 3]");
+    check("[1 + 2, 3 * 4]");
+    check("[(1, 2), 3]");
+    check("[a.b, c[0]]");
+    check("[[1, 2], [3, 4]]");
+    // 元组/数组作调用实参与 let 初始化
+    check("foo((1, 2))");
+    check("bar([1, 2, 3])");
+    check_program("let r = (1, 2);");
+    check_program("let r = [1, 2, 3];");
+    check_program("let (a, b) = (1, 2);");
+    check_program("let x = [(1, 2), (3, 4)];");
+}
