@@ -317,3 +317,33 @@ fn m_m4_for_range_ast_matches_rust_oracle() {
     // 多语句 for 体（let 绑定，非裸赋值——裸赋值语句超出 M-M4 范围）
     check_program("let n = 0; for i in 0..<10 { let s = n + i; s } n");
 }
+
+#[test]
+fn m_m5_match_ast_matches_rust_oracle() {
+    // match 表达式（M-M5）：match <subj> { <pat> => <block>, ... }
+    // 单臂：字面量 / 通配 / 标识符
+    check_program("match x { 1 => { 1 } }");
+    check_program("match x { _ => { 0 } }");
+    check_program("match x { a => { a } }");
+    // 多臂 + 尾逗号
+    check_program("match x { 1 => { 1 }, 2 => { 2 } }");
+    check_program("match x { 1 => { 1 }, 2 => { 2 }, }");
+    // 布尔字面量模式
+    check_program("match x { true => { 1 }, false => { 0 } }");
+    // 元组模式（扁平单 token 元素）
+    check_program("match p { (a, b) => { a } }");
+    check_program("match p { (1, 2) => { 1 } }");
+    // 或模式（两路）
+    check_program("match x { 1 | 2 => { 1 } }");
+    // 范围模式（三种：..< 左闭右开 / ... 闭区间 / <.. 左开右闭）
+    check_program("match x { 0..<10 => { 1 } }");
+    check_program("match x { 0...10 => { 1 } }");
+    check_program("match x { 0<..10 => { 1 } }");
+    // 守卫（pat if cond => body）
+    check_program("match x { a if a > 0 => { a } }");
+    check_program("match x { a if a > 0 => { a }, _ => { 0 } }");
+    // 嵌套 match（臂体内）
+    check_program("match x { 1 => { match y { 2 => { 3 } } } }");
+    // match 后接其他语句（帧收束不泄漏）
+    check_program("match x { 1 => { 1 } } let z = 0;");
+}

@@ -381,6 +381,21 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
             render_expr_canonical(iterator),
             render_block_canonical(body)
         ),
+        // M-M5：match 表达式 -> (match SUBJECT (arm PATTERN [GUARD] BODY) ...)
+        rlyeh_ast::ExprKind::Match { expr, arms } => {
+            let mut s = format!("(match {}", render_expr_canonical(expr));
+            for arm in arms {
+                let pat = render_pattern_canonical(&arm.pattern);
+                let mut arm_s = format!("(arm {pat}");
+                if let Some(g) = &arm.guard {
+                    arm_s = format!("{arm_s} {}", render_expr_canonical(g));
+                }
+                arm_s = format!("{arm_s} {})", render_expr_canonical(&arm.body));
+                s = format!("{s} {arm_s}");
+            }
+            s.push(')');
+            s
+        }
         _ => "(unsupported)".to_string(),
     }
 }
@@ -440,11 +455,24 @@ fn render_stmt_canonical(stmt: &rlyeh_ast::AstStmt) -> String {
     }
 }
 
-/// 渲染模式为规范串：标识符 -> 裸名；`_` -> "_"；元组 -> `(tuple-pat ...)`。
+/// 渲染模式为规范串：标识符 -> 裸名；`_` -> "_"；元组 -> `(tuple-pat ...)`；
+/// 字面量 -> `(lit-int N)` / `(lit-bool b)` / `(lit-str s)` / `(lit-char c)`；
+/// 范围 -> `(range-pat L U lower_inc upper_inc)`；或模式 -> `(or P1 P2 ...)`；
+/// 剩余 -> `..`。结构体/枚举模式超出 M-M5 范围，渲染为 `(pat-unsupported)`。
 fn render_pattern_canonical(p: &rlyeh_ast::AstPattern) -> String {
     match p {
         rlyeh_ast::AstPattern::Ident(n) => n.clone(),
         rlyeh_ast::AstPattern::Wildcard => "_".to_string(),
+        rlyeh_ast::AstPattern::Literal(lv) => match lv {
+            rlyeh_ast::LiteralValue::Int(v) => format!("(lit-int {v})"),
+            rlyeh_ast::LiteralValue::Bool(b) => format!("(lit-bool {b})"),
+            rlyeh_ast::LiteralValue::Str(s) => format!("(lit-str {s})"),
+            rlyeh_ast::LiteralValue::Char(c) => format!("(lit-char {c})"),
+            rlyeh_ast::LiteralValue::Float(f) => format!("(lit-float {f})"),
+            rlyeh_ast::LiteralValue::Time { hour, minute, is_pm } => {
+                format!("(lit-time {hour} {minute} {is_pm})")
+            }
+        },
         rlyeh_ast::AstPattern::Tuple(elems, _) => {
             let mut s = "(tuple-pat".to_string();
             for e in elems {
@@ -453,6 +481,31 @@ fn render_pattern_canonical(p: &rlyeh_ast::AstPattern) -> String {
             s.push(')');
             s
         }
+        rlyeh_ast::AstPattern::Range {
+            lower,
+            upper,
+            lower_inclusive,
+            upper_inclusive,
+        } => {
+            let l = render_expr_canonical(lower);
+            let u = render_expr_canonical(upper);
+            format!(
+                "(range-pat {} {} {} {})",
+                l,
+                u,
+                if *lower_inclusive { 1 } else { 0 },
+                if *upper_inclusive { 1 } else { 0 },
+            )
+        }
+        rlyeh_ast::AstPattern::Or(alts) => {
+            let mut s = "(or".to_string();
+            for a in alts {
+                s = format!("{s} {}", render_pattern_canonical(a));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::AstPattern::Rest => "..".to_string(),
         _ => "(pat-unsupported)".to_string(),
     }
 }

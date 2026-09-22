@@ -283,6 +283,7 @@ fn tokenize(src: String) -> Vec<String> {
             else if name == "loop" { toks.push(String::from("loop")); }
             else if name == "for" { toks.push(String::from("for")); }
             else if name == "in" { toks.push(String::from("in")); }
+            else if name == "match" { toks.push(String::from("match")); }
             else { toks.push("(var " + name + ")"); }
             prev_op = 1;
             continue;
@@ -312,9 +313,10 @@ fn tokenize(src: String) -> Vec<String> {
             }
             toks.push(String::from(".")); prev_op = 1; i = i + 1; continue;
         }
-        // = 与 ==
+        // = / == / =>
         if c == 61 {
             let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
+            if c2 == 62 { toks.push(String::from("fatarrow")); i = i + 2; prev_op = 0; continue; }  // =>
             if c2 == 61 { toks.push(String::from("eq")); i = i + 2; }
             else { toks.push(String::from("=")); i = i + 1; }
             prev_op = 0;
@@ -1059,6 +1061,127 @@ fn parse_pattern_tokens(ts: Vec<String>) -> String {
     result
 }
 
+// 解析单个模式原子 token -> 规范模式串（M-M5）：
+//   (var x) -> x / (var _) -> _ / (var true|false) -> (lit-bool ..) /
+//   (int N) -> (lit-int N) / (str S) -> (lit-str S) / .. -> .. / 其余 -> ?
+fn pat_atom(t: String) -> String {
+    if t == "(var _)" { return String::from("_"); }
+    if t == "(var true)" { return String::from("(lit-bool true)"); }
+    if t == "(var false)" { return String::from("(lit-bool false)"); }
+    if t == ".." { return String::from(".."); }
+    if t.substring(0, 5) == "(int " {
+        let inner = t.substring(5, t.len - 1);   // (int N) -> N
+        return "(lit-int " + inner + ")";
+    }
+    if t.substring(0, 5) == "(str " {
+        let inner = t.substring(5, t.len - 1);
+        return "(lit-str " + inner + ")";
+    }
+    if t.substring(0, 5) == "(var " {
+        let inner = t.substring(5, t.len - 1);   // (var NAME) -> NAME
+        return inner;
+    }
+    String::from("?")
+}
+
+// 解析模式 token 序列 -> 规范模式串（M-M5，非递归、单向依赖）：
+//   或模式：含 bitor -> 按首个 bitor 拆左右（两侧经 render_or_side 渲染）；
+//   范围：含 ..< / ... / <.. -> (range-pat L U li ui)，边界按表达式渲染（对齐 oracle 的 (int N)）；
+//   元组：以 ( 起 ) 收 -> 按 , 拆段，元素为单 token / 范围（不递归，嵌套元组超出 M-M5a）；
+//   单 token -> pat_atom。
+fn render_range_pat(ts: Vec<String>) -> String {
+    let n = ts.len;
+    let mut l0 = 0; let mut u0 = 0; let mut q = 0;
+    while q < n {
+        let t = ts.get(q);
+        if t == "..<" || t == "..." || t == "<.." { l0 = q; u0 = q + 1; break; }
+        q = q + 1;
+    }
+    let rop = ts.get(l0);
+    let mut lv: Vec<String> = Vec::new();
+    let mut a = 0;
+    while a < l0 { lv.push(ts.get(a)); a = a + 1; }
+    let mut uv: Vec<String> = Vec::new();
+    let mut b = u0;
+    while b < n { uv.push(ts.get(b)); b = b + 1; }
+    // 边界按表达式渲染（与 oracle 的 render_expr_canonical 对齐：整数字面量 -> (int N)）
+    let ls = if lv.len == 1 { parse_expr(lv, 0).s } else { pat_atom(lv.get(0)) };
+    let us = if uv.len == 1 { parse_expr(uv, 0).s } else { pat_atom(uv.get(0)) };
+    let mut li = 1; let mut ui = 1;
+    if rop == "..<" { li = 1; ui = 0; }
+    else if rop == "..." { li = 1; ui = 1; }
+    else if rop == "<.." { li = 0; ui = 1; }
+    "(range-pat " + ls + " " + us + " " + int_to_string(li) + " " + int_to_string(ui) + ")"
+}
+
+// 或模式单侧渲染（单 token -> pat_atom；含范围运算符 -> render_range_pat；其余 -> pat_atom(0)）
+fn render_or_side(seg: Vec<String>) -> String {
+    let n = seg.len;
+    if n == 1 { return pat_atom(seg.get(0)); }
+    let mut rk = 0; let mut is_r = 0;
+    while rk < n {
+        let t = seg.get(rk);
+        if t == "..<" || t == "..." || t == "<.." { is_r = 1; break; }
+        rk = rk + 1;
+    }
+    if is_r == 1 { return render_range_pat(seg); }
+    pat_atom(seg.get(0))
+}
+
+// 元组模式渲染：按 , 拆段，每段经 render_or_side（单 token / 范围）；不递归（M-M5a 仅扁平单 token 元素）
+fn render_tuple_pat(ts: Vec<String>) -> String {
+    let n = ts.len;
+    let mut s = String::from("(tuple-pat");
+    let mut seg: Vec<String> = Vec::new();
+    let mut i = 1;
+    while i < n - 1 {
+        let t = ts.get(i);
+        if t == "," {
+            if seg.len > 0 { s = s + " " + render_or_side(seg); }
+            seg = Vec::new();
+            i = i + 1;
+            continue;
+        }
+        seg.push(t);
+        i = i + 1;
+    }
+    if seg.len > 0 { s = s + " " + render_or_side(seg); }
+    s = s + ")";
+    s
+}
+
+fn parse_match_pattern(ts: Vec<String>) -> String {
+    let n = ts.len;
+    if n == 0 { return String::from("?"); }
+    // 或模式（最低优先级）：含 bitor -> 按首个 bitor 拆左右
+    let mut k = 0; let mut has_or = 0; let mut oi = 0;
+    while k < n {
+        if ts.get(k) == "bitor" { has_or = 1; oi = k; break; }
+        k = k + 1;
+    }
+    if has_or == 1 {
+        let mut left: Vec<String> = Vec::new();
+        let mut m = 0;
+        while m < oi { left.push(ts.get(m)); m = m + 1; }
+        let mut right: Vec<String> = Vec::new();
+        let mut p = oi + 1;
+        while p < n { right.push(ts.get(p)); p = p + 1; }
+        return "(or " + render_or_side(left) + " " + render_or_side(right) + ")";
+    }
+    // 范围模式：含 ..< / ... / <..
+    let mut rk = 0; let mut is_range = 0;
+    while rk < n {
+        let t = ts.get(rk);
+        if t == "..<" || t == "..." || t == "<.." { is_range = 1; break; }
+        rk = rk + 1;
+    }
+    if is_range == 1 { return render_range_pat(ts); }
+    // 元组：以 ( 起始且 ) 收尾
+    if ts.get(0) == "(" && ts.get(n - 1) == ")" { return render_tuple_pat(ts); }
+    // 单 token
+    pat_atom(ts.get(0))
+}
+
 // 解析整段程序源码，返回规范 S-表达式程序文本（见本文件顶部"规范格式"）。
 fn parse_program(src: String) -> String {
     let tokens = tokenize(src);
@@ -1087,6 +1210,12 @@ fn parse_program(src: String) -> String {
     let mut cf_depth: Vec<String> = Vec::new();
     // cf_pat: for 循环的模式（其余控制帧不占用，按顺序与 cf_kind 同步 pop）
     let mut cf_pat: Vec<String> = Vec::new();
+    // M-M5 match 帧专用缓冲（match 同一时刻仅一层在顶层活动，故模式缓冲为全局单份）
+    let mut match_pat: Vec<String> = Vec::new();            // 当前臂正在收集的模式/守卫 token
+    let mut match_arm_pat_done: Vec<String> = Vec::new();   // 有守卫时暂存的 finalized 模式 token
+    let mut match_seen: Vec<String> = Vec::new();           // per-frame："0"=未见 =>（区分 match 自身 {} 与臂 body {}）
+    let mut match_arm_pat_str: Vec<String> = Vec::new();    // per-frame：当前臂 finalized 模式串
+    let mut match_arm_guard_str: Vec<String> = Vec::new();  // per-frame：当前臂守卫串（无守卫为 ""）
     // pending let 信息（M-M2c：控制流作 let 初始化时暂存，帧收束后组装 (let ...)）
     let mut pend_let_pat: Vec<String> = Vec::new();
     let mut pend_let_type: Vec<String> = Vec::new();
@@ -1095,6 +1224,99 @@ fn parse_program(src: String) -> String {
         let tok = tokens.get(ti);
         // 空语句
         if tok == ";" { ti = ti + 1; continue; }
+        // match 帧顶层路由（M-M5）：仅当 bufstack 深度 == match 帧深度时拦截模式/=>/守卫/,/{}
+        if cf_kind.len() > 0 {
+            let mk_idx = cf_kind.len() - 1;
+            if cf_kind.get(mk_idx) == "match" {
+                let mk_depth = cf_depth.get(mk_idx);
+                if int_to_string(bufstack.len()) == mk_depth {
+                    // 顶层：模式收集 / => / if(守卫) / ,(臂分隔) / {}(body 或 match 自身花括号)
+                    if tok == "{" {
+                        if match_seen.get(mk_idx) == "0" {
+                            // match 自身的花括号：跳过，不入 buffer 栈
+                            match_seen.set(mk_idx, String::from("1"));
+                            ti = ti + 1;
+                            continue;
+                        }
+                        // 臂 body 开始：正常入 buffer 栈
+                        ti = ti + 1;
+                        bufstack.push("");
+                        continue;
+                    }
+                    if tok == "}" {
+                        // 闭合 match：组装 (match <SUBJ> <ARMS>)
+                        let subject = cf_cond.get(mk_idx);
+                        let arms = cf_then.get(mk_idx);
+                        let node = "(match " + subject + arms + ")";
+                        ti = ti + 1;
+                        cf_kind.pop(); cf_cond.pop(); cf_then.pop(); cf_else.pop();
+                        cf_state.pop(); cf_elseif.pop(); cf_sink.pop(); cf_depth.pop();
+                        cf_pat.pop(); match_seen.pop();
+                        match_arm_pat_str.pop(); match_arm_guard_str.pop();
+                        while match_pat.len() > 0 { match_pat.pop(); }
+                        while match_arm_pat_done.len() > 0 { match_arm_pat_done.pop(); }
+                        let nxt = if ti < n { tokens.get(ti) } else { String::from("") };
+                        let mut s = node;
+                        if nxt == ";" { ti = ti + 1; s = "(semi " + node + ")"; }
+                        else if nxt == "}" { s = node; }
+                        else { s = "(semi " + node + ")"; }
+                        let po = bufstack.pop();
+                        let mut p = match po { Option::Some(x) => x, Option::None => String::new() };
+                        p = p + " " + s;
+                        bufstack.push(p);
+                        continue;
+                    }
+                    if tok == "fatarrow" {
+                        // 收束当前臂的模式/守卫
+                        let st = cf_state.get(mk_idx);
+                        let mut pat = String::new();
+                        let mut grd = String::new();
+                        if st == "3" {
+                            // 有守卫：pattern 存于 match_arm_pat_done，guard 存于 match_pat
+                            pat = parse_match_pattern(match_arm_pat_done);
+                            let ge = parse_expr(match_pat, 0);
+                            grd = ge.s;
+                            while match_arm_pat_done.len() > 0 { match_arm_pat_done.pop(); }
+                        } else {
+                            pat = parse_match_pattern(match_pat);
+                        }
+                        while match_pat.len() > 0 { match_pat.pop(); }
+                        match_arm_pat_str.set(mk_idx, pat);
+                        match_arm_guard_str.set(mk_idx, grd);
+                        cf_state.set(mk_idx, String::from("1"));
+                        ti = ti + 1;
+                        continue;
+                    }
+                    if tok == "if" && cf_state.get(mk_idx) == "0" {
+                        // 进入守卫收集：把已收集模式 token 转存到 match_arm_pat_done
+                        let mut kk = 0;
+                        while kk < match_pat.len() {
+                            match_arm_pat_done.push(match_pat.get(kk));
+                            kk = kk + 1;
+                        }
+                        while match_pat.len() > 0 { match_pat.pop(); }
+                        cf_state.set(mk_idx, String::from("3"));
+                        ti = ti + 1;
+                        continue;
+                    }
+                    if tok == "," {
+                        if match_pat.len() > 0 {
+                            // 模式内逗号（元组 / 守卫中的调用参数）：累积进 match_pat
+                            match_pat.push(tok);
+                            ti = ti + 1;
+                            continue;
+                        }
+                        // 臂分隔符（body 已闭合、match_pat 为空，等待下一臂）
+                        ti = ti + 1;
+                        continue;
+                    }
+                    // 其余：模式 token，累积到 match_pat
+                    match_pat.push(tok);
+                    ti = ti + 1;
+                    continue;
+                }
+            }
+        }
         // 块结束
         if tok == "}" {
             if bufstack.len() > 1 {
@@ -1107,6 +1329,20 @@ fn parse_program(src: String) -> String {
                     let t_idx = cf_state.len() - 1;
                     let top_state = cf_state.get(t_idx);
                     let top_depth = cf_depth.get(t_idx);
+                    let top_kind = cf_kind.get(t_idx);
+                    if top_kind == "match" {
+                        // match 臂闭合：body = 刚弹出的块；组装 (arm <pat> [<guard>] <body>)
+                        let pat = match_arm_pat_str.get(t_idx);
+                        let grd = match_arm_guard_str.get(t_idx);
+                        let mut arm = String::from("(arm ");
+                        arm = arm + pat;
+                        if grd.len() > 0 { arm = arm + " " + grd; }
+                        arm = arm + " " + block + ")";
+                        let at = cf_then.get(t_idx);
+                        cf_then.set(t_idx, at + " " + arm);
+                        cf_state.set(t_idx, String::from("0"));  // 等待下一臂或 match 闭合
+                        continue;
+                    }
                     if int_to_string(bufstack.len()) == top_depth {
                         // 该 '}' 闭合的是控制帧自身的 then/else 块
                         let mut do_fin = 0;
@@ -1399,6 +1635,32 @@ fn parse_program(src: String) -> String {
             cf_elseif.push(String::from("0"));
             cf_sink.push(String::from("stmt"));
             cf_depth.push(int_to_string(bufstack.len()));
+            continue;
+        }
+        // match 表达式（M-M5）：match <subject> { <pat> => <block>, ... }
+        if tok == "match" {
+            ti = ti + 1;
+            // 解析被匹配表达式直到 '{'
+            let r = parse_expr(tokens, ti);
+            let subject = r.s;
+            ti = r.ti;
+            // 越过 match 自身的 '{'（不入 buffer 栈）
+            if ti < n && tokens.get(ti) == "{" { ti = ti + 1; }
+            // 清空全局模式缓冲
+            while match_pat.len() > 0 { match_pat.pop(); }
+            while match_arm_pat_done.len() > 0 { match_arm_pat_done.pop(); }
+            cf_kind.push(String::from("match"));
+            cf_cond.push(subject);
+            cf_then.push(String::new());   // 累积臂：(arm ...)(arm ...)
+            cf_else.push(String::new());
+            cf_state.push(String::from("0"));  // 0=收集模式 / 3=收集守卫 / 1=等待 body
+            cf_elseif.push(String::from("0"));
+            cf_sink.push(String::from("stmt"));
+            cf_depth.push(int_to_string(bufstack.len()));
+            cf_pat.push(String::new());
+            match_seen.push(String::from("1"));        // match 自身 '{' 已在分发处跳过，路由中 '{' 一律为臂 body
+            match_arm_pat_str.push(String::new());     // 当前臂 finalized 模式串
+            match_arm_guard_str.push(String::new());   // 当前臂守卫串（无守卫为 ""）
             continue;
         }
         // 其余：表达式语句（含 return；块表达式已由 '{' 分支处理）
