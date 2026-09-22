@@ -264,6 +264,34 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
             None => "(return)".to_string(),
         },
         rlyeh_ast::ExprKind::Block(b) => render_block_canonical(b),
+        // M-M2c：控制流（语句/表达式双形态）
+        rlyeh_ast::ExprKind::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            let mut s = format!(
+                "(if {} {}",
+                render_expr_canonical(cond),
+                render_block_canonical(then_block)
+            );
+            if let Some(eb) = else_block {
+                s.push(' ');
+                s.push_str(&render_block_canonical(eb));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::ExprKind::While { cond, body } => {
+            format!(
+                "(while {} {})",
+                render_expr_canonical(cond),
+                render_block_canonical(body)
+            )
+        }
+        rlyeh_ast::ExprKind::Loop { body } => {
+            format!("(loop {})", render_block_canonical(body))
+        }
         _ => "(unsupported)".to_string(),
     }
 }

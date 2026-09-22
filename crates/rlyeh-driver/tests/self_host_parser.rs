@@ -191,3 +191,39 @@ fn m_m2b_statement_ast_matches_rust_oracle() {
     // 混合：模式 + 类型标注 + 嵌套块
     check_program("let (a, b) = 1 + 2; { let (c, _) = a; c }");
 }
+
+#[test]
+fn m_m2c_control_flow_ast_matches_rust_oracle() {
+    // if / else（M-M2c：语句与块尾表达式双形态）
+    check_program("if x { }");
+    check_program("if x { y }");
+    check_program("if x { } else { }");
+    check_program("if x { a } else { b }");
+    check_program("if x { a } else if y { b } else { c }");   // else if 收束为嵌套 if
+    check_program("if x < 5 { a } else { b }");               // 条件含比较链
+    check_program("if (x) { y }");                            // 条件加括号
+    // while / loop
+    check_program("while x { }");
+    check_program("while x { y }");
+    check_program("while i < 10 { i }");
+    check_program("loop { }");
+    check_program("loop { x }");
+    // 嵌套控制流
+    check_program("if x { if y { z } }");
+    check_program("while x { if y { z } }");
+    check_program("if x { while y { z } }");
+    // 控制流作块尾表达式（裸，无 semi）
+    check_program("{ if x { } }");
+    check_program("{ if x { } else { } }");
+    check_program("{ while x { } }");
+    check_program("{ loop { } }");
+    // 控制流后接语句 → semi 包裹
+    check_program("if x { } x");
+    check_program("while x { } y");
+    // 控制流作 let 初始化表达式（M-M2c 表达式双形态之一）
+    check_program("let r = if x { 1 } else { 2 };");
+    check_program("let r: i64 = if x { 1 } else { 2 };");
+    check_program("let r = loop { 1 };");
+    check_program("let r = while x { 1 };");
+    check_program("let r: Vec<i64> = if x { 1 } else { 2 };");
+}

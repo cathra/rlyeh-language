@@ -221,7 +221,7 @@ struct PRes { s: String, ti: i64 }
 //   - 语句/块：迭代式 buffer 栈（遇 `{` 入栈新 buffer，遇 `}` 出栈包成 (block ...)），
 //     不引入递归，规避 Rlyeh 的共享 Vec 传递/递归语义风险。
 //
-// 规范格式（M-M2b1 + M-M2b2）：
+// 规范格式（M-M2b1 + M-M2b2 + M-M2c）：
 //   (program STMT ...)                         顶层
 //   (block STMT ... [FINAL-EXPR?])             块（FINAL-EXPR 仅块内末位裸表达式，裸渲染）
 //   (let PAT [TYPE] INIT) / (let mut PAT [TYPE] INIT)
@@ -229,6 +229,11 @@ struct PRes { s: String, ti: i64 }
 //                                                  TYPE 可选，存在时渲染为 (type ...) 节点）
 //   (semi EXPR)                                带 `;` 表达式语句 / 顶层裸表达式 / 顶层裸块
 //   (return EXPR) / (return)                   return 表达式
+//   (if COND (block ...) [ (block ...) ])      if/else（M-M2c；else 分支可选；else if 收束为嵌套 if）
+//   (while COND (block ...))                   while 循环（M-M2c）
+//   (loop (block ...))                         loop 循环（M-M2c）
+//   控制流作语句：`(semi (if ...))`；作块尾表达式：裸 `(if ...)`（与 oracle 一致）
+//   控制流作 let 初始化：`(let PAT [TYPE] (if ...))`（M-M2c 表达式双形态之一）
 //
 // 类型规范（M-M2b2，迭代式 @GEN@ 栈，见 parse_type_core）：
 //   (type NAME ARG...)     路径类型，泛型实参递归渲染
@@ -271,6 +276,10 @@ fn tokenize(src: String) -> Vec<String> {
             if name == "let" { toks.push(String::from("let")); }
             else if name == "mut" { toks.push(String::from("mut")); }
             else if name == "return" { toks.push(String::from("return")); }
+            else if name == "if" { toks.push(String::from("if")); }
+            else if name == "else" { toks.push(String::from("else")); }
+            else if name == "while" { toks.push(String::from("while")); }
+            else if name == "loop" { toks.push(String::from("loop")); }
             else { toks.push("(var " + name + ")"); }
             prev_op = 1;
             continue;
@@ -686,6 +695,29 @@ fn parse_program(src: String) -> String {
     let mut ti = 0;
     let mut bufstack: Vec<String> = Vec::new();
     bufstack.push("");   // 程序体 buffer
+    // 控制帧栈（M-M2c）：与 bufstack 配合解析 if/while/loop 的块体（不引入递归）。
+    //   Rlyeh 的 Vec<i64>::get/pop 返回 ptr 而非 i64，故所有整数态均以 String 编码
+    //   （int_to_string / "0"/"1"/"2" / "stmt"/"let" / "1"=else-if 子帧）。
+    //   cf_kind:   "if"/"while"/"loop"
+    //   cf_cond:   条件 S-表达式（if/while）；loop 为 ""
+    //   cf_then:  then 块 S-表达式（then '}' 闭合时写入）
+    //   cf_else:  else 块 S-表达式（else '}' 闭合时写入；否则 "")
+    //   cf_state: "0"=等待 then '}'；"1"=then 已闭合（无 else 或 else 已就绪）；"2"=已见 else 待 else 块 '}'
+    //   cf_elseif:"1"=本帧是 else if 子帧，收束结果挂到其下方帧的 else；"0"=否
+    //   cf_sink:  "stmt"=收束按 semi/bare 落到父 buffer；"let"=收束组装 (let ...)（pending let）
+    //   cf_depth: int_to_string(建帧时 bufstack 深度)，用于判定闭合 '}' 是否属于本帧
+    let mut cf_kind: Vec<String> = Vec::new();
+    let mut cf_cond: Vec<String> = Vec::new();
+    let mut cf_then: Vec<String> = Vec::new();
+    let mut cf_else: Vec<String> = Vec::new();
+    let mut cf_state: Vec<String> = Vec::new();
+    let mut cf_elseif: Vec<String> = Vec::new();
+    let mut cf_sink: Vec<String> = Vec::new();
+    let mut cf_depth: Vec<String> = Vec::new();
+    // pending let 信息（M-M2c：控制流作 let 初始化时暂存，帧收束后组装 (let ...)）
+    let mut pend_let_pat: Vec<String> = Vec::new();
+    let mut pend_let_type: Vec<String> = Vec::new();
+    let mut pend_let_mut: Vec<String> = Vec::new();
     while ti < n {
         let tok = tokens.get(ti);
         // 空语句
@@ -697,6 +729,122 @@ fn parse_program(src: String) -> String {
                 let body_opt = bufstack.pop();
                 let body = match body_opt { Option::Some(x) => x, Option::None => String::new() };
                 let block = "(block" + body + ")";
+                // 是否属于某个控制帧的块体？
+                if cf_state.len() > 0 {
+                    let t_idx = cf_state.len() - 1;
+                    let top_state = cf_state.get(t_idx);
+                    let top_depth = cf_depth.get(t_idx);
+                    if int_to_string(bufstack.len()) == top_depth {
+                        // 该 '}' 闭合的是控制帧自身的 then/else 块
+                        let mut do_fin = 0;
+                        if top_state == "0" {
+                            cf_then.set(t_idx, block);
+                            cf_state.set(t_idx, String::from("1"));
+                            let nxt = if ti < n { tokens.get(ti) } else { String::from("") };
+                            if nxt == "else" {
+                                ti = ti + 1;
+                                let n2 = if ti < n { tokens.get(ti) } else { String::from("") };
+                                if n2 == "{" {
+                                    cf_state.set(t_idx, String::from("2"));   // 待 else 块 '}'
+                                } else if n2 == "if" {
+                                    // else if：开启新帧（elseif 子帧），收束结果挂到其下方帧的 else
+                                    ti = ti + 1;
+                                    let r = parse_expr(tokens, ti);
+                                    cf_kind.push(String::from("if"));
+                                    cf_cond.push(r.s);
+                                    cf_then.push(String::new());
+                                    cf_else.push(String::new());
+                                    cf_state.push(String::from("0"));
+                                    cf_elseif.push(String::from("1"));
+                                    cf_sink.push(String::from("stmt"));
+                                    cf_depth.push(int_to_string(bufstack.len()));
+                                    ti = r.ti;
+                                } else {
+                                    do_fin = 1;   // else 后非块非 if：按无 else 收束
+                                }
+                            } else {
+                                do_fin = 1;       // 无 else：收束
+                            }
+                        } else {
+                            // top_state == "2"：else 块闭合；或异常态：直接收束
+                            if top_state == "2" {
+                                cf_else.set(t_idx, block);
+                                cf_state.set(t_idx, String::from("1"));
+                            }
+                            do_fin = 1;
+                        }
+                        if do_fin == 1 {
+                            // 控制帧收束（含 else if 级联）：组装节点并落到目标
+                            let mut fin = 1;
+                            while fin == 1 {
+                                let fk_o = cf_kind.pop();
+                                let fk = match fk_o { Option::Some(x) => x, Option::None => String::new() };
+                                let fc_o = cf_cond.pop();
+                                let fc = match fc_o { Option::Some(x) => x, Option::None => String::new() };
+                                let ft_o = cf_then.pop();
+                                let ft = match ft_o { Option::Some(x) => x, Option::None => String::new() };
+                                let fe_o = cf_else.pop();
+                                let fe = match fe_o { Option::Some(x) => x, Option::None => String::new() };
+                                let fs_o = cf_state.pop();
+                                let fs = match fs_o { Option::Some(x) => x, Option::None => String::new() };
+                                let feif_o = cf_elseif.pop();
+                                let feif = match feif_o { Option::Some(x) => x, Option::None => String::new() };
+                                let fd_o = cf_depth.pop();
+                                let fd = match fd_o { Option::Some(x) => x, Option::None => String::new() };
+                                let sk_o = cf_sink.pop();
+                                let sk = match sk_o { Option::Some(x) => x, Option::None => String::new() };
+                                let mut node = String::new();
+                                if fk == "if" {
+                                    node = "(if " + fc + " " + ft;
+                                    if fe.len() > 0 { node = node + " " + fe; }
+                                    node = node + ")";
+                                } else if fk == "while" {
+                                    node = "(while " + fc + " " + ft + ")";
+                                } else {
+                                    node = "(loop " + ft + ")";
+                                }
+                                if feif == "1" {
+                                    // 级联：else if 的 else 分支是块，故将嵌套 if 包成 (block ...)
+                                    // 再挂到下方帧的 else，继续收束下方帧
+                                    let below = cf_else.len() - 1;
+                                    cf_else.set(below, "(block " + node + ")");
+                                    cf_state.set(below, String::from("1"));
+                                } else if sk == "let" {
+                                    // 挂到 pending let 初始化
+                                    let lp_o = pend_let_pat.pop();
+                                    let lp = match lp_o { Option::Some(x) => x, Option::None => String::new() };
+                                    let lt_o = pend_let_type.pop();
+                                    let lt = match lt_o { Option::Some(x) => x, Option::None => String::new() };
+                                    let lm_o = pend_let_mut.pop();
+                                    let lm = match lm_o { Option::Some(x) => x, Option::None => String::new() };
+                                    let mut ln = String::new();
+                                    if lm == "1" { ln = "(let mut " + lp; } else { ln = "(let " + lp; }
+                                    if lt.len() > 0 { ln = ln + " " + lt; }
+                                    ln = ln + " " + node + ")";
+                                    let po = bufstack.pop();
+                                    let mut pp = match po { Option::Some(x) => x, Option::None => String::new() };
+                                    pp = pp + " " + ln;
+                                    bufstack.push(pp);
+                                    fin = 0;
+                                } else {
+                                    // 顶层控制语句：按 semi/bare 落到父 buffer
+                                    let nx = if ti < n { tokens.get(ti) } else { String::from("") };
+                                    let mut s = node;
+                                    if nx == ";" { ti = ti + 1; s = "(semi " + node + ")"; }
+                                    else if nx == "}" { s = node; }
+                                    else { s = "(semi " + node + ")"; }
+                                    let po = bufstack.pop();
+                                    let mut pp = match po { Option::Some(x) => x, Option::None => String::new() };
+                                    pp = pp + " " + s;
+                                    bufstack.push(pp);
+                                    fin = 0;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                }
+                // 普通块闭合（控制帧体内的内层块 / 非控制块）
                 let nxt = if ti < n { tokens.get(ti) } else { String::from("") };
                 let mut append = block;
                 if nxt == ";" {
@@ -765,6 +913,31 @@ fn parse_program(src: String) -> String {
             }
             // 越过 '='
             if ti < n && tokens.get(ti) == "=" { ti = ti + 1; }
+            // 控制流作 let 初始化表达式（M-M2c：表达式双形态之一）
+            if ti < n && (tokens.get(ti) == "if" || tokens.get(ti) == "while" || tokens.get(ti) == "loop") {
+                let ck = tokens.get(ti);
+                ti = ti + 1;
+                let mut cinit = String::new();
+                if ck == "loop" {
+                    cinit = String::new();
+                } else {
+                    let r2 = parse_expr(tokens, ti);
+                    cinit = r2.s;
+                    ti = r2.ti;
+                }
+                pend_let_pat.push(pattern);
+                pend_let_type.push(type_sexpr);
+                pend_let_mut.push(int_to_string(is_mut));
+                cf_kind.push(ck);
+                cf_cond.push(cinit);
+                cf_then.push(String::new());
+                cf_else.push(String::new());
+                cf_state.push(String::from("0"));
+                cf_elseif.push(String::from("0"));
+                cf_sink.push(String::from("let"));
+                cf_depth.push(int_to_string(bufstack.len()));
+                continue;
+            }
             let r = parse_expr(tokens, ti);
             let init = r.s;
             ti = r.ti;
@@ -778,6 +951,47 @@ fn parse_program(src: String) -> String {
             let mut p = match p_opt { Option::Some(x) => x, Option::None => String::new() };
             p = p + " " + node;
             bufstack.push(p);
+            continue;
+        }
+        // 控制流语句（M-M2c）：if / while / loop（语句形态）
+        if tok == "if" {
+            ti = ti + 1;
+            let r = parse_expr(tokens, ti);
+            cf_kind.push(String::from("if"));
+            cf_cond.push(r.s);
+            cf_then.push(String::new());
+            cf_else.push(String::new());
+            cf_state.push(String::from("0"));
+            cf_elseif.push(String::from("0"));
+            cf_sink.push(String::from("stmt"));
+            cf_depth.push(int_to_string(bufstack.len()));
+            ti = r.ti;
+            continue;
+        }
+        if tok == "while" {
+            ti = ti + 1;
+            let r = parse_expr(tokens, ti);
+            cf_kind.push(String::from("while"));
+            cf_cond.push(r.s);
+            cf_then.push(String::new());
+            cf_else.push(String::new());
+            cf_state.push(String::from("0"));
+            cf_elseif.push(String::from("0"));
+            cf_sink.push(String::from("stmt"));
+            cf_depth.push(int_to_string(bufstack.len()));
+            ti = r.ti;
+            continue;
+        }
+        if tok == "loop" {
+            ti = ti + 1;
+            cf_kind.push(String::from("loop"));
+            cf_cond.push(String::new());
+            cf_then.push(String::new());
+            cf_else.push(String::new());
+            cf_state.push(String::from("0"));
+            cf_elseif.push(String::from("0"));
+            cf_sink.push(String::from("stmt"));
+            cf_depth.push(int_to_string(bufstack.len()));
             continue;
         }
         // 其余：表达式语句（含 return；块表达式已由 '{' 分支处理）
