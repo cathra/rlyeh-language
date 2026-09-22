@@ -213,6 +213,9 @@ struct PRes { s: String, ti: i64 }
 // 函数项头解析结果（M-M6）：规范 header 串（NAME (params ...) [RET]）+ 新位置。
 struct FHdr { h: String, ti: i64 }
 
+// 类型项（struct/enum）解析结果（M-M8）：规范串 + 新位置。
+struct DRes { s: String, ti: i64 }
+
 // ============================================================================
 // M-M2（SH-P2-7）切片2（M-M2b1）：程序/语句级解析 → 规范 S-表达式 AST 文本。
 //
@@ -328,6 +331,8 @@ fn tokenize(src: String) -> Vec<String> {
             else if name == "match" { toks.push(String::from("match")); }
             else if name == "fn" { toks.push(String::from("fn")); }
             else if name == "pub" { toks.push(String::from("pub")); }
+            else if name == "struct" { toks.push(String::from("struct")); }
+            else if name == "enum" { toks.push(String::from("enum")); }
             else if name == "true" { toks.push(String::from("(bool true)")); }
             else if name == "false" { toks.push(String::from("(bool false)")); }
             else { toks.push("(var " + name + ")"); }
@@ -1338,6 +1343,140 @@ fn parse_fn_header(tokens: Vec<String>, ti0: i64, is_pub: i64) -> FHdr {
     FHdr { h: header, ti: ti }
 }
 
+// 类型 token 列表 -> 规范类型串（M-M8）：>> 拆两个 gt 后交 parse_type_tokens。
+fn type_of_tokens(ts: Vec<String>) -> String {
+    let mut fixed: Vec<String> = Vec::new();
+    let mut fi = 0;
+    while fi < ts.len {
+        if ts.get(fi) == "shr" { fixed.push(String::from("gt")); fixed.push(String::from("gt")); }
+        else { fixed.push(ts.get(fi)); }
+        fi = fi + 1;
+    }
+    parse_type_tokens(fixed)
+}
+
+// 解析结构体声明（M-M8）：`<name> { <field>: <Type>, ... }` -> `(struct [pub] NAME (field NAME TYPE) ...)`
+fn parse_struct_decl(tokens: Vec<String>, ti0: i64, is_pub: i64) -> DRes {
+    let n = tokens.len;
+    let mut i = ti0;
+    let name = typename_of(tokens.get(i));
+    i = i + 1;
+    // 越过 '{'
+    if i < n {
+        if tokens.get(i) == "{" { i = i + 1; }
+    }
+    let mut fields = String::new();
+    while i < n {
+        let t = tokens.get(i);
+        if t == "}" { i = i + 1; break; }
+        if t == "," { i = i + 1; continue; }
+        // 字段名
+        let fname = typename_of(t);
+        i = i + 1;
+        // 越过 ':'
+        if i < n {
+            if tokens.get(i) == ":" { i = i + 1; }
+        }
+        // 收集类型 token 直到 ',' 或 '}'
+        let mut tt: Vec<String> = Vec::new();
+        while i < n {
+            let q = tokens.get(i);
+            if q == "," { break; }
+            if q == "}" { break; }
+            tt.push(q);
+            i = i + 1;
+        }
+        fields = fields + " (field " + fname + " " + type_of_tokens(tt) + ")";
+    }
+    let mut s = String::from("(struct ");
+    if is_pub == 1 { s = s + "pub "; }
+    s = s + name + fields + ")";
+    DRes { s: s, ti: i }
+}
+
+// 解析枚举声明（M-M8）：`<name> { V1, V2(T, U), V3 { f: T } }`
+//   -> `(enum [pub] NAME (variant NAME) [(variant NAME TYPE...)] [(variant NAME (field NAME TYPE)...)] ...)`
+fn parse_enum_decl(tokens: Vec<String>, ti0: i64, is_pub: i64) -> DRes {
+    let n = tokens.len;
+    let mut i = ti0;
+    let name = typename_of(tokens.get(i));
+    i = i + 1;
+    // 越过 '{'
+    if i < n {
+        if tokens.get(i) == "{" { i = i + 1; }
+    }
+    let mut variants = String::new();
+    while i < n {
+        let t = tokens.get(i);
+        if t == "}" { i = i + 1; break; }
+        if t == "," { i = i + 1; continue; }
+        // 变体名
+        let vname = typename_of(t);
+        i = i + 1;
+        let mut payload = String::new();
+        // 元组负载 V(T, U)
+        let mut has_paren = 0;
+        if i < n {
+            if tokens.get(i) == "(" { has_paren = 1; i = i + 1; }
+        }
+        if has_paren == 1 {
+            let mut tt: Vec<String> = Vec::new();
+            while i < n {
+                let q = tokens.get(i);
+                if q == ")" { i = i + 1; break; }
+                tt.push(q);
+                i = i + 1;
+            }
+            // 按 ',' 拆各类型
+            let mut tseg: Vec<String> = Vec::new();
+            let mut ti2 = 0;
+            while ti2 < tt.len {
+                let q = tt.get(ti2);
+                if q == "," {
+                    payload = payload + " " + type_of_tokens(tseg);
+                    tseg = Vec::new();
+                    ti2 = ti2 + 1;
+                    continue;
+                }
+                tseg.push(q);
+                ti2 = ti2 + 1;
+            }
+            if tseg.len > 0 { payload = payload + " " + type_of_tokens(tseg); }
+        }
+        // 结构式负载 V { f: T }
+        let mut has_brace = 0;
+        if i < n {
+            if tokens.get(i) == "{" { has_brace = 1; i = i + 1; }
+        }
+        if has_brace == 1 {
+            while i < n {
+                let q = tokens.get(i);
+                if q == "}" { i = i + 1; break; }
+                if q == "," { i = i + 1; continue; }
+                let fname = typename_of(q);
+                i = i + 1;
+                if i < n {
+                    if tokens.get(i) == ":" { i = i + 1; }
+                }
+                let mut tt2: Vec<String> = Vec::new();
+                while i < n {
+                    let z = tokens.get(i);
+                    if z == "," { break; }
+                    if z == "}" { break; }
+                    tt2.push(z);
+                    i = i + 1;
+                }
+                payload = payload + " (field " + fname + " " + type_of_tokens(tt2) + ")";
+            }
+        }
+        variants = variants + " (variant " + vname + payload + ")";
+    }
+    let mut s = String::from("(enum ");
+    if is_pub == 1 { s = s + "pub "; }
+    s = s + name + variants + ")";
+    DRes { s: s, ti: i }
+}
+
 // 解析整段程序源码，返回规范 S-表达式程序文本（见本文件顶部"规范格式"）。
 fn parse_program(src: String) -> String {
     let tokens = tokenize(src);
@@ -1855,7 +1994,33 @@ fn parse_program(src: String) -> String {
             cf_pat.push(String::new());
             continue;
         }
-        // 非 fn 的 pub 项（M-M6a 未覆盖）：跳过 pub token
+        // 结构体声明（M-M8）：[pub] struct <name> { <field>: <Type>, ... }
+        if tok == "struct" || (tok == "pub" && peek1 == "struct") {
+            let mut spub = 0;
+            if tok == "pub" { spub = 1; ti = ti + 1; }
+            ti = ti + 1;   // 越过 struct
+            let r = parse_struct_decl(tokens, ti, spub);
+            ti = r.ti;
+            let p_opt = bufstack.pop();
+            let mut p = match p_opt { Option::Some(x) => x, Option::None => String::new() };
+            p = p + " " + r.s;
+            bufstack.push(p);
+            continue;
+        }
+        // 枚举声明（M-M8）：[pub] enum <name> { V1, V2(T, U), V3 { f: T } }
+        if tok == "enum" || (tok == "pub" && peek1 == "enum") {
+            let mut epub = 0;
+            if tok == "pub" { epub = 1; ti = ti + 1; }
+            ti = ti + 1;   // 越过 enum
+            let r = parse_enum_decl(tokens, ti, epub);
+            ti = r.ti;
+            let p_opt = bufstack.pop();
+            let mut p = match p_opt { Option::Some(x) => x, Option::None => String::new() };
+            p = p + " " + r.s;
+            bufstack.push(p);
+            continue;
+        }
+        // 非 fn/struct/enum 的 pub 项（M-M6a/M-M8a 未覆盖）：跳过 pub token
         if tok == "pub" { ti = ti + 1; continue; }
         // 其余：表达式语句（含 return；块表达式已由 '{' 分支处理）
         let r = parse_expr(tokens, ti);

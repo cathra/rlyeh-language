@@ -414,3 +414,23 @@ fn m_m7_dogfood_examples_ast_matches_rust_oracle() {
     check_program(&example_src("hello-world.rl"));
     check_program(&example_src("arith-print.rl"));
 }
+
+#[test]
+fn m_m8_struct_enum_decl_ast_matches_rust_oracle() {
+    // M-M8 结构体 / 枚举声明（项）
+    // 结构体
+    check_program("struct Point { x: i64, y: i64 }");
+    check_program("struct Empty { }");
+    check_program("pub struct P { a: i64 }");
+    check_program("struct S { a: Vec<i64> }");
+    check_program("struct R { r: &i64 }");
+    // 枚举
+    check_program("enum Color { Red, Green }");
+    check_program("enum E { A, B(i64), C(i64, String) }");
+    check_program("enum S { V { x: i64 } }");
+    check_program("enum Mix { A, B(i64), C { f: i64 } }");
+    check_program("pub enum PE { A }");
+    // 与函数项混排
+    check_program("struct P { x: i64 } fn main() {}");
+    check_program("enum E { A } fn f() -> i64 { 0 } let z = 0;");
+}

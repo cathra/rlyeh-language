@@ -425,6 +425,15 @@ fn render_program_canonical(ast: &rlyeh_ast::AstProgram) -> String {
                 s.push(' ');
                 s.push_str(&render_fn_canonical(decl));
             }
+            // M-M8：结构体 / 枚举声明
+            rlyeh_ast::AstItem::StructDecl(decl) => {
+                s.push(' ');
+                s.push_str(&render_struct_decl_canonical(decl));
+            }
+            rlyeh_ast::AstItem::EnumDecl(decl) => {
+                s.push(' ');
+                s.push_str(&render_enum_decl_canonical(decl));
+            }
             _ => {
                 // M-M2b1 不覆盖项声明，渲染为占位以便对拍不崩溃
                 s.push_str(" (item-unsupported)");
@@ -490,6 +499,60 @@ fn render_fn_canonical(decl: &rlyeh_ast::AstFnDecl) -> String {
     if let Some(b) = &decl.body {
         s.push(' ');
         s.push_str(&render_block_canonical(b));
+    }
+    s.push(')');
+    s
+}
+
+/// 渲染结构体声明为规范串（M-M8）：`(struct [pub] NAME (field [pub] NAME TYPE) ...)`
+fn render_struct_decl_canonical(decl: &rlyeh_ast::AstStructDecl) -> String {
+    let mut s = String::from("(struct ");
+    if decl.is_pub {
+        s.push_str("pub ");
+    }
+    s.push_str(&decl.name);
+    for f in &decl.fields {
+        s.push_str(" (field ");
+        if f.is_pub {
+            s.push_str("pub ");
+        }
+        s.push_str(&f.name);
+        s.push(' ');
+        s.push_str(&render_type_canonical(&f.type_));
+        s.push(')');
+    }
+    s.push(')');
+    s
+}
+
+/// 渲染枚举声明为规范串（M-M8）：`(enum [pub] NAME (variant NAME [TYPE...] | (field NAME TYPE)...) ...)`
+fn render_enum_decl_canonical(decl: &rlyeh_ast::AstEnumDecl) -> String {
+    let mut s = String::from("(enum ");
+    if decl.is_pub {
+        s.push_str("pub ");
+    }
+    s.push_str(&decl.name);
+    for v in &decl.variants {
+        s.push_str(" (variant ");
+        s.push_str(&v.name);
+        if !v.tuple_fields.is_empty() {
+            for t in &v.tuple_fields {
+                s.push(' ');
+                s.push_str(&render_type_canonical(t));
+            }
+        } else if !v.struct_fields.is_empty() {
+            for f in &v.struct_fields {
+                s.push_str(" (field ");
+                if f.is_pub {
+                    s.push_str("pub ");
+                }
+                s.push_str(&f.name);
+                s.push(' ');
+                s.push_str(&render_type_canonical(&f.type_));
+                s.push(')');
+            }
+        }
+        s.push(')');
     }
     s.push(')');
     s
