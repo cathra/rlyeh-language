@@ -347,3 +347,30 @@ fn m_m5_match_ast_matches_rust_oracle() {
     // match 后接其他语句（帧收束不泄漏）
     check_program("match x { 1 => { 1 } } let z = 0;");
 }
+
+#[test]
+fn m_m6_fn_item_ast_matches_rust_oracle() {
+    // 函数项（M-M6）：[pub] fn <name>(<params>) [-> <ret>] <block>
+    // 无参数 / 空体
+    check_program("fn main() {}");
+    // 基本参数 + 返回类型
+    check_program("fn add(a: i64, b: i64) -> i64 { a }");
+    check_program("fn id(x: i64) -> i64 { x }");
+    // 无返回类型 + 有体
+    check_program("fn foo() { 1 }");
+    // pub 函数
+    check_program("pub fn pub_fn() {}");
+    // mut 参数
+    check_program("fn f(mut x: i64) -> i64 { x }");
+    // 泛型 / 引用参数类型
+    check_program("fn vec_sum(v: Vec<i64>) -> i64 { 0 }");
+    check_program("fn ref_fn(x: &i64) -> i64 { 0 }");
+    // 函数体含语句与块尾表达式
+    check_program("fn main() { let x = 1; x }");
+    // 函数体含控制流（if/else 作块尾表达式）
+    check_program("fn nested(a: i64) -> i64 { if a > 0 { 1 } else { 0 } }");
+    // 多函数项
+    check_program("fn a() {} fn b() {}");
+    // 函数项后接顶层语句
+    check_program("fn a() {} let z = 0;");
+}

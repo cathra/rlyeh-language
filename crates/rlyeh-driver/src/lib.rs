@@ -420,6 +420,11 @@ fn render_program_canonical(ast: &rlyeh_ast::AstProgram) -> String {
                 s.push(' ');
                 s.push_str(&render_stmt_canonical(stmt));
             }
+            // M-M6：函数项
+            rlyeh_ast::AstItem::FnDecl(decl) => {
+                s.push(' ');
+                s.push_str(&render_fn_canonical(decl));
+            }
             _ => {
                 // M-M2b1 不覆盖项声明，渲染为占位以便对拍不崩溃
                 s.push_str(" (item-unsupported)");
@@ -453,6 +458,41 @@ fn render_stmt_canonical(stmt: &rlyeh_ast::AstStmt) -> String {
         rlyeh_ast::AstStmt::Semi(e) => format!("(semi {})", render_expr_canonical(e)),
         rlyeh_ast::AstStmt::Item(_) => "(item-unsupported)".to_string(),
     }
+}
+
+/// 渲染函数项为规范串（M-M6）：
+/// `(fn [pub] NAME (params (param [mut] NAME TYPE) ...) [RET] BODY)`
+/// - `params` 恒存在（空参数为 `(params)`）；
+/// - `RET` 为返回类型节点（缺省省略）；
+/// - `BODY` 为块节点（无体如 protocol 抽象方法则省略）。
+fn render_fn_canonical(decl: &rlyeh_ast::AstFnDecl) -> String {
+    let mut s = String::from("(fn ");
+    if decl.is_pub {
+        s.push_str("pub ");
+    }
+    s.push_str(&decl.name);
+    s.push_str(" (params");
+    for p in &decl.params {
+        s.push_str(" (param ");
+        if p.is_mut {
+            s.push_str("mut ");
+        }
+        s.push_str(&p.name);
+        s.push(' ');
+        s.push_str(&render_type_canonical(&p.type_));
+        s.push(')');
+    }
+    s.push(')');
+    if let Some(rt) = &decl.return_type {
+        s.push(' ');
+        s.push_str(&render_type_canonical(rt));
+    }
+    if let Some(b) = &decl.body {
+        s.push(' ');
+        s.push_str(&render_block_canonical(b));
+    }
+    s.push(')');
+    s
 }
 
 /// 渲染模式为规范串：标识符 -> 裸名；`_` -> "_"；元组 -> `(tuple-pat ...)`；

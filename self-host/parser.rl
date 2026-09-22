@@ -210,6 +210,9 @@ fn parse(src: String) -> String {
 // 表达式解析结果（Rlyeh 当前版本不支持元组字面量构造，用结构体承载「S-表达式 + 新位置」）。
 struct PRes { s: String, ti: i64 }
 
+// 函数项头解析结果（M-M6）：规范 header 串（NAME (params ...) [RET]）+ 新位置。
+struct FHdr { h: String, ti: i64 }
+
 // ============================================================================
 // M-M2（SH-P2-7）切片2（M-M2b1）：程序/语句级解析 → 规范 S-表达式 AST 文本。
 //
@@ -284,6 +287,8 @@ fn tokenize(src: String) -> Vec<String> {
             else if name == "for" { toks.push(String::from("for")); }
             else if name == "in" { toks.push(String::from("in")); }
             else if name == "match" { toks.push(String::from("match")); }
+            else if name == "fn" { toks.push(String::from("fn")); }
+            else if name == "pub" { toks.push(String::from("pub")); }
             else { toks.push("(var " + name + ")"); }
             prev_op = 1;
             continue;
@@ -321,6 +326,11 @@ fn tokenize(src: String) -> Vec<String> {
             else { toks.push(String::from("=")); i = i + 1; }
             prev_op = 0;
             continue;
+        }
+        // 箭头 ->（M-M6：fn 返回类型分隔符）
+        if c == 45 {
+            let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
+            if c2 == 62 { toks.push(String::from("arrow")); prev_op = 0; i = i + 2; continue; }
         }
         // 运算符（同 M-M2a 优先级名）
         let mut name = String::new();
@@ -1182,6 +1192,109 @@ fn parse_match_pattern(ts: Vec<String>) -> String {
     pat_atom(ts.get(0))
 }
 
+// 渲染单个函数参数段 -> " (param [mut] NAME TYPE)"（M-M6）。
+//   段形如 [mut] NAME : TYPE（TYPE 可含泛型，>> 已拆为两个 gt）。
+fn render_param(seg: Vec<String>) -> String {
+    let n = seg.len;
+    if n == 0 { return String::new(); }
+    let mut k = 0;
+    let mut is_mut = 0;
+    if seg.get(0) == "mut" { is_mut = 1; k = 1; }
+    let mut name = String::from("?");
+    if k < n { name = typename_of(seg.get(k)); }
+    k = k + 1;
+    let mut typ = String::from("?");
+    let mut has_colon = 0;
+    if k < n {
+        if seg.get(k) == ":" { has_colon = 1; }
+    }
+    if has_colon == 1 {
+        k = k + 1;
+        let mut tt: Vec<String> = Vec::new();
+        while k < n { tt.push(seg.get(k)); k = k + 1; }
+        let mut fixed: Vec<String> = Vec::new();
+        let mut fi = 0;
+        while fi < tt.len {
+            if tt.get(fi) == "shr" { fixed.push(String::from("gt")); fixed.push(String::from("gt")); }
+            else { fixed.push(tt.get(fi)); }
+            fi = fi + 1;
+        }
+        typ = parse_type_tokens(fixed);
+    }
+    let mut s = String::from(" (param ");
+    if is_mut == 1 { s = s + "mut "; }
+    s = s + name + " " + typ + ")";
+    s
+}
+
+// 解析函数项头（M-M6）：`<name>(<params>) [-> <ret>]` -> 规范 header 串 + 新位置（指向 body '{'）。
+//   独立成函数以缩小 parse_program（避免过多局部变量致编译产物异常）。
+fn parse_fn_header(tokens: Vec<String>, ti0: i64, is_pub: i64) -> FHdr {
+    let n = tokens.len;
+    let mut ti = ti0;
+    let name = typename_of(tokens.get(ti));
+    ti = ti + 1;
+    // 参数列表：越过 '('，收集至匹配的 ')'（&& 不短路，故用嵌套 if 保护 get）
+    if ti < n {
+        if tokens.get(ti) == "(" { ti = ti + 1; }
+    }
+    let mut ptoks: Vec<String> = Vec::new();
+    let mut pdepth = 0;
+    while ti < n {
+        let t = tokens.get(ti);
+        if t == ")" && pdepth == 0 { ti = ti + 1; break; }
+        if t == "(" { pdepth = pdepth + 1; }
+        if t == ")" { pdepth = pdepth - 1; }
+        ptoks.push(t);
+        ti = ti + 1;
+    }
+    // 拆参数（按 ','），每段 NAME [: TYPE]
+    let mut pstr = String::new();
+    let mut seg: Vec<String> = Vec::new();
+    let pn = ptoks.len;
+    let mut pi = 0;
+    while pi < pn {
+        let t = ptoks.get(pi);
+        if t == "," {
+            pstr = pstr + render_param(seg);
+            seg = Vec::new();
+            pi = pi + 1;
+            continue;
+        }
+        seg.push(t);
+        pi = pi + 1;
+    }
+    if seg.len > 0 { pstr = pstr + render_param(seg); }
+    // 返回类型（可选）：-> TYPE 直到 '{'
+    let mut ret = String::new();
+    let mut has_arrow = 0;
+    if ti < n {
+        if tokens.get(ti) == "arrow" { has_arrow = 1; }
+    }
+    if has_arrow == 1 {
+        ti = ti + 1;
+        let mut rtoks: Vec<String> = Vec::new();
+        while ti < n {
+            if tokens.get(ti) == "{" { break; }
+            rtoks.push(tokens.get(ti));
+            ti = ti + 1;
+        }
+        let mut fixed: Vec<String> = Vec::new();
+        let mut fi = 0;
+        while fi < rtoks.len {
+            if rtoks.get(fi) == "shr" { fixed.push(String::from("gt")); fixed.push(String::from("gt")); }
+            else { fixed.push(rtoks.get(fi)); }
+            fi = fi + 1;
+        }
+        ret = parse_type_tokens(fixed);
+    }
+    let mut header = String::new();
+    if is_pub == 1 { header = String::from("pub "); }
+    header = header + name + " (params" + pstr + ")";
+    if ret.len > 0 { header = header + " " + ret; }
+    FHdr { h: header, ti: ti }
+}
+
 // 解析整段程序源码，返回规范 S-表达式程序文本（见本文件顶部"规范格式"）。
 fn parse_program(src: String) -> String {
     let tokens = tokenize(src);
@@ -1330,20 +1443,32 @@ fn parse_program(src: String) -> String {
                     let top_state = cf_state.get(t_idx);
                     let top_depth = cf_depth.get(t_idx);
                     let top_kind = cf_kind.get(t_idx);
-                    if top_kind == "match" {
-                        // match 臂闭合：body = 刚弹出的块；组装 (arm <pat> [<guard>] <body>)
-                        let pat = match_arm_pat_str.get(t_idx);
-                        let grd = match_arm_guard_str.get(t_idx);
-                        let mut arm = String::from("(arm ");
-                        arm = arm + pat;
-                        if grd.len() > 0 { arm = arm + " " + grd; }
-                        arm = arm + " " + block + ")";
-                        let at = cf_then.get(t_idx);
-                        cf_then.set(t_idx, at + " " + arm);
-                        cf_state.set(t_idx, String::from("0"));  // 等待下一臂或 match 闭合
-                        continue;
-                    }
                     if int_to_string(bufstack.len()) == top_depth {
+                        if top_kind == "match" {
+                            // match 臂闭合：body = 刚弹出的块；组装 (arm <pat> [<guard>] <body>)
+                            let pat = match_arm_pat_str.get(t_idx);
+                            let grd = match_arm_guard_str.get(t_idx);
+                            let mut arm = String::from("(arm ");
+                            arm = arm + pat;
+                            if grd.len() > 0 { arm = arm + " " + grd; }
+                            arm = arm + " " + block + ")";
+                            let at = cf_then.get(t_idx);
+                            cf_then.set(t_idx, at + " " + arm);
+                            cf_state.set(t_idx, String::from("0"));  // 等待下一臂或 match 闭合
+                            continue;
+                        }
+                        if top_kind == "fn" {
+                            // 函数体闭合：组装 (fn <HDR> (block ...)) 并落到父 buffer（裸）
+                            let hdr = cf_cond.get(t_idx);
+                            let node = "(fn " + hdr + " " + block + ")";
+                            cf_kind.pop(); cf_cond.pop(); cf_then.pop(); cf_else.pop();
+                            cf_state.pop(); cf_elseif.pop(); cf_sink.pop(); cf_depth.pop(); cf_pat.pop();
+                            let po = bufstack.pop();
+                            let mut p = match po { Option::Some(x) => x, Option::None => String::new() };
+                            p = p + " " + node;
+                            bufstack.push(p);
+                            continue;
+                        }
                         // 该 '}' 闭合的是控制帧自身的 then/else 块
                         let mut do_fin = 0;
                         if top_state == "0" {
@@ -1663,6 +1788,32 @@ fn parse_program(src: String) -> String {
             match_arm_guard_str.push(String::new());   // 当前臂守卫串（无守卫为 ""）
             continue;
         }
+        // 函数项（M-M6）：[pub] fn <name>(<params>) [-> <ret>] <block>
+        // 注意：Rlyeh 的 && 不短路，故下一 token 须先安全预取（不可写 tokens.get(ti+1)）
+        let mut peek1 = String::new();
+        if ti + 1 < n { peek1 = tokens.get(ti + 1); }
+        if tok == "fn" || (tok == "pub" && peek1 == "fn") {
+            let mut fpub = 0;
+            if tok == "pub" { fpub = 1; ti = ti + 1; }   // 跨越 pub
+            ti = ti + 1;                                  // 跨越 fn
+            // 解析函数头（名 / 参数 / 返回类型）-> 规范 header 串 + 新位置
+            let h = parse_fn_header(tokens, ti, fpub);
+            let header = h.h;
+            ti = h.ti;
+            // 推 fn 帧（body 块由 '{' 分支入 buffer 栈，'}' 收束时组装）
+            cf_kind.push(String::from("fn"));
+            cf_cond.push(header);
+            cf_then.push(String::new());
+            cf_else.push(String::new());
+            cf_state.push(String::from("0"));
+            cf_elseif.push(String::from("0"));
+            cf_sink.push(String::from("stmt"));
+            cf_depth.push(int_to_string(bufstack.len()));
+            cf_pat.push(String::new());
+            continue;
+        }
+        // 非 fn 的 pub 项（M-M6a 未覆盖）：跳过 pub token
+        if tok == "pub" { ti = ti + 1; continue; }
         // 其余：表达式语句（含 return；块表达式已由 '{' 分支处理）
         let r = parse_expr(tokens, ti);
         let e = r.s;
