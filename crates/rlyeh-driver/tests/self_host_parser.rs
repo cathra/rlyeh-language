@@ -3,7 +3,7 @@
 //! 文本逐字节一致。
 //!
 //! 切片1（M-M2a）范围：整数/标识符/一元负号/括号/二元算术与比较/逻辑/位运算。
-//! M-M2b（语句/let/类型/模式）、M-M2c（控制流）、M-M3a（字段/索引/调用）依次扩展。
+//! M-M2b（语句/let/类型/模式）、M-M2c（控制流）、M-M3a（字段访问）、M-M2e（索引/调用/方法）依次扩展。
 
 use std::fs;
 use std::path::PathBuf;
@@ -243,4 +243,31 @@ fn m_m3a_field_access_ast_matches_rust_oracle() {
     check_program("let r = a.b;");
     check_program("let r = a.b.c;");
     check_program("if a.b { c.d } else { e.f }");
+}
+
+#[test]
+fn m_m2e_index_call_ast_matches_rust_oracle() {
+    // 索引访问（可嵌套 / 含表达式）— 后缀标记化，无递归
+    check("a[0]");
+    check("a[i + 1]");
+    check("arr[i][j]");
+    check("m.get(k).value");
+    check("v[0].len()");
+    check("a.x[1].b[2]");
+    // 函数调用 / 方法调用（统一规范为 (call ...)）
+    check("foo()");
+    check("foo(1, 2)");
+    check("a.b(1)");
+    check("a.b(x, y)");
+    check("add(1, 2).scale(3)");
+    check("f(g(x))");
+    check("foo().bar()");
+    // 混合：字段 + 索引 + 调用 组合
+    check("v[0].len()");
+    check("map.get(k).push(1)");
+    check("(a + b)[i].call(x)");
+    // 索引/调用作 let 初始化（控制流双形态沿用既有机制）
+    check_program("let r = a[0];");
+    check_program("let r = foo(1, 2);");
+    check_program("if a[i].ok { b.call() } else { c[0] }");
 }

@@ -356,24 +356,43 @@ fn tokenize(src: String) -> Vec<String> {
 }
 
 // ============================================================================
-// M-M3a：字段访问（后缀 .field）。在既有 shunting-yard 主循环内，以"包裹最后一个
-//   RPN 操作数"的方式实现，不引入新函数 / 递归 / 嵌套循环，规避 Rlyeh 编译器
-//   对前向递归与复杂控制流的已知限制。索引 [ ] / 调用 ( ) 因需子表达式解析（递归），
-//   留待显式栈重写（M-M3a-part2）。
-// 与 oracle（render_expr_canonical 的 FieldAccess 分支）逐字节对齐：
+// M-M2e：表达式后缀统一标记化（字段 .field / 索引 [ ] / 调用 ( )）。
+//   设计：shunting-yard 主循环把每个后缀转成 RPN 标记，末位建树阶段归约。
+//   规避 Rlyeh 编译器对前向递归 / if-表达式返回值的已知限制——全程迭代，
+//   索引/调用的子表达式直接在 RPN 内展开（靠 opstack 括号界定的运算符冲刷），
+//   不需要递归调用 parse_expr。
+// 与 oracle（render_expr_canonical）逐字节对齐：
 //   a.b        -> (field (var a) b)
 //   a.b.c      -> (field (field (var a) b) c)
 //   (a + b).c  -> (field (bin add (var a) (var b)) c)
+//   a[0]       -> (index (var a) (int 0))
+//   a[i + 1]   -> (index (var a) (bin add (var i) (int 1)))
+//   arr[i][j]  -> (index (index (var arr) (var i)) (var j))
+//   foo()      -> (call (var foo))
+//   foo(1, 2)  -> (call (var foo) (int 1) (int 2))
+//   a.b(1)     -> (call (field (var a) b) (int 1))
+//   add(1,2).scale(3) -> (call (field (call (var add) (int 1) (int 2)) scale) (int 3))
+//   f(g(x))    -> (call (var f) (call (var g) (var x)))
+// RPN 标记约定（均以 '@' 起头，归约时 f==64）：
+//   @field@NAME  : 字段访问后缀，弹栈顶节点包裹
+//   @open-index@: 索引开始，建树时压 @OPEN@ 哨兵
+//   @close-index@: 索引结束，弹至 @OPEN@ 取索引子表达式 + 接收者包裹
+//   @open-call@ : 调用开始，建树时压 @OPEN@ 哨兵
+//   @argsep@    : 调用实参分隔，建树时压 @ARGSEP@ 哨兵
+//   @close-call@: 调用结束，弹至 @OPEN@ 拆 @ARGSEP@ 得实参 + 接收者包裹
+// opstack 括号：'(' 分组 / '(c' 调用 / '[' 索引（仅用于 ')''}' 冲刷运算符时定界）。
 // ============================================================================
 
 // 对 token 流从位置 ti 起解析一个表达式，返回 PRes{ s: S-表达式, ti: 新位置 }。
-// 表达式在以下 token 处停止：';' '}' '=' ':' '{' 'let' 及 EOF（交由语句层处理）。
+// 表达式在以下 token 处停止：';' '}' '=' ':' '{' 'let' 及 EOF；顶层 ','（非调用
+//   上下文）亦停止（交由语句层处理）。
 fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
-    let mut ti = ti0;
     let n = tokens.len;
+    let mut ti = ti0;
     let mut opstack: Vec<String> = Vec::new();
     let mut rpn: Vec<String> = Vec::new();
-    let mut prev_op = 0;
+    let mut prev_op = 0;     // 1 = 刚见到操作数 / 右括号 / 字段 / 索引闭 / 调用闭
+    let mut call_depth = 0;  // 当前处于第几层调用括号（区分 ',' 是否实参分隔）
     let mut ret_flag = 0;
     // return 前缀
     if ti < n && tokens.get(ti) == "return" {
@@ -389,12 +408,63 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
         if tok == ":" { break; }
         if tok == "{" { break; }
         if tok == "let" { break; }
-        if tok == "," { break; }
-        if tok == "[" { break; }
-        if tok == "]" { break; }
-        // M-M3a：字段访问后缀 .name（推入后缀标记，交由末位 RPN 建树阶段归约；
-        //   不直接包裹 rpn 末位，因 shunting-yard 的 rpn 为扁平后缀串，
-        //   分组/运算符场景末位未必是完整操作数）
+        // 逗号：调用上下文作实参分隔；否则停止（语句层处理元组）
+        if tok == "," {
+            if call_depth > 0 {
+                // 冲刷运算符栈直到括号
+                let mut flush = 1;
+                while flush == 1 {
+                    if opstack.len() == 0 { flush = 0; break; }
+                    let t = opstack.pop();
+                    let v = match t { Option::Some(x) => x, Option::None => String::new() };
+                    if v == "" { flush = 0; break; }
+                    if v == "(" || v == "(c" || v == "[" { opstack.push(v); flush = 0; break; }
+                    rpn.push(v);
+                }
+                rpn.push(String::from("@argsep@"));
+                prev_op = 0;
+                ti = ti + 1;
+                continue;
+            } else {
+                break;
+            }
+        }
+        // 右圆括号：弹运算符直到匹配 ( 或 (c
+        if tok == ")" {
+            let mut un = 1;
+            while un == 1 {
+                if opstack.len() == 0 { un = 0; break; }
+                let t = opstack.pop();
+                let v = match t { Option::Some(x) => x, Option::None => String::new() };
+                if v == "" { un = 0; break; }
+                if v == "(" { prev_op = 1; un = 0; break; }       // 分组：直接丢弃
+                if v == "(c" {
+                    rpn.push(String::from("@close-call@"));
+                    call_depth = call_depth - 1;
+                    prev_op = 1;
+                    un = 0;
+                    break;
+                }
+                rpn.push(v);
+            }
+            ti = ti + 1;
+            continue;
+        }
+        // 右方括号：弹运算符直到 [
+        if tok == "]" {
+            let mut un = 1;
+            while un == 1 {
+                if opstack.len() == 0 { un = 0; break; }
+                let t = opstack.pop();
+                let v = match t { Option::Some(x) => x, Option::None => String::new() };
+                if v == "" { un = 0; break; }
+                if v == "[" { rpn.push(String::from("@close-index@")); prev_op = 1; un = 0; break; }
+                rpn.push(v);
+            }
+            ti = ti + 1;
+            continue;
+        }
+        // 字段访问后缀 .name
         if tok == "." {
             ti = ti + 1;
             let mut nm = String::from("?");
@@ -408,6 +478,27 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
             prev_op = 1;
             continue;
         }
+        // 左方括号：索引后缀开始
+        if tok == "[" {
+            rpn.push(String::from("@open-index@"));
+            opstack.push(String::from("["));
+            prev_op = 0;
+            ti = ti + 1;
+            continue;
+        }
+        // 左圆括号：前接操作数 -> 调用后缀；否则分组
+        if tok == "(" {
+            if prev_op == 1 {
+                rpn.push(String::from("@open-call@"));
+                opstack.push(String::from("(c"));
+                call_depth = call_depth + 1;
+            } else {
+                opstack.push(String::from("("));
+            }
+            prev_op = 0;
+            ti = ti + 1;
+            continue;
+        }
         // 操作数：(int ...)/(var ...) 起于 '(' 但非 "("
         let first = tok.get(0);
         if first == 40 && tok != "(" {
@@ -416,45 +507,32 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
             ti = ti + 1;
             continue;
         }
-        if tok == "(" {
-            opstack.push(String::from("("));
-            prev_op = 0;
-            ti = ti + 1;
-            continue;
-        }
-        if tok == ")" {
-            while opstack.len() > 0 {
-                let t = opstack.pop();
-                let v = match t { Option::Some(x) => x, Option::None => String::new() };
-                if v == "" { break; }
-                if v == "(" { break; }
-                rpn.push(v);
-            }
-            ti = ti + 1;
-            prev_op = 1;
-            continue;
-        }
-        // 运算符（含 u-）
+        // 运算符（含 u-：prec_of("u-")==100，走 shunting-yard 落于运算元之后，
+        //   归约阶段弹栈得 (neg ...)；不可提前压入 rpn，否则顺序错乱）
         let pr = prec_of(tok);
-        while opstack.len() > 0 {
+        let mut sh = 1;
+        while sh == 1 {
+            if opstack.len() == 0 { sh = 0; break; }
             let t = opstack.pop();
             let v = match t { Option::Some(x) => x, Option::None => String::new() };
-            if v == "" { break; }
-            if v == "(" { opstack.push(v); break; }
+            if v == "" { sh = 0; break; }
+            if v == "(" || v == "(c" || v == "[" { opstack.push(v); sh = 0; break; }
             let tp = prec_of(v);
             if tp >= pr { rpn.push(v); }
-            else { opstack.push(v); break; }
+            else { opstack.push(v); sh = 0; break; }
         }
         opstack.push(tok);
         prev_op = 0;
         ti = ti + 1;
     }
-    // 清空运算符栈
-    while opstack.len() > 0 {
+    // 清空运算符栈（遇括号终止）
+    let mut dr = 1;
+    while dr == 1 {
+        if opstack.len() == 0 { dr = 0; break; }
         let t = opstack.pop();
         let v = match t { Option::Some(x) => x, Option::None => String::new() };
-        if v == "" { break; }
-        if v == "(" { /* 丢弃未匹配左括号 */ }
+        if v == "" { dr = 0; break; }
+        if v == "(" || v == "(c" || v == "[" { /* 丢弃未匹配括号 */ }
         else { rpn.push(v); }
     }
     // 由 RPN 迭代建树
@@ -472,12 +550,64 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 Option::None => { ast.push("(neg ?)"); }
             }
         } else if f == 64 {
-            // 字段访问后缀：tk = "@field@NAME"，弹出栈顶节点包裹
-            let name = tk.substring(7, tk.len);
-            let a = ast.pop();
-            match a {
-                Option::Some(av) => { ast.push("(field " + av + " " + name + ")"); }
-                Option::None => { ast.push("(field ? " + name + ")"); }
+            // '@' 起头的后缀标记
+            if tk.substring(0, 7) == "@field@" {
+                let name = tk.substring(7, tk.len);
+                let a = ast.pop();
+                match a {
+                    Option::Some(av) => { ast.push("(field " + av + " " + name + ")"); }
+                    Option::None => { ast.push("(field ? " + name + ")"); }
+                }
+            } else if tk == "@open-index@" {
+                ast.push(String::from("@OPEN@"));
+            } else if tk == "@close-index@" {
+                let idx_o = ast.pop();
+                let idx = match idx_o { Option::Some(x) => x, Option::None => String::from("?") };
+                if idx == "@OPEN@" {
+                    ast.push(String::from("?"));   // 空索引（异常输入）
+                } else {
+                    let _open = ast.pop();   // 丢弃 @OPEN@
+                    let rcv_o = ast.pop();
+                    let rcv = match rcv_o { Option::Some(x) => x, Option::None => String::from("?") };
+                    ast.push("(index " + rcv + " " + idx + ")");
+                }
+            } else if tk == "@open-call@" {
+                ast.push(String::from("@OPEN@"));
+            } else if tk == "@argsep@" {
+                ast.push(String::from("@ARGSEP@"));
+            } else if tk == "@close-call@" {
+                // 收集实参（逆序弹出，遇 @ARGSEP@ 分拆，遇 @OPEN@ 终止）
+                let mut args: Vec<String> = Vec::new();
+                let mut col = 1;
+                while col == 1 {
+                    if ast.len() == 0 { col = 0; break; }
+                    let top_o = ast.pop();
+                    let top = match top_o { Option::Some(x) => x, Option::None => String::new() };
+                    if top == "@OPEN@" { col = 0; break; }
+                    if top == "@ARGSEP@" { continue; }
+                    args.push(top);
+                }
+                // 反转还原实参顺序
+                let mut ai = 0;
+                let mut aj = args.len - 1;
+                while ai < aj {
+                    let tmp = args.get(ai);
+                    args.set(ai, args.get(aj));
+                    args.set(aj, tmp);
+                    ai = ai + 1; aj = aj - 1;
+                }
+                let callee_o = ast.pop();
+                let callee = match callee_o { Option::Some(x) => x, Option::None => String::from("?") };
+                let mut s = "(call " + callee;
+                let mut ai2 = 0;
+                while ai2 < args.len {
+                    s = s + " " + args.get(ai2);
+                    ai2 = ai2 + 1;
+                }
+                s = s + ")";
+                ast.push(s);
+            } else {
+                ast.push(tk);
             }
         } else {
             let b = ast.pop();
