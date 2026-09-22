@@ -264,6 +264,45 @@ fn tokenize(src: String) -> Vec<String> {
         let c = src.get(i);
         // 空白
         if c == 32 || c == 9 || c == 13 || c == 10 { i = i + 1; continue; }
+        // 注释（M-M7）：行注释 // 与块注释 /* */（嵌套判定用嵌套 if，避免 && 非短路下 get 越界）
+        if c == 47 {
+            let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
+            if c2 == 47 {
+                i = i + 2;
+                while i < n {
+                    if src.get(i) == 10 { break; }
+                    i = i + 1;
+                }
+                continue;
+            }
+            if c2 == 42 {
+                i = i + 2;
+                while i < n {
+                    let mut is_end = 0;
+                    if src.get(i) == 42 {
+                        if i + 1 < n {
+                            if src.get(i + 1) == 47 { is_end = 1; }
+                        }
+                    }
+                    if is_end == 1 { i = i + 2; break; }
+                    i = i + 1;
+                }
+                continue;
+            }
+        }
+        // 字符串字面量（M-M7a：不含转义，扫描至下一个 '"'）
+        if c == 34 {
+            let start = i + 1;
+            let mut j = start;
+            while j < n {
+                if src.get(j) == 34 { break; }
+                j = j + 1;
+            }
+            toks.push("(str " + src.substring(start, j) + ")");
+            prev_op = 1;
+            i = j + 1;
+            continue;
+        }
         // 整数
         if c >= 48 && c <= 57 {
             let start = i;
@@ -272,7 +311,7 @@ fn tokenize(src: String) -> Vec<String> {
             prev_op = 1;
             continue;
         }
-        // 标识符 / 关键字
+        // 标识符 / 关键字 / 布尔字面量
         if is_ident_start(c) == 1 {
             let start = i;
             while i < n && is_ident_cont(src.get(i)) == 1 { i = i + 1; }
@@ -289,6 +328,8 @@ fn tokenize(src: String) -> Vec<String> {
             else if name == "match" { toks.push(String::from("match")); }
             else if name == "fn" { toks.push(String::from("fn")); }
             else if name == "pub" { toks.push(String::from("pub")); }
+            else if name == "true" { toks.push(String::from("(bool true)")); }
+            else if name == "false" { toks.push(String::from("(bool false)")); }
             else { toks.push("(var " + name + ")"); }
             prev_op = 1;
             continue;
@@ -1078,6 +1119,8 @@ fn pat_atom(t: String) -> String {
     if t == "(var _)" { return String::from("_"); }
     if t == "(var true)" { return String::from("(lit-bool true)"); }
     if t == "(var false)" { return String::from("(lit-bool false)"); }
+    if t == "(bool true)" { return String::from("(lit-bool true)"); }
+    if t == "(bool false)" { return String::from("(lit-bool false)"); }
     if t == ".." { return String::from(".."); }
     if t.substring(0, 5) == "(int " {
         let inner = t.substring(5, t.len - 1);   // (int N) -> N

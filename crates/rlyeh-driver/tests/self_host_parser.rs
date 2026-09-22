@@ -23,6 +23,14 @@ fn parser_src() -> String {
         .unwrap_or_else(|_| fs::read_to_string("self-host/parser.rl").expect("read parser.rl"))
 }
 
+/// 读取仓库 `examples/` 下的示例源码（用于 dogfood 对拍）。
+fn example_src(name: &str) -> String {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let path = format!("{manifest}/../../examples/{name}");
+    fs::read_to_string(&path)
+        .unwrap_or_else(|_| fs::read_to_string(format!("examples/{name}")).expect("read example"))
+}
+
 /// 把任意字符串转义为 Rlyeh 字符串字面量内容（与 lexer harness 同款）。
 fn escape_rl(s: &str) -> String {
     let mut out = String::new();
@@ -373,4 +381,36 @@ fn m_m6_fn_item_ast_matches_rust_oracle() {
     check_program("fn a() {} fn b() {}");
     // 函数项后接顶层语句
     check_program("fn a() {} let z = 0;");
+}
+
+#[test]
+fn m_m7_literals_ast_matches_rust_oracle() {
+    // M-M7 字面量补全：字符串 + 布尔 + 注释跳过
+    // 布尔字面量
+    check_program("true");
+    check_program("false");
+    check_program("let b = true;");
+    check_program("if true { 1 }");
+    check_program("foo(true, false);");
+    check_program("println(true);");
+    // 字符串字面量
+    check_program("\"hi\"");
+    check_program("let s = \"hello world\";");
+    check_program("println(\"Hello, Rlyeh!\");");
+    check_program("\"\"");
+    check_program("foo(\"a\", \"b\");");
+    check_program("let s = \"6 * 7 = \";");
+    // 注释跳过（行注释 / 块注释）
+    check_program("1; // 行注释\n2;");
+    check_program("// 前缀注释\nlet x = 1;");
+    check_program("let x = 1; /* 块注释 */ let y = 2;");
+    // 字符串/布尔作 match 模式（M-M5 回归）
+    check_program("match b { true => { 1 }, false => { 0 } }");
+}
+
+#[test]
+fn m_m7_dogfood_examples_ast_matches_rust_oracle() {
+    // dogfood：用仓库真实示例文件与 oracle 对拍（含注释 + 字符串 + 布尔）
+    check_program(&example_src("hello-world.rl"));
+    check_program(&example_src("arith-print.rl"));
 }
