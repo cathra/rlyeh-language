@@ -470,13 +470,17 @@ fn typename_of(t: String) -> String {
     res
 }
 
-// 迭代解析类型核心（不含前置 ref）。所有原子压入 stk；`<` 压 @GEN@，`>` 弹出 @GEN@ 之上
-// 的全部实参 + @GEN@ 之下的基类型，包成 (type BASE ARG...)。实参逆序弹出后反转还原。
-// 必须在 parse_type_tokens 之前定义，避免前向调用导致返回类型被推断为 i64。
+// 迭代解析类型核心（不含前置 ref，ref 由 parse_type_tokens 剥离）。所有原子压入 stk：
+//   '<' 压 @GEN@，'>' 弹出 @GEN@ 之上全部实参 + @GEN@ 之下基类型，包成 (type BASE ARG...)；
+//   '(' 压 @TUP@，')' 弹出直到 @TUP@ 包成 (tuple-type ...)；
+//   '[' 压 @ARR@，';' 压 @ASEP@（其后为长度表达式，原子按字面渲染不包 (type ...)），
+//        ']' 弹出直到 @ARR@，以 @ASEP@ 为界拆出 类型 T 与 长度 N，包成 (array T N)。
+// 实参/元素逆序弹出后反转还原。必须在 parse_type_tokens 之前定义，避免前向调用推断为 i64。
 fn parse_type_core(ts: Vec<String>, start: i64) -> String {
     let n = ts.len;
     let mut k = start;
     let mut stk: Vec<String> = Vec::new();
+    let mut in_len = 0;   // 1 = 当前处于数组长度表达式部分（原子按字面渲染）
     while k < n {
         let t = ts.get(k);
         if t == "lt" {
@@ -484,6 +488,7 @@ fn parse_type_core(ts: Vec<String>, start: i64) -> String {
             k = k + 1; continue;
         }
         if t == "gt" {
+            // 泛型收束
             let mut args: Vec<String> = Vec::new();
             while stk.len() > 0 {
                 let top_opt = stk.pop();
@@ -512,9 +517,92 @@ fn parse_type_core(ts: Vec<String>, start: i64) -> String {
             stk.push(w);
             k = k + 1; continue;
         }
+        if t == "(" {
+            stk.push(String::from("@TUP@"));
+            k = k + 1; continue;
+        }
+        if t == ")" {
+            // 元组收束：(T1, T2, ...) -> (tuple-type T1 T2 ...)
+            let mut elems: Vec<String> = Vec::new();
+            while stk.len() > 0 {
+                let top_opt = stk.pop();
+                let top = match top_opt { Option::Some(x) => x, Option::None => String::new() };
+                if top == "@TUP@" { break; }
+                elems.push(top);
+            }
+            let mut ai = 0;
+            let mut aj = elems.len - 1;
+            while ai < aj {
+                let tmp = elems.get(ai);
+                elems.set(ai, elems.get(aj));
+                elems.set(aj, tmp);
+                ai = ai + 1; aj = aj - 1;
+            }
+            let mut w = String::from("(tuple-type");
+            let mut xi = 0;
+            while xi < elems.len {
+                w = w + " " + elems.get(xi);
+                xi = xi + 1;
+            }
+            w = w + ")";
+            stk.push(w);
+            k = k + 1; continue;
+        }
+        if t == "[" {
+            stk.push(String::from("@ARR@"));
+            k = k + 1; continue;
+        }
+        if t == ";" {
+            // 数组长度分隔符（仅出现在 [T; N] 内）
+            stk.push(String::from("@ASEP@"));
+            in_len = 1;
+            k = k + 1; continue;
+        }
+        if t == "]" {
+            // 数组收束：[T; N] -> (array T N)
+            let mut parts: Vec<String> = Vec::new();
+            while stk.len() > 0 {
+                let top_opt = stk.pop();
+                let top = match top_opt { Option::Some(x) => x, Option::None => String::new() };
+                if top == "@ARR@" { break; }
+                parts.push(top);
+            }
+            // parts 自顶向下：[N_last ... N_first, "@ASEP@", T_last ... T_first]
+            let mut sep_idx = -1;
+            let mut pi = 0;
+            while pi < parts.len {
+                if parts.get(pi) == "@ASEP@" { sep_idx = pi; }
+                pi = pi + 1;
+            }
+            let mut nstr = String::from("?");
+            let mut tstr = String::from("?");
+            if sep_idx >= 0 {
+                // 长度部分 = parts[0..sep_idx]（顶->sep），反转还原左到右
+                let mut li = sep_idx - 1;
+                while li >= 0 {
+                    if nstr == "?" { nstr = parts.get(li); }
+                    else { nstr = parts.get(li) + " " + nstr; }
+                    li = li - 1;
+                }
+                // 类型部分 = parts[sep_idx+1..end]（sep->底，顺序为逆），反转还原左到右
+                let mut ti = parts.len - 1;
+                while ti > sep_idx {
+                    if tstr == "?" { tstr = parts.get(ti); }
+                    else { tstr = parts.get(ti) + " " + tstr; }
+                    ti = ti - 1;
+                }
+            }
+            let w = "(array " + tstr + " " + nstr + ")";
+            stk.push(w);
+            in_len = 0;
+            k = k + 1; continue;
+        }
         if t == "," { k = k + 1; continue; }
+        // 原子：路径 / 推断 / 数组长度字面（in_len 时按字面）
         let mut atom = String::from("");
-        if t == "(var _)" {
+        if in_len == 1 {
+            atom = t;   // 数组长度表达式（如 (int 4) / (var N)）按字面渲染
+        } else if t == "(var _)" {
             atom = String::from("(infer)");
         } else {
             let nm = typename_of(t);

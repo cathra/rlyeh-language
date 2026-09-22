@@ -161,6 +161,16 @@ fn m_m2b_statement_ast_matches_rust_oracle() {
     check_program("let x: Vec<Result<i64, String>> = 0;");   // 嵌套泛型
     check_program("let x: _ = 0;");                          // 推断
     check_program("let mut y: Vec<i64> = 0;");
+    // 元组类型标注（M-M2b3）：(A, B) -> (tuple-type ...)
+    check_program("let x: (i64, i64) = 0;");
+    check_program("let x: (i64, String, bool) = 0;");
+    check_program("let x: (Vec<i64>, u32) = 0;");
+    check_program("let x: Vec<(i64, String)> = 0;");         // 元组在泛型内
+    check_program("let mut y: (i64, i64) = 0;");
+    // 数组类型标注（M-M2b3）：[T; N] -> (array T N)
+    check_program("let x: [i64; 4] = 0;");
+    check_program("let x: [(i64, i64); 4] = 0;");            // 元素为元组
+    check_program("let x: [Vec<Result<i64, String>>; 2] = 0;");  // 嵌套泛型 + shr 拆分
     // 模式：扁平元组解构与 _ 通配（M-M2b2）
     check_program("let (a, b) = 1 + 2;");
     check_program("let (a, _, c) = 1;");
