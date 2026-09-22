@@ -31,6 +31,7 @@ fn is_ident_cont(c: i64) -> i64 {
 // 运算符优先级（仅决定建树形状，不影响输出文本；需与 Rust oracle 的绑定顺序一致）：
 // 一元负(100) > * / %(90) > + -(80) > << >>(70) > 比较(60) > & (40) > ^ (35) > | (30) > && (20) > || (10)
 fn prec_of(op: String) -> i64 {
+    if op.substring(0, 1) == "r" { return 5; }   // 范围运算符标记 r..< / r... / r<..
     if op == "u-" { return 100; }
     if op == "mul" { return 90; }
     if op == "div" { return 90; }
@@ -280,6 +281,8 @@ fn tokenize(src: String) -> Vec<String> {
             else if name == "else" { toks.push(String::from("else")); }
             else if name == "while" { toks.push(String::from("while")); }
             else if name == "loop" { toks.push(String::from("loop")); }
+            else if name == "for" { toks.push(String::from("for")); }
+            else if name == "in" { toks.push(String::from("in")); }
             else { toks.push("(var " + name + ")"); }
             prev_op = 1;
             continue;
@@ -295,8 +298,20 @@ fn tokenize(src: String) -> Vec<String> {
         if c == 44 { toks.push(String::from(",")); prev_op = 0; i = i + 1; continue; }
         if c == 91 { toks.push(String::from("[")); prev_op = 0; i = i + 1; continue; }
         if c == 93 { toks.push(String::from("]")); prev_op = 0; i = i + 1; continue; }
-        // 点号（M-M3a：字段访问 a.b 的后缀运算符）
-        if c == 46 { toks.push(String::from(".")); prev_op = 1; i = i + 1; continue; }
+        // 点号 / 范围运算符（M-M3a 字段访问 a.b；M-M4 范围 ..< ... <..）
+        if c == 46 {
+            // 范围：..<（左闭右开）/ ...（闭区间）/ ..=（废弃，仍产 range 节点）/ ..（废弃）
+            if i + 1 < n && src.get(i + 1) == 46 {
+                let c2 = if i + 2 < n { src.get(i + 2) } else { 0 };
+                if c2 == 60 { toks.push(String::from("..<")); i = i + 3; }       // ..<
+                else if c2 == 61 { toks.push(String::from("..=")); i = i + 3; }  // ..= (废弃)
+                else if c2 == 46 { toks.push(String::from("...")); i = i + 3; }  // ...
+                else { toks.push(String::from("..")); i = i + 2; }              // .. (废弃)
+                prev_op = 1;
+                continue;
+            }
+            toks.push(String::from(".")); prev_op = 1; i = i + 1; continue;
+        }
         // = 与 ==
         if c == 61 {
             let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
@@ -332,6 +347,9 @@ fn tokenize(src: String) -> Vec<String> {
             let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
             if c2 == 61 { name = String::from("le"); adv = 2; }                     // <=
             else if c2 == 60 { name = String::from("shl"); adv = 2; }               // <<
+            else if c2 == 46 && i + 2 < n && src.get(i + 2) == 46 {
+                toks.push(String::from("<..")); prev_op = 0; i = i + 3; continue;   // <.. 左开右闭
+            }
             else { name = String::from("lt"); }                                      // <
         }
         else if c == 62 {
@@ -558,6 +576,25 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
             ti = ti + 1;
             continue;
         }
+        // 范围运算符（M-M4：..< / ... / <..）：二元中缀，归约为 (range LOWER UPPER L U)
+        if tok == "..<" || tok == "..." || tok == "<.." {
+            // 冲刷运算符栈直到括号或更低优先级（范围优先级最低，仅高于赋值）
+            let mut sh = 1;
+            while sh == 1 {
+                if opstack.len() == 0 { sh = 0; break; }
+                let t = opstack.pop();
+                let v = match t { Option::Some(x) => x, Option::None => String::new() };
+                if v == "" { sh = 0; break; }
+                if v == "(" || v == "(c" || v == "(t" || v == "[" || v == "[a" { opstack.push(v); sh = 0; break; }
+                let tp = prec_of(v);
+                if tp >= 6 { rpn.push(v); }
+                else { opstack.push(v); sh = 0; break; }
+            }
+            opstack.push("r" + tok);   // 范围标记：r..< / r... / r<..
+            prev_op = 0;
+            ti = ti + 1;
+            continue;
+        }
         // 操作数：(int ...)/(var ...) 起于 '(' 但非 "("
         let first = tok.get(0);
         if first == 40 && tok != "(" {
@@ -749,6 +786,19 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 ast.push(tk);
             }
         } else {
+            if tk.substring(0, 1) == "r" {
+                // 范围运算符归约：(range LOWER UPPER lower_inclusive upper_inclusive)
+                let bo = ast.pop();
+                let bv = match bo { Option::Some(x) => x, Option::None => String::from("?") };
+                let ao = ast.pop();
+                let av = match ao { Option::Some(x) => x, Option::None => String::from("?") };
+                let mut li = 1; let mut ui = 1;
+                if tk == "r..<" { li = 1; ui = 0; }
+                else if tk == "r..." { li = 1; ui = 1; }
+                else if tk == "r<.." { li = 0; ui = 1; }
+                else { li = 1; ui = 1; }
+                ast.push("(range " + av + " " + bv + " " + int_to_string(li) + " " + int_to_string(ui) + ")");
+            } else {
             // 弹出右操作数（跳过分组/元组/调用/数组等哨兵，它们非真实节点）
             let mut b = String::from("?");
             let mut sk = 1;
@@ -774,6 +824,7 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 a = av; sk2 = 0; break;
             }
             ast.push("(bin " + tk + " " + a + " " + b + ")");
+            }
         }
         k = k + 1;
     }
@@ -1034,6 +1085,8 @@ fn parse_program(src: String) -> String {
     let mut cf_elseif: Vec<String> = Vec::new();
     let mut cf_sink: Vec<String> = Vec::new();
     let mut cf_depth: Vec<String> = Vec::new();
+    // cf_pat: for 循环的模式（其余控制帧不占用，按顺序与 cf_kind 同步 pop）
+    let mut cf_pat: Vec<String> = Vec::new();
     // pending let 信息（M-M2c：控制流作 let 初始化时暂存，帧收束后组装 (let ...)）
     let mut pend_let_pat: Vec<String> = Vec::new();
     let mut pend_let_type: Vec<String> = Vec::new();
@@ -1113,6 +1166,8 @@ fn parse_program(src: String) -> String {
                                 let fd = match fd_o { Option::Some(x) => x, Option::None => String::new() };
                                 let sk_o = cf_sink.pop();
                                 let sk = match sk_o { Option::Some(x) => x, Option::None => String::new() };
+                                let fp_o = cf_pat.pop();
+                                let fp = match fp_o { Option::Some(x) => x, Option::None => String::new() };
                                 let mut node = String::new();
                                 if fk == "if" {
                                     node = "(if " + fc + " " + ft;
@@ -1120,6 +1175,8 @@ fn parse_program(src: String) -> String {
                                     node = node + ")";
                                 } else if fk == "while" {
                                     node = "(while " + fc + " " + ft + ")";
+                                } else if fk == "for" {
+                                    node = "(for " + fp + " " + fc + " " + ft + ")";
                                 } else {
                                     node = "(loop " + ft + ")";
                                 }
@@ -1306,6 +1363,36 @@ fn parse_program(src: String) -> String {
             ti = ti + 1;
             cf_kind.push(String::from("loop"));
             cf_cond.push(String::new());
+            cf_then.push(String::new());
+            cf_else.push(String::new());
+            cf_state.push(String::from("0"));
+            cf_elseif.push(String::from("0"));
+            cf_sink.push(String::from("stmt"));
+            cf_depth.push(int_to_string(bufstack.len()));
+            continue;
+        }
+        // for 循环（M-M4）：for <pattern> in <iterator> <block>
+        if tok == "for" {
+            ti = ti + 1;
+            // 收集模式 token 直到 'in'
+            let mut pat_toks: Vec<String> = Vec::new();
+            while ti < n {
+                let p = tokens.get(ti);
+                if p == "in" { break; }
+                pat_toks.push(p);
+                ti = ti + 1;
+            }
+            let pattern = parse_pattern_tokens(pat_toks);
+            // 越过 'in'
+            if ti < n && tokens.get(ti) == "in" { ti = ti + 1; }
+            // 解析迭代器表达式直到块体 '{'
+            let r = parse_expr(tokens, ti);
+            let iter = r.s;
+            ti = r.ti;
+            // 推帧（复用控制帧机制：cf_cond 存迭代器、cf_pat 存模式）
+            cf_kind.push(String::from("for"));
+            cf_cond.push(iter);
+            cf_pat.push(pattern);
             cf_then.push(String::new());
             cf_else.push(String::new());
             cf_state.push(String::from("0"));

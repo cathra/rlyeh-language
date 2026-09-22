@@ -296,3 +296,24 @@ fn m_m3_tuple_array_literal_ast_matches_rust_oracle() {
     check_program("let (a, b) = (1, 2);");
     check_program("let x = [(1, 2), (3, 4)];");
 }
+
+#[test]
+fn m_m4_for_range_ast_matches_rust_oracle() {
+    // for 循环 + 范围迭代（M-M4）：for <pat> in <iter> <block>
+    // 三种范围形态：..< 左闭右开 / ... 闭区间 / <.. 左开右闭
+    check_program("for i in 0..<10 {}");
+    check_program("for i in 0...10 {}");
+    check_program("for i in 0<..10 {}");
+    check_program("for i in 0..<10 { i }");
+    check_program("for i in 0..<10 { let x = i; x }");
+    // 元组模式（复用 parse_pattern_tokens）
+    check_program("for (a, b) in 0<..10 { a }");
+    check_program("for (x, y) in 0...5 { x }");
+    // 迭代器为数组字面量（非范围表达式）
+    check_program("for x in [1, 2, 3] {}");
+    check_program("for x in [(1, 2), (3, 4)] {}");
+    // for 后接其他语句（控制帧收束不泄漏）
+    check_program("for i in 0..<10 {} let y = i;");
+    // 多语句 for 体（let 绑定，非裸赋值——裸赋值语句超出 M-M4 范围）
+    check_program("let n = 0; for i in 0..<10 { let s = n + i; s } n");
+}

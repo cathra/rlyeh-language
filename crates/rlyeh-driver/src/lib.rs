@@ -347,6 +347,40 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
             s
         }
         rlyeh_ast::ExprKind::Unit => "(unit)".to_string(),
+        // M-M4：范围表达式 a..<b / a...b / a<..b -> (range LOWER UPPER lower_inc upper_inc)
+        rlyeh_ast::ExprKind::Range {
+            lower,
+            upper,
+            lower_inclusive,
+            upper_inclusive,
+        } => {
+            let lo = match lower {
+                Some(e) => render_expr_canonical(e),
+                None => "?".to_string(),
+            };
+            let up = match upper {
+                Some(e) => render_expr_canonical(e),
+                None => "?".to_string(),
+            };
+            format!(
+                "(range {} {} {} {})",
+                lo,
+                up,
+                if *lower_inclusive { 1 } else { 0 },
+                if *upper_inclusive { 1 } else { 0 },
+            )
+        }
+        // M-M4：for 循环 -> (for PATTERN ITERATOR BODY)
+        rlyeh_ast::ExprKind::For {
+            pattern,
+            iterator,
+            body,
+        } => format!(
+            "(for {} {} {})",
+            render_pattern_canonical(pattern),
+            render_expr_canonical(iterator),
+            render_block_canonical(body)
+        ),
         _ => "(unsupported)".to_string(),
     }
 }
