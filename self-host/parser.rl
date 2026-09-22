@@ -345,7 +345,11 @@ fn tokenize(src: String) -> Vec<String> {
         if c == 123 { toks.push(String::from("{")); prev_op = 0; i = i + 1; continue; }
         if c == 125 { toks.push(String::from("}")); prev_op = 0; i = i + 1; continue; }
         if c == 59 { toks.push(String::from(";")); prev_op = 0; i = i + 1; continue; }
-        if c == 58 { toks.push(String::from(":")); prev_op = 0; i = i + 1; continue; }
+        if c == 58 {
+            let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
+            if c2 == 58 { toks.push(String::from("pathsep")); prev_op = 1; i = i + 2; continue; }   // :: 路径分隔（M-M9）
+            toks.push(String::from(":")); prev_op = 0; i = i + 1; continue;
+        }
         // 逗号 / 方括号（M-M2b2：模式与类型标注使用；表达式解析中作停止符）
         if c == 44 { toks.push(String::from(",")); prev_op = 0; i = i + 1; continue; }
         if c == 91 { toks.push(String::from("[")); prev_op = 0; i = i + 1; continue; }
@@ -590,6 +594,28 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
                 rpn.push(v);
             }
             ti = ti + 1;
+            continue;
+        }
+        // 路径后缀 ::seg（M-M9）：把前一操作数与紧随段名合并为 (path ...)（左结合）。
+        //   Rlyeh && 不短路，故下一 token 须先安全预取。
+        if tok == "pathsep" {
+            let mut seg_tok = String::new();
+            if ti + 1 < n { seg_tok = tokens.get(ti + 1); }
+            let seg = typename_of(seg_tok);
+            let lo = rpn.pop();
+            let left = match lo { Option::Some(x) => x, Option::None => String::from("?") };
+            let mut node = String::from("?");
+            if left.len > 6 {
+                if left.substring(0, 6) == "(path " {
+                    node = left.substring(0, left.len - 1) + " " + seg + ")";
+                } else if left.substring(0, 5) == "(var " {
+                    let nm = left.substring(5, left.len - 1);
+                    node = "(path " + nm + " " + seg + ")";
+                }
+            }
+            rpn.push(node);
+            prev_op = 1;
+            ti = ti + 2;   // 越过 pathsep 与段名
             continue;
         }
         // 字段访问后缀 .name

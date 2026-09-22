@@ -211,6 +211,16 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
     match &*e.kind {
         rlyeh_ast::ExprKind::IntLiteral(v) => format!("(int {v})"),
         rlyeh_ast::ExprKind::Ident(name) => format!("(var {name})"),
+        // M-M9：路径表达式 a::b::c -> (path a b c)
+        rlyeh_ast::ExprKind::Path(segs) => {
+            let mut s = String::from("(path");
+            for seg in segs {
+                s.push(' ');
+                s.push_str(seg);
+            }
+            s.push(')');
+            s
+        }
         rlyeh_ast::ExprKind::BoolLiteral(b) => format!("(bool {b})"),
         rlyeh_ast::ExprKind::StringLiteral(s) => format!("(str {s})"),
         rlyeh_ast::ExprKind::Unary { op, operand } => match op {

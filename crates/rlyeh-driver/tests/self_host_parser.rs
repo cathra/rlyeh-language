@@ -434,3 +434,14 @@ fn m_m8_struct_enum_decl_ast_matches_rust_oracle() {
     check_program("struct P { x: i64 } fn main() {}");
     check_program("enum E { A } fn f() -> i64 { 0 } let z = 0;");
 }
+
+#[test]
+fn m_m9_path_ast_matches_rust_oracle() {
+    // M-M9 路径表达式 ::（含枚举变体构造）；裸路径作顶层语句在 Rlyeh 中不合法，
+    // 故路径均以「调用」或「let 初始化」承载
+    check_program("let a: Option<i64> = Option::Some(7);");
+    check_program("let b: Option<i64> = Option::None;");
+    check_program("let c: Result<i64, String> = Result::Ok(5);");
+    check_program("fn main() { let d: Option<i64> = Option::Some(1); }");
+    check_program("let e = Foo::Bar(1);");
+}
