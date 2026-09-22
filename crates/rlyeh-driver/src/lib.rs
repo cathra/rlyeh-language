@@ -292,6 +292,41 @@ fn render_expr_canonical(e: &rlyeh_ast::AstExpr) -> String {
         rlyeh_ast::ExprKind::Loop { body } => {
             format!("(loop {})", render_block_canonical(body))
         }
+        // M-M3a：字段访问 / 索引 / 调用 / 方法调用（表达式双形态之一）
+        rlyeh_ast::ExprKind::FieldAccess { expr, field } => {
+            format!("(field {} {field})", render_expr_canonical(expr))
+        }
+        rlyeh_ast::ExprKind::Index { expr, index } => {
+            format!(
+                "(index {} {})",
+                render_expr_canonical(expr),
+                render_expr_canonical(index)
+            )
+        }
+        rlyeh_ast::ExprKind::Call { callee, args, .. } => {
+            let mut s = format!("(call {}", render_expr_canonical(callee));
+            for a in args {
+                s = format!("{s} {}", render_expr_canonical(a));
+            }
+            s.push(')');
+            s
+        }
+        rlyeh_ast::ExprKind::MethodCall {
+            receiver,
+            method,
+            args,
+            ..
+        } => {
+            let mut s = format!(
+                "(call (field {} {method})",
+                render_expr_canonical(receiver)
+            );
+            for a in args {
+                s = format!("{s} {}", render_expr_canonical(a));
+            }
+            s.push(')');
+            s
+        }
         _ => "(unsupported)".to_string(),
     }
 }

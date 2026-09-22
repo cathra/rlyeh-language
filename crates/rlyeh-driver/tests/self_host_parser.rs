@@ -3,6 +3,7 @@
 //! 文本逐字节一致。
 //!
 //! 切片1（M-M2a）范围：整数/标识符/一元负号/括号/二元算术与比较/逻辑/位运算。
+//! M-M2b（语句/let/类型/模式）、M-M2c（控制流）、M-M3a（字段/索引/调用）依次扩展。
 
 use std::fs;
 use std::path::PathBuf;
@@ -47,7 +48,7 @@ fn run_rlyeh_parser(corpus: &str) -> String {
 fn run_rlyeh_parser_result(corpus: &str) -> Result<String, rlyeh_driver::error::DriverError> {
     let _guard = PARSER_RUN_LOCK.lock().unwrap();
     let src = format!(
-        "{}fn main() {{ let s = String::from(\"{}\"); let ast = parse(s); println(ast); }}\n",
+        "{}fn main() {{ let s = String::from(\"{}\"); let toks = tokenize(s); let r = parse_expr(toks, 0); let ast = r.s; println(ast); }}\n",
         parser_src(),
         escape_rl(corpus),
     );
@@ -226,4 +227,20 @@ fn m_m2c_control_flow_ast_matches_rust_oracle() {
     check_program("let r = loop { 1 };");
     check_program("let r = while x { 1 };");
     check_program("let r: Vec<i64> = if x { 1 } else { 2 };");
+}
+
+#[test]
+fn m_m3a_field_access_ast_matches_rust_oracle() {
+    // 字段访问（后缀链，可多层）— M-M3a-part1（无递归实现）
+    check("a.b");
+    check("a.b.c");
+    check("a.x + b.y");
+    check("(a + b).c");
+    check("a.b.c.d");
+    check("x.y == z.w");
+    check("p.x * 2");
+    // 字段访问作 let 初始化 / 控制流条件（沿用既有机制）
+    check_program("let r = a.b;");
+    check_program("let r = a.b.c;");
+    check_program("if a.b { c.d } else { e.f }");
 }

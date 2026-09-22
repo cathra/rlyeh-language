@@ -295,6 +295,8 @@ fn tokenize(src: String) -> Vec<String> {
         if c == 44 { toks.push(String::from(",")); prev_op = 0; i = i + 1; continue; }
         if c == 91 { toks.push(String::from("[")); prev_op = 0; i = i + 1; continue; }
         if c == 93 { toks.push(String::from("]")); prev_op = 0; i = i + 1; continue; }
+        // 点号（M-M3a：字段访问 a.b 的后缀运算符）
+        if c == 46 { toks.push(String::from(".")); prev_op = 1; i = i + 1; continue; }
         // = 与 ==
         if c == 61 {
             let c2 = if i + 1 < n { src.get(i + 1) } else { 0 };
@@ -353,6 +355,17 @@ fn tokenize(src: String) -> Vec<String> {
     toks
 }
 
+// ============================================================================
+// M-M3a：字段访问（后缀 .field）。在既有 shunting-yard 主循环内，以"包裹最后一个
+//   RPN 操作数"的方式实现，不引入新函数 / 递归 / 嵌套循环，规避 Rlyeh 编译器
+//   对前向递归与复杂控制流的已知限制。索引 [ ] / 调用 ( ) 因需子表达式解析（递归），
+//   留待显式栈重写（M-M3a-part2）。
+// 与 oracle（render_expr_canonical 的 FieldAccess 分支）逐字节对齐：
+//   a.b        -> (field (var a) b)
+//   a.b.c      -> (field (field (var a) b) c)
+//   (a + b).c  -> (field (bin add (var a) (var b)) c)
+// ============================================================================
+
 // 对 token 流从位置 ti 起解析一个表达式，返回 PRes{ s: S-表达式, ti: 新位置 }。
 // 表达式在以下 token 处停止：';' '}' '=' ':' '{' 'let' 及 EOF（交由语句层处理）。
 fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
@@ -379,6 +392,22 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
         if tok == "," { break; }
         if tok == "[" { break; }
         if tok == "]" { break; }
+        // M-M3a：字段访问后缀 .name（推入后缀标记，交由末位 RPN 建树阶段归约；
+        //   不直接包裹 rpn 末位，因 shunting-yard 的 rpn 为扁平后缀串，
+        //   分组/运算符场景末位未必是完整操作数）
+        if tok == "." {
+            ti = ti + 1;
+            let mut nm = String::from("?");
+            if ti < n { nm = tokens.get(ti); }
+            ti = ti + 1;
+            let mut name = nm;
+            if nm.len > 5 && nm.substring(0, 5) == "(var " {
+                name = nm.substring(5, nm.len - 1);
+            }
+            rpn.push("@field@" + name);
+            prev_op = 1;
+            continue;
+        }
         // 操作数：(int ...)/(var ...) 起于 '(' 但非 "("
         let first = tok.get(0);
         if first == 40 && tok != "(" {
@@ -441,6 +470,14 @@ fn parse_expr(tokens: Vec<String>, ti0: i64) -> PRes {
             match a {
                 Option::Some(av) => { ast.push("(neg " + av + ")"); }
                 Option::None => { ast.push("(neg ?)"); }
+            }
+        } else if f == 64 {
+            // 字段访问后缀：tk = "@field@NAME"，弹出栈顶节点包裹
+            let name = tk.substring(7, tk.len);
+            let a = ast.pop();
+            match a {
+                Option::Some(av) => { ast.push("(field " + av + " " + name + ")"); }
+                Option::None => { ast.push("(field ? " + name + ")"); }
             }
         } else {
             let b = ast.pop();
