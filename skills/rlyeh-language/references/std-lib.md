@@ -1,14 +1,15 @@
-# Rlyeh 标准库速查（v0.1.0）
+# Rlyeh 标准库速查（v0.2.0）
 
 > 实际布局（2026-08-22 模块化拆分）：`rlyeh-std/rlyeh/module.rl` 根模块（String / Vec / HashMap / Option /
 > Result + 全部 extern 声明 + `module` 声明 + `import` 重新导出）+ 子模块文件 `time.rl` / `io.rl` /
 > `net.rl` / `sync.rl`。**裸名即用**（`import time::Duration;` 等已在根模块重导出）。
-> 完整 API 与目标架构见 `docs/std-lib.md`；本速查只列 MVP 已实现（✅）项，编写代码可用。
+> 完整 API 与目标架构见 `docs/std-lib.md`；本速查只列 0.2.0 已实现（✅）项，编写代码可用。
 
 ## 内建（无需导入）
 
-- `println(expr)` / `print(expr)`：0–1 参数，自动按类型输出，**无 `{}` 占位符**
-- 长度：`.len` 字段或 `.len()` 方法（String / Vec / HashMap；**无内建 `len` 函数**）
+- `println(expr)` / `print(expr)`：0–1 参数，自动按类型输出（无 `{}`）
+- `format!` / `println!`：宏，支持 `{}`、`{:?}`、`{:>6}` 对齐；`format!` 返回 `String`
+- 长度：`.len` 字段或 `.len()` 方法（String / Vec / HashMap；无内建 `len` 函数）
 
 ## String（✅）
 
@@ -62,8 +63,22 @@ m.insert(String::from("a"), 1);
 let v = m.get(String::from("a"));        // Option<V>
 m.remove(String::from("a"));
 m.contains_key(String::from("a"));
-m.iter_pairs();                          // 键值对迭代
+m.iter_pairs();                          // 键值对迭代（KVRef）
+m.keys(); m.values(); m.len();
 m.with_capacity(8);
+```
+
+## BTreeMap<K, V> / VecDeque<T>（✅）
+
+```rlyeh
+let mut b: BTreeMap<i64, i64> = BTreeMap::new();
+b.insert(1, 10); b.get(1); b.remove(1);
+b.iter();                       // BTreeMapIter，next() -> Option<KVRef<K,V>>
+b.range(0, 10);                 // [lo, hi) 区间的值（Vec<V>，线性扫描）
+
+let mut d: VecDeque<i64> = VecDeque::new();
+d.push_back(1); d.push_front(0); d.pop_front(); d.pop_back();
+d.iter();                       // 从逻辑头 front 开始的零拷贝 IterRef<T>
 ```
 
 ## Option<T> / Result<T, E>（✅）

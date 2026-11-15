@@ -68,9 +68,9 @@ in break continue match return async await send actor region transfer self
 true false type extern as ref
 ```
 
-- `Str` 类型保留（未实现，勿用）。
-- `move` 关键字 MVP **忽略**（所有权宽松）：写了也不报错，但目前不激活"移动语义"的特殊行为。
-- 生命周期标注 `'a` 是语法接受但宽松检查的（见 §3.5）。
+- `str`/`&str` 已支持（字符串字面量与只读视图）；`String` 是拥有所有权的堆字符串。
+- `move` 已激活：跨线程闭包必须 `move`（捕获拥有环境），捕获类型须满足 `'static`。
+- 生命周期标注 `'a` 语法接受；当前为块级借用模型（见 §3.5）。
 
 ---
 

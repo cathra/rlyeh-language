@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 文档
+
+- **教程 / 语言手册 / Skill 同步 0.2.0（2026-11-15）**：教程补充 `println` 与 `println!`/`format!` 的区别、`-O0..-O3/-Os` 优化级别与 `--no-heap` 示例；手册重写已知限制（移除嵌套模块/`pub use`/`Self` dyn/`move` 等过时限制），补充元组/`if let`/`match` 守卫/`Drop`/`unsafe`/`const`/BTreeMap/VecDeque 等当前能力；Skill 升级到 v0.2.0（命令、语言/陷阱/语义/标准库参考）。
+
 ## [0.2.0] - 2026-11-15
 
 ### 新增

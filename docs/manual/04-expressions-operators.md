@@ -87,7 +87,7 @@ fn chain(a: i64, b: i64, c: i64) -> Option<i64> {
 | 同类型 | 零指令 | `42 as i64` = 42 |
 
 - 范围：≤64 位整族 + 浮点 + bool + char（32 位码点）。
-- `i128`/`u128` 与指针/引用/聚合转换保持擦除（不支持）。
+- 指针/引用/聚合转换保持擦除（不支持）。
 - 数值语义与 Rust `as` 一致（向零截断 / 环绕截断）。
 
 ---
@@ -102,7 +102,7 @@ println(d.area());         // 经 vtable 间接调用
 ```
 
 - **去虚拟化（2026-08-24 ✅）**：`let d: dyn Protocol = &obj;` 绑定变量时记录来源具体类型，后续 `d.method()` 静态分派（LLVM 可内联），性能与 Rust 持平；`d` 被重新赋值时保守回退 vtable 间接调用。
-- MVP 限制：非泛型 protocol/impl、含 `Self` 签名方法不可经 dyn 调用；vtable 的 drop/size/align 槽置 0（显式释放语义与 `Box`/`Rc` 一致）。
+- 当前能力：含 `Self` 签名方法与 `Any` 下转换已支持；`Box<dyn Any + Send>`/多 protocol 约束未实现；vtable 的 drop/size/align 槽仍置 0。
 
 ---
 

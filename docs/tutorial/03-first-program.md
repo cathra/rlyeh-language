@@ -45,7 +45,7 @@ fn main() {
 | `main()` | `int main(void)` / `int main()` | 程序入口，名字叫 `main` |
 | 无返回类型 | `int main` | Rlyeh 中 `main` 默认无返回值（等价于返回 `()`，类似 C 的 `void`） |
 
-> **C 程序员的视角**：Rlyeh 的 `fn main() { }` 大致等价于 C 的 `void main(void) { }`。Rlyeh 没有"main 必须返回 int 表示退出码"的强约束（MVP 简化）。
+> **C 程序员的视角**：Rlyeh 的 `fn main() { }` 大致等价于 C 的 `void main(void) { }`。Rlyeh 没有"main 必须返回 int 表示退出码"的强约束（当前版本简化）。
 
 ### `println("Hello, Rlyeh!")` —— 打印
 
@@ -73,35 +73,35 @@ Rlyeh 用大括号 `{}` 划分块，和 C 一样。但 Rlyeh **强制缩进风�
 
 ---
 
-## 3.3 打印多个值：不用格式字符串
+## 3.3 打印多个值：内建 `println` 与 `println!`
 
-C 的 `printf` 要靠 `%d`/`%s` 占位符，类型写错就崩。Rlyeh 的 `println` 直接逗号分隔多个值，自动按类型格式化：
+`println(expr)` 是**内建函数**，接收 0–1 个值，按类型自动输出，不需要占位符：
+
+```rlyeh
+fn main() {
+    let count = 3;
+    println(count);            // 3
+    println("hello");          // hello
+}
+```
+
+要拼接多个值，使用 `println!` 宏（0.2.0 已支持 `{}`、`{:?}` 与对齐格式）：
 
 ```rlyeh
 fn main() {
     let name = "world";
     let count = 3;
-    println("Hello, ", name, "! count = ", count);
+    println!("Hello, {}! count = {}", name, count);   // Hello, world! count = 3
 }
 ```
 
-输出：
-
-```
-Hello, world! count = 3
-```
-
-> **为什么更省心**：你不用记 `%d`/`%ld`/`%f`/`%s` 的区别，也不用担心占位符和参数类型不匹配（C 里这是经典的未定义行为来源）。
-
-### 占位符 `{}` 写法（可选）
-
-如果你想完全控制格式，也可以用和 Rust 类似的 `{}` 占位：
+需要返回字符串时用 `format!`：
 
 ```rlyeh
-println("Hello, {}! count = {}", "world", 3);   // Hello, world! count = 3
+let s = format!("count = {}", count);   // String
 ```
 
-`{}` 是个值占位符，按顺序填入后面的参数。这种写法在循环里拼接字符串时很常用（见 [指南 §10 标准库](../guide/10-stdlib.md) 的 `String`）。
+> **C 程序员的视角**：`println(expr)` ≈ `printf` 的单值特例；`println!`/`format!` 才对应带格式串的 `printf`，但由编译器检查占位符与实参类型，不需要 `%d`/`%s`。
 
 ---
 
@@ -172,6 +172,29 @@ hello-world.rl
 3. 写一个 `add` 函数（见 §3.4），在 `main` 里调用并打印结果。
 
 完成后，你已经具备"写 → 编 → 跑"的闭环能力。下一章我们用 `rlyeh new` 建立一个真正的项目结构。
+
+---
+
+## 3.8 优化级别与无堆模式（0.2.0）
+
+日常使用默认 `-O3` 即可；需要调试或缩小体积时可显式指定：
+
+```bash
+rlyeh build hello-world.rl -O0 -o hello-debug   # 关闭优化，便于调试
+rlyeh build hello-world.rl -O2 -o hello          # 常规发布
+rlyeh build hello-world.rl -Os -o hello-tiny     # 体积优先
+rlyeh run hello-world.rl -O3                    # 一步运行（默认）
+```
+
+`-O0/-O1/-O2/-O3/-Os` 同时控制 Rlyeh 自身的 MIR 优化（常量折叠/DCE/内联）与 clang 后端；默认 O3。
+
+面向密码模块等"运行期不得动态分配"的场景，可使用 `--no-heap`：
+
+```bash
+rlyeh build crypto.rl --no-heap -o crypto
+```
+
+它会拒绝 `String`/`Vec`/`HashMap`/`Box`/`format!`/`region` 等堆路径（诊断码 `NH001`），只允许标量、定长数组、栈上 struct 与引用，并在生成 IR 后检查无 `calloc/malloc/realloc`。详见 [优化级别](../optimization-levels.md) 与 [无堆编程模式](../no-heap.md)。
 
 ---
 

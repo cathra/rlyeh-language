@@ -21,12 +21,13 @@ Rlyeh 标准库采用模块化拆分（2026-09-18 布局重整）：`rlyeh-std/r
 
 ## 11.1 内建（无需导入）
 
-- `println(expr)` / `print(expr)`：0–1 参数，自动按类型输出，**无 `{}` 占位符**
-- 长度：`.len` 字段或 `.len()` 方法（String / Vec / HashMap；**无内建 `len` 函数**）
+- `println(expr)` / `print(expr)`：0–1 参数，自动按类型输出（无 `{}`）
+- `println!` / `format!`：宏，支持 `{}`、`{:?}`、对齐格式；`format!` 返回 `String`
+- 长度：`.len` 字段或 `.len()` 方法（String / Vec / HashMap；无内建 `len` 函数）
 
 ## 11.2 打印（std-lib §1）
 
-`println(expr)` / `print(expr)`：0–1 参数，自动按类型输出。
+`println(expr)` / `print(expr)`：0–1 参数，自动按类型输出；多值/占位符用 `println!`/`format!`（如 `println!("{}", x)`）。
 
 ## 11.3 String（std-lib §3）
 
@@ -38,7 +39,12 @@ Rlyeh 标准库采用模块化拆分（2026-09-18 布局重整）：`rlyeh-std/r
 
 ## 11.5 HashMap（std-lib §5）
 
-`HashMap::new` / `insert` / `get` / `remove` / `contains_key` / `iter_pairs` / `with_capacity`。
+`HashMap::new` / `insert` / `get` / `remove` / `contains_key` / `iter_pairs` / `keys` / `values` / `len` / `with_capacity`。
+
+## 11.5b BTreeMap / VecDeque
+
+- `BTreeMap<K,V>`：`new` / `insert` / `get` / `remove` / `iter`（`BTreeMapIter`，`next() -> Option<KVRef<K,V>>`）/ `range(lo, hi)`（`[lo, hi)` 的值，线性扫描）。
+- `VecDeque<T>`：`new` / `push_back` / `push_front` / `pop_front` / `pop_back` / `iter`（从逻辑头 `front` 起的零拷贝 `IterRef<T>`）。
 
 ## 11.6 Option / Result（std-lib §6）
 
@@ -55,7 +61,7 @@ Rlyeh 标准库采用模块化拆分（2026-09-18 布局重整）：`rlyeh-std/r
 ## 11.9 序列化
 
 - `json::stringify(v)` / `json::to_string(v)`：标量 / String / `&str` / 数组 / struct / Vec / HashMap（键序确定性）
-- `json::parse::<T>(s)` / `json::from_str::<T>(s)`：`i64` / `bool` / `String` / `HashMap<K,V>`（MVP 直接返回 T，非法输入给默认值）
+- `json::parse::<T>(s)` / `json::from_str::<T>(s)`：`i64` / `bool` / `String` / `HashMap<K,V>`（当前实现直接返回 T，非法输入给默认值）
 - `json::to_writer(w, v)` / `json::from_reader::<T>(r)`：流式（Q2 ✅）
 - `toml::to_string(v)` / `toml::from_str::<T>(s)`（Q4 ✅）
 - `#[derive(Serialize, Deserialize)]`：自动生成编解码（Q1 ✅）

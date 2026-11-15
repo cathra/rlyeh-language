@@ -1,4 +1,4 @@
-# Rlyeh 语义要点（v0.1.0 MVP）
+# Rlyeh 语义要点（v0.2.0）
 
 > 权威规范：`docs/semantics.md`、`docs/memory-model.md`、`docs/actor-model.md`。本节解释**运行时行为**，
 > 用于调试与代码审查。
@@ -47,7 +47,7 @@
 
 ## 6. 类型系统行为
 
-- 泛型**单态化**（无擦除、无协议对象、无 `dyn`）。
+- 泛型默认**单态化**；`dyn Protocol` 使用 vtable（H4），支持含 `Self` 签名方法与 `Any` 下转换。
 - `match` 枚举解构按**具体实例化**处理（含嵌套泛型 `Option<Vec<T>>`、`Result<Option<String>, i64>`）。
 - 裸 `Ok`/`Err`/`Some` 构造 + `unwrap_or` 等可自动定型（Infer 回填）。
 - `String::from(s)`：仅接受字面量或绑定字面量的变量（非字面量 Str 长度表达未实现）。
@@ -62,3 +62,12 @@
 
 - 位运算、算术支持常量折叠（编译期可算出字面量结果）。
 - `rlyeh check` 静态分析：未使用变量 / 恒常条件 / 冗余比较 / 不可达代码。
+
+## 9. 0.2.0 语义补充
+
+- `if let`/`while let` 由 parser desugar 为 `match`/`loop`，零新增 IR；`match` 守卫在绑定后求值，范围/或模式复用比较链语义。
+- `try { .. }` 块内 `?` 不再从函数早返回，而是就地跳出该块并包裹 `Ok`/`Some`；错误类型取外层函数返回类型。
+- `Drop` 在作用域尾按**逆声明序**对拥有所有权的绑定调用；字段级析构先调用自身 `drop` 再逆字段序递归。
+- `#[derive(Clone/PartialEq/Debug)]` 展开为普通 `impl`，零新增 IR；`==` 经 `eq` 方法比较。
+- `--no-heap` 是编译期约束：堆类型/宏/region 报 `NH001`；聚合逃逸到堆的回退由 LLVM IR 守卫拒绝。
+- `-O0/-O1/-O2/-O3/-Os` 同时影响 MIR 优化（常量折叠/DCE/内联）与 clang 后端；默认 O3。

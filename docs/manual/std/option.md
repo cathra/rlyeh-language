@@ -34,7 +34,7 @@ println(n.unwrap_or(0));      // 0
 ```
 
 ### `unwrap() -> T`
-有值返回值，否则运行时 panic（MVP 直接 abort）。
+有值返回值，否则运行时 panic（当前实现直接 abort）。
 ```rlyeh
 let o = Some(7);
 println(o.unwrap());          // 7

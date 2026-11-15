@@ -1,60 +1,57 @@
-# Rlyeh MVP 编写陷阱清单（每次写代码前必读）
+# Rlyeh 0.2.0 编写陷阱清单（每次写代码前必读）
 
-> MVP（v0.1.0）语法边界严格。以下条目来自 `docs/guide/13-references-limits.md` §13 已知限制与编译器实际行为。
-> 违反任一「语法不支持」条目 → typecheck 报 `Unsupported` 或链接失败。
+> 当前版本 v0.2.0。以下条目来自 `docs/guide/13-references-limits.md` 与编译器实际行为；违反限制会得到 `Unsupported`、`NH001` 或链接错误。
 
-## A. 程序结构（最常见错误）
+## A. 程序结构
 
-1. **必须有 `fn main()`**。否则链接报 `Undefined symbols: _main`。Rlyeh 无隐式入口。
-2. 语句用 `;` 结束；`if`/`while`/`loop` 条件**无需括号**。
-3. `println(expr)` 是**内建函数不是宏**：单参数、自动按类型输出、**不支持 `{}` 占位符**。
-4. **无宏调用语法**：`println!` / `vec!` / `format!` 全部不可用（`!` 是 `not` 一元运算符）。
+1. **必须有 `fn main()`**；否则链接报 `Undefined symbols: _main`。
+2. 语句用 `;` 结束；`if`/`while`/`loop` 条件无需括号。
+3. `println(expr)` 是内建函数（单参数、自动按类型）；`println!("{}", x)` / `format!` 是宏，占位符写法与 Rust 类似。
+4. 宏可用：`format!`、`println!`、`vec!`、`map!`、`arr!`、`assert!`、`panic!` 等；宏展开不保证 hygiene。
 
-## B. 语法不支持（parser 可解析、typecheck 报 Unsupported）
+## B. 当前未实现 / 限制
 
-5. **引用**：`&x` 表达式、`&T` 参数、`str` 类型、解引用 `*`、裸指针——全部未实现。
-   仅方法接收者 `&self` / `&mut self` 可用。
-6. **闭包**：`|x| x + 1` 语法可解析但 Unsupported。
-7. `dyn Protocol`、函数指针、`?` 错误传播——未实现。
-8. `Rc<T>` / `Arc<T>` / `Gc<T>`（L2/L3 内存层）——规划未实现。
-9. **迭代器**：`Iterator` protocol / `collect` 未实现；`for` **仅支持数值区间**（`for i in 0..<10`），不支持 `for x in vec`。
-10. 字符串插值 / `format!` 格式化——未实现。
+5. `Box`/`Rc`/`Arc` 未接 Drop；不要依赖它们自动释放内部资源。
+6. `!` never 类型未实现；`panic!` 返回 `()`，不能用于分支类型收敛。
+7. enum derive、泛型 bound 强制校验、自定义 derive 扩展点未实现；仅 struct 的 `Clone`/`PartialEq`/`Debug`。
+8. 泛型 impl 关联静态方法暂不支持；Arena 在调用方构造。
+9. `Sender`/`Receiver` 跨线程移动受 `Thread::start` 传参限制。
+10. 默认私有 + `pub` 校验仍是灰度（`--visibility`，默认 `off`）；std 跨模块访问暂未全量迁移。
+11. `--no-heap` 下禁止 `String`/`Vec`/`HashMap`/`Box`/`format!`/`region`；聚合按值跨函数逃逸会被 IR 守卫拒绝，改传 `&`/`&mut`。
 
-## C. 语义陷阱（可编译但行为不同）
+## C. 语义陷阱
 
-11. **位运算优先级低于比较**：优先级 `*` > `+` > `<<` > `&` > `^` > `|`，比较高于位运算。
-    裸 `x & 3 == 2` 会解析为 `x & (3 == 2)`（bool）——**必须写 `(x & 3) == 2`**。
-12. `String::from(s)`：仅接受字面量或绑定字面量的变量；非字面量 Str 长度表达未实现。
-13. String 按**字符**索引、步长 1 字节（ASCII 假设）；中文等多字节字符索引会错位。
-14. 动态切片返回**全新缓冲**（值拷贝），修改切片不影响原数组。
-15. 数组/Vec 绑定与赋值是 3 槽拷贝、**底层缓冲共享**（别名可见）；拼接 `a + b` 已修复为深拷贝、隔离安全。
-16. 数组索引越界在编译期可查（字面量场景）；动态切片越界 clamp 而非报错。
+12. **位运算优先级低于比较**：`*` > `+` > `<<` > `&` > `^` > `|`，比较高于位运算。裸 `x & 3 == 2` 会按 `x & (3 == 2)` 解析——必须写 `(x & 3) == 2`。
+13. String 索引按**字节**（UTF-8 边界由调用方保证）；中文等多字节字符不能按字符下标直接切。
+14. 动态切片 `v[lo..<hi]` 返回**新缓冲**（值拷贝）；切片引用 `&[T]` 是零拷贝视图，两者语义不同。
+15. 数组/Vec 赋值是槽拷贝、底层缓冲可能共享；`String` 的 `+` 已深拷贝隔离。
+16. 切片/索引越界可能 clamp 或 abort；不要依赖越界写。
 
-## D. Actor 陷阱
+## D. Actor
 
-17. 方法返回 **`-1` = 崩溃信号**：ask 立即返回 0、supervisor 重启、无监督则停止——**正常业务不要返回 -1**。
-18. 同步调用用 `.method(args).await`；异步 fire-and-forget 用 `send actor.method(args)`。
-19. 受监督 spawn 用 `Counter::new_supervised(0)`（0=OneForOne 1=AllForOne 2=RestartForOne），崩溃后重建初始状态重启。
+17. 方法返回 **`-1` = 崩溃信号**：ask 返回 0、supervisor 重启、无监督停止；正常业务不要返回 -1。
+18. 同步 `.method(args).await`；fire-and-forget `send actor.method(args)`。
+19. `new_supervised(mode)`：0=OneForOne、1=AllForOne、2=RestartForOne。
 
 ## E. FFI / 链接
 
-20. `extern fn` 符号名必须与 libc/系统库**完全一致**（模块/import 前缀改名 → 链接失败）。
-21. 链接报 `_main` undefined → 检查源文件是否有 `fn main()`。
-22. 链接报 extern 符号 undefined → 检查签名类型与 libc 是否一致（如 `u32` vs `c_uint`）。
+20. `extern fn` 符号名必须与 libc/系统库完全一致；模块前缀改名会导致链接失败。
+21. 链接 `_main` undefined → 检查 `fn main()`。
+22. extern 符号 undefined → 检查签名类型与系统库原型。
 
-## F. 编译错误快速定位
+## F. 编译错误定位
 
-| 报错阶段 | 特征 | 常见原因 |
-|----------|------|----------|
-| Lexer | 非法字符 / 未闭合注释 | 用了不支持的符号（如 `@` `#` 宏语法） |
-| Parser | 语法错误（行/列） | 括号/分号缺失、表达式形状错误 |
-| Typecheck | 类型不匹配 / `Unsupported` | 用了 B 类语法、类型写错 |
-| Codegen/LLVM | 符号 undefined / 链接失败 | 缺 main、extern 符号不一致、目标 triple 问题 |
+| 阶段 | 特征 | 常见原因 |
+|------|------|----------|
+| Lexer | 非法字符 / 未闭合注释 | 不支持的符号、字符串未闭合 |
+| Parser | 语法错误（行/列） | 括号/分号/模式形状错误 |
+| Typecheck | 类型不匹配 / `Unsupported` / `NH001` | 类型写错、当前限制、无堆模式禁用项 |
+| Codegen/LLVM | 符号 undefined / 链接失败 | 缺 main、extern 不一致、目标 triple |
 
-## G. 编写风格建议
+## G. 风格与验证
 
-- 优先用 `rlyeh run <file.rl>` 快速验证；复杂项目用 `rlyeh new` + `rlyeh build`。
-- 逻辑运算：`not x`（不是 `!x`，虽然 `!` 也是 not 但结合易错）；`&&` / `||` 正常。
-- 常量用 `const`；需要可变量用 `let mut`。
-- 复合类型（struct/enum/impl）用 `match` 解构时写全变体模式。
-- 标准库只调 `references/std-lib.md` 中 ✅ 已实现 API，规划 API 编译不过。
+- 快速验证：`rlyeh run file.rl`；项目：`rlyeh new` + `rlyeh build`。
+- 默认 `-O3`；调试用 `-O0`，体积优先 `-Os`；切换级别会使用不同缓存键。
+- 需要无堆库时用 `--no-heap`，先确认未使用堆类型/宏/region。
+- 逻辑运算 `not x`；位运算加括号；复合类型 match 写全变体。
+- 标准库 API 以 `references/std-lib.md` 的 ✅ 项为准。

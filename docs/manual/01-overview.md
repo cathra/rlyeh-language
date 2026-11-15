@@ -28,7 +28,7 @@ Rlyeh 是一门**系统级编程语言**，编译为原生机器码。设计公�
 | 你要做的事 | C 怎么干 | Rlyeh 怎么干 |
 |------------|----------|--------------|
 | 写入口 | `int main()` | `fn main()` |
-| 打印 | `printf("x=%d\n", x)` | `println("x=", x)` |
+| 打印 | `printf("x=%d\n", x)` | `println(x)` / `println!("x={}", x)` |
 | 变量 | `int x = 6;`（默认可改） | `let x = 6;`（默认不可改，`let mut` 才可改） |
 | 堆分配 | `malloc`/`free` | 所有权自动释放 / `region` / `Box`/`Rc`/`Gc` |
 | 结构体 | `struct { int x; };` | `struct { x: i64 }` |
@@ -40,18 +40,22 @@ Rlyeh 是一门**系统级编程语言**，编译为原生机器码。设计公�
 
 ---
 
-## 1.3 MVP 已落地核心能力
+## 1.3 0.2.0 已落地核心能力
 
 - 标量 / 聚合类型、引用与借用（严格借用检查）、`ref`/`ref mut` 模式
 - `struct` / `enum`（具名变体 + 显式判别式）/ `protocol` + `impl` + 泛型单态化
 - 类型联合 `A | B`、枚举显式判别式（`U1`–`U3`）
 - 切片引用 `&[T]` / `&mut [T]`（`S1`–`S3`）、动态切片、`as` 数值转换（`U6`）
-- 闭包（H1 函数指针 / H2 无捕获 / H3 捕获 IIFE / H5 闭包值对象）、`dyn Protocol`（H4）
-- 分层内存（L0 所有权 → L1 区域 → L2 `Rc`/`Arc` → L3 `Gc`）
-- Actor 并发（监督 / 交叉编译 WASM，`L4`）、`async`/`.await`（S1/W1–W5）
-- 标准库：String / Vec / HashMap / Option / Result / 时间 / IO / 网络 / 同步 / 序列化（JSON+TOML）/ 迭代器
+- 闭包（H1 函数指针 / H2 无捕获 / H3 捕获 IIFE / H5 闭包值对象 / 跨函数边界与 `move`）、`dyn Protocol` 含 `Self` 与 `Any`
+- 分层内存（L0 所有权 → L1 区域 → L2 `Rc`/`Arc` → L3 `Gc`），`Drop`/RAII 与字段级析构
+- Actor 并发（监督 / 交叉编译 WASM，`L4`）、`async`/`.await`（S1/W1–W5）、原子类型/线程
+- 元组值/解构、`if let`/`while let`、`match` 守卫 + 范围/或模式、`const`/`static`、`mem::swap/replace/take`
+- `unsafe` 块 / 裸指针 / `#[repr(C)]`、`extern "C"` FFI、`#[derive(Clone/PartialEq/Debug)]`
+- 嵌套模块、`pub use`、组导入/glob；`?` 经 `From` 自动转换与 `try { .. }` 错误聚合
+- 标准库：String / Vec / HashMap / BTreeMap / VecDeque / Option / Result / 时间 / IO / 网络 / 同步 / 序列化 / 迭代器
+- 编译器：`-O0/-O1/-O2/-O3/-Os` 优化级别、`--no-heap` 无堆模式、`--visibility` 灰度
 
-> **MVP 含义**：本文档（手册 + 指南）**只描述上述已实现项**。规划中特性会在各章明确标注，不会引导你使用不存在的功能。完整已知限制见 [§14 限制](./14-limits.md) 与 [指南 §13](../guide/13-references-limits.md)。
+> **版本含义**：手册/指南只描述当前 0.2.0 已实现项；0.3.0 才进行工具链自举重写。完整已知限制见 [§14 限制](./14-limits.md) 与 [指南 §13](../guide/13-references-limits.md)。
 
 ---
 
@@ -89,7 +93,7 @@ int main() { printf("x=%d\n", 6); return 0; }
 ```rlyeh
 // Rlyeh
 fn main() {
-    println("x=", 6);     // 自动按类型格式化，无占位符、无 %d 陷阱
+    println!("x={}", 6);  // 占位符与实参类型由编译器检查，无 %d 陷阱
 }
 ```
 

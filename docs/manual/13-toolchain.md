@@ -9,12 +9,13 @@
 | 命令 | 功能 | 备注 / C 对照 |
 |------|------|----------------|
 | `rlyeh new <name> [--lib]` | 创建项目脚手架 | 生成 `Rlyeh.toml` + `src/main.rl` 或 `lib.rl`；≈ `mkdir` + 写 Makefile |
-| `rlyeh build <file> [-o <out>] [--target <triple>] [--no-heap] [-O0..-O3|-Os]` | 编译为可执行文件 | ≈ `clang file.c -o out`；`--target` 交叉编译；`--no-heap` 无堆模式（隐含 `--no-std`）；`-O*` 优化级别（默认 O3） |
-| `rlyeh run <file> [--no-heap] [-O0..-O3|-Os]` | 编译并运行 | 一步到位；`--no-heap` 拒绝堆分配（NH001 / IR 守卫）；`-O*` 控制优化 |
+| `rlyeh build <file> [-o <out>] [--target <triple>] [--no-heap] [-O0..-O3\|-Os]` | 编译为可执行文件 | ≈ `clang file.c -o out`；`--target` 交叉编译；`--no-heap` 无堆模式（隐含 `--no-std`）；`-O*` 优化级别（默认 O3） |
+| `rlyeh run <file> [--no-heap] [-O0..-O3\|-Os]` | 编译并运行 | 一步到位；`--no-heap` 拒绝堆分配（NH001 / IR 守卫）；`-O*` 控制优化 |
 | `rlyeh test` | 运行测试目录用例 | compile-pass / compile-fail / run-pass 三类 |
 | `rlyeh fmt <file>` | 代码格式化 | `--check` 仅检查 / `-w` 写回 / `--indent` 设缩进；≈ `clang-format` |
 | `rlyeh check <file>` | 静态分析 | 未用变量 / 恒常条件 / 冗余比较 / 不可达代码；≈ `clang --analyze` |
-| `rlyeh bench <file>` | 基准测试 | `--runs` / `--warmup` 采样；≈ 手写 `clock()` 循环取中位数 |
+| `rlyeh bench <file> [-O0..-O3\|-Os]` | 基准测试 | `--runs` / `--warmup` 采样；`-O*` 控制优化级别 |
+| `rlyeh build <file> --emit <ir\|ast\|hir\|tokens>` | 导出中间表示 | 不编译运行；IR 遵循所选优化级别 |
 | `rlyeh doc <file>` | 从 `///` 注释生成 Markdown | ≈ Doxygen |
 | `rlyeh publish [--registry] [--verbose]` | 发布到 dagon 注册表 | 重复版本拦截 |
 | `rlyeh lsp` | 语言服务器（LSP over stdio） | 编辑器诊断推送 |

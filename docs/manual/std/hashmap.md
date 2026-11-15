@@ -1,6 +1,6 @@
 # HashMap\<K, V\>
 
-哈希表（键值映射）。MVP 中键/值类型须为可哈希标量/`String`；`String` 键按内容哈希。构造后裸名即可调用方法（`import` 已在根模块重导出）。
+哈希表（键值映射）。当前版本中键/值类型须为可哈希标量/`String`；`String` 键按内容哈希。构造后裸名即可调用方法（`import` 已在根模块重导出）。
 
 > **C 程序员对照**：C 标准库**没有哈希表**——要么自己用"数组 + 线性探测"手写，要么引入第三方库（uthash 等）。`HashMap` 相当于 C++ 的 `std::unordered_map`。关键差异：`get` 返回 `Option<V>`，**不存在"键没找到返回什么哨兵"的歧义**；内存自动管理，不用手动 `free` 桶数组。
 
@@ -16,7 +16,7 @@ let m3: HashMap<i64, i64> = map![1 => 10, 2 => 20];   // 宏构造（I3 ✅）
 - `HashMap::with_capacity(n: i64) -> HashMap<K, V>`：预分配桶。
 - `map![k => v, ...]`：块表达式 `with_capacity` + 逐元素 `insert`，空集合 → `new()`。
 
-> MVP 限制：`map![...]` 绑定后 K/V 为 `Infer`，须显式类型注解（如 `let m: HashMap<i64, i64> = map![...]`）；键/值含逗号或冒号经 `split(",")`/`find(":")` 分段不可靠；嵌套 `HashMap` 值 parse 报 Unsupported（值限标量）。
+> 当前限制：`map![...]` 绑定后 K/V 为 `Infer`，须显式类型注解（如 `let m: HashMap<i64, i64> = map![...]`）；键/值含逗号或冒号经 `split(",")`/`find(":")` 分段不可靠；嵌套 `HashMap` 值 parse 报 Unsupported（值限标量）。
 
 ## 方法
 

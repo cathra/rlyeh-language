@@ -48,7 +48,7 @@ let unit = ();          // ()
 | `[T; N]` | 定长数组（N 编译期已知） | `[1, 2, 3]` / `[i64; 4]` |
 | `Vec<T>` | 动态数组（标准库） | `Vec::new()` / `vec![1, 2, 3]` |
 | `String` | UTF-8 字符串缓冲（标准库） | `String::from("hi")` |
-| `Str` | **未实现**，勿用 | — |
+| `str` | 字符串字面量/只读视图的底层类型 | 字符串字面量 `"hi"` 类型为 `str` |
 | `&T` / `&mut T` | 引用（G1 ✅） | `&x` / `&mut x`；`*` 解引用；字段/方法自动剥引用层 |
 | `&str` | String 只读借用视图 | `s.as_str()`（零拷贝） |
 | `&[T]` / `&mut [T]` | 切片引用（零拷贝胖指针 `{data, len}`） | `&arr` 后 `xs[1..<3]`；`.len()`/`.first()`/`.last()`/`.iter()`；`&[T; N]` 经 unsize coercion → `&[T]` |
@@ -57,7 +57,7 @@ let unit = ();          // ()
 | `Option<T>` / `Result<T, E>` | 代数数据类型（标准库） | `Some(5)` / `Result::Ok(10)` |
 | `dyn Protocol` | protocol 对象（2 槽胖指针，H4 ✅） | `let d: dyn Shape = &c;` |
 | `fn(T) -> R` | 函数指针类型（H1 ✅） | `let f: fn(i64) -> i64 = add;` |
-| `A | B` | 类型联合（U1/U2 ✅） | `let x: i64 | String = 5;` |
+| `A \| B` | 类型联合（U1/U2 ✅） | `let x: i64 \| String = 5;` |
 | `enum { ... }` | 具名变体枚举；可带显式判别式（U3 ✅） | `enum Code { Ok = 200 }` |
 
 > **C 对照**：

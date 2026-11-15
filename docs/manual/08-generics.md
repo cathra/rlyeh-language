@@ -46,10 +46,10 @@ impl f64: Convert<i64> {
 let n = 3.7.convert();          // n: i64 = 3
 ```
 
-> **MVP 限制**：
-> - `Self` 仅支持**返回位置**——参数位置（关联返回）保持禁止。
-> - 含 `Self` 签名的方法不可经 `dyn` 协议调用（见 [§4.6](./04-expressions-operators.md) H4 限制）。
-> - `From::from(v) -> Self` / `Into::into() -> Self` / `Deserialize::from_json(s) -> Self` 落地待 std protocol 声明。
+> **当前能力与限制**：
+> - `Self` 返回位置已支持（A3）；参数位置/关联返回仍受限。
+> - 含 `Self` 签名的方法可经 `dyn` 协议调用（G1）；`Box<dyn Any + Send>`/多 protocol 约束未实现。
+> - `From::from(v) -> Self` / `Into::into() -> Self` 已落地；`Deserialize::from_json` 等 derive 扩展点仍受限。
 
 ---
 

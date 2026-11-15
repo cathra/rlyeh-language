@@ -1,4 +1,4 @@
-# Rlyeh 语言语法速查（v0.1.0 MVP）
+# Rlyeh 语言语法速查（v0.2.0）
 
 > 权威规范：`docs/grammar.md`（EBNF）、`docs/guide/index.md`（教程）。本节是编写代码时的速查。
 
@@ -12,7 +12,7 @@
 ## 2. 类型
 
 标量：`i8 i16 i32 i64 isize u8 u16 u32 u64 usize f32 f64 bool char` + 无类型 `()`。
-聚合：`[T; N]` 定长数组、`Vec<T>`（标准库）、`String`（标准库）、`Str`（**未实现**，勿用）、`&T` / `&mut T`（引用，G1 ✅）、`&[T]` / `&mut [T]`（切片引用，S1/S2/S3 ✅，零拷贝胖指针视图 `{ data, len }`）。
+聚合：`[T; N]` 定长数组、`Vec<T>`、`String`、`str`/`&str`（字符串字面量与只读视图）、`&T` / `&mut T`、`&[T]` / `&mut [T]`（零拷贝胖指针视图 `{ data, len }`）、元组 `(A, B, ...)`。
 
 类型注解：
 ```rlyeh
@@ -43,7 +43,9 @@ extern fn my_lib_fn(x: i64) -> i64; // FFI 声明（无 body，链接器解析�
 if 0 < x < 10 { println("range"); } else { println("out"); }   // 无需括号，语句用 ; 分隔
 while x > 0 { x -= 1; }
 loop { if done { break; } }
-for i in 0..<10 { println(i); }     // 仅数值区间（半开/双闭）
+for i in 0..<10 { println(i); }     // 数值区间（半开/双闭）
+for x in vec { println(x); }        // 数组 / Vec / 自定义迭代器
+for (k, v) in map { println(k); }   // HashMap 键值对
 match s {
     Shape::Circle(r) => 3.14 * r * r,
     Shape::Rect { w, h } => w * h,
@@ -114,8 +116,10 @@ module math {
 }
 import math::PI;
 import math::square as sq;
-// 多文件：module foo; → foo.rl / foo/module.rl；跨模块 模块名::Enum::Variant
-// （扁平名字空间：无 crate/super/self，路径即「模块名::」；可见性仅 pub / 私有）
+import math::{square, PI};      // 组导入
+import math::*;                 // glob（注意同名歧义）
+// 多文件：module foo; → foo.rl / foo/module.rl；嵌套 module 与 pub use 重导出已支持
+// 扁平名字空间：无 crate/super/self，路径即「模块名::」；B4 默认私有 + pub 校验灰度可用
 ```
 
 ## 11. 区域（Region）
@@ -161,6 +165,7 @@ extern fn abs(x: i64) -> i64;      // 声明，无 body
 extern fn srand(seed: u32);        // void 返回类型
 ```
 - codegen 生成 `declare`（链接器解析）；extern 符号必须与 libc 一致。
+- `extern` 调用必须在 `unsafe { }` 内（std prelude 内部 FFI 豁免）。
 - 支持标量类型 + `()`；`&T`/指针类型用 `Ptr`（未知名类型回退）。
 
 ## 14. 内建函数（无需导入）
@@ -177,3 +182,44 @@ fn main() {
     if total in (0...20) { println(total); }
 }
 ```
+
+## 16. 0.2.0 新增能力（速查）
+
+```rlyeh
+// 元组值/解构/多返回
+fn pair() -> (i64, String) { (1, String::from("a")) }
+let (a, b) = pair();
+
+// if let / while let / match 守卫 + 或/范围模式
+if let Option::Some(x) = o { println(x); }
+while let Option::Some(x) = it.next() { println(x); }
+match n {
+    1 | 2 => println("small"),
+    3...9 if n % 2 == 0 => println("even"),
+    _ => println("other"),
+}
+
+// derive
+#[derive(Clone, PartialEq, Debug)]
+struct P { x: i64, y: i64 }
+
+// const / static / unsafe / repr(C)
+const LIMIT: i64 = 10;
+static mut FLAG: i64 = 0;
+#[repr(C)] struct Header { tag: u8, len: i64 }
+let p: *const i64 = &x;
+let v = unsafe { *p };
+
+// Drop/RAII（Q1–Q3）
+impl Guard: Drop { fn drop(&mut self) { self.unlock(); } }
+
+// mem / ? / try
+mem::swap(&mut a, &mut b);
+mem::replace(&mut a, 0);
+mem::take(&mut a);
+let v = may_fail()?;
+let r = try { may_fail()?; 42 };   // Result 错误聚合块
+```
+
+- 泛型 protocol/impl、嵌套模块、`pub use` 已支持；`Box<dyn Any + Send>`/多 protocol 约束未实现。
+- `-O0/-O1/-O2/-O3/-Os` 与 `--no-heap` 见 SKILL.md 与 `docs/optimization-levels.md` / `docs/no-heap.md`。

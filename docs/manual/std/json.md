@@ -2,7 +2,7 @@
 
 JSON 编解码（L2 ✅ 基础；Q2 ✅ 泛型入口）。序列化规则：标量（`i64`/`bool`/`String`/`&str`）按值输出；数组/struct/`Vec`/`HashMap` 递归；`HashMap` 键序确定性（便于可重现输出）。
 
-> **C 程序员对照**：C 标准库**没有 JSON**——要么引入 cJSON/jansson，要么手写字符串拼装与解析（极易出错）。Rlyeh 的 `json::stringify`/`json::from_str::<T>` 让你**类型驱动**地序列化/反序列化：`from_str::<HashMap<String,i64>>` 直接拿到强类型结果，不用 `cJSON_GetObjectItem` 一步步取值。MVP 限制：非法 JSON 直接给默认值（不抛异常），生产环境需自行校验。
+> **C 程序员对照**：C 标准库**没有 JSON**——要么引入 cJSON/jansson，要么手写字符串拼装与解析（极易出错）。Rlyeh 的 `json::stringify`/`json::from_str::<T>` 让你**类型驱动**地序列化/反序列化：`from_str::<HashMap<String,i64>>` 直接拿到强类型结果，不用 `cJSON_GetObjectItem` 一步步取值。当前限制：非法 JSON 直接给默认值（不抛异常），生产环境需自行校验。
 
 ## 函数
 
@@ -15,7 +15,7 @@ let s2 = json::to_string(v);            // 同上
 ```
 
 ### `json::parse::<T>(s) -> T` / `json::from_str::<T>(s) -> T`
-反序列化（类型由 turbofish 指引）。MVP 直接返回 T，非法输入给默认值。
+反序列化（类型由 turbofish 指引）。当前实现直接返回 T，非法输入给默认值。
 ```rlyeh
 let back = json::parse::<HashMap<String, i64>>(s);
 let back2 = json::from_str::<i64>(String::from("42"));   // 42
@@ -40,7 +40,7 @@ let v2 = json::from_reader::<HashMap<String, i64>>(f2);
 | `HashMap<K, V>` | JSON 对象（键序确定性） |
 | struct | JSON 对象（字段名 → 值） |
 
-> MVP 限制：`HashMap` parse 的键/值含逗号或冒号经 `split(",")`/`find(":")` 分段不可靠；嵌套 `HashMap` 值 parse 报 Unsupported（值限标量）。
+> 当前限制：`HashMap` parse 的键/值含逗号或冒号经 `split(",")`/`find(":")` 分段不可靠；嵌套 `HashMap` 值 parse 报 Unsupported（值限标量）。
 
 ## `#[derive(Serialize, Deserialize)]`（Q1 ✅）
 

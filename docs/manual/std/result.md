@@ -33,7 +33,7 @@ println(r.unwrap_or(100));    // 100
 ```
 
 ### `unwrap() -> T`
-成功返回值，失败运行时 panic（MVP 直接 abort）。
+成功返回值，失败运行时 panic（当前实现直接 abort）。
 ```rlyeh
 let r = Result::Ok(5);
 println(r.unwrap());          // 5
