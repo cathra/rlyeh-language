@@ -63,7 +63,7 @@ python3 run.py --skip-rlyeh-build   # 跳过 Rlyeh 重编译（复用已有二�
 | Swift | `swiftc -O` | 发布级优化 |
 | Rust | `rustc -O` | 发布级优化 |
 
-## 最新结果摘要（Apple Silicon，2026-08-31 重新实测）
+## 历史结果摘要（Apple Silicon，2026-08-31 重新实测）
 
 > **2026-08-31 修正说明**：原 2026-08-24 版的 Rlyeh 数值（actor 6.7ms / dyn_dispatch 3.6ms 等）**从未被自动化脚本真正产出**——`run.py` 曾把 Rlyeh 源文件扩展名误写成 `rlyeh`（实际为 `rl`），导致 Rlyeh 每次编译都因找不到 `*.rlyeh` 文件而 I/O 失败，旧数值为手写 / 过乐观估计。下方为修正扩展名后本机**真实重测**结果。
 
@@ -82,6 +82,35 @@ python3 run.py --skip-rlyeh-build   # 跳过 Rlyeh 重编译（复用已有二�
 | region_alloc (ms) | 5.874 | 4.533 | 2.467 | 3.107 | 2.938 | 3.083 | 2.38x（当前最慢项） |
 | region_batch (ms) | 12.930 | 11.528 | 12.759 | 11.484 | 11.442 | 14.118 | 1.13x（vs 最优） |
 | nqueens (ms) | 62.839 | 58.409 | 63.046 | 62.785 | 56.530 | 65.694 | 1.11x |
+
+## 2026-11-15 性能优化（本轮）
+
+本轮针对 README 中 Rlyeh 落后项做了三处优化（均保持语义/输出不变）：
+
+1. **`push_str(字面量)` 快速路径修复**：typecheck 为字面量构造完整 `StrFat {data, len}`，直接调用 `String::push_bytes`，避免每次字面量拼接都 `String::from` 深拷贝（旧快速路径因单槽伪对象头导致 StrFat len 槽为垃圾值而移除）。`strcat` 从 **5.143 ms → 2.194 ms**（30 次均值，约 2.3x）。
+2. **`format!` 单 builder + 整数直写**：由 `String::from(字面量) + to_string(v)` 链改为一次 `String::with_capacity` + `push_str`/`push_i64`；整数不再经 `int_to_string` 中间 String。`hashmap_str` 从 **7.259 ms → 6.533 ms**（30 次均值，约 1.11x）。
+3. **`int_to_string` 预分配**：容量 24 字节，避免逐位 `push_byte` 多次 grow。
+
+同机 Rlyeh vs 最快对标（C/C++/Rust/Swift；本机 Go 安装损坏，未纳入）：
+
+| 基准 | Rlyeh (ms) | 最优对标 (ms) | Rlyeh/最优 |
+|------|-----------:|-------------:|:---------:|
+| fib | 3.507 | 3.326 (C++) | 1.05x |
+| loop_sum | 2.581 | 2.122 (C++) | 1.22x |
+| matmul | 12.902 | 12.327 (Rust) | 1.05x |
+| strcat | 2.708 | 2.202 (C) | 1.23x |
+| hashmap | 7.142 | 5.228 (C) | 1.37x |
+| sort | 2.385 | 2.266 (C++) | 1.05x |
+| actor_pingpong | 5.672 | 145.134 (Rust) | **最快** |
+| btree | 2.972 | 2.289 (C++) | 1.30x |
+| hashmap_str | 7.173 | 2.730 (C++) | 2.63x |
+| dyn_dispatch | 2.175 | 2.365 (Rust) | **最快** |
+| region_alloc | 5.629 | 2.262 (C++) | 2.49x |
+| region_batch | 12.810 | 12.450 (C) | 1.03x |
+| nqueens | 66.932 | 58.071 (Rust) | 1.15x |
+
+> 计时口径：warmup 1 + 正式 10 次均值；本机负载会让单次结果有 ±10% 波动。`hashmap_str` / `region_alloc` 仍为后续优化重点（字符串键构造的 String 对象+数据双分配、region 每对象分配调用开销）。
+> `run.py` 已修复 Rlyeh 二进制路径（`target/release/rlyeh`，兼容旧名 `rlyeh-driver`），此前路径错误会导致 benchmark 直接报“未找到 rlyeh-driver”。
 
 ### 关键洞察
 

@@ -8,7 +8,8 @@
 // 输出。全部 i64 算术（不用 Vec——`Vec::new()` 的 Infer 类型参数在标准库
 // 自举时无上下文注解可统一）。i64::MIN 取负溢出 MVP 不处理。
 fn int_to_string(n: i64) -> String {
-    let mut buf = String::new();
+    // 性能：预分配 24 字节（负号 + i64 最长 19 位），避免 push_byte 逐位 grow。
+    let mut buf = String::with_capacity(24);
     let mut v = n;
     if v < 0 {
         buf.push_byte(45);

@@ -20,7 +20,12 @@ import json
 import datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-RLYEH_DRIVER = os.path.join(ROOT, "..", "..", "..", "target", "release", "rlyeh-driver")
+_RELEASE_DIR = os.path.join(ROOT, "..", "..", "..", "target", "release")
+# rlyeh-driver 包实际产出的二进制名为 `rlyeh`（Cargo [[bin]] name = "rlyeh"）；
+# 兼容旧版 `rlyeh-driver` 命名。
+RLYEH_DRIVER = os.path.join(_RELEASE_DIR, "rlyeh")
+if not os.path.exists(RLYEH_DRIVER):
+    RLYEH_DRIVER = os.path.join(_RELEASE_DIR, "rlyeh-driver")
 
 BENCHMARKS = ["fib", "loop_sum", "matmul", "strcat", "hashmap", "sort",
               "actor_pingpong", "btree", "hashmap_str", "dyn_dispatch",

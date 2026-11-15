@@ -143,16 +143,6 @@ pub(super) fn align_string_ast(
     }
 }
 
-pub(super) fn value_to_string_ast(
-    ctx: &mut TypeContext,
-    arg: &AstExpr,
-    debug: bool,
-    span: Span,
-) -> Result<AstExpr, TypeError> {
-    let (_, ty) = infer_expr(ctx, arg)?;
-    value_to_string_for_ty(ctx, &ty, arg, debug, span)
-}
-
 pub(super) fn value_to_string_for_ty(
     ctx: &mut TypeContext,
     ty: &Type,
@@ -354,37 +344,93 @@ pub(super) fn check_format_macro(
             span,
         });
     }
-    // 逐段拼接：`String::from(字面量) + to_string(值) + ...`
-    // （`+` 在 Binary 分支 desugar 为 clone + push_str 深拷贝，A3 语义）
-    let mut acc: Option<AstExpr> = None;
+    // 性能：用单个 String builder（with_capacity + push_str/push_i64）替代
+    // String::from(字面量) + to_string(值) + ... 的 clone/push 链，
+    // 避免每次 format! 2–3 次堆分配（hashmap_str 键构造热路径）。
+    // 容量估算：字面量字节数 + 每个值预留 24 字节（i64 最长 20 位 + 余量）。
+    let capacity = fmt.len() + 24 * value_count;
+    let out_name = ctx.fresh_temp();
+    let out_id = AstExpr::new(ExprKind::Ident(out_name.clone()), span);
+    let push_str = |recv: AstExpr, val: AstExpr| {
+        AstExpr::new(
+            ExprKind::MethodCall {
+                receiver: recv,
+                method: "push_str".to_string(),
+                args: vec![val],
+                protocol_hint: None,
+            },
+            span,
+        )
+    };
+    let mut stmts: Vec<AstStmt> = vec![AstStmt::Let {
+        pattern: AstPattern::Ident(out_name),
+        type_anno: None,
+        init: mk_path_call(
+            vec!["String".to_string(), "with_capacity".to_string()],
+            vec![AstExpr::new(ExprKind::IntLiteral(capacity as i128), span)],
+            span,
+        ),
+        mutable: true,
+    }];
     let mut value_idx = 1usize;
     for seg in &segs {
-        let seg_ast = if seg.is_value {
+        if seg.is_value {
             let arg = &args[value_idx];
             value_idx += 1;
-            let base = value_to_string_ast(ctx, arg, seg.is_debug, span)?;
-            // X4：对齐格式占位符（`{:>10}` / `{:<5}` / `{:^8}`）——按宽度对齐。
-            if seg.width > 0 && seg.align != '\0' {
-                align_string_ast(ctx, base, seg.align, seg.width, seg.fill, span)?
+            let (_, ty) = infer_expr(ctx, arg)?;
+            let base = peel_ref(&ty);
+            let is_integer = matches!(
+                base,
+                Type::I8
+                    | Type::I16
+                    | Type::I32
+                    | Type::I64
+                    | Type::ISize
+                    | Type::U8
+                    | Type::U16
+                    | Type::U32
+                    | Type::U64
+                    | Type::USize
+            );
+            let has_align = seg.width > 0 && seg.align != '\0';
+            if is_integer && !seg.is_debug && !has_align {
+                // 整数直接追加十进制（无需中间 String）。
+                stmts.push(AstStmt::Semi(AstExpr::new(
+                    ExprKind::MethodCall {
+                        receiver: out_id.clone(),
+                        method: "push_i64".to_string(),
+                        args: vec![arg.clone()],
+                        protocol_hint: None,
+                    },
+                    span,
+                )));
             } else {
-                base
+                let base_ast = value_to_string_for_ty(ctx, &ty, arg, seg.is_debug, span)?;
+                // X4：对齐格式占位符——按宽度对齐。
+                let seg_ast = if has_align {
+                    align_string_ast(ctx, base_ast, seg.align, seg.width, seg.fill, span)?
+                } else {
+                    base_ast
+                };
+                stmts.push(AstStmt::Semi(push_str(out_id.clone(), seg_ast)));
             }
         } else {
-            string_from_lit_ast(seg.text.clone(), span)
-        };
-        acc = Some(match acc {
-            None => seg_ast,
-            Some(prev) => AstExpr::new(
-                ExprKind::Binary {
-                    op: BinaryOp::Add,
-                    left: prev,
-                    right: seg_ast,
-                },
-                span,
-            ),
-        });
+            // 直接传字符串字面量（而非 String::from）：push_str 内建快速路径
+            // 转 push_bytes(StrFat)，避免每个字面量段的深拷贝分配。
+            stmts.push(AstStmt::Semi(push_str(
+                out_id.clone(),
+                AstExpr::new(ExprKind::StringLiteral(seg.text.clone()), span),
+            )));
+        }
     }
-    let concat = acc.expect("格式串至少有一段");
+    let concat = AstExpr::new(
+        ExprKind::Block(AstBlock {
+            stmts,
+            final_expr: Some(out_id),
+            span,
+        }),
+        span,
+    );
     if name == "format!" {
         let (hir, ty) = infer_expr(ctx, &concat)?;
         return Ok((hir, ty));

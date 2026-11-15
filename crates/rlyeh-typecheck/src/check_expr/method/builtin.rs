@@ -247,16 +247,46 @@ pub(super) fn try_builtin_method_call(
         })), Span::dummy());
         recv_ty = Type::Named("String".to_string(), vec![]);
     }
-    // `push_str(字面量实参)` 快速路径（原改调 `String::push_bytes(src, n)`）已移除：
-    // 该特判把字面量经 `&__lit`（单槽伪对象头，仅含 data 指针）传给 `push_bytes`，
-    // 而 `push_bytes` 内部的 `src[i]` 索引按 `&str` 胖指针（StrFat `{data, len}`）
-    // 读取 `len` 字段做边界检查——单槽对象在偏移 +8 处是栈上垃圾值，导致边界检查
-    // `i >= len` 立即成立、`abort()`（典型崩溃：`m.push_str(" world")`、`float_to_string`
-    // 内的 `push_str(数字串)`）。回退到常规 `push_str(String)` 路径（字面量经
-    // `upgrade_str_arg` 升级为 `String`，`push_str` 直接索引 `other.data[i]` 且边界
-    // 用正确的 `other.len`），行为正确、零新增回归；性能优化（避免字面量深拷贝）应改为
-    // 在 codegen 为字面量构造完整 StrFat `{data, len}` 后再接 `push_bytes`，而非当前
-    // 单槽伪对象头。
+    // 性能：`push_str(字面量)` 快速路径——按原注释建议，为字面量构造**完整**
+    // StrFat `{data, len}` 双槽（make_slice_fat），再调用 `String::push_bytes`。
+    // 避免每次字面量拼接都走 `String::from` 深拷贝（strcat / format! 前缀热路径）。
+    // 旧版曾传单槽伪对象头，导致 StrFat 的 len 槽为垃圾值而 abort；此处修复。
+    if method == "push_str" && args.len() == 1 {
+        if let ExprKind::StringLiteral(lit) = &*args[0].kind {
+            if let Some(impl_def) = ctx.find_impl_for_method(&recv_ty, "push_bytes").cloned() {
+                if let Some(method_def) = impl_def
+                    .methods
+                    .iter()
+                    .find(|m| m.sig.name == "push_bytes")
+                    .cloned()
+                {
+                    if let Ok(fn_name) = instantiate_impl_method(
+                        ctx,
+                        &impl_def,
+                        &method_def,
+                        &std::collections::HashMap::new(),
+                        span,
+                    ) {
+                        let n = lit.len() as i128;
+                        let data = HirExpr::new(HirExprKind::StringLiteral(lit.clone()), Span::dummy());
+                        let fat = make_slice_fat(ctx, data, n);
+                        let call = HirExpr::new(
+                            HirExprKind::Call {
+                                callee: fn_name,
+                                args: vec![
+                                    recv_hir.clone(),
+                                    fat,
+                                    HirExpr::new(HirExprKind::IntLiteral(n), Span::dummy()),
+                                ],
+                            },
+                            Span::dummy(),
+                        );
+                        return Ok(BuiltinOutcome::Handled(call, Type::Unit));
+                    }
+                }
+            }
+        }
+    }
     // `Rc<T>` / `Arc<T>` / `Weak<T>` 引用计数内建方法（K3）：clone /
     // strong_count / weak_count / downgrade / try_unwrap / upgrade。
     // 须在堆指针改写前分派（内建需要原始 Rc 对象取 RcInner 指针）

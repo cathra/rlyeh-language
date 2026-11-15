@@ -54,6 +54,43 @@ impl String {
         }
         self.len = self.len + n;
     }
+    // 快速整数追加（format! 优化，2026-11-15）：一次预留最多 20 字节，
+    // 直接写十进制数字到缓冲，避免 int_to_string 的临时 String 分配与多次 grow。
+    // 语义与 int_to_string 一致（0 特判、负数前缀；i64::MIN 溢出同 MVP 限制）。
+    fn push_i64(&mut self, n: i64) {
+        while self.cap - self.len < 20 {
+            self.grow();
+        }
+        let mut v = n;
+        if v == 0 {
+            self.data[self.len] = 48;
+            self.len = self.len + 1;
+            return;
+        }
+        if v < 0 {
+            self.data[self.len] = 45;
+            self.len = self.len + 1;
+            v = 0 - v;
+        }
+        let mut ndigits = 0;
+        let mut tmp = v;
+        while tmp > 0 {
+            ndigits = ndigits + 1;
+            tmp = tmp / 10;
+        }
+        let mut place = 1;
+        let mut k = 1;
+        while k < ndigits {
+            place = place * 10;
+            k = k + 1;
+        }
+        while place >= 1 {
+            let d = (v / place) % 10;
+            self.data[self.len] = 48 + d;
+            self.len = self.len + 1;
+            place = place / 10;
+        }
+    }
     // 深拷贝：返回全新缓冲，内容与 self 相等但互不影响。
     // `a + b` 运算符 desugar 依赖此语义（A3：消除共享缓冲别名隐患——
     // 拼接结果与左操作数不再指向同一缓冲）。

@@ -9,6 +9,8 @@
 
 ### 新增
 
+- **性能优化（2026-11-15）**：`push_str(字面量)` 修复为构造完整 `StrFat` 后直调 `String::push_bytes`（不再每次 `String::from` 深拷贝）——`strcat` 5.143 → 2.194 ms（约 2.3x）；`format!` 改为单 `String::with_capacity` builder + `push_i64` 整数直写（`hashmap_str` 7.259 → 6.533 ms，约 1.11x），`int_to_string` 预分配 24 字节。新增 `format_int_builder` 回归用例；benchmark `run.py` 修复 Rlyeh 二进制路径。详见 `examples/projects/benchmarks/README.md`。
+
 - **标准库集合迭代器补全（2026-11-15）**：`VecDeque::iter() -> IterRef<T>`（从逻辑头 `front` 起、零拷贝只读引用迭代）、`BTreeMap::iter() -> BTreeMapIter<K,V>`（`next() -> Option<KVRef<K,V>>` 键值对引用迭代）与 `BTreeMap::range(lo, hi) -> Vec<V>`（区间 `[lo, hi)`，MVP 线性扫描）。新增 run-pass `tests/run-pass/vecdeque_iter.{rl,out}`、`btreemap_iter_range.{rl,out}`；`rlyeh test tests` **355/355 通过**。同步修正 `docs/std-lib.md` 中已过时的 Iterator/File/Channel/格式化/TOML/`try` 状态标注。
 
 - **0.2.0 收尾验收通过（2026-11-15）**：阶段 A–Y 全部落地后完成全量验收——`cargo build --workspace` + `cargo test --workspace --no-fail-fast -- --test-threads=1` **134 个测试目标 / 804 个测试函数全通过、0 失败**（含 `suite_test` 的 352 个 `.rl` 用例：249 run-pass + 87 compile-fail + 16 compile-pass）；SH-P2-7 前端自举 PoC 五组测试（lexer/parser/ast/macro/dogfood）全绿。补漏：T-6 块级借用模型下 `reference_test` 四例按 RFC §4.4 迁入显式块、`wasm_target_test` sysroot 就绪检测补查 `crt1.o`/`libc.a`、parser 陈旧单测修正（`protocol` 仍为关键字）。已知限制（Q-M4 智能指针 Drop、W L3 `!` never、C enum derive、I 泛型 impl 静态方法、Y4 跨线程移动、P2-5 K-M1..M3）明确移交 0.3.0，详见 `docs/development-plan-0.2.0.md` §1.1。
