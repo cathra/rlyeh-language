@@ -133,3 +133,20 @@ jobs:
         with:
           files: dist/${{ matrix.name }}.tar.gz
           generate_release_notes: true
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package docs
+        shell: bash
+        run: |
+          mkdir -p dist
+          VERSION=${GITHUB_REF_NAME#v}
+          tar --exclude=.DS_Store -czf dist/rlyeh-docs-${VERSION}.tar.gz docs
+
+      - name: Upload docs
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/rlyeh-docs-*.tar.gz
