@@ -52,7 +52,7 @@ build_platform() {
     local stage
     stage="$(mktemp -d)"
     mkdir -p "$stage/bin"
-    for b in rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon; do
+    for b in rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench rlyeh-lsp dagon; do
         cp "$REPO/target/$target/release/$b$ext" "$stage/bin/$b$ext"
     done
 

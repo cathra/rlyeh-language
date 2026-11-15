@@ -29,7 +29,7 @@ REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 PREFIX="${RLYEH_PREFIX:-$HOME/.rlyeh}"
 RELEASE="${RLYEH_RELEASE_DIR:-$REPO/target/release}"
 
-BINARIES=(rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon)
+BINARIES=(rlyeh rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench rlyeh-lsp dagon)
 STD_SRC="$REPO/crates/rlyeh-std/rlyeh"
 
 echo "==> Rlyeh 工具链本地发布"
