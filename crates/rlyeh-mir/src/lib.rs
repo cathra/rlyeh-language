@@ -19,7 +19,10 @@
 #![warn(unsafe_code)]
 
 pub mod lower;
+pub mod opt;
 pub mod passes;
+
+pub use opt::OptLevel;
 
 use rlyeh_hir::{HirBinaryOp, HirRegionOptions, HirUnaryOp};
 

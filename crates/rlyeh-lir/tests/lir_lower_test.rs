@@ -4,13 +4,14 @@ use rlyeh_lir::lower::lower_program;
 use rlyeh_lir::{LirOperand, LirProgram, LirStmt, LirTerminator, LirType};
 use rlyeh_mir::lower::lower_program as lower_mir;
 use rlyeh_mir::passes::optimize;
+use rlyeh_mir::OptLevel;
 use rlyeh_typecheck::typecheck_source;
 
 /// 完整降低：typecheck → MIR → 优化 → LIR。
 fn lower(src: &str) -> LirProgram {
     let hir = typecheck_source(src).expect("typecheck");
     let mut mir = lower_mir(&hir);
-    optimize(&mut mir);
+    optimize(&mut mir, OptLevel::O3);
     lower_program(&mir).expect("lir lowering")
 }
 

@@ -167,8 +167,8 @@ fn main() -> ExitCode {
             eprintln!(
                 "Rlyeh 编译器（MVP）\n\
                  用法:\n  \
-                 rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--no-heap] [--verbose] 编译并运行\n  \
-                 rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--no-heap] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
+                 rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--no-heap] [-O0|-O1|-O2|-O3|-Os] [--verbose] 编译并运行\n  \
+                 rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--no-heap] [-O0|-O1|-O2|-O3|-Os] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
                  rlyeh run|build <file> --emit <ir|ast|hir|ast-user|hir-user> [-o <out>] 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行\n  \
                  rlyeh test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
                  rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
@@ -228,6 +228,8 @@ struct CliOpts {
     force: bool,
     no_std: bool,
     no_heap: bool,
+    /// 优化级别（-O0/-O1/-O2/-O3/-Os，默认 O3）。
+    opt_level: rlyeh_mir::OptLevel,
     verbose: bool,
     out: Option<PathBuf>,
     target: Option<String>,
@@ -250,6 +252,7 @@ impl CliOpts {
         let mut force = false;
         let mut no_std = false;
         let mut no_heap = false;
+        let mut opt_level = rlyeh_mir::OptLevel::O3;
         let mut verbose = false;
         let mut out = None;
         let mut target = None;
@@ -264,6 +267,18 @@ impl CliOpts {
             if let Some(v) = arg.strip_prefix("--visibility=") {
                 visibility = rlyeh_typecheck::VisibilityMode::parse(v)
                     .ok_or_else(|| format!("未知可见性模式: {v}（可选 off/warn/error）"))?;
+                i += 1;
+                continue;
+            }
+            if let Some(v) = arg.strip_prefix("--opt-level=") {
+                opt_level = rlyeh_mir::OptLevel::parse(v)
+                    .ok_or_else(|| format!("未知优化级别: {v}（可选 O0/O1/O2/O3/Os）"))?;
+                i += 1;
+                continue;
+            }
+            if let Some(v) = arg.strip_prefix("-O") {
+                opt_level = rlyeh_mir::OptLevel::parse(v)
+                    .ok_or_else(|| format!("未知优化级别: -O{v}（可选 -O0/-O1/-O2/-O3/-Os）"))?;
                 i += 1;
                 continue;
             }
@@ -320,6 +335,7 @@ impl CliOpts {
             force,
             no_std,
             no_heap,
+            opt_level,
             verbose,
             out,
             target,
@@ -337,9 +353,15 @@ impl CliOpts {
 }
 
 /// 按 `--emit` 目标导出中间表示文本（Ir/Ast/Hir 及其 user-only 变体）。
-fn emit_file(path: &str, target: &EmitTarget) -> Result<String, DriverError> {
+fn emit_file(path: &str, target: &EmitTarget, opts: &CliOpts) -> Result<String, DriverError> {
     match target {
-        EmitTarget::Ir => rlyeh_driver::compile_file_to_llvm(Path::new(path)),
+        EmitTarget::Ir => rlyeh_driver::compile_file_to_llvm_with_opts(
+            Path::new(path),
+            opts.visibility,
+            opts.no_std,
+            opts.no_heap,
+            opts.opt_level,
+        ),
         EmitTarget::Ast => rlyeh_driver::emit_ast(Path::new(path)),
         EmitTarget::Hir => rlyeh_driver::emit_hir(Path::new(path)),
         EmitTarget::AstUser => rlyeh_driver::emit_ast_user(Path::new(path)),
@@ -351,7 +373,7 @@ fn emit_file(path: &str, target: &EmitTarget) -> Result<String, DriverError> {
 /// 若指定 `--emit`，导出中间表示文本并直接返回退出码；否则返回 `None`（继续编译运行）。
 fn handle_emit(file: &str, opts: &CliOpts) -> Option<ExitCode> {
     let target = opts.emit.as_ref()?;
-    match emit_file(file, target) {
+    match emit_file(file, target, opts) {
         Ok(out) => {
             if let Some(o) = &opts.out {
                 if let Err(e) = std::fs::write(o, &out) {
@@ -409,6 +431,7 @@ fn new_driver(opts: &CliOpts) -> IncrementalDriver {
         .with_force(opts.force)
         .with_no_std(opts.no_std)
         .with_no_heap(opts.no_heap)
+        .with_opt_level(opts.opt_level)
         .with_target(opts.target.clone())
         .with_visibility(opts.visibility)
         .with_dep_roots(opts.dep_roots.clone())
@@ -678,6 +701,7 @@ fn run_bench(args: &[String]) -> ExitCode {
     let mut warmup = 2usize;
     let mut force = false;
     let mut cache_dir: Option<PathBuf> = None;
+    let mut opt_level = rlyeh_mir::OptLevel::O3;
 
     let mut i = 0;
     while i < args.len() {
@@ -723,6 +747,13 @@ fn run_bench(args: &[String]) -> ExitCode {
                 }
             }
             "--force" => force = true,
+            s if s.starts_with("-O") => match rlyeh_mir::OptLevel::parse(&s[2..]) {
+                Some(level) => opt_level = level,
+                None => {
+                    eprintln!("rlyeh bench: 未知优化级别 '{s}'（可选 -O0/-O1/-O2/-O3/-Os）");
+                    return ExitCode::from(2);
+                }
+            },
             s if s.starts_with('-') => {
                 eprintln!("rlyeh bench: 未知选项 '{s}'");
                 return ExitCode::from(2);
@@ -738,7 +769,7 @@ fn run_bench(args: &[String]) -> ExitCode {
         i += 1;
     }
     let Some(file) = file else {
-        eprintln!("用法: rlyeh bench <file.rl> [-o <out>] [--runs N] [--warmup N]");
+        eprintln!("用法: rlyeh bench <file.rl> [-o <out>] [--runs N] [--warmup N] [-O0..-O3|-Os]");
         return ExitCode::from(2);
     };
 
@@ -755,6 +786,7 @@ fn run_bench(args: &[String]) -> ExitCode {
         force,
         no_std: false,
         no_heap: false,
+        opt_level,
         verbose: false,
         out: None,
         target: None,

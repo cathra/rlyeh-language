@@ -42,6 +42,7 @@ dist/
 !tests/run-pass/btreemap_iter_range.out
 !tests/run-pass/format_int_builder.out
 !tests/run-pass/no_heap_crypto.out
+!tests/run-pass/opt_level_o0.out
 !tests/run-pass/copy_clone.out
 !tests/run-pass/cross_module_mut_self.out
 !tests/run-pass/type_alias.out

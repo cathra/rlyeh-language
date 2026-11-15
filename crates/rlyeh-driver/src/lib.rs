@@ -65,7 +65,7 @@ pub fn build_executable_with_target(
     target: Option<&str>,
 ) -> Result<(), DriverError> {
     let llvm = full_pipeline(source)?;
-    assemble(&llvm, out_path, target)
+    assemble(&llvm, out_path, target, rlyeh_mir::OptLevel::O3)
 }
 
 /// 编译并运行源码，返回程序标准输出（UTF-8），无缓存。
@@ -105,6 +105,7 @@ pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
         prelude_lines,
         rlyeh_typecheck::VisibilityMode::Off,
         false,
+        rlyeh_mir::OptLevel::O3,
     )
 }
 
@@ -115,6 +116,7 @@ pub fn compile_file_to_llvm_with_opts(
     visibility: rlyeh_typecheck::VisibilityMode,
     no_std: bool,
     no_heap: bool,
+    opt_level: rlyeh_mir::OptLevel,
 ) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;
     // 无堆模式强制不注入标准库（std 自带 String/Vec/HashMap 等堆类型）。
@@ -126,6 +128,7 @@ pub fn compile_file_to_llvm_with_opts(
         prelude_lines,
         visibility,
         no_heap,
+        opt_level,
     )
 }
 
@@ -853,7 +856,7 @@ pub fn build_executable_file_with_target(
     target: Option<&str>,
 ) -> Result<(), DriverError> {
     let llvm = compile_file_to_llvm(entry)?;
-    assemble(&llvm, out_path, target)
+    assemble(&llvm, out_path, target, rlyeh_mir::OptLevel::O3)
 }
 
 /// 编译并运行入口文件（含外部模块），返回程序标准输出（UTF-8），无缓存。
@@ -974,6 +977,8 @@ pub struct IncrementalDriver {
     no_std: bool,
     /// 无堆模式（`--no-heap`）：拒绝堆分配（隐含 no_std）。
     no_heap: bool,
+    /// 优化级别（`-O0/-O1/-O2/-O3/-Os`，默认 O3）。
+    opt_level: rlyeh_mir::OptLevel,
     /// LLVM 目标 triple（`--target` 交叉编译；`None` = 主机目标）
     target: Option<String>,
     /// 会话内缓存统计
@@ -999,6 +1004,7 @@ impl IncrementalDriver {
             force: false,
             no_std: false,
             no_heap: false,
+            opt_level: rlyeh_mir::OptLevel::default(),
             target: None,
             stats: CacheStats::default(),
             region_hints: std::collections::HashMap::new(),
@@ -1031,6 +1037,12 @@ impl IncrementalDriver {
     /// 启用无堆模式（`--no-heap`）：拒绝堆分配，并隐含不注入标准库预置。
     pub fn with_no_heap(mut self, no_heap: bool) -> Self {
         self.no_heap = no_heap;
+        self
+    }
+
+    /// 设置优化级别（默认 O3）。
+    pub fn with_opt_level(mut self, opt_level: rlyeh_mir::OptLevel) -> Self {
+        self.opt_level = opt_level;
         self
     }
 
@@ -1070,9 +1082,13 @@ impl IncrementalDriver {
             self.stats.recovered += 1;
         }
 
-        // 无堆模式必须与普通编译区分缓存，否则可能复用含 calloc 的旧产物。
-        let source_hash = if self.no_heap {
-            compute_source_hash(&format!("--no-heap\n{source}"))
+        // 无堆模式 / 非默认优化级别必须与普通编译区分缓存。
+        let source_hash = if self.no_heap || self.opt_level != rlyeh_mir::OptLevel::O3 {
+            compute_source_hash(&format!(
+                "--no-heap={}\n-O{}\n{source}",
+                self.no_heap,
+                self.opt_level.name()
+            ))
         } else {
             compute_source_hash(source)
         };
@@ -1101,6 +1117,7 @@ impl IncrementalDriver {
             self.prelude_lines,
             self.visibility,
             self.no_heap,
+            self.opt_level,
         )?;
         let interface = extract_interface(&source)?;
         let interface_hash = compute_interface_hash(&interface);
@@ -1122,7 +1139,12 @@ impl IncrementalDriver {
         out_path: &Path,
     ) -> Result<BuildOutcome, DriverError> {
         let outcome = self.compile_to_llvm(file, source)?;
-        assemble(&outcome.llvm, out_path, self.target.as_deref())?;
+        assemble(
+            &outcome.llvm,
+            out_path,
+            self.target.as_deref(),
+            self.opt_level,
+        )?;
         Ok(outcome)
     }
 
@@ -1163,7 +1185,12 @@ impl IncrementalDriver {
         out_path: &Path,
     ) -> Result<BuildOutcome, DriverError> {
         let outcome = self.compile_file_to_llvm(entry)?;
-        assemble(&outcome.llvm, out_path, self.target.as_deref())?;
+        assemble(
+            &outcome.llvm,
+            out_path,
+            self.target.as_deref(),
+            self.opt_level,
+        )?;
         Ok(outcome)
     }
 
@@ -1209,6 +1236,7 @@ fn full_pipeline(source: &str) -> Result<String, DriverError> {
         0,
         rlyeh_typecheck::VisibilityMode::Off,
         false,
+        rlyeh_mir::OptLevel::O3,
     )
 }
 
@@ -1250,6 +1278,7 @@ fn full_pipeline_with_hints(
     prelude_lines: usize,
     visibility: rlyeh_typecheck::VisibilityMode,
     no_heap: bool,
+    opt_level: rlyeh_mir::OptLevel,
 ) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR），并收集建议性警告与全局声明
     let (hir, warnings, globals) = rlyeh_typecheck::typecheck_source_with_warnings(
@@ -1278,7 +1307,7 @@ fn full_pipeline_with_hints(
 
     // 4. MIR lowering + 优化
     let mut mir = rlyeh_mir::lower::lower_program(&hir);
-    rlyeh_mir::passes::optimize(&mut mir);
+    rlyeh_mir::passes::optimize(&mut mir, opt_level);
 
     // 5. LIR lowering
     let mut lir = rlyeh_lir::lower::lower_program(&mir).map_err(|e| DriverError::Lir(e.to_string()))?;
@@ -1310,7 +1339,12 @@ fn full_pipeline_with_hints(
 /// LLVM IR 文本 → clang 汇编 / 链接 → 可执行文件。
 ///
 /// `target` 为 LLVM 目标 triple（`--target` 交叉编译）；`None` 表示主机目标。
-fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), DriverError> {
+fn assemble(
+    llvm: &str,
+    out_path: &Path,
+    target: Option<&str>,
+    opt_level: rlyeh_mir::OptLevel,
+) -> Result<(), DriverError> {
     // 输出路径的父目录必须存在（链接器无法创建）
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent).map_err(DriverError::Io)?;
@@ -1337,13 +1371,13 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     // WebAssembly 目标走独立汇编链路（wasi-libc sysroot + wasm-ld），其余走系统链接器。
     if let Some(t) = target {
         if is_wasm_triple(t) {
-            return assemble_wasm(&ll_path, out_path, t, &dir);
+            return assemble_wasm(&ll_path, out_path, t, &dir, opt_level);
         }
         // Y（2026-08-28）：跨 OS ELF 目标（Linux/RISC-V/LoongArch musl）——宿主
         // clang 的 ld 无法链接跨 OS 目标（macOS ld 不认识 `--hash-style` 等），
         // 改用 rust-lld（多目标链接器）+ Rust musl sysroot 的 crt/libc 链接。
         if is_elf_musl_target(t) && is_cross_target(target) {
-            return assemble_cross_elf(&ll_path, out_path, t, &dir);
+            return assemble_cross_elf(&ll_path, out_path, t, &dir, opt_level);
         }
     }
 
@@ -1371,7 +1405,7 @@ fn assemble(llvm: &str, out_path: &Path, target: Option<&str>) -> Result<(), Dri
     // （-O2 全部优化 + 更强的循环向量化 / 函数内联 / 循环变换）。
     // 生成的 IR 不含 noalias/nsw/nuw 标注，LLVM 的优化保守安全
     // （-O3 不依赖这些标注，无错误别名假设）。
-    cmd.arg("-O3");
+    cmd.arg(opt_level.clang_flag());
     cmd.arg(&ll_path);
     for lib in &runtime_libs {
         if let Some(parent) = lib.parent() {

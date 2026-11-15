@@ -9,8 +9,8 @@
 | 命令 | 功能 | 备注 / C 对照 |
 |------|------|----------------|
 | `rlyeh new <name> [--lib]` | 创建项目脚手架 | 生成 `Rlyeh.toml` + `src/main.rl` 或 `lib.rl`；≈ `mkdir` + 写 Makefile |
-| `rlyeh build <file> [-o <out>] [--target <triple>] [--no-heap]` | 编译为可执行文件 | ≈ `clang file.c -o out`；`--target` 交叉编译；`--no-heap` 无堆模式（隐含 `--no-std`） |
-| `rlyeh run <file> [--no-heap]` | 编译并运行 | 一步到位；`--no-heap` 拒绝堆分配（NH001 / IR 守卫） |
+| `rlyeh build <file> [-o <out>] [--target <triple>] [--no-heap] [-O0..-O3|-Os]` | 编译为可执行文件 | ≈ `clang file.c -o out`；`--target` 交叉编译；`--no-heap` 无堆模式（隐含 `--no-std`）；`-O*` 优化级别（默认 O3） |
+| `rlyeh run <file> [--no-heap] [-O0..-O3|-Os]` | 编译并运行 | 一步到位；`--no-heap` 拒绝堆分配（NH001 / IR 守卫）；`-O*` 控制优化 |
 | `rlyeh test` | 运行测试目录用例 | compile-pass / compile-fail / run-pass 三类 |
 | `rlyeh fmt <file>` | 代码格式化 | `--check` 仅检查 / `-w` 写回 / `--indent` 设缩进；≈ `clang-format` |
 | `rlyeh check <file>` | 静态分析 | 未用变量 / 恒常条件 / 冗余比较 / 不可达代码；≈ `clang --analyze` |
@@ -19,6 +19,8 @@
 | `rlyeh publish [--registry] [--verbose]` | 发布到 dagon 注册表 | 重复版本拦截 |
 | `rlyeh lsp` | 语言服务器（LSP over stdio） | 编辑器诊断推送 |
 | `rlyeh profile <file.rl_profile>` | PGO 画像 → 区域大小预测 | `--out` 输出报告 |
+
+> **优化级别**：`-O0/-O1/-O2/-O3/-Os` 同时控制 Rlyeh MIR 优化 passes 与 clang 后端，默认 `-O3`；详见 [优化级别](../optimization-levels.md)。
 
 > **无堆模式**：`--no-heap` 面向 GM/T 0028 风格「运行期不得动态分配」的密码模块代码，拒绝 `String`/`Vec`/`HashMap`/`Box`/`format!`/`region` 等堆路径，并用 IR 后置守卫确保无 `calloc`/`malloc`/`realloc` 调用；允许标量、定长数组、栈上 struct 与按引用传递。详见 [无堆编程模式](../no-heap.md)。
 

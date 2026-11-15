@@ -25,6 +25,7 @@ pub(crate) fn assemble_wasm(
     out_path: &Path,
     target: &str,
     dir: &Path,
+    opt_level: rlyeh_mir::OptLevel,
 ) -> Result<(), DriverError> {
     let sysroot = wasi_sysroot().ok_or_else(|| {
         DriverError::Clang(
@@ -196,7 +197,7 @@ pub(crate) fn assemble_wasm(
     cmd.arg(format!("--sysroot={}", sysroot.display()));
     // 发布级优化：LLVM IR 汇编启用 -O3 优化管线（与 native 对齐；
     // 更强内联/循环变换，生成 IR 不含 noalias/nsw/nuw 标注，优化保守安全）。
-    cmd.arg("-O3");
+    cmd.arg(opt_level.clang_flag());
     // 关闭 clang 默认的 compiler-rt builtins 链接（wasm32 的 libclang_rt.builtins.a
     // 不在 Xcode CLT / brew llvm 内），改由 wasi-libc 的 crt1.o + libc.a 提供入口与库函数。
     // Rlyeh 的 i64/f64 运算在 wasm32 均为原生指令，不依赖 software-intrinsic。
@@ -407,6 +408,7 @@ pub(crate) fn assemble_cross_elf(
     out_path: &Path,
     target: &str,
     dir: &Path,
+    opt_level: rlyeh_mir::OptLevel,
 ) -> Result<(), DriverError> {
     // 1. clang 汇编 LLVM IR → 目标平台 object
     let clang = clang_path();
@@ -422,6 +424,7 @@ pub(crate) fn assemble_cross_elf(
     let mut asm_cmd = Command::new(&clang);
     asm_cmd
         .arg(format!("--target={target}"))
+        .arg(opt_level.clang_flag())
         .arg("-c")
         .arg(&ll_stub_path)
         .arg("-o")

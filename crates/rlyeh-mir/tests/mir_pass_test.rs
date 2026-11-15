@@ -2,7 +2,7 @@
 
 use rlyeh_mir::lower::lower_program;
 use rlyeh_mir::passes::{constant_fold, dead_code_elimination, inline_small_functions, optimize};
-use rlyeh_mir::{MirProgram, MirStmt, MirTerminator, MirValue};
+use rlyeh_mir::{MirProgram, MirStmt, MirTerminator, MirValue, OptLevel};
 use rlyeh_typecheck::typecheck_source;
 
 fn lower(src: &str) -> MirProgram {
@@ -162,7 +162,7 @@ fn main() -> u32 {
 }
 "#,
     );
-    optimize(&mut m);
+    optimize(&mut m, OptLevel::O3);
     let f = first_fn(&m);
     // 流水线不破坏循环 CFG（entry/head/body/after 仍 4 块）
     assert_eq!(f.blocks.len(), 4);

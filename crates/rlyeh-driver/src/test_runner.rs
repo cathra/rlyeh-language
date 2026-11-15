@@ -249,7 +249,13 @@ fn run_one(task: &PendingTask) -> TestCaseResult {
 /// compile-pass：编译到 LLVM IR 必须成功（不链接、不运行）。
 fn run_compile_pass(file: &Path, name: &str) -> TestCaseResult {
     let flags = parse_test_flags(file);
-    match compile_file_to_llvm_with_opts(file, flags.visibility, flags.no_std, flags.no_heap) {
+    match compile_file_to_llvm_with_opts(
+        file,
+        flags.visibility,
+        flags.no_std,
+        flags.no_heap,
+        flags.opt_level,
+    ) {
         Ok(_) => TestCaseResult {
             kind: TestKind::CompilePass,
             name: name.to_string(),
@@ -269,7 +275,13 @@ fn run_compile_pass(file: &Path, name: &str) -> TestCaseResult {
 fn run_compile_fail(file: &Path, name: &str) -> TestCaseResult {
     let flags = parse_test_flags(file);
     let expects = expected_error_fragments(file);
-    match compile_file_to_llvm_with_opts(file, flags.visibility, flags.no_std, flags.no_heap) {
+    match compile_file_to_llvm_with_opts(
+        file,
+        flags.visibility,
+        flags.no_std,
+        flags.no_heap,
+        flags.opt_level,
+    ) {
         Ok(_) => TestCaseResult {
             kind: TestKind::CompileFail,
             name: name.to_string(),
@@ -307,10 +319,11 @@ fn run_run_pass(file: &Path, name: &str) -> TestCaseResult {
     let flags = parse_test_flags(file);
     let expect_file = file.with_extension("out");
     let expected = std::fs::read_to_string(&expect_file).ok();
-    let result = if flags.no_heap {
+    let result = if flags.no_heap || flags.opt_level != rlyeh_mir::OptLevel::O3 {
         let mut driver = crate::IncrementalDriver::new(std::env::temp_dir())
             .with_force(true)
-            .with_no_heap(true);
+            .with_no_heap(flags.no_heap)
+            .with_opt_level(flags.opt_level);
         driver.run_source_file(file).map(|(out, _)| out)
     } else {
         run_source_file(file)
@@ -355,6 +368,7 @@ struct TestFlags {
     visibility: VisibilityMode,
     no_std: bool,
     no_heap: bool,
+    opt_level: rlyeh_mir::OptLevel,
 }
 
 /// 解析源文件头（前 20 行）的 `// flag: <token...>` 注释，提取用例级编译选项。
@@ -382,6 +396,14 @@ fn parse_test_flags(file: &Path) -> TestFlags {
                 flags.no_std = true;
             } else if tok == "--no-heap" {
                 flags.no_heap = true;
+            } else if let Some(v) = tok.strip_prefix("--opt-level=") {
+                if let Some(level) = rlyeh_mir::OptLevel::parse(v) {
+                    flags.opt_level = level;
+                }
+            } else if let Some(v) = tok.strip_prefix("-O") {
+                if let Some(level) = rlyeh_mir::OptLevel::parse(v) {
+                    flags.opt_level = level;
+                }
             }
         }
     }

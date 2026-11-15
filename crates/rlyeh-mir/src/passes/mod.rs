@@ -15,12 +15,22 @@ pub use const_fold::constant_fold;
 pub use dce::dead_code_elimination;
 pub use inline::inline_small_functions;
 
-use crate::MirProgram;
+use crate::{MirProgram, OptLevel};
 
-/// 标准优化流水线：常量折叠 → 死代码消除 → 基础内联 → 死代码消除（清理内联产物）。
-pub fn optimize(program: &mut MirProgram) {
+/// 按优化级别执行 MIR 流水线。
+///
+/// - O0：不执行任何 MIR pass；
+/// - O1：常量折叠 → 死代码消除；
+/// - O2/O3：O1 后执行基础内联，再 DCE 清理内联产物（O3 的额外强度由 clang -O3 承担）；
+/// - Os：仅常量折叠 + DCE（大小优先）。
+pub fn optimize(program: &mut MirProgram, level: OptLevel) {
+    if !level.mir_basic() {
+        return;
+    }
     constant_fold(program);
     dead_code_elimination(program);
-    inline_small_functions(program);
-    dead_code_elimination(program);
+    if level.mir_inline() {
+        inline_small_functions(program);
+        dead_code_elimination(program);
+    }
 }
