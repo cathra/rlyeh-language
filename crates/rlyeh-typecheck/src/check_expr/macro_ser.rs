@@ -9,6 +9,12 @@ pub(crate) fn check_macro_call(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    if ctx.no_heap {
+        return Err(TypeError::NoHeap {
+            what: format!("{name} 宏"),
+            span,
+        });
+    }
     match name {
         "println!" | "print!" | "format!" | "eprintln!" | "eprint!" => {
             check_format_macro(ctx, name, args, span)

@@ -403,6 +403,12 @@ pub(crate) fn infer_expr_tail(
             options,
             body,
         } => {
+            if ctx.no_heap {
+                return Err(TypeError::NoHeap {
+                    what: "region 区域分配".to_string(),
+                    span,
+                });
+            }
             let (hir_block, ty) = check_block(ctx, body)?;
             // L3 PGO 回灌：`adaptive` 区域优先采用 profile 推荐初始容量
             // （`rlyeh build --profile` 注入，见 driver::compile_with_region_hints）。

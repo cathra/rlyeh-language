@@ -9,6 +9,8 @@
 
 ### 新增
 
+- **无堆编程模式（2026-11-15）**：新增 `rlyeh build/run --no-heap`（隐含 `--no-std`），拒绝 `String`/`Vec`/`HashMap`/`Box`/`Rc`/`Arc`/`Gc`、`format!` 等格式化宏、`region`、`alloc_bytes`/`alloc_array`，类型检查报 `NH001`；定长数组与任意字段数标量 struct 改为栈上 `[N x i64]` 分配，支持按引用跨函数传递。codegen 后置扫描 LLVM IR 中的 `calloc/malloc/realloc/rlyeh_region_alloc` 作为最终守卫，确保 `--no-heap` 产物无堆调用。新增 `tests/run-pass/no_heap_crypto.rl`、5 个 compile-fail 用例与 [docs/no-heap.md](docs/no-heap.md)（含 GM/T 0028 适用边界与限制）。
+
 - **性能优化（2026-11-15）**：`push_str(字面量)` 修复为构造完整 `StrFat` 后直调 `String::push_bytes`（不再每次 `String::from` 深拷贝）——`strcat` 5.143 → 2.194 ms（约 2.3x）；`format!` 改为单 `String::with_capacity` builder + `push_i64` 整数直写（`hashmap_str` 7.259 → 6.533 ms，约 1.11x），`int_to_string` 预分配 24 字节。新增 `format_int_builder` 回归用例；benchmark `run.py` 修复 Rlyeh 二进制路径。详见 `examples/projects/benchmarks/README.md`。
 
 - **标准库集合迭代器补全（2026-11-15）**：`VecDeque::iter() -> IterRef<T>`（从逻辑头 `front` 起、零拷贝只读引用迭代）、`BTreeMap::iter() -> BTreeMapIter<K,V>`（`next() -> Option<KVRef<K,V>>` 键值对引用迭代）与 `BTreeMap::range(lo, hi) -> Vec<V>`（区间 `[lo, hi)`，MVP 线性扫描）。新增 run-pass `tests/run-pass/vecdeque_iter.{rl,out}`、`btreemap_iter_range.{rl,out}`；`rlyeh test tests` **355/355 通过**。同步修正 `docs/std-lib.md` 中已过时的 Iterator/File/Channel/格式化/TOML/`try` 状态标注。

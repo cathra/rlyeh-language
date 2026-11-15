@@ -92,6 +92,25 @@ impl LlvmEmitter {
         //    calloc 堆分配（Alloc 发射处按 bvs 成员判定），不能使用栈槽。
         //    剔除是「永久」的（记录在 `escaped` 中）：否则 4a 每轮会把同一
         //    target 重新并入，与 4b 的剔除互相震荡。
+        // 按值局部变量的槽数（无堆模式支持任意槽数栈聚合；缺省按 2 槽返回 ABI）。
+        let mut by_value_slots: HashMap<String, HashMap<String, usize>> = HashMap::new();
+        for f in &program.functions {
+            let mut m: HashMap<String, usize> = HashMap::new();
+            for b in &f.blocks {
+                for s in &b.stmts {
+                    if let LirStmt::Alloc {
+                        target,
+                        slots,
+                        by_value: true,
+                        ..
+                    } = s
+                    {
+                        m.insert(target.clone(), *slots);
+                    }
+                }
+            }
+            by_value_slots.insert(f.name.clone(), m);
+        }
         let mut ret_by_value: HashSet<String> = HashSet::new();
         // 每函数已确认逃逸（须改走 calloc）的 by_value 对象（永久剔除）
         let mut escaped: HashMap<String, HashSet<String>> = HashMap::new();
@@ -289,6 +308,7 @@ impl LlvmEmitter {
             alloc_slot_cursor: 0,
             body: String::new(),
             by_value_locals,
+            by_value_slots,
             ret_by_value,
             promo: None,
             current_block: 0,

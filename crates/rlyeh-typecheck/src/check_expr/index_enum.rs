@@ -297,7 +297,8 @@ pub(super) fn check_array_lit(
         name: base.clone(),
         init: HirExpr::new(HirExprKind::Alloc{
             slots: elems.len(),
-            by_value: false,
+            // 无堆模式：定长数组分配在栈上（codegen 按 slots 分配 [N x i64]）。
+            by_value: ctx.no_heap,
             is_strfat: false,
         }, Span::dummy()),
         mutable: false,

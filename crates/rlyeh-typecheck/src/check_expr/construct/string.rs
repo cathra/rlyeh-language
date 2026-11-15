@@ -10,6 +10,7 @@ pub(crate) fn check_string_from(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("String::from", span)?;
     if args.len() != 1 {
         return Err(TypeError::UnexpectedArgumentCount {
             name: "String::from".to_string(),

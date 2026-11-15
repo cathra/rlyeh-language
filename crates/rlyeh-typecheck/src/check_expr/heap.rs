@@ -10,6 +10,7 @@ pub(super) fn check_box_new(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("Box::new", span)?;
     if args.len() != 1 {
         return Err(TypeError::UnexpectedArgumentCount {
             name: "Box::new".to_string(),
@@ -84,6 +85,7 @@ pub(super) fn check_rc_new(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap(&format!("{ty_name}::new"), span)?;
     if args.len() != 1 {
         return Err(TypeError::UnexpectedArgumentCount {
             name: format!("{ty_name}::new"),
@@ -169,6 +171,7 @@ pub(super) fn check_gc_new(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("Gc::new", span)?;
     if args.len() != 1 {
         return Err(TypeError::UnexpectedArgumentCount {
             name: "Gc::new".to_string(),

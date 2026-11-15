@@ -58,6 +58,23 @@ pub(super) fn split_variant_path(ctx: &TypeContext, resolved: &str) -> Option<(S
 
 pub(crate) fn resolve_ast_type(
     ctx: &TypeContext,
+    ast: &AstType,
+    span: Span,
+) -> Result<Type, TypeError> {
+    let ty = resolve_ast_type_inner(ctx, ast, span)?;
+    if ctx.no_heap {
+        if let Some(name) = crate::context::type_heap_name(&ty) {
+            return Err(TypeError::NoHeap {
+                what: name.to_string(),
+                span,
+            });
+        }
+    }
+    Ok(ty)
+}
+
+fn resolve_ast_type_inner(
+    ctx: &TypeContext,
     ty: &AstType,
     span: Span,
 ) -> Result<Type, TypeError> {

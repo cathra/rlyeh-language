@@ -11,6 +11,7 @@ pub(crate) fn check_hashset_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("HashSet", span)?;
     let cap = if method == "new" {
         AstExpr::new(ExprKind::IntLiteral(8), span)
     } else if args.len() == 1 {
@@ -116,6 +117,7 @@ pub(crate) fn check_btreemap_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("BTreeMap", span)?;
     let cap = if method == "new" {
         AstExpr::new(ExprKind::IntLiteral(8), span)
     } else if args.len() == 1 {

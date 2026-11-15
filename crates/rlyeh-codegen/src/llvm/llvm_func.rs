@@ -98,7 +98,16 @@ impl LlvmEmitter {
         // FieldGet/FieldSet/IndexGet 等既有代码零改动即可直接读写）。
         if let Some(bvs) = self.by_value_locals.get(&f.name) {
             for name in bvs {
-                body.push_str(&format!("  %{name}.obj = alloca [2 x i64]\n"));
+                // 至少 2 槽：历史 codegen 对 1 槽 by_value 对象也按 2 槽读取
+                // （别名传播后的 getelementptr/bitcast）；保持兼容，避免越界。
+                let slots = self
+                    .by_value_slots
+                    .get(&f.name)
+                    .and_then(|m| m.get(name))
+                    .copied()
+                    .unwrap_or(2)
+                    .max(2);
+                body.push_str(&format!("  %{name}.obj = alloca [{slots} x i64]\n"));
             }
         }
         for (name, ty) in &f.params {

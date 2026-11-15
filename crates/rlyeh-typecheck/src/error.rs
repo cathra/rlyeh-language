@@ -322,6 +322,13 @@ pub enum TypeError {
         /// 源码位置
         span: Span,
     },
+    /// 无堆模式（`--no-heap`）下使用了需要堆分配的类型/操作
+    NoHeap {
+        /// 触发点说明（如 `Vec` / `String::from` / `format!`）
+        what: String,
+        /// 源码位置
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -370,6 +377,7 @@ impl TypeError {
             | TypeError::GlobAmbiguity { span, .. }
             | TypeError::NameNotFound { span, .. }
             | TypeError::PrivateItem { span, .. }
+            | TypeError::NoHeap { span, .. }
             | TypeError::UnsafeExternCall { span, .. }
             | TypeError::CannotAssignStatic { span, .. }
             | TypeError::StaticMutOutsideUnsafe { span, .. }
@@ -567,6 +575,9 @@ fn write_message(f: &mut fmt::Formatter<'_>, loc: &str, err: &TypeError) -> fmt:
         TypeError::PrivateItem { name, .. } => {
             write!(f, "{loc}: error: private item `{name}` is not accessible from this module")
         }
+        TypeError::NoHeap { what, .. } => {
+            write!(f, "{loc}: error: no-heap mode: `{what}` requires heap allocation")
+        }
     }
 }
 
@@ -656,6 +667,7 @@ impl TypeError {
             TypeError::GlobAmbiguity { .. } => "TC031",
             TypeError::NameNotFound { .. } => "TC032",
             TypeError::PrivateItem { .. } => "TC033",
+            TypeError::NoHeap { .. } => "NH001",
         }
     }
 
@@ -752,6 +764,9 @@ impl TypeError {
             TypeError::PrivateItem { .. } => {
                 Some("为该符号添加 `pub` 修饰，或使用同模块 / 子模块内的定义")
             }
+            TypeError::NoHeap { .. } => Some(
+                "使用标量、定长数组或栈上 struct，避免 String/Vec/HashMap/Box/format!/region 等堆分配",
+            ),
         }
     }
 

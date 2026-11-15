@@ -40,6 +40,58 @@ impl VisibilityMode {
 }
 use crate::{Warning, WarningKind};
 
+/// 无堆模式下禁止的类型名（堆容器 / 智能指针）。
+pub(crate) fn is_heap_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        "String"
+            | "Vec"
+            | "HashMap"
+            | "HashSet"
+            | "BTreeMap"
+            | "VecDeque"
+            | "Box"
+            | "Rc"
+            | "Arc"
+            | "Weak"
+            | "Gc"
+    )
+}
+
+/// 递归查找类型中的堆类型名（无堆模式用于函数签名/字段/局部注解）。
+pub(crate) fn type_heap_name(ty: &Type) -> Option<&str> {
+    match ty {
+        Type::Named(name, args) => {
+            if is_heap_type_name(name) {
+                Some(name)
+            } else {
+                args.iter().find_map(type_heap_name)
+            }
+        }
+        Type::Ref(inner, _, _)
+        | Type::RawPtr(inner, _)
+        | Type::Array(inner, _)
+        | Type::Slice(inner) => type_heap_name(inner),
+        Type::Union(types) | Type::Tuple(types) => types.iter().find_map(type_heap_name),
+        Type::Fn(sig) => sig
+            .params
+            .iter()
+            .find_map(type_heap_name)
+            .or_else(|| type_heap_name(&sig.return_type)),
+        Type::Closure {
+            captures,
+            params,
+            ret,
+            ..
+        } => captures
+            .iter()
+            .chain(params.iter())
+            .find_map(type_heap_name)
+            .or_else(|| type_heap_name(ret)),
+        _ => None,
+    }
+}
+
 /// 延迟闭包值绑定记录（H5 补全：非注解闭包 `let f = |x| body;`）。
 ///
 /// 绑定处闭包参数类型未知，仅记录 AST 与变量名，绑定变量类型为未固化
@@ -171,6 +223,8 @@ pub struct TypeContext {
     pub import_alias_spans: Vec<(String, String, Span)>,
     /// 可见性检查模式（P2），默认 `Off`（兼容存量代码 / 标准库）。
     pub visibility: VisibilityMode,
+    /// 无堆模式（`--no-heap`）：拒绝需要堆分配的类型与内建操作。
+    pub no_heap: bool,
     /// 对外公共符号面（`pub fn`/`struct`/`enum`/`const`/`static`/`actor`/`protocol`/`import` 的
     /// 全名）；跨模块访问私有符号（`--visibility=error`）时据此外部可达性判定。
     pub pub_symbols: std::collections::HashSet<String>,
@@ -571,6 +625,18 @@ impl TypeContext {
         })
     }
 
+    /// 无堆模式守卫：命中堆分配点时返回 `NoHeap`（NH001），否则放行。
+    pub(crate) fn deny_heap(&self, what: &str, span: Span) -> Result<(), TypeError> {
+        if self.no_heap {
+            Err(TypeError::NoHeap {
+                what: what.to_string(),
+                span,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
     /// 记录一个模块常量（完整符号名 → (HIR 值, 类型)）。
     pub fn insert_constant(&mut self, name: String, value: HirExpr, type_: Type) {
         self.constants.insert(name, (value, type_));
@@ -699,6 +765,12 @@ impl TypeContext {
         }
         if self.type_params.iter().any(|p| p == name) {
             return Ok(Type::Generic(name.to_string()));
+        }
+        if self.no_heap && is_heap_type_name(name) {
+            return Err(TypeError::NoHeap {
+                what: name.to_string(),
+                span,
+            });
         }
         let builtin = builtin_type(name);
         if let Some(t) = builtin {

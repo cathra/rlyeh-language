@@ -76,7 +76,7 @@ pub use crate::check_item::{collect_fn_signatures, typecheck, typecheck_with_reg
 
 /// 便捷函数：解析源码并类型检查，返回 HIR。
 pub fn typecheck_source(source: &str) -> Result<HirProgram, TypeError> {
-    typecheck_source_with_region_hints(source, &Default::default(), 0, VisibilityMode::Off)
+    typecheck_source_with_region_hints(source, &Default::default(), 0, VisibilityMode::Off, false)
 }
 
 /// 便捷函数：解析源码并类型检查，注入 L3 PGO 回灌提示（区域名 → 推荐初始容量）。
@@ -85,6 +85,7 @@ pub fn typecheck_source_with_region_hints(
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
     visibility: VisibilityMode,
+    no_heap: bool,
 ) -> Result<HirProgram, TypeError> {
     let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
@@ -95,7 +96,7 @@ pub fn typecheck_source_with_region_hints(
         what: e.to_string(),
         span: e.span(),
     })?;
-    typecheck_source_with_warnings(source, region_hints, prelude_len, visibility)
+    typecheck_source_with_warnings(source, region_hints, prelude_len, visibility, no_heap)
         .map(|(hir, _warnings, _globals)| hir)
 }
 
@@ -108,6 +109,7 @@ pub fn typecheck_source_with_warnings(
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
     visibility: VisibilityMode,
+    no_heap: bool,
 ) -> Result<(HirProgram, Vec<Warning>, Vec<GlobalDecl>), TypeError> {
     let mut program = rlyeh_parser::parse(source).map_err(|e| TypeError::Unsupported {
         what: format!("语法错误: {e}"),
@@ -119,7 +121,7 @@ pub fn typecheck_source_with_warnings(
         span: e.span(),
     })?;
     let (hir, warnings, globals) =
-        typecheck_with_region_hints(&program, region_hints, prelude_len, visibility)?;
+        typecheck_with_region_hints(&program, region_hints, prelude_len, visibility, no_heap)?;
     Ok((hir, warnings, globals))
 }
 
@@ -129,7 +131,7 @@ mod tests {
     use super::*;
 
     fn warns(src: &str) -> Vec<Warning> {
-        let (_, warnings, _globals) = typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off)
+        let (_, warnings, _globals) = typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off, false)
             .expect("类型检查应成功");
         warnings
     }
@@ -195,7 +197,7 @@ mod tests {
         fn main() { let x = m::secret(); }
         "#;
         let (_, warnings, _) =
-            typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Warn)
+            typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Warn, false)
                 .expect("warn 模式应继续编译");
         assert!(
             warnings.iter().any(|w| matches!(
@@ -205,7 +207,7 @@ mod tests {
             "warn 模式应记录 m::secret 的 PrivateItem 警告，实际：{warnings:?}"
         );
         let err =
-            typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Error)
+            typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Error, false)
                 .expect_err("error 模式应报 PrivateItem");
         assert!(
             matches!(err, TypeError::PrivateItem { .. }),
@@ -260,7 +262,7 @@ mod tests {
 
     /// B-2（P0'）：源码是否能通过类型检查（coerce 成功路径应返回 Ok）。
     fn ok(src: &str) -> bool {
-        typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off).is_ok()
+        typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Off, false).is_ok()
     }
 
     #[test]

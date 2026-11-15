@@ -23,6 +23,7 @@
 | [actor-model.md](./actor-model.md) | 并发规范 | 编译器开发者 / 使用者 | Actor 并发模型（spawn / ask / supervisor 等） |
 | [module-system.md](./module-system.md) | 模块系统规范 | 编译器开发者 / 使用者 | 模块系统设计（语法/语义/编译模型/包集成 + 演进路线） |
 | [std-lib.md](./std-lib.md) | 标准库 API | 编译器开发者 / 使用者 | 各模块目标 API（✅ 已实现 / 📋 规划），MVP 差异注记 |
+| [no-heap.md](./no-heap.md) | 无堆编程模式 | 密码模块开发者 / 编译器开发者 | `--no-heap`（GM/T 0028 风格无动态分配约束）：允许子集、NH001 诊断、IR 后置守卫与认证边界 |
 | [development-plan.md](./development-plan.md) | 进度计划 | 团队 | 开发计划（阶段 A–Z 总览 + 阶段详情索引；§2 总览表链接各阶段详情） |
 | [development-plan-0.2.0.md](./development-plan-0.2.0.md) | 0.2.0 进度计划 | 团队 | 自举准备阶段计划（阶段 A–E：泛型 protocol/impl、嵌套模块、derive 宏、进程调用 FFI、前端自举 PoC） |
 | [self-hosting/feasibility.md](./self-hosting/feasibility.md) | 自举可行性评估 | 团队 | Rlyeh 自举能力评估（全栈编译器/标准库/工具四层可行性矩阵 + 缺口 P0/P1/P2 + 推荐自举路径） |
@@ -33,6 +34,7 @@
 
 - **语言使用者**：`tutorial/index.md`（新手入口）→ `guide/index.md` →（按需）`manual/index.md` / `manual/std/index.md` / `std-lib.md` → `grammar.md` / `memory-model.md`
 - **编译器开发者**：`semantics.md` → `grammar.md` → `memory-model.md` → `actor-model.md` → `module-system.md` →（各文档尾部"实现纪要"附录，任务书归档于 [`../design/prompts/`](design/prompts/README.md)）
+- **密码模块开发者**：`no-heap.md`（`--no-heap` 允许子集 / NH001 / IR 守卫 / GM/T 0028 边界）→ `memory-model.md`
 - **标准库开发者**：`std-lib.md` + `design/10_标准库规划.md`
 - **团队排期**：`development-plan.md`（阶段 A–Z，当前主线）
 

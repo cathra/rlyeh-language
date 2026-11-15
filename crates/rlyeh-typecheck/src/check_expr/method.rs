@@ -23,6 +23,12 @@ pub(super) fn check_static_method_call(
     type_args: &[AstType],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    if ctx.no_heap && crate::context::is_heap_type_name(ty_name) {
+        return Err(TypeError::NoHeap {
+            what: format!("{ty_name}::{method}"),
+            span,
+        });
+    }
     // W6：闭包值跨线程捕获——`Thread::start(f, arg)`（f 为带参闭包值对象）。
     // 展开为：生成线程入口 thunk + 线程输入对象（捕获槽值 + arg），调用
     // std `thread::__start_with_input(thunk, input)`（Result 构造复用 std 语言层）。

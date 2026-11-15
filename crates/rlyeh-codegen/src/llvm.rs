@@ -255,6 +255,8 @@ struct LlvmEmitter {
     /// 标量聚合按值优化：函数名 → 该函数内按值分配的局部变量集合
     /// （Alloc{by_value} 的目标 + 调用按值返回函数的 target）。
     by_value_locals: HashMap<String, BTreeSet<String>>,
+    /// 按值局部变量的槽数（函数名 → 变量名 → slots）；无堆模式支持 [N x i64]。
+    by_value_slots: HashMap<String, HashMap<String, usize>>,
     /// 标量聚合按值优化：按值返回（返回 `{i64, i64}`）的函数名集合。
     ret_by_value: HashSet<String>,
     /// 当前函数的循环提升上下文（`find_loop_promo` 结果；None = 不提升）
@@ -477,9 +479,10 @@ impl LlvmEmitter {
                         "  store {{ i8*, i64 }} zeroinitializer, {{ i8*, i64 }}* %{target}.addr\n"
                     ));
                 } else if in_bvs {
+                    let stack_slots = (*slots).max(2);
                     let r = self.reg();
                     body.push_str(&format!(
-                        "  %{r} = bitcast [2 x i64]* %{target}.obj to i8*\n"
+                        "  %{r} = bitcast [{stack_slots} x i64]* %{target}.obj to i8*\n"
                     ));
                     body.push_str(&format!("  store i8* %{r}, i8** %{target}.addr\n"));
                 } else {

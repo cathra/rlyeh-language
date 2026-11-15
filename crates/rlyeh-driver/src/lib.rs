@@ -104,24 +104,28 @@ pub fn compile_file_to_llvm(entry: &Path) -> Result<String, DriverError> {
         prelude_len,
         prelude_lines,
         rlyeh_typecheck::VisibilityMode::Off,
+        false,
     )
 }
 
-/// 带可见性 / 标准库开关的编译入口（供测试 harness 注入 `--visibility` / `--no-std` 等
-/// 用例级选项，见 `test_runner.rs` 的 `// flag:` 注释解析）。
+/// 带可见性 / 标准库 / 无堆开关的编译入口（供测试 harness 注入 `--visibility` /
+/// `--no-std` / `--no-heap` 等用例级选项，见 `test_runner.rs` 的 `// flag:` 注释解析）。
 pub fn compile_file_to_llvm_with_opts(
     entry: &Path,
     visibility: rlyeh_typecheck::VisibilityMode,
     no_std: bool,
+    no_heap: bool,
 ) -> Result<String, DriverError> {
     let source = module::load_combined_source(entry)?;
-    let (combined, prelude_len, prelude_lines) = source_with_std(source, no_std)?;
+    // 无堆模式强制不注入标准库（std 自带 String/Vec/HashMap 等堆类型）。
+    let (combined, prelude_len, prelude_lines) = source_with_std(source, no_std || no_heap)?;
     full_pipeline_with_hints(
         &combined,
         &Default::default(),
         prelude_len,
         prelude_lines,
         visibility,
+        no_heap,
     )
 }
 
@@ -147,6 +151,7 @@ pub fn emit_hir(entry: &Path) -> Result<String, DriverError> {
         &std::collections::HashMap::new(),
         prelude_len,
         rlyeh_typecheck::VisibilityMode::Off,
+        false,
     )
     .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
     Ok(format!("{:#?}", hir))
@@ -175,6 +180,7 @@ pub fn emit_hir_user(entry: &Path) -> Result<String, DriverError> {
         &std::collections::HashMap::new(),
         prelude_len,
         rlyeh_typecheck::VisibilityMode::Off,
+        false,
     )
     .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
     let items: Vec<HirItem> = hir
@@ -966,6 +972,8 @@ pub struct IncrementalDriver {
     force: bool,
     /// 禁用标准库预置注入（`--no-std`）
     no_std: bool,
+    /// 无堆模式（`--no-heap`）：拒绝堆分配（隐含 no_std）。
+    no_heap: bool,
     /// LLVM 目标 triple（`--target` 交叉编译；`None` = 主机目标）
     target: Option<String>,
     /// 会话内缓存统计
@@ -990,6 +998,7 @@ impl IncrementalDriver {
             cache_dir,
             force: false,
             no_std: false,
+            no_heap: false,
             target: None,
             stats: CacheStats::default(),
             region_hints: std::collections::HashMap::new(),
@@ -1016,6 +1025,12 @@ impl IncrementalDriver {
     /// 禁用标准库预置注入（文件入口 API 默认注入标准库）。
     pub fn with_no_std(mut self, no_std: bool) -> Self {
         self.no_std = no_std;
+        self
+    }
+
+    /// 启用无堆模式（`--no-heap`）：拒绝堆分配，并隐含不注入标准库预置。
+    pub fn with_no_heap(mut self, no_heap: bool) -> Self {
+        self.no_heap = no_heap;
         self
     }
 
@@ -1055,7 +1070,12 @@ impl IncrementalDriver {
             self.stats.recovered += 1;
         }
 
-        let source_hash = compute_source_hash(source);
+        // 无堆模式必须与普通编译区分缓存，否则可能复用含 calloc 的旧产物。
+        let source_hash = if self.no_heap {
+            compute_source_hash(&format!("--no-heap\n{source}"))
+        } else {
+            compute_source_hash(source)
+        };
 
         // 1. 缓存查找：源码哈希一致 + 产物存在 → 直接复用
         if !self.force {
@@ -1080,6 +1100,7 @@ impl IncrementalDriver {
             self.prelude_len,
             self.prelude_lines,
             self.visibility,
+            self.no_heap,
         )?;
         let interface = extract_interface(&source)?;
         let interface_hash = compute_interface_hash(&interface);
@@ -1128,7 +1149,7 @@ impl IncrementalDriver {
         let mut source = module::load_combined_source(entry)?;
         source = module::inject_dep_roots(&source, &self.dep_roots)?;
         let (combined, prelude_len, prelude_lines) =
-            source_with_std(source, self.no_std)?;
+            source_with_std(source, self.no_std || self.no_heap)?;
         self.prelude_len = prelude_len;
         self.prelude_lines = prelude_lines;
         let key = entry.to_string_lossy().to_string();
@@ -1187,6 +1208,7 @@ fn full_pipeline(source: &str) -> Result<String, DriverError> {
         0,
         0,
         rlyeh_typecheck::VisibilityMode::Off,
+        false,
     )
 }
 
@@ -1227,6 +1249,7 @@ fn full_pipeline_with_hints(
     prelude_len: usize,
     prelude_lines: usize,
     visibility: rlyeh_typecheck::VisibilityMode,
+    no_heap: bool,
 ) -> Result<String, DriverError> {
     // 1. 类型检查（内部完成 lex + parse → HIR），并收集建议性警告与全局声明
     let (hir, warnings, globals) = rlyeh_typecheck::typecheck_source_with_warnings(
@@ -1234,6 +1257,7 @@ fn full_pipeline_with_hints(
         region_hints,
         prelude_len,
         visibility,
+        no_heap,
     )
     .map_err(|e| DriverError::Typecheck(e.to_string_structured(prelude_len, prelude_lines)))?;
 
@@ -1263,7 +1287,24 @@ fn full_pipeline_with_hints(
     lir.globals = globals.iter().filter_map(convert_global_decl).collect();
 
     // 6. LLVM IR 文本生成
-    rlyeh_codegen::generate_llvm(&lir).map_err(|e| DriverError::Codegen(e.to_string()))
+    let llvm = rlyeh_codegen::generate_llvm(&lir).map_err(|e| DriverError::Codegen(e.to_string()))?;
+    // 6b. 无堆模式最终守卫：栈上聚合逃逸时 codegen 会回退 calloc，此处拒绝
+    //     任何残留的堆分配调用（含 region 运行时），确保交付物确实无堆。
+    if no_heap {
+        for line in llvm.lines() {
+            if !line.contains("call ") {
+                continue;
+            }
+            for sym in ["@calloc", "@malloc", "@realloc", "@rlyeh_region_alloc"] {
+                if line.contains(sym) {
+                    return Err(DriverError::Codegen(format!(
+                        "no-heap: 生成代码仍包含堆分配 `{sym}`（聚合对象逃逸出栈帧）；请改为局部定长数组/标量或内联使用"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(llvm)
 }
 
 /// LLVM IR 文本 → clang 汇编 / 链接 → 可执行文件。

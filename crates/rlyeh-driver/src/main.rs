@@ -167,8 +167,8 @@ fn main() -> ExitCode {
             eprintln!(
                 "Rlyeh 编译器（MVP）\n\
                  用法:\n  \
-                 rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--verbose] 编译并运行\n  \
-                 rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
+                 rlyeh run <file.rl> [--cache-dir <dir>] [--force] [--no-std] [--no-heap] [--verbose] 编译并运行\n  \
+                 rlyeh build <file.rl> [-o <out>] [--cache-dir <dir>] [--force] [--no-std] [--no-heap] [--verbose] [--target <triple>] 编译为可执行文件（--target 交叉编译 / wasm32-wasi 生成 .wasm）\n  \
                  rlyeh run|build <file> --emit <ir|ast|hir|ast-user|hir-user> [-o <out>] 仅导出中间表示文本（LLVM IR / AST / HIR），不编译运行\n  \
                  rlyeh test [<tests-dir>] 运行 tests/ 目录用例（compile-pass/compile-fail/run-pass）\n  \
                  rlyeh fmt <file.rl> [--check] [-w|--write] [--indent N] 格式化代码（默认输出到 stdout）\n  \
@@ -227,6 +227,7 @@ struct CliOpts {
     cache_dir: PathBuf,
     force: bool,
     no_std: bool,
+    no_heap: bool,
     verbose: bool,
     out: Option<PathBuf>,
     target: Option<String>,
@@ -248,6 +249,7 @@ impl CliOpts {
             .unwrap_or_else(|| PathBuf::from("."));
         let mut force = false;
         let mut no_std = false;
+        let mut no_heap = false;
         let mut verbose = false;
         let mut out = None;
         let mut target = None;
@@ -283,6 +285,7 @@ impl CliOpts {
                 }
                 "--force" => force = true,
                 "--no-std" => no_std = true,
+                "--no-heap" => no_heap = true,
                 "--verbose" => verbose = true,
                 "--visibility" => {
                     i += 1;
@@ -316,6 +319,7 @@ impl CliOpts {
             cache_dir,
             force,
             no_std,
+            no_heap,
             verbose,
             out,
             target,
@@ -404,6 +408,7 @@ fn new_driver(opts: &CliOpts) -> IncrementalDriver {
     IncrementalDriver::new(opts.cache_dir.clone())
         .with_force(opts.force)
         .with_no_std(opts.no_std)
+        .with_no_heap(opts.no_heap)
         .with_target(opts.target.clone())
         .with_visibility(opts.visibility)
         .with_dep_roots(opts.dep_roots.clone())
@@ -749,6 +754,7 @@ fn run_bench(args: &[String]) -> ExitCode {
         cache_dir,
         force,
         no_std: false,
+        no_heap: false,
         verbose: false,
         out: None,
         target: None,

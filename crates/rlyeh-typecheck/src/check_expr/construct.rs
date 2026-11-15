@@ -160,9 +160,12 @@ pub(super) fn check_struct_construct(
     } else {
         None
     };
-    let struct_by_value = !def.repr_c
-        && def.fields.len() <= 2
-        && def.fields.iter().all(|(_, fty)| field_is_scalar_slot(fty));
+    // 无堆模式：所有 struct 强制按值（栈上 [slots x i64]）；逃逸对象由
+    // codegen 的后置 IR 守卫拒绝（不允许回退 calloc）。
+    let struct_by_value = ctx.no_heap
+        || (!def.repr_c
+            && def.fields.len() <= 2
+            && def.fields.iter().all(|(_, fty)| field_is_scalar_slot(fty)));
     let base = ctx.fresh_temp();
     let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: base.clone(),
@@ -289,8 +292,8 @@ pub(super) fn check_tuple_construct(
     }
 
     // 按值仅允许"字段全为标量槽"的元组（≤2 槽），与结构体一致
-    let tuple_by_value = elem_tys.len() <= 2
-        && elem_tys.iter().all(|t| field_is_scalar_slot(t));
+    let tuple_by_value = ctx.no_heap
+        || (elem_tys.len() <= 2 && elem_tys.iter().all(|t| field_is_scalar_slot(t)));
     let base = ctx.fresh_temp();
     let mut stmts = vec![HirStmt::new(HirStmtKind::Let{
         name: base.clone(),
@@ -325,6 +328,7 @@ pub(super) fn check_vec_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("Vec", span)?;
     let cap = if method == "new" {
         AstExpr::new(ExprKind::IntLiteral(4), span)
     } else if args.len() == 1 {
@@ -402,6 +406,7 @@ pub(super) fn check_string_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("String", span)?;
     let cap = if method == "new" {
         AstExpr::new(ExprKind::IntLiteral(8), span)
     } else if args.len() == 1 {
@@ -478,6 +483,7 @@ pub(super) fn check_hashmap_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("HashMap", span)?;
     let cap = if method == "new" {
         AstExpr::new(ExprKind::IntLiteral(8), span)
     } else if args.len() == 1 {
@@ -616,6 +622,7 @@ pub(super) fn check_vecdeque_construct(
     args: &[AstExpr],
     span: Span,
 ) -> Result<(HirExpr, Type), TypeError> {
+    ctx.deny_heap("VecDeque", span)?;
     // 校验参数个数：`new` 0 参、`with_capacity` 1 参
     if method == "with_capacity" && args.len() != 1 {
         return Err(TypeError::UnexpectedArgumentCount {

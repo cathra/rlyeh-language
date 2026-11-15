@@ -319,6 +319,18 @@ pub(super) fn check_call(
         }
     };
 
+    // 无堆模式：`String::from` / `Vec::new` / `HashMap::new` 等在 std 未注入时
+    // 会先报「函数不存在」；此处按首段类型名直接给出 NH001。
+    if ctx.no_heap {
+        if let Some(first) = name.split("::").next() {
+            if crate::context::is_heap_type_name(first) {
+                return Err(TypeError::NoHeap {
+                    what: name.clone(),
+                    span,
+                });
+            }
+        }
+    }
     // G-M2/G-M3（SH-P0-3）：`Any` 类型擦除——运行时类型标识读取与安全向下转换。
     // `any_type_id(x: dyn Any) -> i64` 读 vtable 槽 0；
     // `any_downcast_ref::<T>(x: dyn Any) -> Option<&T>` 比对 type_id 后产出
@@ -552,6 +564,12 @@ pub(super) fn check_call(
 
     // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
     // 按签名检查参数、返回签名类型
+    if ctx.no_heap && matches!(name.as_str(), "alloc_array" | "alloc_bytes" | "array_free") {
+        return Err(TypeError::NoHeap {
+            what: name.clone(),
+            span,
+        });
+    }
     if let Some((params, ret)) = builtin_signature(&name) {
         // `print` / `println` / `eprint` / `eprintln` 允许 0..=1 个参数
         // （`println()` 打印空行；`eprint*` 输出到 stderr）

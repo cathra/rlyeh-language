@@ -33,7 +33,7 @@ use crate::types::{
 ///
 /// 泛型函数 / 泛型方法在调用点实例化，实例化产生的函数项追加到输出末尾。
 pub fn typecheck(program: &AstProgram) -> Result<(HirProgram, Vec<Warning>), TypeError> {
-    typecheck_with_region_hints(program, &Default::default(), 0, crate::VisibilityMode::Off)
+    typecheck_with_region_hints(program, &Default::default(), 0, crate::VisibilityMode::Off, false)
         .map(|(hir, w, _globals)| (hir, w))
 }
 
@@ -45,11 +45,13 @@ pub fn typecheck_with_region_hints(
     region_hints: &std::collections::HashMap<String, usize>,
     prelude_len: usize,
     visibility: crate::VisibilityMode,
+    no_heap: bool,
 ) -> Result<(HirProgram, Vec<Warning>, Vec<GlobalDecl>), TypeError> {
     let mut ctx = TypeContext::new();
     ctx.region_hints = region_hints.clone();
     ctx.prelude_len = prelude_len;
     ctx.visibility = visibility;
+    ctx.no_heap = no_heap;
     collect_declarations(&mut ctx, program)?;
     // PC-4：父协议一致性校验（`protocol A: B` → 实现 A 的类型必须同时实现 B）。
     crate::check_expr::validate_superprotocols(&ctx)?;
