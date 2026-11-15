@@ -1,6 +1,6 @@
 # import 完善策划（P1 `pub module` / 诊断健壮性 / P2 可见性 / P4 dagon 包集成）
 
-> **状态**：✅ 已收口（2026-09-20）· **范围**：用户确认「前面 4 项都要」——即补齐 `docs/module-system.md` 路线图中尚未落地的 import 相关四块能力。
+> **状态**：🟢 已收口（A/B/D ✅；C 灰度可用，默认 `off`；std 迁移/默认 `error` 暂缓）（2026-09-20 初版，2026-11-15 复核）· **范围**：用户确认「前面 4 项都要」——即补齐 `docs/module-system.md` 路线图中尚未落地的 import 相关四块能力。
 > **基线**：截至 2026-09-19，import 已实现单路径+别名、`pub import` 重导出、组导入（含嵌套子组）、glob、`pub use` 多级链、跨模块路径访问；全量套件约 249 用例 0 失败（见 `leaf/sh-p1-3-nested-module.md`）。
 > **原则**：不破坏现有语法与存量代码（`module`/`import` 关键字 2026-08-25 已更名迁移）；每一项独立可交付、可回滚；先评审后实现。
 
@@ -18,10 +18,12 @@
 | `import a::*` glob 导入 | ✅（2026-09-02） | — |
 | `pub import` 重导出（多级链） | ✅（2026-09-02） | — |
 | 模块内 `import` 相对本模块解析（2026-09-18 规则） | ✅ | — |
-| **`pub module` 声明** | 📋 未实现 | **工作流 A** |
-| **import 健壮性诊断**（冲突 / 歧义 / 候选） | 📋 未实现（§4.2/§4.3 规划） | **工作流 B** |
-| **可见性检查**（默认私有 + `pub`） | 🔧 仅语法无校验（B4 暂缓） | **工作流 C** |
-| **dagon 包集成**（`rlyeh build` 注入依赖模块） | 📋（P4） | **工作流 D** |
+| **`pub module` 声明** | ✅（2026-09-19/20；含 struct/enum/protocol/actor `pub`） | **工作流 A** |
+| **import 健壮性诊断**（冲突 / 歧义 / 候选） | ✅（2026-09-19/20） | **工作流 B** |
+| **可见性检查**（默认私有 + `pub`） | 🟢 灰度可用（默认 `off`；`error` 需 `--no-std`，std 迁移/默认翻转暂缓） | **工作流 C** |
+| **dagon 包集成**（`rlyeh build` 注入依赖模块） | ✅（2026-09-20） | **工作流 D** |
+
+> **复核（2026-11-15）**：A/B/C/D 四块代码与验收用例均已落地；唯一未完成项是 C 的阶段 2（std 跨模块 `pub` 迁移 + 默认 `error` 翻转，B4），因 std 全线依赖「跨模块全部可达」而按原计划继续暂缓——`--visibility=error` 已可用，但含 std 的程序需配 `--no-std`。详见 §4 实施状态与 §8。
 
 ---
 
@@ -59,6 +61,14 @@
 - compile-fail：`tests/compile-fail/private_module_import.rl`（非 `pub` 模块被外部 `import` → 报 `PrivateModule`）——若采用「增量放开」语义则本用例延后到 C。
 - 全量套件回归 0 失败。
 
+### 实施状态（2026-09-19/20）：A 已落地
+
+- **AST/parser**：`AstModDecl.is_pub` + `parse_item` 的 `pub module` 分支 + 外部/内联模块构造透传；`pub` 标注同时覆盖 `struct`/`enum`/`protocol`/`actor`（见 §4 尾部实施状态）。
+- **typecheck**：`pub_module_prefixes` 登记 `pub module` 前缀；`resolve_full_name` / `resolve_callable` / 类型解析接入 `check_visibility`。
+- **driver**：外部文件模块展开原路径规则不变，`is_pub` 透传 typecheck。
+- **验收**：`tests/run-pass/pub_module_export.rl` 通过（`pub module inner { pub fn secret() }` → `inner::secret()` 输出 42）。
+- **语义**：采用 §2 C1 推荐的「增量放开」——A 只额外开放 `pub module`，不收紧非 `pub` 模块的既有可达性；`tests/compile-fail/private_module_import.rl` 按此语义不落地，收紧由工作流 C 的 `--visibility` 统一处理。
+
 ---
 
 ## 3. 工作流 B：import 健壮性诊断
@@ -81,6 +91,13 @@
 - compile-fail：`tests/compile-fail/import_alias_conflict.rl`（`import a::x as y; let y = 1;` → `NameConflict`）、`import_glob_ambiguity.rl`（两 glob 同名 → `GlobAmbiguity`）、`import_not_found.rl`（`import nonexist::x;` → `NameNotFound` 带候选）。
 - 全量套件回归 0 失败。
 
+### 实施状态（2026-09-19/20）：B 已落地
+
+- **错误类型**：`NameConflict`（TC030）、`GlobAmbiguity`（TC031）、`NameNotFound.candidates`（TC032）已加入 `rlyeh-typecheck`，含 span 与修复建议。
+- **`register_use`**：显式 import 别名/组导入叶子与本地绑定或已有 import 冲突时报 `NameConflict`；glob 登记「符号 → 来源模块」多来源映射，使用处命中 ≥2 来源且无显式 import 报 `GlobAmbiguity`；显式 import 优先于 glob。
+- **`NameNotFound` 候选**：`Context::name_candidates` 对已知符号（structs/fn/const/actor/import 别名/模块前缀）计算相近名，附 top-3 候选。
+- **验收**：`tests/run-pass/import_explicit_shadows_glob.rl`（输出 1）通过；三个 compile-fail（alias_conflict / glob_ambiguity / not_found）均按预期报错；全量 353 用例 0 失败（2026-11-15 复核）。
+
 ---
 
 ## 4. 工作流 C：可见性检查（P2）
@@ -101,8 +118,15 @@
 - 该开关保证：未就绪前存量代码零影响，可灰度推进。
 
 ### 验收
-- compile-fail：`tests/compile-fail/private_item_access.rl`（模块内 `fn secret()` 非 `pub`，外部 `import m::secret` 调用 → `PrivateItem`）。
-- 迁移后全量套件（含 std）在 `--visibility=error` 下 0 失败。
+- compile-fail：`tests/compile-fail/private_item_access.rl`（模块内 `fn secret()` 非 `pub`，外部 `import m::secret` 调用 → `PrivateItem`）→ 已落地，套件通过。
+- **阶段 2（暂缓）**：std 跨模块 `pub` 迁移完成后，全量套件（含 std）在 `--visibility=error` 下 0 失败，并将默认模式翻转为 `error`。
+
+### 实施状态（2026-09-20 / 复核 2026-11-15）：C 灰度可用，默认 off
+
+- **检查器**：`VisibilityMode`（Off/Warn/Error）+ `--visibility=off|warn|error` CLI；`Context.pub_symbols` 收集 `pub` 符号，`check_visibility` 在跨模块解析后判定「同模块/子模块放行，否则要求 `pub_symbols`」；Warn 记 `W003` 警告并继续编译、Error 报 `PrivateItem`（TC033）。**2026-11-15 修复**：此前 Warn 分支仍返回 Err（`--visibility=warn` 实际不可用），现改为 `RefCell` 收集 `WarningKind::PrivateItem` 并在 typecheck 结束时并入 warnings。对 `examples/hello-world.rl` 实测收集 278 条 / 26 个唯一私有符号，可作为 std `pub` 迁移 backlog。
+- **`pub` 覆盖**：`AstModDecl` / `AstFnDecl` / `AstStructDecl` / `AstEnumDecl` / `AstProtocolDecl` / `AstActorDecl` 及 import 重导出；枚举变体随枚举全名登记；struct 字面量、枚举变体构造、actor `new`/spawn、类型名/函数/路径解析均接入可见性检查。
+- **验收**：`tests/compile-fail/private-struct.rl` / `private-enum-variant.rl` / `private-actor-type.rl` / `private-actor-spawn.rl` + `private_item_access.rl`（均 `--visibility=error --no-std`）全部按预期报错；`tests/compile-pass/visibility-pub.rl` / `visibility-pub-actor-spawn.rl` 通过；全量 353 用例 0 失败（2026-11-15 复核）。
+- **明确未完成（B4）**：std 的跨模块 `pub` 迁移与默认 `error` 翻转**未做**。当前含 std 的程序用 `--visibility=error` 会报大量 `PrivateItem`（如 `time::duration::Duration`），故可见性用例统一 `--no-std`。这是原计划 §4「风险与迁移策略」的有意灰度边界，不是检查器缺陷；默认保持 `off`，存量代码零影响。
 
 ---
 
@@ -188,11 +212,11 @@ A (pub module, 低) ──→ B (诊断, 低) ──→ C (可见性, 高, 需 -
 
 ## 8. 验收总览
 
-- **A**：`pub_module_export.rl` 通过；全量 0 失败。
-- **B**：`import_explicit_shadows_glob.rl` 通过；3 个 compile-fail（`alias_conflict`/`glob_ambiguity`/`not_found`）锁定。
-- **C**：`private_item_access.rl` 锁定；std 在 `--visibility=error` 下 0 失败。
-- **D**：本地 `--dep-root` 示例端到端编译运行通过；无依赖时行为不变。
-- **统一**：每批次结束 `cargo test --workspace` 全绿（含 `rlyeh_test_suite_all_pass` 全量 .rl 套件）。
+- **A**：✅ `pub_module_export.rl` 通过；`pub` 覆盖 struct/enum/protocol/actor。
+- **B**：✅ `import_explicit_shadows_glob.rl` 通过；3 个 compile-fail（`alias_conflict`/`glob_ambiguity`/`not_found`）锁定。
+- **C**：🟢 灰度可用——`private_item_access.rl` 已锁定（`--visibility=error --no-std`）；std 在 `--visibility=error` 下 0 失败与默认翻转按 B4 暂缓。
+- **D**：✅ `--dep-root` 端到端编译运行通过（`dep_root_test.rs`）；无依赖时行为不变。
+- **统一**：2026-11-15 复核 `rlyeh test tests` 353 用例 0 失败；`cargo test --workspace --no-fail-fast` 134 测试目标 / 804 测试函数 0 失败（含 `rlyeh_test_suite_all_pass`）。
 
 ---
 
@@ -203,6 +227,8 @@ A (pub module, 低) ──→ B (诊断, 低) ──→ C (可见性, 高, 需 -
 3. **C3（glob 歧义严格度）**：两 glob 同名使用处直接报错，还是仅当该名被实际使用时才报？**推荐实际使用时报（惰性），避免未使用符号误报**。
 4. **范围确认**：四块（A/B/C/D）是否本期全做，还是先 A+B（低风险）评审通过后再排 C+D？**按用户「前面 4 项都要」全做，但建议按 6 批次顺序推进**。
 
+**复核结论（2026-11-15）**：C1 采用「增量放开」（已落地）；C2 默认 `off`，`error` 翻转随 B4 暂缓；C3 采用「实际使用时报歧义」（惰性，已落地）；C4 四块均已落地，C 为灰度可用状态。
+
 ---
 
 ## 10. 变更记录
@@ -211,3 +237,4 @@ A (pub module, 低) ──→ B (诊断, 低) ──→ C (可见性, 高, 需 -
 |------|------|
 | 2026-09-19 | 根据用户确认（4 项都要）起草策划稿：A `pub module` / B 诊断 / C 可见性 / D dagon 包集成，含落点、语义决策、灰度策略、验收与待评审点 |
 | 2026-09-20 | A 扩展：`pub` 标注覆盖 struct/enum/protocol/actor（protocol→protocol，AST 仍为 `AstProtocolDecl`）；parser 分发 + 收集登记 `pub_symbols` + struct 字面量/枚举变体/actor 构造函数可见性接线；CLI 验证通过，记录 spawn 与 protocol 约束两处架构限制 |
+| 2026-11-15 | 复核收口：A/B/D 已落地并补实施状态；C 灰度可用（默认 off，`--visibility=warn` 现可真正收集 W003 警告，`error` 需 `--no-std`）；补齐 `tests/compile-fail/private_item_access.rl`；明确 B4（std 跨模块 `pub` 迁移 + 默认 error 翻转）暂缓；`rlyeh test tests` 353 用例 0 失败 |

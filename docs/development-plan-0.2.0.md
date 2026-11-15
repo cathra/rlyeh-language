@@ -70,7 +70,7 @@
 | 阶段 | 主题 | 对应缺口 | 关联文档 | 风险 | 状态 | 说明 |
 |------|------|----------|----------|------|------|------|
 | **0.2.0-A** | 泛型 protocol/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-protocol.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
-| **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 完成 | 嵌套模块（既有）+ `pub use`/组导入/glob/嵌套组导入已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
+| **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 完成 | 嵌套模块（既有）+ `pub use`/组导入/glob/嵌套组导入已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性灰度可用（默认 `off`，std 迁移/默认 `error` 暂缓） |
 | **0.2.0-C** | protocol derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252；enum derive / 泛型 bound 强制校验 / 自定义 derive 扩展点移交 0.3.0 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | 🟢 核心落地 | process 模块（system/exec/output/exec_combined）+ clang FFI 印证，全量回归 253/253 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | 🟢 完成 | unsafe 块/裸指针/E-M1 bump 分配器 + E2 repr(C)（sub8+嵌套聚合内联）+ E3 FFI 门禁全部落地，全量 253/253 |

@@ -1,6 +1,6 @@
 # SH-P1-3 嵌套模块 / `pub use` / 组与 glob 导入
 
-> **级别**：P1（阻塞前端自举） · **状态**：🟢 部分完成（B1 既有 / B2·组导入·glob 已实现；B3 排除；B4 暂缓） · **归属**：0.2.0-B
+> **级别**：P1（阻塞前端自举） · **状态**：🟢 部分完成（B1 既有 / B2·组导入·glob 已实现；B3 排除；B4 灰度可用，默认 `off`，std 迁移/默认 `error` 暂缓） · **归属**：0.2.0-B
 > **索引**：[`../self-hosting-p1.md`](../self-hosting-p1.md) · **评估**：[`../../self-hosting/feasibility.md`](../../self-hosting/feasibility.md) §4 P1-6 · **计划**：[`../../development-plan-0.2.0.md`](../../development-plan-0.2.0.md) §3.2
 
 ## 目标
@@ -12,8 +12,10 @@
 > `crate::`/`super::`/`self::`。故本阶段**不实现**相对路径语义（与 0.2.0 计划表 B3 文字
 > 描述不同，以模块系统规范为准）。
 >
-> **B4 模块级可见性（默认私有 + `pub` 校验）：暂缓**。当前 std 全量依赖"跨模块全部可达"，
-> 启用可见性校验需先为 std 全部跨模块引用补齐 `pub`，风险高、易引发大范围回归，本阶段不动。
+> **B4 模块级可见性（默认私有 + `pub` 校验）：灰度可用，默认 `off`**。检查器与
+> `--visibility=off|warn|error` 已落地（2026-09-20），跨模块访问私有符号可报 `PrivateItem`；
+> 但 std 全量依赖"跨模块全部可达"，**std 的 `pub` 迁移与默认 `error` 翻转仍暂缓**（已知边界，
+> 见 `import-improvement-plan.md` §4）。含 std 的程序使用 `--visibility=error` 需配 `--no-std`。
 
 ## 技术细节
 - 当前 Rlyeh 0.1.0：顶层 `module` + 内联/多文件嵌套模块（既有 ✅）+ 别名导入/重命名。
@@ -21,7 +23,7 @@
   - `rlyeh-driver/src/lib.rs:17-21` `pub mod error; pub mod incremental; mod module;`
   - `rlyeh-typecheck/src/check_expr/{mod,call,method,...}.rs`（32 文件多级模块）
   - `rlyeh-region-alloc/src/lib.rs:46-59` `mod block; mod bump; pub mod allocator; ...`
-- 子任务（对应 0.2.0-B）：B1 嵌套模块（既有）/ B2 `pub use` / 组导入 / glob 导入 / B3 排除 / B4 暂缓。
+- 子任务（对应 0.2.0-B）：B1 嵌套模块（既有）/ B2 `pub use` / 组导入 / glob 导入 / B3 排除 / B4 灰度可用（默认 `off`，std 迁移暂缓）。
 
 ## 受影响组件
 parser（`parse_use`）、typecheck（`register_use` / `resolve_full_name` / `resolve_callable`）、
@@ -56,7 +58,7 @@ AST（`AstUseDecl` 增加 `group` / `is_pub`）。driver 模块展开不受影�
 
 **已知限制（本次未解）**
 - 嵌套组导入 `import a::{b::{x, y}, c}`（组内含子组）**已于 2026-09-04 补齐**（见下方「实现纪要（2026-09-04）」与变更记录）。
-- 可见性（B4）未实现：跨模块访问仍不校验 `pub`，全部可达。
+- 可见性（B4）灰度可用：`--visibility=off|warn|error` 检查器已落地（默认 `off`）；`warn` 收集 `W003` 不阻断（2026-11-15 修复原 Warn 仍报 Err 的问题）；std 的跨模块 `pub` 迁移与默认 `error` 翻转仍暂缓，含 std 程序用 `error` 需配 `--no-std`。
 - `crate::`/`super::` 按扁平决策不实现。
 
 ## 验证
@@ -64,11 +66,12 @@ AST（`AstUseDecl` 增加 `group` / `is_pub`）。driver 模块展开不受影�
 - 验收：`cargo test --workspace` 全绿（含 `rlyeh_test_suite_all_pass` 全量 .rl 套件 0 失败）。
 
 ## 状态
-🟢 部分完成：嵌套模块（既有）+ 组导入 + `pub use` + glob 已实现并通过；B3 排除、B4 暂缓。
+🟢 部分完成：嵌套模块（既有）+ 组导入 + `pub use` + glob 已实现并通过；B3 排除；B4 灰度可用（默认 `off`，std 迁移/默认 `error` 暂缓）。
 
 ## 变更记录
 | 日期 | 变更 |
 |------|------|
 | 2026-09-01 | 从评估报告 P1-6 拆出为叶子 |
 | 2026-09-02 | B1 嵌套（既有确认）/ B2 `pub use` / 组导入 / glob 实现；B3 按扁平决策排除；B4 暂缓；全量套件 0 失败 |
+| 2026-11-15 | 复核 B4：可见性检查器与 `--visibility=off|warn|error` 已落地（灰度可用，默认 `off`）；补齐 `tests/compile-fail/private_item_access.rl`；std `pub` 迁移/默认 `error` 仍暂缓（见 `import-improvement-plan.md` §4） |
 | 2026-09-04 | **补齐嵌套组导入** `import a::{b::{x, y}, c}`：`AstUseDecl.group` 改递归 `AstUseMember`；parser `parse_use_group` 递归解析任意深度子组；typecheck `register_use_group` 递归登记（仅叶子名入作用域，`pub` 重导出同构）；新增 `tests/run-pass/import_nested_group.{rl,out}` + parser 单测 `test_use_nested_group`；全量 `cargo test --workspace` 无回归。叶子「已知限制」中原「仅单层组」标记已消解 |
