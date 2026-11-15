@@ -9,6 +9,8 @@
 
 ### 新增
 
+- **String clone/substring 预分配（2026-11-15）**：`String::clone` 与 `substring` 改为先 `String::with_capacity(len)` 一次分配、再逐字节写入，避免旧实现从 `String::new()` 的 8 字节缓冲反复 grow；`substring` 对 `start >= end` 显式取 0 长度。`rlyeh test tests` 364/364。
+
 - **六语言全量基准（2026-11-15）**：修复 Go benchmark 构建（本机 Homebrew std 模块元数据不可用，runner 改用 `GO111MODULE=off`），完成 13 基准 × C/C++/Go/Rust/Swift/Rlyeh 的 30 轮同机对比；Rlyeh 在 actor_pingpong / btree / dyn_dispatch 为全场最快，matmul/loop_sum/strcat/region_batch 与最快语言 1.0–1.06x。完整数据见 [benchmarks/README.md](examples/projects/benchmarks/README.md) 与 `results/benchmark_report.md`。
 
 - **优化级别（2026-11-15）**：新增 `-O0/-O1/-O2/-O3/-Os` 与 `--opt-level=`，同时控制 Rlyeh MIR 优化流水线（常量折叠 / DCE / 基础内联）和 clang 后端；默认 `-O3` 保持原发布级行为。缓存键包含优化级别，`--emit ir` 按所选级别导出。新增 `tests/run-pass/opt_level_o0.rl` 与 [docs/optimization-levels.md](docs/optimization-levels.md)。

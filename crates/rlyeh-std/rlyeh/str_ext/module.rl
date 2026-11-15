@@ -99,7 +99,8 @@ impl String {
     // `a + b` 运算符 desugar 依赖此语义（A3：消除共享缓冲别名隐患——
     // 拼接结果与左操作数不再指向同一缓冲）。
     fn clone(&self) -> String {
-        let mut buf = String::new();
+        // 预分配一次，避免逐字节 push_byte 触发 grow；语义与原循环完全一致。
+        let mut buf = String::with_capacity(self.len);
         let mut i = 0;
         while i < self.len {
             buf.push_byte(self.data[i]);
@@ -125,7 +126,8 @@ impl String {
         if e > self.len {
             e = self.len;
         }
-        let mut buf = String::new();
+        let n = if e > s { e - s } else { 0 };
+        let mut buf = String::with_capacity(n);
         let mut i = s;
         while i < e {
             buf.push_byte(self.data[i]);
