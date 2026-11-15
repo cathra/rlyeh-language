@@ -23,6 +23,7 @@ pub const BUILTIN_FUNCTIONS: &[&str] = &[
     "array_copy",
     "array_free",
     "alloc_bytes",
+    "alloc_string_inline",
     "copy_bytes",
     "bytes_eq",
     "bytes_cmp",
@@ -201,7 +202,7 @@ fn infer_function_types(f: &MirFunction) -> Result<(HashMap<Local, LirType>, Lir
                         // `alloc_array` / `alloc_bytes` 返回动态缓冲指针，
                         // `hash_value` / `bytes_cmp` 返回 i64（散列值 / memcmp 结果），
                         // `bytes_eq` 返回布尔，其余内建返回单元值
-                        let rt = if callee == "alloc_array" || callee == "alloc_bytes" {
+                        let rt = if callee == "alloc_array" || callee == "alloc_bytes" || callee == "alloc_string_inline" {
                             LirType::Ptr
                         } else if callee == "hash_value" || callee == "bytes_cmp" {
                             LirType::I64

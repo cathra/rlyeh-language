@@ -18,6 +18,11 @@ pub fn builtin_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         "array_free" => Some((vec![dyn_arr()], Type::Unit)),
         // String 动态缓冲（按字节）：
         "alloc_bytes" => Some((vec![Type::I64], Type::Array(Box::new(Type::U8), 0))),
+        // 性能：String 对象 + 数据缓冲一次性合并分配（返回 String 对象指针）。
+        "alloc_string_inline" => Some((
+            vec![Type::I64],
+            Type::Named("String".to_string(), vec![]),
+        )),
         "copy_bytes" => Some((vec![Type::Infer, Type::Infer, Type::I64], Type::Unit)),
         // String 内容相等：`bytes_eq(a, b, n)` → `memcmp(a, b, n) == 0`
         "bytes_eq" => Some((vec![Type::Infer, Type::Infer, Type::I64], Type::Bool)),

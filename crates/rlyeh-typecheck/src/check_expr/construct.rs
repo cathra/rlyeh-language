@@ -427,54 +427,16 @@ pub(super) fn check_string_construct(
         });
     }
 
-    let data_tmp = ctx.fresh_temp();
-    let base = ctx.fresh_temp();
-    let cap_for_alloc = cap_hir.clone();
-    let stmts = vec![
-        HirStmt::new(HirStmtKind::Let{
-            name: data_tmp.clone(),
-            init: HirExpr::new(HirExprKind::Call{
-                callee: "alloc_bytes".to_string(),
-                args: vec![cap_for_alloc],
-            }, Span::dummy()),
-            mutable: false,
-        }, Span::dummy()),
-        HirStmt::new(HirStmtKind::Let{
-            name: base.clone(),
-            init: HirExpr::new(HirExprKind::Alloc{
-            slots: 3,
-            by_value: false,
-            is_strfat: false,
-        }, Span::dummy()),
-            mutable: false,
-        }, Span::dummy()),
-        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
-            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
-            index: 0,
-            value: Box::new(HirExpr::new(HirExprKind::Variable(data_tmp), Span::dummy())),
-            ty: FieldScalar::Ptr,
-        }, Span::dummy())), Span::dummy()),
-        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
-            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
-            index: 1,
-            value: Box::new(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())),
-            ty: FieldScalar::Int,
-        }, Span::dummy())), Span::dummy()),
-        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
-            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
-            index: 2,
-            value: Box::new(cap_hir),
-            ty: FieldScalar::Int,
-        }, Span::dummy())), Span::dummy()),
-    ];
-
-    Ok((
-        HirExpr::new(HirExprKind::Block(Box::new(HirBlock { span: Span::dummy(),
-            stmts,
-            final_expr: Some(HirExpr::new(HirExprKind::Variable(base), Span::dummy())),
-        })), Span::dummy()),
-        Type::Named("String".to_string(), vec![]),
-    ))
+    // 性能：对象与数据缓冲合并为一次分配（cap 最高位标记 inline），
+    // 避免 String 构造的两次堆分配（hashmap_str / format! 热路径）。
+    let call = HirExpr::new(
+        HirExprKind::Call {
+            callee: "alloc_string_inline".to_string(),
+            args: vec![cap_hir],
+        },
+        Span::dummy(),
+    );
+    Ok((call, Type::Named("String".to_string(), vec![])))
 }
 
 pub(super) fn check_hashmap_construct(

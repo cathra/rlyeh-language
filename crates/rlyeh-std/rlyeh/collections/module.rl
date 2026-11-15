@@ -65,10 +65,19 @@ impl<K, V> HashMap<K, V> {
     // 哈希——与 i64 键同构）。
     // 墓碑（s == 2）跳过不占用（不参与交换、不作为插入位）：新键始终落真空槽，
     // 距离不变量与无删除时一致；墓碑堆积由负载因子触发的 grow 重哈希清除（丢弃）。
-    // 负载因子 7/8（Robin Hood 高负载下距离均衡 + 提前终止控探测）——表小一半、
-    // 扩容重哈希总量减半（vs 旧 1/2 负载）。
+    // 负载因子：小表 1/2（字符串键碰撞成本高），大表 7/8（控制 4 个并行数组的
+    // 内存带宽与扩容重哈希总量）。
     fn insert(&mut self, k: K, v: V) {
-        if self.used * 8 >= self.cap * 7 {
+        // 小表（<= 32768 槽）用 1/2 负载：字符串键的探测/比较成本高，
+        // 低负载显著减少碰撞（hashmap_str 10k 键 6.4ms -> 3.4ms）。
+        // 大表保持 7/8 负载，避免 4 个并行数组的内存带宽/扩容重哈希开销
+        // 压过低负载收益（hashmap 200k i64 键）。
+        let need_grow = if self.cap <= 32768 {
+            self.used * 2 >= self.cap
+        } else {
+            self.used * 8 >= self.cap * 7
+        };
+        if need_grow {
             self.grow();
         }
         let mask = self.cap - 1;

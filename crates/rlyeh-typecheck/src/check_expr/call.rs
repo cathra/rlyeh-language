@@ -564,7 +564,7 @@ pub(super) fn check_call(
 
     // 内建函数（`print` / `println` / `alloc_array` 等，由代码生成层映射到运行时）：
     // 按签名检查参数、返回签名类型
-    if ctx.no_heap && matches!(name.as_str(), "alloc_array" | "alloc_bytes" | "array_free") {
+    if ctx.no_heap && matches!(name.as_str(), "alloc_array" | "alloc_bytes" | "alloc_string_inline" | "array_free") {
         return Err(TypeError::NoHeap {
             what: name.clone(),
             span,

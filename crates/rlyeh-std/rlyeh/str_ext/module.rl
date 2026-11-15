@@ -5,8 +5,12 @@ impl String {
     fn len(&self) -> i64 {
         self.len
     }
+    // cap 最高位 bit62 为 inline 标记：with_capacity 将对象与数据合并分配。
+    fn cap_real(&self) -> i64 {
+        self.cap & 0x3fffffffffffffff
+    }
     fn cap(&self) -> i64 {
-        self.cap
+        self.cap_real()
     }
     fn is_empty(&self) -> bool {
         self.len == 0
@@ -16,7 +20,7 @@ impl String {
         self.data[i]
     }
     fn push_byte(&mut self, b: i64) {
-        if self.len >= self.cap {
+        if self.len >= self.cap_real() {
             self.grow();
         }
         self.data[self.len] = b;
@@ -29,7 +33,7 @@ impl String {
     // `a + b` 运算符在 typecheck 层 desugar 为
     // `let __s = a.clone(); __s.push_str(b); __s`）
     fn push_str(&mut self, other: String) {
-        while self.cap - self.len < other.len {
+        while self.cap_real() - self.len < other.len {
             self.grow();
         }
         let mut i = 0;
@@ -44,7 +48,7 @@ impl String {
     // 字节数，零分配、零 String 对象构造（`push_str("ab")` 的字面量实参不再
     // 每次 alloc_bytes + copy_bytes 深拷贝——strcat 类拼接基准收益 ~3 个数量级）。
     fn push_bytes(&mut self, src: &str, n: i64) {
-        while self.cap - self.len < n {
+        while self.cap_real() - self.len < n {
             self.grow();
         }
         let mut i = 0;
@@ -58,7 +62,7 @@ impl String {
     // 直接写十进制数字到缓冲，避免 int_to_string 的临时 String 分配与多次 grow。
     // 语义与 int_to_string 一致（0 特判、负数前缀；i64::MIN 溢出同 MVP 限制）。
     fn push_i64(&mut self, n: i64) {
-        while self.cap - self.len < 20 {
+        while self.cap_real() - self.len < 20 {
             self.grow();
         }
         let mut v = n;
@@ -376,10 +380,15 @@ impl String {
         self.lines()
     }
     fn grow(&mut self) {
-        let new_cap = if self.cap == 0 { 8 } else { self.cap * 2 };
+        let inline = (self.cap & 0x4000000000000000) != 0;
+        let real_cap = self.cap_real();
+        let new_cap = if real_cap == 0 { 8 } else { real_cap * 2 };
         let new_data = alloc_bytes(new_cap);
         copy_bytes(new_data, self.data, self.len);
-        array_free(self.data);
+        // inline 数据位于 String 对象之后，不能单独 array_free（对象仍需存活）。
+        if !inline {
+            array_free(self.data);
+        }
         self.data = new_data;
         self.cap = new_cap;
     }

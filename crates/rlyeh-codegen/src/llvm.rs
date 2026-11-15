@@ -45,6 +45,7 @@ const BUILTIN_FUNCTIONS: &[&str] = &[
     "array_copy",
     "array_free",
     "alloc_bytes",
+    "alloc_string_inline",
     "copy_bytes",
     "bytes_eq",
     "bytes_cmp",

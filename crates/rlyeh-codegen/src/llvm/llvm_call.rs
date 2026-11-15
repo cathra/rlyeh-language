@@ -255,6 +255,48 @@ impl LlvmEmitter {
             body.push_str(&format!("  call void @free(i8* {p})\n"));
             return Ok(());
         }
+        // String 对象 + 数据缓冲合并分配（性能）：一次 calloc(24 + cap, 1)，
+        // 对象位于块首（3 槽），数据紧接其后；cap 最高位 bit62 标记 inline，
+        // grow 时据此跳过 array_free（数据不是独立分配）。
+        if callee == "alloc_string_inline" {
+            let cap =
+                self.operand_value(&LirOperand::Local(args[0].clone()), LirType::I64, body, f)?;
+            let total = self.reg();
+            body.push_str(&format!("  %{total} = add i64 {cap}, 24\n"));
+            let r64 = self.reg();
+            body.push_str(&format!(
+                "  %{r64} = call i64 @calloc(i64 1, i64 %{total})\n"
+            ));
+            let base = self.reg();
+            body.push_str(&format!("  %{base} = inttoptr i64 %{r64} to i8*\n"));
+            let data = self.reg();
+            body.push_str(&format!(
+                "  %{data} = getelementptr i8, i8* %{base}, i64 24\n"
+            ));
+            body.push_str(&format!("  store i8* %{data}, i8** %{base}\n"));
+            let p8 = self.reg();
+            body.push_str(&format!(
+                "  %{p8} = getelementptr i8, i8* %{base}, i64 8\n"
+            ));
+            let p8c = self.reg();
+            body.push_str(&format!("  %{p8c} = bitcast i8* %{p8} to i64*\n"));
+            body.push_str(&format!("  store i64 0, i64* %{p8c}\n"));
+            let p16 = self.reg();
+            body.push_str(&format!(
+                "  %{p16} = getelementptr i8, i8* %{base}, i64 16\n"
+            ));
+            let p16c = self.reg();
+            body.push_str(&format!("  %{p16c} = bitcast i8* %{p16} to i64*\n"));
+            let flagged = self.reg();
+            body.push_str(&format!(
+                "  %{flagged} = or i64 {cap}, 4611686018427387904\n"
+            ));
+            body.push_str(&format!("  store i64 %{flagged}, i64* %{p16c}\n"));
+            if let Some(t) = target {
+                body.push_str(&format!("  store i8* %{base}, i8** %{t}.addr\n"));
+            }
+            return Ok(());
+        }
         // 字节缓冲分配（String 动态缓冲）：target = calloc(n, 1)（按字节，无步长缩放）。
         // calloc 清零：与 alloc_array 一致，杜绝未初始化内存 UB。
         if callee == "alloc_bytes" {
