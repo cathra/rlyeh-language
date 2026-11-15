@@ -106,6 +106,7 @@ jobs:
         shell: bash
         run: |
           cp -R crates/rlyeh-std/rlyeh dist/std
+          mkdir -p dist/skills
           if [ -d skills/rlyeh-language ]; then cp -R skills/rlyeh-language dist/skills/; fi
           if [ -d examples/std-demos ]; then cp -R examples/std-demos dist/examples/; fi
 
