@@ -16,13 +16,13 @@
 | SH-P0-5 | 元组值构造 + 解构（多返回值） | 0.2.0-N | lexer / parser（PoC 重写）、typecheck / codegen | [leaf](./leaf/sh-p0-5-tuple-value.md) | 🟢 完成 |
 | SH-P0-6 | `if let` / `while let` 模式控制流 | 0.2.0-O | lexer / parser / typecheck（PoC 重写） | [leaf](./leaf/sh-p0-6-if-let.md) | 🟢 完成 |
 | SH-P0-7 | `match` 守卫 + 范围/或模式 | 0.2.0-P | parser / typecheck（字符分类/判别分支） | [leaf](./leaf/sh-p0-7-match-guard.md) | 🟢 完成 |
-| SH-P0-8 | `Drop` protocol / 析构 / RAII | 0.2.0-Q | typecheck / codegen / std（MutexGuard/arena/智能指针） | [leaf](./leaf/sh-p0-8-drop.md) | 🟢 完成（Q1–Q3；Q4 智能指针接入待办） |
+| SH-P0-8 | `Drop` protocol / 析构 / RAII | 0.2.0-Q | typecheck / codegen / std（MutexGuard/arena/智能指针） | [leaf](./leaf/sh-p0-8-drop.md) | 🟢 完成（Q1–Q3；Q4 智能指针接入移交 0.3.0） |
 
 ---
 
 ## 进度
 
-P0 共 8 项：**SH-P0-1 ~ SH-P0-8 全部 🟢 完成**（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。P0 阶段收官；SH-P0-8 内剩余 Q-M4（智能指针接 `Drop`）为子项待办，见叶子文档。
+P0 共 8 项：**SH-P0-1 ~ SH-P0-8 全部 🟢 完成**（**0.2.0 必须项（语言特性）**，对应阶段 G/H/N/O/P/Q）。P0 阶段收官；SH-P0-8 的 Q-M4（智能指针接 `Drop`）已明确移交 0.3.0（堆释放/引用计数约定与运行时重写耦合），详见叶子文档。
 
 ---
 

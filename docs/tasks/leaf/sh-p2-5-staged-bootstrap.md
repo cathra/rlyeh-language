@@ -98,3 +98,4 @@
 | 2026-09-04 | C2 落地：harness 加 `--dims`/`--manifest`；新增 `tests/snapshot-baseline.txt`（精选 ~30 确定性用例）+ `tests/snapshots/` 运行行为基线（120K）；CI 加快照回归步骤；记录 AST/HIR/IR 被 std 前缀主导的体积约束 |
 | 2026-09-04 | C2 扩充：run 基线用例 30→56（新增 26 个经双次运行验证的确定性用例）；新增 IR 探针 `tests/snapshot-baseline-ir-probe.txt`（小子集 6 例，仅存 ir 维度）+ harness `--probe` 便捷模式 + CI `IR probe regression` 步骤；验证 run 56/0/0/0、IR 探针 6/0/0/0 连续两次零差异 |
 | 2026-09-04 | C2 扩充·路线 A：AST/HIR 排除 std 前缀（按源文件过滤条目）。`rlyeh_hir::HirItem` 新增 `span`，typecheck 12 个构造点填真实/合成 span；driver 新增 `--emit ast-user/hir-user`（`emit_ast_user`/`emit_hir_user`）。`hello` 实测 `ast` 212230→`ast-user` 70 行、`hir` 35354→`hir-user` 36 行。新增 AST/HIR 探针清单（13/12 例）+ harness `DIMS` 扩充 + CI 两步回归；验证 ast-user 13/0/0/0、hir-user 12/0/0/0 连续两次零差异 |
+| 2026-11-15 | 0.2.0 收尾：按当前编译器刷新探针基线（IR 6 / ast-user 13 / hir-user 12 / diagnostics 12 个维度文件），复验 run 56/0/0/0、IR 6/0/0/0、ast-user 13/0/0/0、hir-user 12/0/0/0、diagnostics 12/0/0/0 |

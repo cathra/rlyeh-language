@@ -39,3 +39,4 @@ SH-P2-7 前端自举 PoC ✅ 完成：lexer（M-M1a/b/c）与 parser（M-M2a–M
 | 2026-09-01 | 新增 SH-P2-4 链接桥、SH-P2-5 分阶段自举、SH-P2-6 诊断、SH-P2-7 driver 自举 |
 | 2026-10-19 | SH-P2-7 状态同步：lexer/parser（M-M1、M-M2a–M-M10）✅；parser 拆分 `self-host/parser/*.rl`；计划级 M-M3 拆为 M-M3a/b/c（M-M3a 已 ✅，节点级对拍 4/4），M-M3b ✅（真·arena 全层贯通，parser 15/15 + ast 4/4），M-M3c 进行中，M-M4 待推进 |
 | 2026-11-14 | SH-P2-7 ✅ 完成：M-M3c macro 最小对拍（2/2，43 组用例）；M-M4 `self_host_dogfood.rs` 单编译单元串联 lexer+ast+parser，16 个真实语料四层对拍（2/2）；0.2.0-M 状态置为 🟢 完成（PoC） |
+| 2026-11-15 | 0.2.0 收尾验收通过：全量 `cargo test --workspace --no-fail-fast -- --test-threads=1` 134 测试目标 / 804 测试函数 / 0 失败（含 352 个 `.rl` 用例）；快照回归全绿；P2-2/3 核心、P2-4/6/7 完成、P2-5 PoC(CD)、P2-1 长期 Rust；Q-M4 等残留项移交 0.3.0 |

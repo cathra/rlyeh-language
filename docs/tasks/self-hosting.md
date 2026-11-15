@@ -32,7 +32,7 @@
 - 🟢 [SH-P0-5 元组值构造 + 解构（多返回值）](./leaf/sh-p0-5-tuple-value.md) → 0.2.0-N（复审补遗；复核后仅解构为真缺口）
 - 🟢 [SH-P0-6 `if let` / `while let` 模式控制流](./leaf/sh-p0-6-if-let.md) → 0.2.0-O（复审补遗；语言此前完全缺失，parser 层 desugar 落地）
 - 🟢 [SH-P0-7 `match` 守卫 + 范围/或模式](./leaf/sh-p0-7-match-guard.md) → 0.2.0-P（复审补遗；M1 修复缺陷、M2 补 typecheck、M3 或模式全链路新增）
-- 🟢 [SH-P0-8 `Drop` protocol / 析构 / RAII](./leaf/sh-p0-8-drop.md) → 0.2.0-Q（复审补遗；Q1–Q3 已落地，Q4 智能指针接入待办）
+- 🟢 [SH-P0-8 `Drop` protocol / 析构 / RAII](./leaf/sh-p0-8-drop.md) → 0.2.0-Q（复审补遗；Q1–Q3 已落地，Q4 智能指针接入移交 0.3.0）
 
 ### P1 — 需新增语言/标准库特性（0.2.0 必须项）
 - 🟢 [SH-P1-1 泛型 protocol/impl 完整化](./leaf/sh-p1-1-generic-protocol.md) → 0.2.0-A
@@ -64,7 +64,7 @@
 
 | 级别 | 状态 |
 |------|------|
-| P0 | ✅ 完成（0.2.0 E/F/G/H/N/O/P/Q；Q4 智能指针 Drop 待办） |
+| P0 | ✅ 完成（0.2.0 E/F/G/H/N/O/P/Q；Q4 智能指针 Drop 移交 0.3.0） |
 | P1 | 🟢 完成（0.2.0 A/B/C/R/S/T；C derive 核心落地） |
 | P2 | 🟢 主要能力落地（P2-2/3 核心，P2-4/6/7/8/9/10/11 完成，P2-5 PoC(CD)；P2-1 长期保留 Rust） |
 | P3 | ✅ 完成（P3-1 告警式并发安全基线） |

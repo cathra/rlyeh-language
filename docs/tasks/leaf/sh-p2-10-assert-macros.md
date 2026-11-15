@@ -13,6 +13,9 @@
   - `assert!(cond[, msg?])` / `assert_eq!(a, b[, msg?])` / `assert_ne!(a, b[, msg?])` → `if !cond { panic!(msg) } else { () }`（`assert_eq` 为 `a == b`、`assert_ne` 为 `a != b`）。
   - actor 方法仍可用返回 `-1` 触发崩溃协议，与 `panic!` 并存。
 
+## 已知限制（移交 0.3.0）
+- `panic!` 当前返回 `()`；`!` never 类型未接，`if` 分支中 `panic!` 参与类型合并时按 Unit 处理。不影响 0.2.0 前端 PoC（前端不使用 `!` 分支类型统一）。
+
 ## 风险分解（→ 低危）
 - **L1（低）** `panic!(msg)` / `unreachable!()` / `todo!()`：desugar 为 `eprintln!`(stderr) + 终止（复用 N4 stderr 宏 + 进程退出内建）；`assert!(cond[, msg])` / `assert_eq!(a, b)`：条件假则 `panic!`。
 - **L2（低）** 差分对拍：断言触发时机与 Rust 一致（仅需语义对齐，无新 IR 节点）。

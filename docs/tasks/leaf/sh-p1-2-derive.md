@@ -38,7 +38,7 @@
 - 全量 `rlyeh test tests`：**252 用例全过**（含 `x3_deserialize*` serde derive 用例未受影响）。
 
 ## 状态
-🟢 struct 的 Clone / PartialEq / Debug derive 已落地并全量回归通过；enum derive、泛型 bound 强制校验、用户自定义 derive 宏（C4 扩展点）留待后续。
+🟢 struct 的 Clone / PartialEq / Debug derive 已落地并全量回归通过；enum derive、泛型 bound 强制校验、用户自定义 derive 宏（C4 扩展点）移交 0.3.0（0.2.0 前端自举所需 derive 已覆盖）。
 
 ## 变更记录
 | 日期 | 变更 |

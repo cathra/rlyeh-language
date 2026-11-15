@@ -1,7 +1,7 @@
 # 语言级缺陷跟踪专项（Lang Defects）
 
 > **所属阶段**：阶段 Y（专项跟踪文档，非独立阶段）
-> **状态**：📋 待办（登记探测到的语言级类型系统/泛型/dyn 缺陷，统一评估后修复）
+> **状态**：✅ 已收口（登记项均已修复或明确规避；#3 切片参数化由 S1/S2/S3 解除，#9 悬垂返回由借用检查修复，#10 跨模块自动借用已修复）
 > **所属任务树**：[任务文档导航](../README.md) → [阶段 U–Z](../stage-u-z.md)
 
 ## 目标
@@ -31,9 +31,10 @@ Y 阶段任务风险评估（2026-08-28）在实测中探测到多个语言级�
 - **修复方向（已落地）**：P4c 支持具体类型 → dyn protocol 对象上转型——`coerce_to_dyn`（`check_expr/misc.rs:380`）实现 `&T → &dyn Protocol` coercion，用于 `let` 绑定（`check_stmt.rs`）、函数返回（`fn_sig.rs:189`）等主路径；`&dyn Protocol` 作参数/返回值（胖指针）亦可用（见 legacy-misc #4）。
 - **状态**：✅ 已修复（P4c；2026-09-06 复现验证）：`p4_dyn_upshift.rl` / `error_source.rl` 验证 `&dyn Error` 上转型与 `source() -> Option<&dyn Error>` 链式返回可用；`let d: &dyn Error = &e;` 形式正常。注：裸 `dyn Error`（按值，DST 不可存储）非缺陷，与 Rust 一致。
 
-### 3.（预留）切片参数化（U1，源自 Y1）
+### 3. 切片参数化（U1，源自 Y1）— ✅ 已解除（S1/S2/S3）
 
-- `read(&mut [u8])`/`write(&[u8])` 切片实参依赖 U1 切片成熟——`&mut [u8]`/`&[u8]` 作函数参数 + 切片值传递，待确认语言支持后登记。
+- `read(&mut [u8])`/`write(&[u8])` 切片实参依赖 U1 切片成熟——`&mut [u8]`/`&[u8]` 作函数参数 + 切片值传递。
+- **状态**：✅ 已解除（2026-08-30，S1 类型层 / S2 codegen / S3 std 接线）：`File::read_slice(&mut [u8])` / `write_slice(&[u8])` 已落地并二进制安全；`Vec<u8>` 仍非紧凑字节缓冲的等价替代（数组非紧凑），故保留 `read(cap)`/`write(String)` 兼容 API。详见 [`slice-s3-std-wiring.md`](./slice-s3-std-wiring.md) 与 [`y1-file-api.md`](./y1-file-api.md)。
 
 ### 4. 泛型 protocol 实参不支持路径 + 无 where 子句（源自 Y6b）
 
@@ -133,7 +134,7 @@ impl<T> MutexGuard<T> { fn get(&self) -> &T; fn get_mut(&mut self) -> &mut T; }
 - **根因**：V1「真实取址」（`&obj.field` → GEP 槽地址）对**局部/按值 self 字段**生成的是临时栈地址，返回该地址即悬空；MVP 借用检查未将「返回字段地址」判定为 `DanglingReference`（仅对返回 `&x` 局部变量/绑定引用变量判定）。
 - **影响**：错误包装器（及其他需返回内部引用者）**不能**用 `&self.field` 形式返回字段引用；须把内部引用作为**引用类型字段**存储，并返回该字段的引用**值**（上转型），而非对字段取地址。
 - **约束/规避**：MVP 暂不支持 `&dyn Error` 直接作 struct 字段（dtor/vtable 槽归零），故 `source` 链载体退化到具体引用类型（`&IoFailure`）；待借用检查补全「返回字段地址 = 悬空」判定 + `&dyn Error` 字段支持后解除。
-- **状态**：📋 登记（MVP 已知限制，非阻塞——用引用值字段规避即可，见 y6-error-source.md P7d-1 小节）。
+- **状态**：✅ 已修复（2026-09-06）：借用检查器 `HirParam.is_ref` + `check_dangling_return` 的 `ref_root`/`is_escaping_root` 判定已补齐，`&self.field` 悬垂返回报 `BC005`；回归用例 `tests/compile-fail/dangle_value_self.rl`、`dangle_value_param.rl` + `tests/run-pass/ref_self_field.rl`。原「用引用值字段规避」不再是唯一方案。
 
 ### 10. 跨模块 `&mut self` 方法自动借用失效（源自 Y2c）
 

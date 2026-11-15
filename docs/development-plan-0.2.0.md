@@ -13,7 +13,7 @@
 | 版本 | 状态 | 说明 |
 |------|------|------|
 | 0.1.0 (MVP) | ✅ 收口 | 阶段 A–Z 全部完成；工具链用 Rust 实现（bootstrap 阶段） |
-| **0.2.0 (自举能力补齐)** | 🟡 收尾（阶段 A–Y 已落地） | 落地全部自举所需**语言/标准库能力**（含原 P0 语言特性），交付前端自举 PoC + FFI 链接桥 + 差分测试，使 0.3.0 可自举；C/D/I/K 为核心落地或 PoC，遗留限制见各叶子 |
+| **0.2.0 (自举能力补齐)** | ✅ 完成（2026-11-15 收尾验收） | 落地全部自举所需**语言/标准库能力**（含原 P0 语言特性），交付前端自举 PoC + FFI 链接桥 + 差分测试，使 0.3.0 可自举；C/D/I/K 为核心落地或 PoC，遗留限制见 §1.1 并移交 0.3.0 |
 | **0.3.0 (工具链自举)** | 📋 待规划 | 用 0.2.0 能力把 lexer→…→codegen→driver→tools→std 重写为 Rlyeh（运行时可选保留 Rust 经 FFI） |
 
 **0.2.0 主线目标（单一、可验证）**：
@@ -24,6 +24,45 @@
 
 **0.2.0 不负责**：工具链*重写本身*（属 0.3.0）；`dagon` 包管理器可长期保留 Rust 经 FFI。
 
+### 1.1 0.2.0 收尾验收（2026-11-15）
+
+**结论**：0.2.0「自举能力补齐」目标达成。阶段 A–Y 全部落地，前端自举 PoC（SH-P2-7）全绿；剩余项均登记为已知限制或明确移交 0.3.0，不阻塞 0.2.0 验收。
+
+**验收命令（顺序执行）**：
+1. `cargo build --workspace`（先产出运行时 staticlib；CI 同序）
+2. `cargo test --workspace --no-fail-fast -- --test-threads=1`
+3. `python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline.txt --dims run`
+4. `python3 scripts/diff_harness.py check --probe`
+5. `python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-ast-probe.txt --dims ast-user`
+6. `python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-hir-probe.txt --dims hir-user`
+7. `python3 scripts/diff_harness.py check --manifest tests/snapshot-baseline-diag-probe.txt --dims diagnostics`
+
+**验收结果（2026-11-15）**：
+- `cargo build --workspace`：通过。
+- `cargo test --workspace --no-fail-fast -- --test-threads=1`：**134 个测试目标、804 个测试函数全通过，0 失败**；含 `suite_test` 的 352 个 `.rl` 语言用例（249 run-pass + 87 compile-fail + 16 compile-pass）。
+- SH-P2-7 自举测试：lexer 2/2、parser 15/15、ast 4/4、macro 2/2、dogfood 2/2。
+- 快照回归（`scripts/diff_harness.py check`）：run 56/0/0/0、IR 探针 6/0/0/0、ast-user 13/0/0/0、hir-user 12/0/0/0、diagnostics 12/0/0/0（通过/差异/缺快照/错误）。
+- 快照基线：IR / AST-user / HIR-user / 诊断探针基线按 2026-11-15 当前编译器刷新（run 基线保持不变）。
+
+**0.2.0 收尾补漏**：
+- T-6 块级借用模型下 `reference_test` 四个细粒度 NLL 用例按 RFC §4.4 迁入显式块，10/10 通过。
+- `wasm_target_test` 的 sysroot 就绪检测补查 `crt1.o` + `libc.a`，避免 Homebrew 部分安装导致假就绪；5/5 通过（无工具链时优雅跳过）。
+- 修正 parser 陈旧单测为 `test_extension_is_plain_identifier`（`protocol` 仍是关键字，`extension` 才是普通标识符）；parser lib 79/79 通过。
+
+**移交 0.3.0 的已知限制**：
+| 项 | 现状 | 处理 |
+|----|------|------|
+| Q-M4 智能指针 Drop | `Box`/`Rc`/`Arc` 未接 Drop；0.2.0 Drop/RAII 已覆盖用户 struct、字段级 drop glue、guard 自动解锁 | 0.3.0（需堆释放/引用计数约定，与运行时重写耦合） |
+| W L3 `!` never | `panic!` 当前返回 `()`，`if` 分支类型合并不把 panic 视为发散 | 0.3.0（前端 PoC 不依赖） |
+| C enum derive | 仅 struct 的 Clone/PartialEq/Debug；enum derive、bound 强制校验、自定义 derive 扩展点未做 | 0.3.0（前端 PoC 不需要） |
+| I 泛型 impl 静态方法 | 泛型关联静态方法 MVP 不支持，Arena 需调用方显式构造 | 0.3.0 |
+| Y4 跨线程移动 | `Sender`/`Receiver` 类型层/共享已完成，跨线程移动受 `Thread::start` 传参限制 | 0.3.0（线程传参/泛型入口） |
+| P2-5 K-M1..M3 | harness + C0/C1/C2 快照基线完成；三阶段 bootstrap 未启动 | 0.3.0（按 SH-P2-5 计划） |
+| Y1 / Y3 降级项 | Y1 以 MVP 字节缓冲 + `read_slice`/`write_slice` 收口；Y3 Windows sendfile 保留 Unsupported | 接受，不阻塞 0.2.0 |
+| P2-1 外部 crate | pubgrub/clap/serde/toml/tar/flate2/libc 长期保留 Rust 经 FFI | 长期策略 |
+| P1-3 B4 可见性 | 模块级默认私有 + pub 校验暂缓（std 跨模块全可达依赖） | 0.3.0 及以后 |
+
+
 ---
 
 ## 2. 计划总览（阶段 A–Y）
@@ -32,13 +71,13 @@
 |------|------|----------|----------|------|------|------|
 | **0.2.0-A** | 泛型 protocol/impl 完整化 | P1-1 | [SH-P1-1](tasks/leaf/sh-p1-1-generic-protocol.md) | 🟠 中 | 🟢 完成 | typecheck 自举前置（A1/A3 复核为既有能力；A4 两缺口已补；A2 两处限制 2026-09-02 第二轮修复） |
 | **0.2.0-B** | 嵌套模块系统 | P1-3 | [SH-P1-3](tasks/leaf/sh-p1-3-nested-module.md) | 🟠 中 | 🟢 完成 | 嵌套模块（既有）+ `pub use`/组导入/glob/嵌套组导入已实现；B3 `crate::`/`super::` 按扁平决策排除；B4 可见性暂缓 |
-| **0.2.0-C** | protocol derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252 |
+| **0.2.0-C** | protocol derive 宏 | P1-2 | [SH-P1-2](tasks/leaf/sh-p1-2-derive.md) | 🟠 中 | 🟢 核心落地 | struct 的 `#[derive(Clone/PartialEq/Debug)]` 已落地（C1/C2/C3/C4 框架），全量回归 252/252；enum derive / 泛型 bound 强制校验 / 自定义 derive 扩展点移交 0.3.0 |
 | **0.2.0-D** | 进程调用 / 外部工具链 FFI | P2-2 | [SH-P2-2](tasks/leaf/sh-p2-2-process-ffi.md) | 🟠 中 | 🟢 核心落地 | process 模块（system/exec/output/exec_combined）+ clang FFI 印证，全量回归 253/253 |
 | **0.2.0-E** | `unsafe` 块 / 裸指针 / `#[repr(C)]` | P0-1 | [SH-P0-1](tasks/leaf/sh-p0-1-unsafe.md) | 🔴 高 | 🟢 完成 | unsafe 块/裸指针/E-M1 bump 分配器 + E2 repr(C)（sub8+嵌套聚合内联）+ E3 FFI 门禁全部落地，全量 253/253 |
 | **0.2.0-F** | 跨函数边界闭包 + `move` + `'static` | P0-2 | [SH-P0-2](tasks/leaf/sh-p0-2-closure.md) | 🔴 高 | 🟢 完成 | actor 调度器 / driver 线程模型地基 |
 | **0.2.0-G** | `dyn Protocol` 含 `Self` + `Any` 类型擦除 | P0-3 | [SH-P0-3](tasks/leaf/sh-p0-3-dyn-any.md) | 🔴 高 | 🟢 完成 | actor 消息协议地基 |
 | **0.2.0-H** | 并发原语（Arc<Mutex>/atomic/线程 spawn） | P0-4 | [SH-P0-4](tasks/leaf/sh-p0-4-concurrency.md) | 🔴 高 | 🟢 完成 | 运行时并发地基 |
-| **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | 🟢 核心落地 | I2 arena+NodeId + I1 RefCell 验证，全量 255/255 |
+| **0.2.0-I** | 内部可变性 / arena 表示 | P2-3 | [SH-P2-3](tasks/leaf/sh-p2-3-internal-mut.md) | 🟠 中 | 🟢 核心落地 | I2 arena+NodeId + I1 RefCell 验证，全量 255/255；泛型 impl 关联静态方法限制移交 0.3.0（Arena 可在调用方构造） |
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ✅ 完成（C-ABI staticlib 链接桥） | Rlyeh 产物经 `extern "C"` 符号 + `crate-type=["rlib","staticlib"]` 链接 `librlyeh_*_runtime.a`（按需、缺失跳过），actor/gc/region 测试全绿 |
 | **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | 🟢 PoC(CD) | harness + 单编译器快照基线（C0/C1/C2）落地；三阶段自举 K-M1..K-M3 推迟 0.3.0 |
 | **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | 🟢 完成 | L0 harness 诊断维度 + 探针基线（12 例 check 12/0/0/0）；L1 typecheck/borrowck/regionck 用户态 span 对齐 + 语句级坐标（HIR Span 传播）；L2 结构化诊断（稳定错误码 TC/BC/RC0xx + `= help:` + 相关 span 标注，TypeError 多位置回指） |
@@ -46,13 +85,13 @@
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
-| **0.2.0-Q** | `Drop` protocol / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | 🟢 完成（Q1–Q3） | **复审补遗**：MutexGuard/arena/智能指针自动释放；Q4 智能指针接入待办 |
+| **0.2.0-Q** | `Drop` protocol / 析构 / RAII | P0-8 | [SH-P0-8](tasks/leaf/sh-p0-8-drop.md) | 🔴 高 | ✅ 完成（Q1–Q3） | **复审补遗**：MutexGuard/arena/智能指针自动释放；Q1–Q3（Drop protocol + 块尾注入 + 字段级 drop glue）已验收，Q4 智能指针 Drop 移交 0.3.0 |
 | **0.2.0-R** | `Deref`/`DerefMut` 用户类型自动解引用 | P1-4 | [SH-P1-4](tasks/leaf/sh-p1-4-deref.md) | 🟠 中 | ✅ 完成（M1 protocol 声明 + M2 自动解引用强制 + L1 回归） | M1 `Deref`/`DerefMut` protocol 声明（2026-09-04）+ M2 字段/方法/索引解析失败回退插入 `x.deref()`（深度 16，零新增 IR，2026-09-04）+ run-pass `p1_4_autoderef.rl`；**已知限制**：`deref(&self) -> &Target` 返回引用路径受函数返回引用 codegen 缺陷影响，暂仅对返回值的 `deref`（`MutexGuard`/`RwLockGuard` 值分发）生效 |
 | **0.2.0-S** | `Copy`/`Clone` 语义 + `#[derive(Copy)]` | P1-5 | [SH-P1-5](tasks/leaf/sh-p1-5-copy-clone.md) | 🟠 中 | 🟢 完成 | `protocol Copy {}` + `#[derive(Copy)]` 展开 `impl Copy for T` + `T: Copy` 约束（2026-09-04） |
 | **0.2.0-T** | `?` 经 `From`/`Into` 错误自动转换 | P1-6 | [SH-P1-6](tasks/leaf/sh-p1-6-question-from.md) | 🟠 中 | 🟢 完成 | `?`+`From` 转换 P6c（2026-08-29）已落地，`check_question` 在 `E1≠E2` 时插入 `From::<E1>::from` |
 | **0.2.0-U** | `mem::swap` / `mem::replace` 内建 | P2-8 | [SH-P2-8](tasks/leaf/sh-p2-8-mem-swap.md) | 🟠 中 | 🟢 完成 | M1 `mem::swap` 三次 memcpy 交换；M2 `mem::replace` desugar 复用 mem::swap 统一处理标量/聚合；M3 `mem::take` desugar 复用 mem::swap + 打通 `Default` 协议 `Self` 上下文推断（run-pass + compile-fail 已固化）；全量回归 335/335 |
 | **0.2.0-V** | `const` / `static` 全局项 | P2-9 | [SH-P2-9](tasks/leaf/sh-p2-9-const-static.md) | 🟠 中 | 🟢 完成 | M1 const 折叠 / M2 static·static mut data 段符号 + unsafe 门禁 / M3 `&GLOBAL`→`&'static T` 取址；全量回归 330/330 |
-| **0.2.0-W** | `panic!`/`assert!`/`unreachable!`/`todo!` 宏 | P2-10 | [SH-P2-10](tasks/leaf/sh-p2-10-assert-macros.md) | 🟡 低 | ✅ 完成（L1 运行时 panic：desugar 为内置 `panic` 调用，codegen 经 `dprintf` 输出到 stderr 后 `abort()`；L3 never 类型待办） | **复审补遗**：编译器内部断言 |
+| **0.2.0-W** | `panic!`/`assert!`/`unreachable!`/`todo!` 宏 | P2-10 | [SH-P2-10](tasks/leaf/sh-p2-10-assert-macros.md) | 🟡 低 | ✅ 完成（L1 运行时 panic：desugar 为内置 `panic` 调用，codegen 经 `dprintf` 输出到 stderr 后 `abort()`；L3 `!` never 类型移交 0.3.0） | **复审补遗**：编译器内部断言；panic! 当前返回 `()`，不影响前端 PoC |
 | **0.2.0-X** | 结构体 `..` 更新 + 字段简写 | P2-11 | [SH-P2-11](tasks/leaf/sh-p2-11-struct-update.md) | 🟡 低 | 🟢 完成 | L1 字段简写（须显式首字段在前）/ L2 `..base` 拷贝；run-pass 验证通过 |
 | **0.2.0-Y** | `Send`/`Sync` 自动 protocol（放宽/标记） | P3-1 | [SH-P3-1](tasks/leaf/sh-p3-1-send-sync.md) | 🟠 中 | ✅ 完成（告警式并发安全基线 + L1 回归） | **复审补遗**：并发安全基线（告警式）；`Thread::start` 边界 W002 告警 + `is_send_sync` 内建谓词 + run-pass `send_sync_thread.rl` 回归 |
 
@@ -87,7 +126,7 @@
   - C1 `Debug` 复用 `fmt` 模块既有 protocol，`dbg!`（`{:?}` 语义）输出 `Name { f: <Debug>, ... }`。
   - C4：未知 derive 名（serde `Serialize`/`Deserialize`）宽松忽略，与既有行为兼容。
   - 验证：新增 `derive_clone`/`derive_partialeq`/`derive_debug` run-pass（含 `.out`）；全量 `rlyeh test tests` **252/252 通过**。
-  - 已知限制：仅 struct（enum derive 待办）；泛型字段须自身实现对应 protocol（MVP 未强制 bound）；char 字段 Debug 需 `fmt::Debug for char`（未提供）。
+  - 已知限制（移交 0.3.0）：仅 struct（enum derive 未做）；泛型字段须自身实现对应 protocol（MVP 未强制 bound）；char 字段 Debug 需 `fmt::Debug for char`（未提供）。
 > **关联文档**：[SH-P1-2 protocol derive 宏](tasks/leaf/sh-p1-2-derive.md)
 
 ### 3.4 D 进程调用 / 外部工具链 FFI（P2-2）
@@ -386,8 +425,8 @@ MutexGuard 自动解锁、arena 自动释放需 `Drop`/RAII；Rlyeh 0.1.0 完全
 - ✅ **Q-M1（中）** `Drop` 作为**内置** protocol（`is_drop_protocol` / `has_drop_impl`），不依赖 `protocol Drop` 显式声明，也不依赖 A 阶段（`Drop` 为非泛型 protocol）。
 - ✅ **Q-M2（中）** 作用域尾自动插入 `x.drop()`：逆声明序（`Scope.decl_order`）、仅拥有所有权绑定（引用跳过）、块值先求后析构、`Never` 结尾跳过。调用经 `check_stmt` 走常规方法解析，零新增 IR。
 - ✅ **Q-M3（中）** 字段级递归 `build_drop_glue`：先 `T::drop()` 再逆字段序递归；仅具名 struct 参与，`MAX_DROP_DEPTH = 4` 防自引用无限展开。
-- ⏳ **Q-M4（中）** 智能指针接入（`Box` 释放堆、`Rc`/`Arc` 计数-1、`Gc` 逃逸登记）——待办，需先定调用约定且泛型 Drop 依赖 A 阶段。
-- ⏳ **Q-L1（低）** 差分对拍 Rust 参考。
+- ⏳ **Q-M4（中）→ 0.3.0** 智能指针接入（`Box` 释放堆、`Rc`/`Arc` 计数-1、`Gc` 逃逸登记）——0.2.0 收尾明确移交 0.3.0：需先定堆释放/引用计数调用约定，且与运行时重写耦合；0.2.0 的 Drop/RAII 已覆盖用户 struct、字段级 drop glue 与 guard 自动解锁。
+- ⏳ **Q-L1（低）→ 0.3.0** 差分对拍 Rust 参考（随双编译器差分基础设施启动）。
 - **关键 checkpoint**：`tests/run-pass/drop_raii.{rl,out}` 22 行输出全绿（逆声明序 / 嵌套块 / 块值时序 / 引用跳过 / 逆字段序 / drop glue / 多层嵌套）；全量 128 个测试目标全绿。
 - **已知限制**：不跟踪 move（被 return 移出的变量仍析构）；函数形参不析构（位于外层 fn 作用域）；`return`/`break` 提前退出路径不注入（同既有 `guard.rs` 约束）。
 > **关联文档**：[SH-P0-8 `Drop` / 析构 / RAII](tasks/leaf/sh-p0-8-drop.md)
@@ -405,6 +444,7 @@ MutexGuard 自动解锁、arena 自动释放需 `Drop`/RAII；Rlyeh 0.1.0 完全
 | 2026-09-01 | **高危任务细化**：§7 由单表扩展为「速览表 + §7.1–§7.11 子任务小节」，各高危阶段列具体 M 子任务 / 关键 checkpoint / 关联叶子；补齐缺失叶子 `sh-p2-5-staged-bootstrap.md`（K）、`sh-p2-7-driver.md`（M）；修正 `sh-p0-1`/`sh-p0-3` 归属为 0.2.0-E/G（与原「0.3.0+ 长期跟踪」矛盾） |
 | 2026-09-21 | **M-M2b2 落地**：SH-P2-7 M-M2b 补齐 `let` 模式（扁平元组/`_`）与类型标注（`i64`/`&T`/`&mut T`/泛型 `@GEN@` 迭代收束，嵌套 `Vec<Result<i64,String>>` 正确）；Rust oracle 新增 `render_pattern_canonical`/`render_type_canonical`；`tests/self_host_parser.rs` 扩展 b2 用例逐字节对拍一致；实证 Rlyeh 5 项约束（`&&` 不短路、返回 `String` 禁用 `return`、if-表达式 else 返回条件值、`>>`=shr、前向调用推断 i64）写入叶子踩坑点 |
 | 2026-10-19 | **SH-P2-7 收尾启动**：M-M1/M-M2（a–m 全部切片）✅ 状态同步；parser 拆分 `self-host/parser/*.rl`（6 片段 ≤1000 行）；计划级 M-M3 拆为 M-M3a（类型化 AST）/M-M3b（parser 切换 AST）/M-M3c（macro 对拍），M-M3a ✅（类型化 AST + 节点级对拍 4/4）；M-M3b ✅（真·arena 全层贯通，parser 15/15 + ast 4/4）；M-M3c 进行中；M-M4 串联 + 扩大 dogfood 待推进 |
+| 2026-11-15 | **0.2.0 收尾验收通过**：`cargo build --workspace` + `cargo test --workspace --no-fail-fast -- --test-threads=1` 全绿（134 测试目标 / 804 测试函数 / 0 失败，含 352 个 `.rl` 用例）；补漏 T-6 块级借用 reference_test 迁移、wasm sysroot 就绪检测、parser 陈旧单测；Q-M4 / W L3 / C enum derive / I 泛型静态方法 / Y4 跨线程移动 / P2-5 K-M1..M3 明确移交 0.3.0。详见 §1.1 |
 | 2026-11-15 | **文档一致性清理**：0.2.0 总览状态改为「🟡 收尾（阶段 A–Y 已落地）」；总览标题 A–M→A–Y；Y 阶段（Y1/Y3 降级、Y4 跨线程移动待补）与 P2-2/3/4/5 索引状态按叶子实际状态对齐 |
 | 2026-11-14 | **SH-P2-7 收尾完成**：M-M3c macro 最小对拍（`self-host/macro.rl` 876 行 + `macro_oracle.rs` + `self_host_macro.rs`，2/2、43 组用例）；M-M4 `self_host_dogfood.rs` 以 lexer+ast+parser 单编译单元串联，16 个真实语料 token/AST/kinds/roundtrip 四层对拍（2/2，35.56s）；parser 辅助函数改名 `p_is_ident_cont` 支持跨层拼接；0.2.0-M 状态置为 🟢 完成（PoC） |
 | 2026-09-22 | **M-M2c 落地**：SH-P2-7 M-M2c 控制流 `if`/`else`/`else if`/`while`/`loop` 的语句/块尾双形态 + `let x = if...` 初始化；Rlyeh 版 `self-host/parser.rl` 新增迭代式控制帧栈（`cf_*` + pending-let 栈，整数态全 `Vec<String>` 编码规避 `Vec<i64>` 的 `get`/`pop` 返回 ptr 冲突）；Rust oracle `render_expr_canonical` 新增 `If`/`While`/`Loop` 分支；`tests/self_host_parser.rs` 新增 `m_m2c_control_flow_ast_matches_rust_oracle` 差分对拍一致 |
