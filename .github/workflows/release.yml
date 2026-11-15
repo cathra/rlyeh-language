@@ -94,7 +94,10 @@ jobs:
         run: |
           cargo build --release --target ${{ matrix.target }}
           mkdir -p dist/bin
-          for b in rlyeh-driver rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench dagon; do
+          # rlyeh-driver 包的 [[bin]] 名为 rlyeh；分发时重命名为 rlyeh-driver，
+          # 与下面的 rlyeh wrapper（exec rlyeh-driver）保持一致。
+          cp "target/${{ matrix.target }}/release/rlyeh${{ matrix.ext }}" "dist/bin/rlyeh-driver${{ matrix.ext }}"
+          for b in rlyeh-fmt rlyeh-check rlyeh-doc rlyeh-bench rlyeh-lsp dagon; do
             cp "target/${{ matrix.target }}/release/$b${{ matrix.ext }}" "dist/bin/$b${{ matrix.ext }}"
           done
 
