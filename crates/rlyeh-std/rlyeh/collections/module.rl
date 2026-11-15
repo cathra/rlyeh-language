@@ -421,6 +421,14 @@ impl<T> VecDeque<T> {
             Option::Some(self.buf[self.front + self.len - 1])
         }
     }
+    // V5+：只读引用迭代器（零拷贝，从逻辑头 front 开始；迭代期间不得结构性修改）。
+    fn iter(&self) -> IterRef<T> {
+        let mut p: *const T = &self.buf.data[0];
+        if self.len > 0 {
+            p = &self.buf.data[self.front];
+        }
+        IterRef::new(p, self.len)
+    }
 }
 
 // V1-b：HashMap 键值对引用迭代器（零拷贝视图）。`HashMapIter` 持有原表三数组指针
@@ -847,6 +855,28 @@ impl<T> HashSet<T> {
     }
 }
 
+// ===== BTreeMapIter<K, V>：BTreeMap 键值对引用迭代器（V5+） =====
+// 持有原 keys/vals 数组首地址 + 游标 + 长度；next() 返回 KVRef（两裸指针指向
+// 原真实槽）。迭代期间不得对 BTreeMap 做结构性修改（insert/remove 移动元素）。
+struct BTreeMapIter<K, V> {
+    keys: *const K,
+    vals: *const V,
+    idx: i64,
+    len: i64,
+}
+
+impl<K, V> BTreeMapIter<K, V> {
+    fn next(&mut self) -> Option<KVRef<K, V>> {
+        if self.idx >= self.len {
+            return Option::None;
+        }
+        let k: *const K = &self.keys[self.idx];
+        let v: *const V = &self.vals[self.idx];
+        self.idx = self.idx + 1;
+        Option::Some(KVRef { key: k, val: v })
+    }
+}
+
 // ===== BTreeMap<K, V>：有序映射（数组二分 + 移动，V5） =====
 // 键升序存于 keys 数组，vals 平行对齐。插入经二分查找定位 + 右移腾位
 // （O(n) 移动，MVP 数组实现），命中键则覆盖值。MVP 限 i64 键（有序比较）。
@@ -962,5 +992,24 @@ impl<K, V> BTreeMap<K, V> {
             i = i + 1;
         }
         vs
+    }
+    // V5+：借用键值对迭代器（零拷贝，键升序）。
+    fn iter(&self) -> BTreeMapIter<K, V> {
+        let kp: *const K = &self.keys[0];
+        let vp: *const V = &self.vals[0];
+        BTreeMapIter { keys: kp, vals: vp, idx: 0, len: self.len }
+    }
+    // V5+：区间查询 [lo, hi)，返回值集合（键升序；MVP 线性扫描，键限可比较标量）。
+    fn range(&self, lo: K, hi: K) -> Vec<V> {
+        let mut acc: Vec<V> = Vec::new();
+        let mut i = 0;
+        while i < self.len {
+            let k = self.keys[i];
+            if k >= lo && k < hi {
+                acc.push(self.vals[i]);
+            }
+            i = i + 1;
+        }
+        acc
     }
 }

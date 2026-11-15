@@ -38,6 +38,8 @@ dist/
 !tests/run-pass/hashset_cmp_symbol.out
 !tests/run-pass/hashmap_ops_symbol.out
 !tests/run-pass/import_nested_group.out
+!tests/run-pass/vecdeque_iter.out
+!tests/run-pass/btreemap_iter_range.out
 !tests/run-pass/copy_clone.out
 !tests/run-pass/cross_module_mut_self.out
 !tests/run-pass/type_alias.out
