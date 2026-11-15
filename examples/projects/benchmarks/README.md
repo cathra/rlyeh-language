@@ -115,13 +115,13 @@ python3 run.py --skip-rlyeh-build   # 跳过 Rlyeh 重编译（复用已有二�
 ### 2026-11-15 追加：String 内联分配 + HashMap 自适应负载
 
 - **String 对象与数据一次分配**：`String::with_capacity` 改为 `alloc_string_inline`——一次 `calloc(24 + cap)`，3 槽对象在块首、数据紧随其后；cap 最高位 bit62 标记 inline，`grow` 不再 `array_free` 内联数据（对象仍需存活）。`format!`/`String::new`/`clone`/`substring` 等不再走「数据 + 对象」两次分配。
-- **HashMap 自适应负载**：小表（cap ≤ 32768）用 1/2 负载降低字符串键碰撞，大表保持 7/8 负载避免 4 个并行数组的扩容/内存带宽开销。
+- **HashMap 自适应负载 + 元数据合并**：小表（cap ≤ 32768）用 1/2 负载，大表保持 7/8；`states` 与 `dist` 合并为单个 `meta` 数组（0=空、-1=墓碑、d+1=占用距离），探测时少一次内存加载、少一个并行数组。`hashmap` 6.67–7.38 → 5.80–6.39 ms。
 - **region bump 快路径**：cursor 始终 8 字节对齐、分配尺寸按 8 向上取整，循环内去掉每对象的 `(cursor+7)&-8` 对齐运算；`region_alloc` 5.63 → 5.50 ms，`region_batch` 12.81 → 11.96 ms。
 
 | 基准 | 优化前 | 追加优化后 | 变化 |
 |------|------:|-----------:|------|
 | hashmap_str | 7.173 ms | 3.43–3.82 ms | **约 1.9–2.1x** |
-| hashmap | 7.142 ms | 6.67–7.38 ms | 约 1.0x（噪声内） |
+| hashmap | 7.142 ms | 5.80–6.39 ms | 约 1.12–1.23x |
 | strcat | 2.708 ms | 2.34 ms | 约 1.15x（同量级） |
 | loop_sum | 2.581 ms | 2.10–2.22 ms | 约 1.15x（同量级） |
 | region_alloc | 5.629 ms | 5.50 ms | 约 1.02x |

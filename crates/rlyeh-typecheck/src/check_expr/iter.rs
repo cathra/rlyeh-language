@@ -633,10 +633,11 @@ pub(super) fn check_for_hashmap(
             }),
             else_block: None,
         }, Span::dummy())), Span::dummy()),
-        // if __for_m.states[__for_i] != 1 { __for_i += 1; continue; }
+        // if __for_m.states[__for_i] <= 0 { __for_i += 1; continue; }
+        // 槽值 0=空、-1=墓碑、>0=占用（距离+1）。
         HirStmt::new(HirStmtKind::Expr(HirExpr::new(HirExprKind::If{
             cond: Box::new(HirExpr::new(HirExprKind::Binary(
-                HirBinaryOp::Ne,
+                HirBinaryOp::Le,
                 Box::new(HirExpr::new(HirExprKind::Index{
                     base: Box::new(HirExpr::new(HirExprKind::FieldGet{
                         base: Box::new(HirExpr::new(HirExprKind::Variable(stored_m.clone()), Span::dummy())),
@@ -648,7 +649,7 @@ pub(super) fn check_for_hashmap(
                     is_str: false,
                     len: None,
                 }, Span::dummy())),
-                Box::new(HirExpr::new(HirExprKind::IntLiteral(1), Span::dummy())),
+                Box::new(HirExpr::new(HirExprKind::IntLiteral(0), Span::dummy())),
             ), Span::dummy())),
             then_block: Box::new(HirBlock { span: Span::dummy(),
                 stmts: vec![

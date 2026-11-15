@@ -480,7 +480,6 @@ pub(super) fn check_hashmap_construct(
     let keys_tmp = ctx.fresh_temp();
     let vals_tmp = ctx.fresh_temp();
     let states_tmp = ctx.fresh_temp();
-    let dist_tmp = ctx.fresh_temp();
     let base = ctx.fresh_temp();
     let cap_for_alloc = cap_hir.clone();
     let stmts = vec![
@@ -509,17 +508,9 @@ pub(super) fn check_hashmap_construct(
             mutable: false,
         }, Span::dummy()),
         HirStmt::new(HirStmtKind::Let{
-            name: dist_tmp.clone(),
-            init: HirExpr::new(HirExprKind::Call{
-                callee: "alloc_array".to_string(),
-                args: vec![cap_hir.clone()],
-            }, Span::dummy()),
-            mutable: false,
-        }, Span::dummy()),
-        HirStmt::new(HirStmtKind::Let{
             name: base.clone(),
             init: HirExpr::new(HirExprKind::Alloc{
-            slots: 7,
+            slots: 6,
             by_value: false,
             is_strfat: false,
         }, Span::dummy()),
@@ -560,12 +551,6 @@ pub(super) fn check_hashmap_construct(
             index: 5,
             value: Box::new(cap_hir),
             ty: FieldScalar::Int,
-        }, Span::dummy())), Span::dummy()),
-        HirStmt::new(HirStmtKind::Semi(HirExpr::new(HirExprKind::FieldSet{
-            base: Box::new(HirExpr::new(HirExprKind::Variable(base.clone()), Span::dummy())),
-            index: 6,
-            value: Box::new(HirExpr::new(HirExprKind::Variable(dist_tmp), Span::dummy())),
-            ty: FieldScalar::Ptr,
         }, Span::dummy())), Span::dummy()),
     ];
 

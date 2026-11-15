@@ -3,19 +3,20 @@
 struct HashMap<K, V> {
     keys: [K; 0],
     vals: [V; 0],
+    // meta：0 = 空槽，-1 = 墓碑，>0 = 占用且值 = Robin Hood 距离 + 1。
+    // 合并原 states/dist 两个数组，探测时少一次内存加载。
     states: [i64; 0],
     len: i64,
     used: i64,
     cap: i64,
-    dist: [i64; 0],
 }
 
 impl<K, V> HashMap<K, V> {
     // Robin Hood 线性探测查找：命中返回槽位索引，未找到返回 -1。
     // 提前终止双条件：遇空槽（s == 0）→ 不存在；遇槽内键探测距离 < 当前探测步数
     // → 不存在（Robin Hood 距离不变量：链上键距离非减，更远处不可能有本键）。
-    // 槽内键距离预存于 dist 数组（insert/grow 维护，O(1) 读取，String 键零额外哈希）。
-    // 墓碑（s == 2）跳过不终止——删除不破坏距离不变量（见 insert）。
+    // 槽内键距离与状态合并存于 states（meta）：0=空、-1=墓碑、d+1=占用距离。
+    // 墓碑（-1）跳过不终止——删除不破坏距离不变量（见 insert）。
     fn find(&self, k: K) -> i64 {
         let mask = self.cap - 1;
         let mut idx = hash_value(k) & mask;
@@ -25,8 +26,8 @@ impl<K, V> HashMap<K, V> {
             if s == 0 {
                 return -1;
             }
-            if s == 1 {
-                if self.dist[idx] < d {
+            if s > 0 {
+                if s - 1 < d {
                     return -1;
                 }
                 if self.keys[idx] == k {
@@ -61,9 +62,8 @@ impl<K, V> HashMap<K, V> {
     // Robin Hood 插入：单次探测同时完成「查键」与「找插入位」，遇空槽即确认键不存在。
     // 距离均衡——探测中若槽内键距离 < 当前键已走距离（在位者更富/离家更近），则
     // 在位者让位、当前键就位、被挤出的键从下一位置继续探测（穷者靠近家，链上距离
-    // 保持非减，支撑 find 的提前终止）。键距离写入 dist 数组（O(1)，String 键零额外
-    // 哈希——与 i64 键同构）。
-    // 墓碑（s == 2）跳过不占用（不参与交换、不作为插入位）：新键始终落真空槽，
+    // 保持非减，支撑 find 的提前终止）。距离写入 states（meta，O(1)）。
+    // 墓碑（-1）跳过不占用（不参与交换、不作为插入位）：新键始终落真空槽，
     // 距离不变量与无删除时一致；墓碑堆积由负载因子触发的 grow 重哈希清除（丢弃）。
     // 负载因子：小表 1/2（字符串键碰撞成本高），大表 7/8（控制 4 个并行数组的
     // 内存带宽与扩容重哈希总量）。
@@ -91,23 +91,22 @@ impl<K, V> HashMap<K, V> {
                 self.used = self.used + 1;
                 self.keys[idx] = cur_k;
                 self.vals[idx] = cur_v;
-                self.states[idx] = 1;
-                self.dist[idx] = d;
+                self.states[idx] = d + 1;
                 self.len = self.len + 1;
                 return;
             }
-            if s == 1 && self.keys[idx] == cur_k {
+            if s > 0 && self.keys[idx] == cur_k {
                 self.vals[idx] = cur_v;
                 return;
             }
-            if s == 1 {
-                if self.dist[idx] < d {
+            if s > 0 {
+                if s - 1 < d {
                     let yk = self.keys[idx];
                     let yv = self.vals[idx];
-                    let y_dist = self.dist[idx];
+                    let y_dist = s - 1;
                     self.keys[idx] = cur_k;
                     self.vals[idx] = cur_v;
-                    self.dist[idx] = d;
+                    self.states[idx] = d + 1;
                     cur_k = yk;
                     cur_v = yv;
                     d = y_dist;
@@ -127,28 +126,27 @@ impl<K, V> HashMap<K, V> {
             Option::None
         } else {
             let v = self.vals[idx];
-            self.states[idx] = 2;
+            self.states[idx] = -1;
             self.len = self.len - 1;
             Option::Some(v)
         }
     }
-    // 翻倍扩容：新开四数组，重哈希所有占用槽位（墓碑丢弃），释放旧缓冲
-    // 四个数组以类型注解显式定型（`alloc_array` 返回 `[Infer; 0]`，
+    // 翻倍扩容：新开三数组，重哈希所有占用槽位（墓碑丢弃），释放旧缓冲
+    // 三个数组以类型注解显式定型（`alloc_array` 返回 `[Infer; 0]`，
     // 后续索引比较/赋值前必须先统一元素类型）。
     // 重插复用与 insert 同构的 Robin Hood 探测+交换：若只是纯线性探测，键按
     // 旧表槽位顺序重插会使链上距离出现下跳（如 h 的链被 home 槽键打断），
-    // 破坏「链上距离非减」不变量 → find 的 dist < d 早退会误判（假阴性）。
+    // 破坏「链上距离非减」不变量 → find 的 meta-1 < d 早退会误判（假阴性）。
     // 交换式重插在任意重插顺序下都维持不变量，早退保持可靠。
     fn grow(&mut self) {
         let new_cap = self.cap * 2;
         let new_keys: [K; 0] = alloc_array(new_cap);
         let new_vals: [V; 0] = alloc_array(new_cap);
         let new_states: [i64; 0] = alloc_array(new_cap);
-        let new_dist: [i64; 0] = alloc_array(new_cap);
         let mask = new_cap - 1;
         let mut i = 0;
         while i < self.cap {
-            if self.states[i] == 1 {
+            if self.states[i] > 0 {
                 // Robin Hood 落位（含交换），与 insert 循环同构
                 let mut cur_k = self.keys[i];
                 let mut cur_v = self.vals[i];
@@ -159,20 +157,19 @@ impl<K, V> HashMap<K, V> {
                     if new_states[idx] == 0 {
                         new_keys[idx] = cur_k;
                         new_vals[idx] = cur_v;
-                        new_states[idx] = 1;
-                        new_dist[idx] = d;
+                        new_states[idx] = d + 1;
                         placed = 1;
                     } else if new_keys[idx] == cur_k {
                         // 旧表键唯一，理论不触发；防御性更新
                         new_vals[idx] = cur_v;
                         placed = 1;
-                    } else if new_dist[idx] < d {
+                    } else if new_states[idx] - 1 < d {
                         let yk = new_keys[idx];
                         let yv = new_vals[idx];
-                        let y_dist = new_dist[idx];
+                        let y_dist = new_states[idx] - 1;
                         new_keys[idx] = cur_k;
                         new_vals[idx] = cur_v;
-                        new_dist[idx] = d;
+                        new_states[idx] = d + 1;
                         cur_k = yk;
                         cur_v = yv;
                         d = y_dist;
@@ -186,11 +183,9 @@ impl<K, V> HashMap<K, V> {
         array_free(self.keys);
         array_free(self.vals);
         array_free(self.states);
-        array_free(self.dist);
         self.keys = new_keys;
         self.vals = new_vals;
         self.states = new_states;
-        self.dist = new_dist;
         self.used = self.len;
         self.cap = new_cap;
     }
@@ -200,38 +195,35 @@ impl<K, V> HashMap<K, V> {
         let k: [K; 0] = alloc_array(self.cap);
         let v: [V; 0] = alloc_array(self.cap);
         let s: [i64; 0] = alloc_array(self.cap);
-        let d: [i64; 0] = alloc_array(self.cap);
         array_free(self.keys);
         array_free(self.vals);
         array_free(self.states);
-        array_free(self.dist);
         self.keys = k;
         self.vals = v;
         self.states = s;
-        self.dist = d;
         self.len = 0;
         self.used = 0;
     }
-    // 键集合：稀疏遍历全部槽位，收集 states == 1（存活）的键为 Vec<K>。
+    // 键集合：稀疏遍历全部槽位，收集 states > 0（存活）的键为 Vec<K>。
     // 遍历顺序与插入无关（开放寻址），调用方断言需 sort 或求和。
     fn keys(&self) -> Vec<K> {
         let mut ks: Vec<K> = Vec::new();
         let mut i = 0;
         while i < self.cap {
-            if self.states[i] == 1 {
+            if self.states[i] > 0 {
                 ks.push(self.keys[i]);
             }
             i = i + 1;
         }
         ks
     }
-    // 值集合：稀疏遍历全部槽位，收集 states == 1（存活）的值为 Vec<V>。
+    // 值集合：稀疏遍历全部槽位，收集 states > 0（存活）的值为 Vec<V>。
     // 顺序与 keys 一致（同槽位遍历），顺序与插入无关。
     fn values(&self) -> Vec<V> {
         let mut vs: Vec<V> = Vec::new();
         let mut i = 0;
         while i < self.cap {
-            if self.states[i] == 1 {
+            if self.states[i] > 0 {
                 vs.push(self.vals[i]);
             }
             i = i + 1;
@@ -246,7 +238,7 @@ impl<K, V> HashMap<K, V> {
     }
     // V1-b：键值对引用迭代器——`iter_pairs() -> HashMapIter<K,V>`，`next()` 返回
     // `Option<KVRef<K,V>>`（`key`/`val` 两裸指针指向原 keys/vals 真实槽，零拷贝）。
-    // 遍历跳过空/墓碑槽（states != 1）。因 Rlyeh 元组运行时未就绪，键值对以
+    // 遍历跳过空/墓碑槽（states <= 0）。因 Rlyeh 元组运行时未就绪，键值对以
     // `KVRef` 结构体承载，等价 Rust `(&K, &V)` 引用语义。迭代期间不得对 HashMap
     // 做结构性修改（push/remove/grow 触发重哈希会使指针悬垂）。
     fn iter_pairs(&self) -> HashMapIter<K, V> {
@@ -460,10 +452,10 @@ struct KVRef<K, V> {
 }
 
 impl<K, V> HashMapIter<K, V> {
-    // 取下一存活槽的键值引用对并推进；耗尽（无更多 states==1 槽）返回 None。
+    // 取下一存活槽的键值引用对并推进；耗尽（无更多 states>0 槽）返回 None。
     fn next(&mut self) -> Option<KVRef<K, V>> {
         while self.idx < self.cap {
-            if self.states[self.idx] == 1 {
+            if self.states[self.idx] > 0 {
                 let k: *const K = &self.keys[self.idx];
                 let v: *const V = &self.vals[self.idx];
                 self.idx = self.idx + 1;
