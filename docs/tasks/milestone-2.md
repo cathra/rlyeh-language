@@ -15,7 +15,7 @@
 | M2.1 | Actor 运行时 | ✅ | [`m2-1.md`](milestone-tasks/m2-1.md) |
 | M2.2 | 包管理器 Dagon | ✅ | [`m2-2.md`](milestone-tasks/m2-2.md) |
 | M2.3 | 增量编译引擎 | ✅ | [`m2-3.md`](milestone-tasks/m2-3.md) |
-| M2.4 | LSP 服务器 | 📋 | [`m2-4.md`](milestone-tasks/m2-4.md) |
+| M2.4 | LSP 服务器（MVP，F1） | ✅ | [`m2-4.md`](milestone-tasks/m2-4.md) |
 | M2.5 | 标准库核心模块 | ✅ | [`m2-5.md`](milestone-tasks/m2-5.md) |
 | M2.6 | 交叉编译 | ✅ | [`m2-6.md`](milestone-tasks/m2-6.md) |
 | M2.7 | WASM 目标 | ✅ | [`m2-7.md`](milestone-tasks/m2-7.md) |
@@ -59,3 +59,4 @@
 | 日期 | 变更 |
 |------|------|
 | 2026-08-26 | 里程碑任务列表细化为单任务文档（milestone-tasks/），本文件改为任务列表 |
+| 2026-11-15 | 修复已知问题：M2.4 LSP 状态由 📋 更正为 ✅（F1 MVP 已落地，`rlyeh-lsp` + e2e 测试；见 `f1-lsp.md`） |

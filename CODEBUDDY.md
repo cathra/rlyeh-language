@@ -944,7 +944,7 @@ fn main() {
 | 里程碑 | 范围 | 状态 | 任务列表文档 |
 |--------|------|------|-------------|
 | **Milestone 1** — 编译器 MVP（Month 0-4） | M1.1 Lexer → M1.9 hello-world | ✅ 全部完成 | [`milestone-1.md`](docs/tasks/milestone-1.md) |
-| **Milestone 2** — 生产可用（Month 4-8） | M2.1 Actor 运行时 → M2.8 智能区域 | 🔧 部分完成（M2.4 LSP 待；M2.5-2.8 完成） | [`milestone-2.md`](docs/tasks/milestone-2.md) |
+| **Milestone 2** — 生产可用（Month 4-8） | M2.1 Actor 运行时 → M2.8 智能区域 | 🟢 基本完成（M2.4 LSP MVP 已落地；剩余 Windows/ARM 工具链环境项） | [`milestone-2.md`](docs/tasks/milestone-2.md) |
 | **Milestone 3** — 生态繁荣（Month 8-12） | M3.1 数据库 → M3.6 官方教程 | 📋 规划（未开始） | [`milestone-3.md`](docs/tasks/milestone-3.md) |
 
 ---
