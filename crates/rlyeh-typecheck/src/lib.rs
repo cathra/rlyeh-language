@@ -188,6 +188,32 @@ mod tests {
     }
 
     #[test]
+    fn visibility_warn_collects_private_access_without_error() {
+        // P2 可见性灰度：warn 模式应记录 W003 警告并继续编译；error 模式报 PrivateItem。
+        let src = r#"
+        module m { fn secret() -> i64 { 1 } }
+        fn main() { let x = m::secret(); }
+        "#;
+        let (_, warnings, _) =
+            typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Warn)
+                .expect("warn 模式应继续编译");
+        assert!(
+            warnings.iter().any(|w| matches!(
+                &w.kind,
+                WarningKind::PrivateItem { name } if name == "m::secret"
+            )),
+            "warn 模式应记录 m::secret 的 PrivateItem 警告，实际：{warnings:?}"
+        );
+        let err =
+            typecheck_source_with_warnings(src, &Default::default(), 0, VisibilityMode::Error)
+                .expect_err("error 模式应报 PrivateItem");
+        assert!(
+            matches!(err, TypeError::PrivateItem { .. }),
+            "error 模式应报 PrivateItem，实际：{err:?}"
+        );
+    }
+
+    #[test]
     fn send_sync_predicate() {
         // SH-P3-1 M2/M3：is_send_sync 并发安全判定谓词逻辑验证（无需 std 加载）。
         use crate::context::TypeContext;

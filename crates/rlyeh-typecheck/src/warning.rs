@@ -33,6 +33,14 @@ pub enum WarningKind {
         /// 不满足 `Send + Sync` 的类型文本。
         ty: String,
     },
+    /// P2 可见性灰度：跨模块访问非 `pub` 符号（仅 `--visibility=warn` 时发出）。
+    ///
+    /// `--visibility=error` 时同一检查直接报 `PrivateItem`（TC033）；`warn` 模式
+    /// 用于 std 迁移期收集所有待补 `pub` 的点，不阻断编译。
+    PrivateItem {
+        /// 被访问的完整符号名（如 `time::duration::Duration`）。
+        name: String,
+    },
 }
 
 impl Warning {
@@ -44,6 +52,9 @@ impl Warning {
             }
             WarningKind::NotSendSync { ty } => {
                 format!("captured type `{ty}` may not be `Send + Sync`; sharing across threads may be unsafe")
+            }
+            WarningKind::PrivateItem { name } => {
+                format!("private item `{name}` is not accessible across modules")
             }
         }
     }
@@ -57,6 +68,9 @@ impl Warning {
             WarningKind::NotSendSync { .. } => Some(
                 "确保捕获的数据拥有所有权且可跨线程共享（如用 `Arc<Mutex<T>>` 替代 `Rc` / 裸指针）",
             ),
+            WarningKind::PrivateItem { .. } => Some(
+                "为该符号添加 `pub` 修饰，或使用同模块 / 子模块内的定义",
+            ),
         }
     }
 
@@ -65,6 +79,7 @@ impl Warning {
         match self.kind {
             WarningKind::RedundantDeref { .. } => "W001",
             WarningKind::NotSendSync { .. } => "W002",
+            WarningKind::PrivateItem { .. } => "W003",
         }
     }
 

@@ -66,7 +66,10 @@ pub fn typecheck_with_region_hints(
     verify_imports(&mut ctx)?;
     // 泛型实例化产生的函数项追加到末尾
     items.append(&mut ctx.mono_items);
-    Ok((HirProgram { items }, ctx.warnings.clone(), globals))
+    // P2 可见性灰度：`--visibility=warn` 期间收集的私有访问并入普通警告列表。
+    let mut warnings = ctx.warnings.clone();
+    warnings.extend(ctx.visibility_warnings.borrow().iter().cloned());
+    Ok((HirProgram { items }, warnings, globals))
 }
 
 /// 拼接模块前缀与名称（`mod::name`），顶层直接返回原名。

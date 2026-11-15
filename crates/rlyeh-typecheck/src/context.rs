@@ -38,7 +38,7 @@ impl VisibilityMode {
         }
     }
 }
-use crate::Warning;
+use crate::{Warning, WarningKind};
 
 /// 延迟闭包值绑定记录（H5 补全：非注解闭包 `let f = |x| body;`）。
 ///
@@ -174,6 +174,9 @@ pub struct TypeContext {
     /// 对外公共符号面（`pub fn`/`struct`/`enum`/`const`/`static`/`actor`/`protocol`/`import` 的
     /// 全名）；跨模块访问私有符号（`--visibility=error`）时据此外部可达性判定。
     pub pub_symbols: std::collections::HashSet<String>,
+    /// `--visibility=warn` 期间收集的跨模块私有访问（typecheck 结束时并入 `warnings`）。
+    /// `RefCell` 使 `check_visibility(&self)` 可在只读解析路径中记录警告。
+    pub visibility_warnings: std::cell::RefCell<Vec<Warning>>,
     /// 当前作用域的泛型参数名（如 `["T"]`）
     pub type_params: Vec<String>,
     /// 当前泛型替换表（泛型参数名 → 具体类型，实例化 body 检查时有效）
@@ -550,6 +553,16 @@ impl TypeContext {
         let same_or_descendant =
             caller == def_module || caller.starts_with(&format!("{def_module}::"));
         if same_or_descendant || self.pub_symbols.contains(def_full) {
+            return Ok(());
+        }
+        // 灰度模式：只记录警告、不阻断编译（供 std 迁移期批量收集待补 pub 点）。
+        if matches!(self.visibility, Warn) {
+            self.visibility_warnings.borrow_mut().push(Warning {
+                kind: WarningKind::PrivateItem {
+                    name: def_full.to_string(),
+                },
+                span,
+            });
             return Ok(());
         }
         Err(TypeError::PrivateItem {
