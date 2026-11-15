@@ -3,6 +3,7 @@ AstProgram {
         StructDecl(
             AstStructDecl {
                 name: "Point",
+                is_pub: false,
                 generics: [],
                 fields: [
                     AstStructField {
@@ -12,6 +13,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 346,
                             end: 352,
@@ -26,6 +28,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 354,
                             end: 361,
@@ -35,6 +38,7 @@ AstProgram {
                     },
                 ],
                 derive: [],
+                attrs: [],
                 repr_c: true,
                 region_param: None,
                 conformances: [],
@@ -51,6 +55,7 @@ AstProgram {
         StructDecl(
             AstStructDecl {
                 name: "Line",
+                is_pub: false,
                 generics: [],
                 fields: [
                     AstStructField {
@@ -60,6 +65,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 393,
                             end: 401,
@@ -74,6 +80,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 407,
                             end: 413,
@@ -88,6 +95,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 419,
                             end: 426,
@@ -97,6 +105,7 @@ AstProgram {
                     },
                 ],
                 derive: [],
+                attrs: [],
                 repr_c: true,
                 region_param: None,
                 conformances: [],
@@ -113,6 +122,7 @@ AstProgram {
         StructDecl(
             AstStructDecl {
                 name: "Scene",
+                is_pub: false,
                 generics: [],
                 fields: [
                     AstStructField {
@@ -122,6 +132,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 461,
                             end: 471,
@@ -136,6 +147,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 477,
                             end: 487,
@@ -145,6 +157,7 @@ AstProgram {
                     },
                 ],
                 derive: [],
+                attrs: [],
                 repr_c: true,
                 region_param: None,
                 conformances: [],

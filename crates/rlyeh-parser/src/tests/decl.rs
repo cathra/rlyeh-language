@@ -183,11 +183,10 @@ fn test_protocol_and_impl_keywords() {
 }
 
 #[test]
-fn test_protocol_extension_are_plain_identifiers() {
-    // `protocol` / `extension` 已从语法中彻底移除，成为普通标识符（可作变量名）。
-    let program = parse_ok(
-        "fn f() -> i64 { let protocol = 1; let extension = 2; protocol + extension }",
-    );
+fn test_extension_is_plain_identifier() {
+    // `extension` 已从语法中移除，成为普通标识符（可作变量名）；
+    // `protocol` 仍是协议声明关键字（见 test_protocol_and_impl），不可作变量名。
+    let program = parse_ok("fn f() -> i64 { let extension = 2; extension }");
     assert_eq!(program.items.len(), 1);
 }
 

@@ -3,6 +3,7 @@ AstProgram {
         ProtocolDecl(
             AstProtocolDecl {
                 name: "Convert",
+                is_pub: false,
                 generics: [
                     AstTypeParam {
                         name: "T",
@@ -23,6 +24,7 @@ AstProgram {
                                         [],
                                     ),
                                     false,
+                                    None,
                                 ),
                                 default: None,
                                 is_mut: false,
@@ -80,6 +82,7 @@ AstProgram {
         ProtocolDecl(
             AstProtocolDecl {
                 name: "Num",
+                is_pub: false,
                 generics: [],
                 types: [],
                 methods: [
@@ -95,6 +98,7 @@ AstProgram {
                                         [],
                                     ),
                                     false,
+                                    None,
                                 ),
                                 default: None,
                                 is_mut: false,
@@ -137,6 +141,7 @@ AstProgram {
         StructDecl(
             AstStructDecl {
                 name: "IntN",
+                is_pub: false,
                 generics: [],
                 fields: [
                     AstStructField {
@@ -146,6 +151,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 888,
                             end: 895,
@@ -155,6 +161,7 @@ AstProgram {
                     },
                 ],
                 derive: [],
+                attrs: [],
                 repr_c: false,
                 region_param: None,
                 conformances: [],
@@ -175,6 +182,7 @@ AstProgram {
                 ),
                 type_name: "IntN",
                 generics: [],
+                self_type_args: [],
                 protocol_type_args: [],
                 extra_protocols: [],
                 types: [],
@@ -191,6 +199,7 @@ AstProgram {
                                         [],
                                     ),
                                     false,
+                                    None,
                                 ),
                                 default: None,
                                 is_mut: false,
@@ -265,6 +274,7 @@ AstProgram {
         StructDecl(
             AstStructDecl {
                 name: "C",
+                is_pub: false,
                 generics: [],
                 fields: [
                     AstStructField {
@@ -274,6 +284,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 960,
                             end: 967,
@@ -283,6 +294,7 @@ AstProgram {
                     },
                 ],
                 derive: [],
+                attrs: [],
                 repr_c: false,
                 region_param: None,
                 conformances: [],
@@ -310,6 +322,7 @@ AstProgram {
                         ],
                     },
                 ],
+                self_type_args: [],
                 protocol_type_args: [
                     Path(
                         "T",
@@ -331,6 +344,7 @@ AstProgram {
                                         [],
                                     ),
                                     false,
+                                    None,
                                 ),
                                 default: None,
                                 is_mut: false,

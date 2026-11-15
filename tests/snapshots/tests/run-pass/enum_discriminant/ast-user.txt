@@ -3,12 +3,14 @@ AstProgram {
         EnumDecl(
             AstEnumDecl {
                 name: "Code",
+                is_pub: false,
                 generics: [],
                 variants: [
                     AstEnumVariant {
                         name: "Ok",
                         tuple_fields: [],
                         struct_fields: [],
+                        attrs: [],
                         discriminant: Some(
                             200,
                         ),
@@ -23,6 +25,7 @@ AstProgram {
                         name: "NotFound",
                         tuple_fields: [],
                         struct_fields: [],
+                        attrs: [],
                         discriminant: Some(
                             404,
                         ),
@@ -37,6 +40,7 @@ AstProgram {
                         name: "Error",
                         tuple_fields: [],
                         struct_fields: [],
+                        attrs: [],
                         discriminant: Some(
                             500,
                         ),
@@ -48,6 +52,8 @@ AstProgram {
                         },
                     },
                 ],
+                derive: [],
+                attrs: [],
                 region_param: None,
                 conformances: [],
                 methods: [],

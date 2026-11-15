@@ -41,18 +41,24 @@ fn tool_exists(name: &str) -> bool {
 }
 
 /// WASI sysroot 是否就位（与 driver 的探测路径保持一致）。
+///
+/// 仅 lib/ 存在不足以判定可用——Homebrew 的 wasi-libc 可能只装了头文件/
+/// 部分产物（缺 crt1.o 或 libc.a），此时 clang 会在链接阶段报
+/// "no such file or directory: .../crt1.o"。故按 driver 的多目标布局
+/// （lib/ 或 lib/wasm32-wasi/）同时检查 crt1.o + libc.a 后才认为就绪。
 fn wasi_sysroot_ready() -> bool {
+    let mut bases: Vec<String> = Vec::new();
     if let Ok(p) = std::env::var("WASI_SYSROOT") {
-        if Path::new(&p).join("lib").exists() {
-            return true;
-        }
+        bases.push(p);
     }
-    [
-        "/opt/homebrew/opt/wasi-libc/share/wasi-sysroot",
-        "/usr/local/opt/wasi-libc/share/wasi-sysroot",
-    ]
-    .iter()
-    .any(|b| Path::new(b).join("lib").exists())
+    bases.push("/opt/homebrew/opt/wasi-libc/share/wasi-sysroot".to_string());
+    bases.push("/usr/local/opt/wasi-libc/share/wasi-sysroot".to_string());
+    bases.iter().any(|base| {
+        let lib = Path::new(base).join("lib");
+        let multi = lib.join("wasm32-wasi");
+        let has = |dir: &Path| dir.join("crt1.o").exists() && dir.join("libc.a").exists();
+        has(&multi) || has(&lib)
+    })
 }
 
 fn wasm_ld_ready() -> bool {

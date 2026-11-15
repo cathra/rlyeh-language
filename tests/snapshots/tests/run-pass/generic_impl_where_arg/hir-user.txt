@@ -17,120 +17,6 @@ HirProgram {
                                                     stmts: [
                                                         HirStmt {
                                                             kind: Let {
-                                                                name: "__tmp501",
-                                                                init: HirExpr {
-                                                                    kind: Alloc {
-                                                                        slots: 1,
-                                                                        by_value: true,
-                                                                        is_strfat: false,
-                                                                    },
-                                                                    span: Span {
-                                                                        start: 0,
-                                                                        end: 0,
-                                                                        line: 0,
-                                                                        col: 0,
-                                                                    },
-                                                                },
-                                                                mutable: false,
-                                                            },
-                                                            span: Span {
-                                                                start: 0,
-                                                                end: 0,
-                                                                line: 0,
-                                                                col: 0,
-                                                            },
-                                                        },
-                                                        HirStmt {
-                                                            kind: Semi(
-                                                                HirExpr {
-                                                                    kind: FieldSet {
-                                                                        base: HirExpr {
-                                                                            kind: Variable(
-                                                                                "__tmp501",
-                                                                            ),
-                                                                            span: Span {
-                                                                                start: 0,
-                                                                                end: 0,
-                                                                                line: 0,
-                                                                                col: 0,
-                                                                            },
-                                                                        },
-                                                                        index: 0,
-                                                                        value: HirExpr {
-                                                                            kind: IntLiteral(
-                                                                                100,
-                                                                            ),
-                                                                            span: Span {
-                                                                                start: 284224,
-                                                                                end: 284228,
-                                                                                line: 7451,
-                                                                                col: 20,
-                                                                            },
-                                                                        },
-                                                                        ty: Int,
-                                                                    },
-                                                                    span: Span {
-                                                                        start: 0,
-                                                                        end: 0,
-                                                                        line: 0,
-                                                                        col: 0,
-                                                                    },
-                                                                },
-                                                            ),
-                                                            span: Span {
-                                                                start: 0,
-                                                                end: 0,
-                                                                line: 0,
-                                                                col: 0,
-                                                            },
-                                                        },
-                                                    ],
-                                                    final_expr: Some(
-                                                        HirExpr {
-                                                            kind: Variable(
-                                                                "__tmp501",
-                                                            ),
-                                                            span: Span {
-                                                                start: 0,
-                                                                end: 0,
-                                                                line: 0,
-                                                                col: 0,
-                                                            },
-                                                        },
-                                                    ),
-                                                    span: Span {
-                                                        start: 0,
-                                                        end: 0,
-                                                        line: 0,
-                                                        col: 0,
-                                                    },
-                                                },
-                                            ),
-                                            span: Span {
-                                                start: 284217,
-                                                end: 284229,
-                                                line: 7451,
-                                                col: 13,
-                                            },
-                                        },
-                                        mutable: false,
-                                    },
-                                    span: Span {
-                                        start: 284217,
-                                        end: 284229,
-                                        line: 7451,
-                                        col: 13,
-                                    },
-                                },
-                                HirStmt {
-                                    kind: Let {
-                                        name: "n",
-                                        init: HirExpr {
-                                            kind: Block(
-                                                HirBlock {
-                                                    stmts: [
-                                                        HirStmt {
-                                                            kind: Let {
                                                                 name: "__tmp502",
                                                                 init: HirExpr {
                                                                     kind: Alloc {
@@ -172,13 +58,13 @@ HirProgram {
                                                                         index: 0,
                                                                         value: HirExpr {
                                                                             kind: IntLiteral(
-                                                                                7,
+                                                                                100,
                                                                             ),
                                                                             span: Span {
-                                                                                start: 284253,
-                                                                                end: 284255,
-                                                                                line: 7452,
-                                                                                col: 23,
+                                                                                start: 308899,
+                                                                                end: 308903,
+                                                                                line: 7952,
+                                                                                col: 20,
                                                                             },
                                                                         },
                                                                         ty: Int,
@@ -221,18 +107,132 @@ HirProgram {
                                                 },
                                             ),
                                             span: Span {
-                                                start: 284243,
-                                                end: 284256,
-                                                line: 7452,
+                                                start: 308892,
+                                                end: 308904,
+                                                line: 7952,
                                                 col: 13,
                                             },
                                         },
                                         mutable: false,
                                     },
                                     span: Span {
-                                        start: 284243,
-                                        end: 284256,
-                                        line: 7452,
+                                        start: 308892,
+                                        end: 308904,
+                                        line: 7952,
+                                        col: 13,
+                                    },
+                                },
+                                HirStmt {
+                                    kind: Let {
+                                        name: "n",
+                                        init: HirExpr {
+                                            kind: Block(
+                                                HirBlock {
+                                                    stmts: [
+                                                        HirStmt {
+                                                            kind: Let {
+                                                                name: "__tmp503",
+                                                                init: HirExpr {
+                                                                    kind: Alloc {
+                                                                        slots: 1,
+                                                                        by_value: true,
+                                                                        is_strfat: false,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                                mutable: false,
+                                                            },
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                        HirStmt {
+                                                            kind: Semi(
+                                                                HirExpr {
+                                                                    kind: FieldSet {
+                                                                        base: HirExpr {
+                                                                            kind: Variable(
+                                                                                "__tmp503",
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 0,
+                                                                                end: 0,
+                                                                                line: 0,
+                                                                                col: 0,
+                                                                            },
+                                                                        },
+                                                                        index: 0,
+                                                                        value: HirExpr {
+                                                                            kind: IntLiteral(
+                                                                                7,
+                                                                            ),
+                                                                            span: Span {
+                                                                                start: 308928,
+                                                                                end: 308930,
+                                                                                line: 7953,
+                                                                                col: 23,
+                                                                            },
+                                                                        },
+                                                                        ty: Int,
+                                                                    },
+                                                                    span: Span {
+                                                                        start: 0,
+                                                                        end: 0,
+                                                                        line: 0,
+                                                                        col: 0,
+                                                                    },
+                                                                },
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ],
+                                                    final_expr: Some(
+                                                        HirExpr {
+                                                            kind: Variable(
+                                                                "__tmp503",
+                                                            ),
+                                                            span: Span {
+                                                                start: 0,
+                                                                end: 0,
+                                                                line: 0,
+                                                                col: 0,
+                                                            },
+                                                        },
+                                                    ),
+                                                    span: Span {
+                                                        start: 0,
+                                                        end: 0,
+                                                        line: 0,
+                                                        col: 0,
+                                                    },
+                                                },
+                                            ),
+                                            span: Span {
+                                                start: 308918,
+                                                end: 308931,
+                                                line: 7953,
+                                                col: 13,
+                                            },
+                                        },
+                                        mutable: false,
+                                    },
+                                    span: Span {
+                                        start: 308918,
+                                        end: 308931,
+                                        line: 7953,
                                         col: 13,
                                     },
                                 },
@@ -251,9 +251,9 @@ HirProgram {
                                                                         "c",
                                                                     ),
                                                                     span: Span {
-                                                                        start: 284270,
-                                                                        end: 284271,
-                                                                        line: 7453,
+                                                                        start: 308945,
+                                                                        end: 308946,
+                                                                        line: 7954,
                                                                         col: 13,
                                                                     },
                                                                 },
@@ -262,44 +262,44 @@ HirProgram {
                                                                         "n",
                                                                     ),
                                                                     span: Span {
-                                                                        start: 284280,
-                                                                        end: 284281,
-                                                                        line: 7453,
+                                                                        start: 308955,
+                                                                        end: 308956,
+                                                                        line: 7954,
                                                                         col: 23,
                                                                     },
                                                                 },
                                                             ],
                                                         },
                                                         span: Span {
-                                                            start: 284270,
-                                                            end: 284282,
-                                                            line: 7453,
+                                                            start: 308945,
+                                                            end: 308957,
+                                                            line: 7954,
                                                             col: 13,
                                                         },
                                                     },
                                                 ],
                                             },
                                             span: Span {
-                                                start: 284262,
-                                                end: 284283,
-                                                line: 7453,
+                                                start: 308937,
+                                                end: 308958,
+                                                line: 7954,
                                                 col: 5,
                                             },
                                         },
                                     ),
                                     span: Span {
-                                        start: 284262,
-                                        end: 284283,
-                                        line: 7453,
+                                        start: 308937,
+                                        end: 308958,
+                                        line: 7954,
                                         col: 5,
                                     },
                                 },
                             ],
                             final_expr: None,
                             span: Span {
-                                start: 284203,
-                                end: 284343,
-                                line: 7450,
+                                start: 308878,
+                                end: 309018,
+                                line: 7951,
                                 col: 11,
                             },
                         },
@@ -309,9 +309,9 @@ HirProgram {
                 },
             ),
             span: Span {
-                start: 284193,
-                end: 284195,
-                line: 7450,
+                start: 308868,
+                end: 308870,
+                line: 7951,
                 col: 1,
             },
         },

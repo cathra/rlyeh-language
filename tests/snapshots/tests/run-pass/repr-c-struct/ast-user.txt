@@ -3,6 +3,7 @@ AstProgram {
         StructDecl(
             AstStructDecl {
                 name: "Point",
+                is_pub: false,
                 generics: [],
                 fields: [
                     AstStructField {
@@ -12,6 +13,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 259,
                             end: 265,
@@ -26,6 +28,7 @@ AstProgram {
                             [],
                         ),
                         is_pub: false,
+                        attrs: [],
                         span: Span {
                             start: 271,
                             end: 277,
@@ -35,6 +38,7 @@ AstProgram {
                     },
                 ],
                 derive: [],
+                attrs: [],
                 repr_c: true,
                 region_param: None,
                 conformances: [],

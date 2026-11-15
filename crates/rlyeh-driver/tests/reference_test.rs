@@ -67,10 +67,16 @@ fn bump(p: &mut i64) {
 
 fn main() {
     let mut x = 10;
-    bump(&mut x);
+    // T-6 块级借用模型：调用实参的 `&mut` 活跃至所在块尾，故以显式块
+    // 表达「借用结束」，块结束释放后可再次借用（RFC §11 / borrow_pass.rl）。
+    {
+        bump(&mut x);
+    }
     println(x);                // 11
-    let p = &mut x;
-    *p = 99;
+    {
+        let p = &mut x;
+        *p = 99;
+    }
     println(x);                // 99
 }
 "#,
@@ -89,10 +95,14 @@ fn add(p: &mut i64, v: i64) {
 
 fn main() {
     let mut x = 5;
-    add(&mut x, 7);
+    {
+        add(&mut x, 7);
+    }
     println(x);                // 12
-    let p = &mut x;
-    *p *= 3;
+    {
+        let p = &mut x;
+        *p *= 3;
+    }
     println(x);                // 36
 }
 "#,
@@ -135,10 +145,14 @@ fn setx(p: &mut Point, v: i64) {
 
 fn main() {
     let mut pt = Point { x: 1, y: 2 };
-    setx(&mut pt, 99);
+    {
+        setx(&mut pt, 99);
+    }
     println(pt.x);             // 99
-    let r = &mut pt;
-    r.y = 100;
+    {
+        let r = &mut pt;
+        r.y = 100;
+    }
     println(pt.y);             // 100
 }
 "#,
@@ -251,10 +265,14 @@ fn read(p: &i64) -> i64 {
 
 fn main() {
     let mut x = 5;
-    println(read(&mut x));     // 5（&mut 传 &）
-    let y = &mut x;
-    *y = 10;
-    println(read(y));          // 10（引用变量复用）
+    {
+        println(read(&mut x)); // 5（&mut 传 &）
+    }
+    {
+        let y = &mut x;
+        *y = 10;
+        println(read(y));      // 10（引用变量复用）
+    }
 }
 "#,
     );

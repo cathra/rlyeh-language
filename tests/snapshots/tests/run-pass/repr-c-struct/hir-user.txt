@@ -17,7 +17,7 @@ HirProgram {
                                                     stmts: [
                                                         HirStmt {
                                                             kind: Let {
-                                                                name: "__tmp501",
+                                                                name: "__tmp502",
                                                                 init: HirExpr {
                                                                     kind: Alloc {
                                                                         slots: 2,
@@ -46,7 +46,7 @@ HirProgram {
                                                                     kind: FieldSet {
                                                                         base: HirExpr {
                                                                             kind: Variable(
-                                                                                "__tmp501",
+                                                                                "__tmp502",
                                                                             ),
                                                                             span: Span {
                                                                                 start: 0,
@@ -61,9 +61,9 @@ HirProgram {
                                                                                 3,
                                                                             ),
                                                                             span: Span {
-                                                                                start: 283445,
-                                                                                end: 283446,
-                                                                                line: 7439,
+                                                                                start: 308120,
+                                                                                end: 308121,
+                                                                                line: 7940,
                                                                                 col: 24,
                                                                             },
                                                                         },
@@ -94,7 +94,7 @@ HirProgram {
                                                                     kind: FieldSet {
                                                                         base: HirExpr {
                                                                             kind: Variable(
-                                                                                "__tmp501",
+                                                                                "__tmp502",
                                                                             ),
                                                                             span: Span {
                                                                                 start: 0,
@@ -109,9 +109,9 @@ HirProgram {
                                                                                 4,
                                                                             ),
                                                                             span: Span {
-                                                                                start: 283451,
-                                                                                end: 283453,
-                                                                                line: 7439,
+                                                                                start: 308126,
+                                                                                end: 308128,
+                                                                                line: 7940,
                                                                                 col: 30,
                                                                             },
                                                                         },
@@ -140,7 +140,7 @@ HirProgram {
                                                     final_expr: Some(
                                                         HirExpr {
                                                             kind: Variable(
-                                                                "__tmp501",
+                                                                "__tmp502",
                                                             ),
                                                             span: Span {
                                                                 start: 0,
@@ -159,18 +159,18 @@ HirProgram {
                                                 },
                                             ),
                                             span: Span {
-                                                start: 283434,
-                                                end: 283454,
-                                                line: 7439,
+                                                start: 308109,
+                                                end: 308129,
+                                                line: 7940,
                                                 col: 13,
                                             },
                                         },
                                         mutable: false,
                                     },
                                     span: Span {
-                                        start: 283434,
-                                        end: 283454,
-                                        line: 7439,
+                                        start: 308109,
+                                        end: 308129,
+                                        line: 7940,
                                         col: 13,
                                     },
                                 },
@@ -187,9 +187,9 @@ HirProgram {
                                                                     "p",
                                                                 ),
                                                                 span: Span {
-                                                                    start: 283468,
-                                                                    end: 283469,
-                                                                    line: 7440,
+                                                                    start: 308143,
+                                                                    end: 308144,
+                                                                    line: 7941,
                                                                     col: 13,
                                                                 },
                                                             },
@@ -201,26 +201,26 @@ HirProgram {
                                                             },
                                                         },
                                                         span: Span {
-                                                            start: 283468,
-                                                            end: 283471,
-                                                            line: 7440,
+                                                            start: 308143,
+                                                            end: 308146,
+                                                            line: 7941,
                                                             col: 13,
                                                         },
                                                     },
                                                 ],
                                             },
                                             span: Span {
-                                                start: 283460,
-                                                end: 283472,
-                                                line: 7440,
+                                                start: 308135,
+                                                end: 308147,
+                                                line: 7941,
                                                 col: 5,
                                             },
                                         },
                                     ),
                                     span: Span {
-                                        start: 283460,
-                                        end: 283472,
-                                        line: 7440,
+                                        start: 308135,
+                                        end: 308147,
+                                        line: 7941,
                                         col: 5,
                                     },
                                 },
@@ -237,9 +237,9 @@ HirProgram {
                                                                     "p",
                                                                 ),
                                                                 span: Span {
-                                                                    start: 283486,
-                                                                    end: 283487,
-                                                                    line: 7441,
+                                                                    start: 308161,
+                                                                    end: 308162,
+                                                                    line: 7942,
                                                                     col: 13,
                                                                 },
                                                             },
@@ -251,35 +251,35 @@ HirProgram {
                                                             },
                                                         },
                                                         span: Span {
-                                                            start: 283486,
-                                                            end: 283489,
-                                                            line: 7441,
+                                                            start: 308161,
+                                                            end: 308164,
+                                                            line: 7942,
                                                             col: 13,
                                                         },
                                                     },
                                                 ],
                                             },
                                             span: Span {
-                                                start: 283478,
-                                                end: 283490,
-                                                line: 7441,
+                                                start: 308153,
+                                                end: 308165,
+                                                line: 7942,
                                                 col: 5,
                                             },
                                         },
                                     ),
                                     span: Span {
-                                        start: 283478,
-                                        end: 283490,
-                                        line: 7441,
+                                        start: 308153,
+                                        end: 308165,
+                                        line: 7942,
                                         col: 5,
                                     },
                                 },
                             ],
                             final_expr: None,
                             span: Span {
-                                start: 283420,
-                                end: 283493,
-                                line: 7438,
+                                start: 308095,
+                                end: 308168,
+                                line: 7939,
                                 col: 11,
                             },
                         },
@@ -289,9 +289,9 @@ HirProgram {
                 },
             ),
             span: Span {
-                start: 283410,
-                end: 283412,
-                line: 7438,
+                start: 308085,
+                end: 308087,
+                line: 7939,
                 col: 1,
             },
         },

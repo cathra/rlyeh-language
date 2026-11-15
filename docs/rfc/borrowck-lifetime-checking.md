@@ -241,7 +241,8 @@ T-5 编写 `lifetime_region_valid.rl` 时暴露：**borrowck 的 `uses: HashMap<
 
 ### 11.2 迁移
 
-- 唯一回归：`run-pass/borrow_pass.rl` 第 2 节（同块内"借用结束后写原变量"的细粒度 NLL 模式）。按 RFC §4.4 预期，以显式 `{}` 包裹借用+使用，使借用随块结束释放——输出语义（`5` / `7`）不变，符合块级模型语义。
+- 回归面：`run-pass/borrow_pass.rl` 第 2 节（同块内"借用结束后写原变量"的细粒度 NLL 模式）。按 RFC §4.4 预期，以显式 `{}` 包裹借用+使用，使借用随块结束释放——输出语义（`5` / `7`）不变，符合块级模型语义。
+- 2026-11-15 0.2.0 收尾补漏：`crates/rlyeh-driver/tests/reference_test.rs` 的 `scalar_ref_write` / `scalar_ref_compound_assign` / `struct_ref_field_write` / `mut_to_immut_ref` 四例仍按细粒度 NLL 编写（同一块内调用实参 `&mut` 后再次可变借用），在块级模型下属预期误报；已按 §4.4 以显式 `{}` 迁移，10/10 通过。
 
 ### 11.3 验证
 
