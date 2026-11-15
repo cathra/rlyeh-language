@@ -10,9 +10,9 @@
 | ID | 缺口 | 0.2.0 归属 | 受影响组件 | 叶子 | 状态 |
 |----|------|-----------|-----------|------|------|
 | SH-P2-1 | 外部 crate 等价（pubgrub/clap/serde/toml/tar/flate2/libc） | 长期保留 Rust | dagon / driver | [leaf](./leaf/sh-p2-1-external-crates.md) | ⏳ 规划中 |
-| SH-P2-2 | 进程调用 / 外部工具链 FFI | 0.2.0-D | rlyeh-driver `assemble()` | [leaf](./leaf/sh-p2-2-process-ffi.md) | ⏳ 规划中 |
-| SH-P2-3 | `Box` 深树 + 内部可变性（arena/RefCell 等价） | 0.2.0-I | AST/HIR/MIR/LIR 可变遍历 | [leaf](./leaf/sh-p2-3-internal-mut.md) | ⏳ 规划中 |
-| SH-P2-4 | FFI/ABI 链接桥（Rlyeh 产物链接 Rust 运行时） | 0.2.0-J | codegen + Rust 运行时 rlib | [leaf](./leaf/sh-p2-4-linkage-bridge.md) | ⏳ 规划中 |
+| SH-P2-2 | 进程调用 / 外部工具链 FFI | 0.2.0-D | rlyeh-driver `assemble()` | [leaf](./leaf/sh-p2-2-process-ffi.md) | 🟢 核心落地（D1/D2 + D3 印证） |
+| SH-P2-3 | `Box` 深树 + 内部可变性（arena/RefCell 等价） | 0.2.0-I | AST/HIR/MIR/LIR 可变遍历 | [leaf](./leaf/sh-p2-3-internal-mut.md) | 🟢 核心落地（I2 arena+NodeId + I1 RefCell 验证，255/255） |
+| SH-P2-4 | FFI/ABI 链接桥（Rlyeh 产物链接 Rust 运行时） | 0.2.0-J | codegen + Rust 运行时 rlib | [leaf](./leaf/sh-p2-4-linkage-bridge.md) | ✅ 已完成（C-ABI staticlib 链接桥） |
 | SH-P2-5 | 分阶段自举 + 差分测试基础设施 | 0.2.0-K | 引导器 + 测试 harness | [leaf](./leaf/sh-p2-5-staged-bootstrap.md) | 🟢 0.2.0 PoC(CD) |
 | SH-P2-6 | 诊断信息质量对齐 | 0.2.0-L | typecheck / check 诊断 | [leaf](./leaf/sh-p2-6-diagnostics.md) | 🟢 完成（L0 harness 诊断维度 + 探针基线；L1 typecheck/borrowck/regionck 用户态 span 对齐 + 语句级坐标；L2 结构化诊断 TC/BC/RC0xx + help + 相关 span 标注） |
 | SH-P2-7 | 前端自举 PoC（lexer/parser/ast/macro 用 Rlyeh 重写） | 0.2.0-M | rlyeh-driver / lexer / parser / ast / macro / tests | [leaf](./leaf/sh-p2-7-driver.md) | 🟢 完成（PoC）（M-M1a/b/c lexer ✅；M-M2a–M-M10 parser ✅（14 组差分对拍 + 真实示例 dogfood）；parser 已拆分 `self-host/parser/*.rl`（6 片段，≤1000 行/文件）；M-M3a 类型化 AST ✅（4/4）；M-M3b parser 真·arena ✅（15/15 + 4/4）；M-M3c macro ✅（2/2，43 组用例）；M-M4 单编译单元串联 + 16 个真实语料四层 dogfood ✅（2/2）） |
@@ -25,7 +25,7 @@
 
 ## 进度
 
-P2-2/3/4 ⏳ 规划中（入 0.2.0 D/I/J）；P2-1 ⏳ 规划中（长期保留 Rust）；P2-6 ✅ 完成（0.2.0-L 诊断质量对齐 L0/L1/L2 全落地）；P2-7 ✅ 完成（0.2.0-M 前端自举 PoC，lexer/parser/ast/macro + 单编译单元 dogfood）。
+P2-2/3 🟢 核心落地（0.2.0 D/I）；P2-4 ✅ 完成（0.2.0-J C-ABI staticlib 链接桥）；P2-1 ⏳ 规划中（长期保留 Rust）；P2-6 ✅ 完成（0.2.0-L 诊断质量对齐 L0/L1/L2 全落地）；P2-7 ✅ 完成（0.2.0-M 前端自举 PoC，lexer/parser/ast/macro + 单编译单元 dogfood）。
 P2-5 的 K 阶段（差分测试基础设施）✅ 部分落地：0.2.0 收敛为 harness 脚手架 + 单编译器运行行为快照基线（C0/C1/C2，详见 SH-P2-5）；三阶段自举 K-M1..K-M3 推迟至 0.3.0（需 Rlyeh 自写编译器）。
 SH-P2-7 前端自举 PoC ✅ 完成：lexer（M-M1a/b/c）与 parser（M-M2a–M-M10，14 组差分对拍 + 真实示例 dogfood）；parser 按 CODEBUDDY §7.0 拆分为 6 个 ≤1000 行片段；计划级 M-M3 三切片收口（M-M3a 类型化 AST 4/4 / M-M3b parser 真·arena 15/15 + 4/4 / M-M3c macro 2/2）；M-M4 以 `self_host_dogfood.rs` 将 lexer+ast+parser 串为单编译单元，16 个真实语料 token/AST/kinds/roundtrip 四层对拍 2/2（三阶段 bootstrap 仍按上句推迟至 0.3.0）。
 

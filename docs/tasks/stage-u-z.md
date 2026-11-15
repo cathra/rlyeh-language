@@ -1,7 +1,7 @@
 # 阶段 U–Z（目标 API 对齐与编译器能力补齐）
 
 > **所属任务树**：[任务文档导航](./README.md)
-> **状态**：🔧 进行中（U ✅；V ✅（V1 借用迭代器 + 引用元素 `Option<&T>` ✅ 已完成；V2 `chars`/`lines` 目标签名 ✅ 已完成——`char` 类型已拓宽至 32 位 Unicode 码点；V3 自定义迭代器适配器迁移 ✅，数组/Vec 适配器内建记为语言限制）；W ✅（async_if_await/async_neg poll 死循环已于 2026-08-29 验收修复并解除 skip；2026-08-30 验收全绿：W 相关集成测试 25 用例 + 全量 .rl 套件 suite_test 通过）；X ✅；Y 🔧 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分））
+> **状态**：🔧 进行中（U ✅；V ✅（V1 借用迭代器 + 引用元素 `Option<&T>` ✅ 已完成；V2 `chars`/`lines` 目标签名 ✅ 已完成——`char` 类型已拓宽至 32 位 Unicode 码点；V3 自定义迭代器适配器迁移 ✅，数组/Vec 适配器内建记为语言限制）；W ✅（async_if_await/async_neg poll 死循环已于 2026-08-29 验收修复并解除 skip；2026-08-30 验收全绿：W 相关集成测试 25 用例 + 全量 .rl 套件 suite_test 通过）；X ✅；Y ✅（Y1/Y3 按降级项收口；Y4 类型层/API 完成，跨线程移动待 Thread 传参））
 > **权威来源**：阶段详情文档 [`stages/U.md`](../stages/U.md)、[`stages/Y.md`](../stages/Y.md)；执行记录见本文件 §执行记录
 > **本层职责**：记录阶段 U–Z 的任务列表与进度 + 执行记录；其中 V 阶段已拆分为任务文档（V2/V3）+ 叶子文档，其余阶段具体实施见权威源文档。
 
@@ -15,7 +15,7 @@
 | **V** | 集合与迭代器完整化 | V1 借用迭代器、V2 String 码点迭代器、V3 默认方法 + 适配器迁移、V4 `get_mut`、V5 新集合、V5b 集合运算、V5c 借用迭代器、V5d 运算符重载 + 集合运算符糖 | 8 | U1/U2/U3 | ✅ 已完成（V1/V2/V3/V4/V5/V5b/V5c/V5d 全部完成；V3 自定义迭代器适配器已迁移为 protocol 默认方法 + 包装迭代器，数组/`Vec` 适配器因数组非命名类型保留内建 desugar，记为已知语言限制；V5d 运算符重载为通用语言机制（BinaryOp 可重载 + 比较链 `Lt`/`Le`/`Gt`/`Ge` 经 `PartialOrd` 重载子集/超集语义，见 v5d1）） |
 | **W** | 异步运行时完整化 | W1 Future 泛型化、W2 await 状态机、W3 事件驱动 executor、W4 join_all/timeout、W5 recv_async/HTTP async、W6 async 泛型/递归 | 6 | U、R、S1c | ✅ 全部完成（W1–W6；async_if_await/async_neg poll 死循环已于 2026-08-29 验收修复并解除 skip；2026-08-30 验收全绿：W 相关集成测试 25 用例 + 全量 .rl 套件 suite_test 通过） |
 | **X** | 序列化/格式化/时间完整化 | X1 Duration/Instant/SystemTime、X2 标准 TOML、X3 Deserialize + Serializer、X4 Formatter | 4 | U3/U4、Q | ✅ 已完成（X1/X2/X3/X4 全部完成：X3 `json::try_parse`/`toml::try_parse` Err 路径 + `Deserialize` protocol + Serializer/Deserializer 框架全落地，2026-08-30） |
-| **Y** | IO/网络/并发/智能指针收尾 | Y1 File API、Y2 NIO 高性能后端、Y3 HTTP 连接复用 + sendfile、Y4 guard 完整 + Channel 泛型化、Y5 `Box::leak`、Y6 `Error::source`、Y7 UDP、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | 🔧 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分——Y1 `read/write` 切片实参挂 U1、Y3 sendfile Windows 不可验证、Y4 Y4b-3/4 RwLock/DerefMut/有界队列/错误类型/Arc 待办） |
+| **Y** | IO/网络/并发/智能指针收尾 | Y1 File API、Y2 NIO 高性能后端、Y3 HTTP 连接复用 + sendfile、Y4 guard 完整 + Channel 泛型化、Y5 `Box::leak`、Y6 `Error::source`、Y7 UDP、Y8 `thread::Builder::stack_size` | 8 | U、O/R/P | ✅ 完成（Y1/Y3 按降级项收口；Y4 类型层/API 完成，跨线程移动待 Thread 传参；其余 Y2/Y5/Y6/Y7/Y8 ✅） |
 
 ---
 
@@ -106,10 +106,10 @@
 
 | 子任务 | 叶子文档 | 状态 |
 |--------|---------|------|
-| Y1 File 目标 API | [`y1-file-api.md`](leaf/y1-file-api.md) | 🔧 部分完成 |
+| Y1 File 目标 API | [`y1-file-api.md`](leaf/y1-file-api.md) | ✅ 完成（降级：MVP 字节缓冲 + S3 切片 API） |
 | Y2 NIO 高性能后端 | [`y2-nio-backend.md`](leaf/y2-nio-backend.md) | ✅ 已完成（kqueue/epoll 平台后端 + Poller 分派，2026-08-29） |
-| Y3 HTTP 连接复用 + sendfile 平台补全 | [`y3-http-keepalive.md`](leaf/y3-http-keepalive.md) | 🔧 部分完成 |
-| Y4 锁 guard 完整 + Channel 泛型化 | [`y4-lock-guard-channel.md`](leaf/y4-lock-guard-channel.md) | 🔧 部分完成（Y4a/Y4b-1/Y4b-2 std Mutex 泛型化 + Y4c Channel<T> 泛型化 + Y4b-3 RwLock<T> 泛型化 + 读/写守卫 Deref ✅，2026-08-30；**Y4b-4 guard DerefMut ✅，2026-08-30**；**有界队列 ✅（2026-08-30）**；**错误类型 SendError/RecvError/TryRecvError ✅（2026-08-30）**；**Arc<LockFreeQueue> ✅（2026-08-30，类型层；跨线程移动受 Thread::start 无参限制）**） |
+| Y3 HTTP 连接复用 + sendfile 平台补全 | [`y3-http-keepalive.md`](leaf/y3-http-keepalive.md) | ✅ 完成（降级：Windows sendfile 保留 Unsupported） |
+| Y4 锁 guard 完整 + Channel 泛型化 | [`y4-lock-guard-channel.md`](leaf/y4-lock-guard-channel.md) | 🟢 完成（Y4a/Y4b-1/Y4b-2 std Mutex 泛型化 + Y4c Channel<T> 泛型化 + Y4b-3 RwLock<T> 泛型化 + 读/写守卫 Deref ✅，2026-08-30；**Y4b-4 guard DerefMut ✅**；**有界队列 ✅**；**错误类型 SendError/RecvError/TryRecvError ✅**；**Arc<LockFreeQueue> ✅ 类型层；跨线程移动受 Thread::start 无参限制（待补）**） |
 | Y5 `Box::leak` 目标签名 | [`y5-box-leak-signature.md`](leaf/y5-box-leak-signature.md) | ✅ 已完成（返回 `&'static mut T`，2026-08-28） |
 | Y6 错误体系完整化 | [`y6-error-source.md`](leaf/y6-error-source.md) | ✅ 已完成（`source()` 真实错误链 + From/Into + `?` 自动转换，2026-08-29） |
 | Y7 UDP | [`y7-udp.md`](leaf/y7-udp.md) | ✅ 已完成 |

@@ -13,7 +13,7 @@
 | 版本 | 状态 | 说明 |
 |------|------|------|
 | 0.1.0 (MVP) | ✅ 收口 | 阶段 A–Z 全部完成；工具链用 Rust 实现（bootstrap 阶段） |
-| **0.2.0 (自举能力补齐)** | 🔧 规划中 | 落地全部自举所需**语言/标准库能力**（含原 P0 语言特性），交付前端自举 PoC + FFI 链接桥 + 差分测试，使 0.3.0 可自举 |
+| **0.2.0 (自举能力补齐)** | 🟡 收尾（阶段 A–Y 已落地） | 落地全部自举所需**语言/标准库能力**（含原 P0 语言特性），交付前端自举 PoC + FFI 链接桥 + 差分测试，使 0.3.0 可自举；C/D/I/K 为核心落地或 PoC，遗留限制见各叶子 |
 | **0.3.0 (工具链自举)** | 📋 待规划 | 用 0.2.0 能力把 lexer→…→codegen→driver→tools→std 重写为 Rlyeh（运行时可选保留 Rust 经 FFI） |
 
 **0.2.0 主线目标（单一、可验证）**：
@@ -26,7 +26,7 @@
 
 ---
 
-## 2. 计划总览（阶段 A–M）
+## 2. 计划总览（阶段 A–Y）
 
 | 阶段 | 主题 | 对应缺口 | 关联文档 | 风险 | 状态 | 说明 |
 |------|------|----------|----------|------|------|------|
@@ -405,6 +405,7 @@ MutexGuard 自动解锁、arena 自动释放需 `Drop`/RAII；Rlyeh 0.1.0 完全
 | 2026-09-01 | **高危任务细化**：§7 由单表扩展为「速览表 + §7.1–§7.11 子任务小节」，各高危阶段列具体 M 子任务 / 关键 checkpoint / 关联叶子；补齐缺失叶子 `sh-p2-5-staged-bootstrap.md`（K）、`sh-p2-7-driver.md`（M）；修正 `sh-p0-1`/`sh-p0-3` 归属为 0.2.0-E/G（与原「0.3.0+ 长期跟踪」矛盾） |
 | 2026-09-21 | **M-M2b2 落地**：SH-P2-7 M-M2b 补齐 `let` 模式（扁平元组/`_`）与类型标注（`i64`/`&T`/`&mut T`/泛型 `@GEN@` 迭代收束，嵌套 `Vec<Result<i64,String>>` 正确）；Rust oracle 新增 `render_pattern_canonical`/`render_type_canonical`；`tests/self_host_parser.rs` 扩展 b2 用例逐字节对拍一致；实证 Rlyeh 5 项约束（`&&` 不短路、返回 `String` 禁用 `return`、if-表达式 else 返回条件值、`>>`=shr、前向调用推断 i64）写入叶子踩坑点 |
 | 2026-10-19 | **SH-P2-7 收尾启动**：M-M1/M-M2（a–m 全部切片）✅ 状态同步；parser 拆分 `self-host/parser/*.rl`（6 片段 ≤1000 行）；计划级 M-M3 拆为 M-M3a（类型化 AST）/M-M3b（parser 切换 AST）/M-M3c（macro 对拍），M-M3a ✅（类型化 AST + 节点级对拍 4/4）；M-M3b ✅（真·arena 全层贯通，parser 15/15 + ast 4/4）；M-M3c 进行中；M-M4 串联 + 扩大 dogfood 待推进 |
+| 2026-11-15 | **文档一致性清理**：0.2.0 总览状态改为「🟡 收尾（阶段 A–Y 已落地）」；总览标题 A–M→A–Y；Y 阶段（Y1/Y3 降级、Y4 跨线程移动待补）与 P2-2/3/4/5 索引状态按叶子实际状态对齐 |
 | 2026-11-14 | **SH-P2-7 收尾完成**：M-M3c macro 最小对拍（`self-host/macro.rl` 876 行 + `macro_oracle.rs` + `self_host_macro.rs`，2/2、43 组用例）；M-M4 `self_host_dogfood.rs` 以 lexer+ast+parser 单编译单元串联，16 个真实语料 token/AST/kinds/roundtrip 四层对拍（2/2，35.56s）；parser 辅助函数改名 `p_is_ident_cont` 支持跨层拼接；0.2.0-M 状态置为 🟢 完成（PoC） |
 | 2026-09-22 | **M-M2c 落地**：SH-P2-7 M-M2c 控制流 `if`/`else`/`else if`/`while`/`loop` 的语句/块尾双形态 + `let x = if...` 初始化；Rlyeh 版 `self-host/parser.rl` 新增迭代式控制帧栈（`cf_*` + pending-let 栈，整数态全 `Vec<String>` 编码规避 `Vec<i64>` 的 `get`/`pop` 返回 ptr 冲突）；Rust oracle `render_expr_canonical` 新增 `If`/`While`/`Loop` 分支；`tests/self_host_parser.rs` 新增 `m_m2c_control_flow_ast_matches_rust_oracle` 差分对拍一致 |
 

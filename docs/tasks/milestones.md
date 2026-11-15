@@ -16,7 +16,7 @@
 | **V** | 集合与迭代器完整化 | [`stage-u-z.md`](./stage-u-z.md)（[V2](./v2-str-view.md) / [V3](./v3-iterator-adapters.md)） | 5（V3 细分为 12 子任务） | ✅ 已完成（V1/V2/V3/V4/V5 全部完成；V3 数组/`Vec` 适配器因数组非命名类型保留内建 desugar，记为已知语言限制） |
 | **W** | 异步运行时完整化 | [`stage-u-z.md`](./stage-u-z.md) | 6 | ✅ 全部完成（W1–W6；2026-08-30 验收全绿；async_if_await/async_neg poll 死循环已于 2026-08-29 修复并解除 skip） |
 | **X** | 序列化/格式化/时间完整化 | [`stage-u-z.md`](./stage-u-z.md) | 4 | ✅ 全部完成（X1/X2/X3/X4 全部完成，2026-08-30） |
-| **Y** | IO/网络/并发/智能指针收尾 | [`stage-u-z.md`](./stage-u-z.md) | 8 | 🔧 部分完成（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分） |
+| **Y** | IO/网络/并发/智能指针收尾 | [`stage-u-z.md`](./stage-u-z.md) | 8 | ✅ 完成（Y1/Y3 降级收口；Y4 类型层/API 完成，跨线程移动待 Thread 传参） |
 
 ---
 
@@ -44,7 +44,7 @@
 | V1 `HashMap::iter` 引用迭代器 + 引用元素 `Option<&T>` | V1 | ✅ 已完成（2026-08-29：`Vec::iter_ref` 返回 `Option<&T>`、`HashMap::iter_pairs` 经 `KVRef` 零拷贝 KV 引用迭代已落地） |
 | V2 `chars`/`lines` 目标签名（返回 `Chars`/`Lines` 迭代器，需 char 类型） | V2 | ✅ 已完成（2026-08-29：chars/lines 升级为迭代器、`char` 拓宽 32 位） |
 | V3 数组/Vec 适配器走 protocol 方法（数组非命名类型语言限制） | V3 | 📋 已知语言限制（数组 `[T;N]` 非命名类型无法 `impl Iterator`，适配器保留内建 desugar 返回 `Vec`；功能完整、全量测试通过，需语言增强后迁移，非 V 阶段阻塞项） |
-| Y1–Y8 | Y | 📋 规划（Y2/Y5/Y6/Y7/Y8 ✅；Y1/Y3/Y4 部分） |
+| Y1–Y8 | Y | ✅ 完成（Y1/Y3 降级收口；Y4 跨线程移动待 Thread 传参） |
 
 ---
 
