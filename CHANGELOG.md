@@ -9,6 +9,8 @@
 
 ### 新增
 
+- **六语言全量基准（2026-11-15）**：修复 Go benchmark 构建（本机 Homebrew std 模块元数据不可用，runner 改用 `GO111MODULE=off`），完成 13 基准 × C/C++/Go/Rust/Swift/Rlyeh 的 30 轮同机对比；Rlyeh 在 actor_pingpong / btree / dyn_dispatch 为全场最快，matmul/loop_sum/strcat/region_batch 与最快语言 1.0–1.06x。完整数据见 [benchmarks/README.md](examples/projects/benchmarks/README.md) 与 `results/benchmark_report.md`。
+
 - **优化级别（2026-11-15）**：新增 `-O0/-O1/-O2/-O3/-Os` 与 `--opt-level=`，同时控制 Rlyeh MIR 优化流水线（常量折叠 / DCE / 基础内联）和 clang 后端；默认 `-O3` 保持原发布级行为。缓存键包含优化级别，`--emit ir` 按所选级别导出。新增 `tests/run-pass/opt_level_o0.rl` 与 [docs/optimization-levels.md](docs/optimization-levels.md)。
 
 - **性能优化第二批次（2026-11-15）**：`String::with_capacity` 改为对象+数据一次分配（`alloc_string_inline`，cap bit62 inline 标记，grow 跳过内联数据 free）；`HashMap` 小表 1/2 负载、大表 7/8 负载，且 `states`/`dist` 合并为单个 `meta` 数组（0=空、-1=墓碑、d+1=占用距离），`hashmap` 6.67–7.38 → 5.80–6.39 ms。`hashmap_str` 7.173 → 3.43–3.82 ms（约 1.9–2.1x），`hashmap`/`strcat`/`loop_sum` 保持或略优；region bump 去掉每对象对齐运算，`region_batch` 12.81 → 11.96 ms；`rlyeh test tests` 363/363。

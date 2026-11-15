@@ -78,7 +78,12 @@ def build(bench: str, name: str, lang: str, ext: str) -> tuple[str | None, float
     if lang in ("c", "cpp") and bench in THREAD_BENCHES:
         cmd.append("-pthread")
     t0 = time.perf_counter()
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    # 各 benchmark 是单文件 main 包；部分 Homebrew Go 安装的 std 模块
+    # 元数据不可用（go list fmt 失败），用 GOPATH 模式可正常构建。
+    if lang == "go":
+        env["GO111MODULE"] = "off"
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     ms = (time.perf_counter() - t0) * 1000.0
     if r.returncode != 0:
         print(f"  [编译失败] {bench}/{name}: {r.stderr.strip()[:300]}")
@@ -214,7 +219,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
     lines.append("| Rust | `rustc -O` |")
     lines.append("| Swift| `swiftc -O` |")
     lines.append("")
-    lines.append("## 运行耗时（毫秒，10 轮取平均值，越低越好）\n")
+    lines.append(f"## 运行耗时（毫秒，{runs} 轮取平均值，越低越好）\n")
     lines.append("| 基准 | " + " | ".join(langs) + " |")
     lines.append("|------|" + "-----|" * len(langs))
     for bench in BENCHMARKS:
@@ -245,7 +250,7 @@ def write_report(results: dict, compile_ms: dict, runs: int, warmup: int) -> Non
             continue
         row = results[bench]
         base = row.get("Rlyeh")
-        ratio = [f"{base / row[l]:.1f}x" if base and l in row and row[l] > 0 else "—" for l in langs]
+        ratio = [f"{base / row[l]:.2f}x" if base and l in row and row[l] > 0 else "—" for l in langs]
         speed_lines.append(f"| {bench} | " + " | ".join(ratio) + " |")
     lines.append("")
     lines.extend(speed_lines)
