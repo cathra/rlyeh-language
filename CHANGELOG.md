@@ -9,7 +9,7 @@
 
 ### 新增
 
-- **性能优化第二批次（2026-11-15）**：`String::with_capacity` 改为对象+数据一次分配（`alloc_string_inline`，cap bit62 inline 标记，grow 跳过内联数据 free）；`HashMap` 小表 1/2 负载、大表 7/8 负载。`hashmap_str` 7.173 → 3.43–3.82 ms（约 1.9–2.1x），`hashmap`/`strcat`/`loop_sum` 保持或略优；`rlyeh test tests` 363/363。
+- **性能优化第二批次（2026-11-15）**：`String::with_capacity` 改为对象+数据一次分配（`alloc_string_inline`，cap bit62 inline 标记，grow 跳过内联数据 free）；`HashMap` 小表 1/2 负载、大表 7/8 负载。`hashmap_str` 7.173 → 3.43–3.82 ms（约 1.9–2.1x），`hashmap`/`strcat`/`loop_sum` 保持或略优；region bump 去掉每对象对齐运算，`region_batch` 12.81 → 11.96 ms；`rlyeh test tests` 363/363。
 
 - **无堆编程模式（2026-11-15）**：新增 `rlyeh build/run --no-heap`（隐含 `--no-std`），拒绝 `String`/`Vec`/`HashMap`/`Box`/`Rc`/`Arc`/`Gc`、`format!` 等格式化宏、`region`、`alloc_bytes`/`alloc_array`，类型检查报 `NH001`；定长数组与任意字段数标量 struct 改为栈上 `[N x i64]` 分配，支持按引用跨函数传递。codegen 后置扫描 LLVM IR 中的 `calloc/malloc/realloc/rlyeh_region_alloc` 作为最终守卫，确保 `--no-heap` 产物无堆调用。新增 `tests/run-pass/no_heap_crypto.rl`、5 个 compile-fail 用例与 [docs/no-heap.md](docs/no-heap.md)（含 GM/T 0028 适用边界与限制）。
 

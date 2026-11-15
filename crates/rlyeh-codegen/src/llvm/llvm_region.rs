@@ -140,9 +140,9 @@ impl LlvmEmitter {
         slot: &str,
         body: &mut String,
     ) -> String {
-        let align = 8u64; // 与 rlyeh-region-alloc MemoryBlock::BASE_ALIGN 一致
-        let amask = align - 1; // 7
-        let not_amask = !amask; // 18446744073709551607
+        // bump 不变量：cursor 恒 8 字节对齐；所有分配尺寸向上取整到 8，
+        // 故热路径可省略每对象的 `(cursor+7)&-8` 对齐运算。
+        let padded = (size + 7) & !7;
         let b = self.reg();
         body.push_str(&format!("  %{b} = load i8*, i8** %{handle}\n"));
         let base = self.reg();
@@ -155,10 +155,8 @@ impl LlvmEmitter {
         body.push_str(&format!("  %{lg} = getelementptr i8, i8* %{b}, i64 16\n"));
         body.push_str(&format!("  %{lv} = bitcast i8* %{lg} to i64*\n"));
         body.push_str(&format!("  %{lim} = load i64, i64* %{lv}, !tbaa !2\n"));
-        let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
-        body.push_str(&format!("  %{m} = add i64 %{cur}, {amask}\n"));
-        body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
-        body.push_str(&format!("  %{new} = add i64 %{al}, {size}\n"));
+        let (al, new, ok) = (cur.clone(), self.reg(), self.reg());
+        body.push_str(&format!("  %{new} = add i64 %{al}, {padded}\n"));
         body.push_str(&format!("  %{ok} = icmp ule i64 %{new}, %{lim}\n"));
         let (fast, slow, join) = (self.label(), self.label(), self.label());
         body.push_str(&format!("  br i1 %{ok}, label %{fast}, label %{slow}\n"));
@@ -175,7 +173,7 @@ impl LlvmEmitter {
         body.push_str(&format!("{slow}:\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{b}, i64 {size}, i64 8) nounwind\n"
+            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{b}, i64 {padded}, i64 8) nounwind\n"
         ));
         body.push_str(&format!("  store i8* %{sp}, i8** %{slot}\n"));
         body.push_str(&format!("  br label %{join}\n"));
@@ -203,13 +201,9 @@ impl LlvmEmitter {
         slot: &str,
         body: &mut String,
     ) -> String {
-        let align = 8u64; // 与 MemoryBlock::BASE_ALIGN 一致
-        let amask = align - 1; // 7
-        let not_amask = !amask; // 18446744073709551607
-        let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
-        body.push_str(&format!("  %{m} = add i64 %hcur_{hdr}, {amask}\n"));
-        body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
-        body.push_str(&format!("  %{new} = add i64 %{al}, {size}\n"));
+        let padded = (size + 7) & !7;
+        let (al, new, ok) = (format!("hcur_{hdr}"), self.reg(), self.reg());
+        body.push_str(&format!("  %{new} = add i64 %{al}, {padded}\n"));
         body.push_str(&format!("  %{ok} = icmp ule i64 %{new}, %hlim_{hdr}\n"));
         // join 为预分配 label（header phi 已引用它）；fast/slow 新建
         debug_assert!(
@@ -247,7 +241,7 @@ impl LlvmEmitter {
         body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}, !tbaa !2\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{h}, i64 {size}, i64 8) nounwind\n"
+            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{h}, i64 {padded}, i64 8) nounwind\n"
         ));
         let rc = self.reg();
         body.push_str(&format!("  %{rc} = load i64, i64* %{cv}, !tbaa !2\n"));
@@ -284,13 +278,9 @@ impl LlvmEmitter {
         total: usize,
         body: &mut String,
     ) {
-        let align = 8u64; // 与 MemoryBlock::BASE_ALIGN 一致
-        let amask = align - 1;
-        let not_amask = !amask;
-        let (m, al, new, ok) = (self.reg(), self.reg(), self.reg(), self.reg());
-        body.push_str(&format!("  %{m} = add i64 %hcur_{hdr}, {amask}\n"));
-        body.push_str(&format!("  %{al} = and i64 %{m}, {not_amask}\n"));
-        body.push_str(&format!("  %{new} = add i64 %{al}, {total}\n"));
+        let padded_total = (total + 7) & !7;
+        let (al, new, ok) = (format!("hcur_{hdr}"), self.reg(), self.reg());
+        body.push_str(&format!("  %{new} = add i64 %{al}, {padded_total}\n"));
         body.push_str(&format!("  %{ok} = icmp ule i64 %{new}, %hlim_{hdr}\n"));
         let join = self
             .promo
@@ -328,7 +318,7 @@ impl LlvmEmitter {
         body.push_str(&format!("  store i64 %hcur_{hdr}, i64* %{cv}, !tbaa !2\n"));
         let sp = self.reg();
         body.push_str(&format!(
-            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{h}, i64 {total}, i64 8) nounwind\n"
+            "  %{sp} = call i8* @rlyeh_region_alloc(i8* %{h}, i64 {padded_total}, i64 8) nounwind\n"
         ));
         let rc = self.reg();
         body.push_str(&format!("  %{rc} = load i64, i64* %{cv}, !tbaa !2\n"));
