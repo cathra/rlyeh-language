@@ -125,7 +125,7 @@ if [[ -n "$RUSTLLD" ]]; then
             RUSTFLAGS="-C link-self-contained=yes -C link-arg=-L$RISCV_LIBGCC_DIR" \
                 build_platform "linux-riscv64" "riscv64gc-unknown-linux-musl" "" "$RUSTLLD"
         else
-            build_platform "linux-riscv64" "riscv64gc-unknown-linux-musl" "" "$RUSTLLD"
+            echo "!! 跳过 linux-riscv64（缺 RISC-V libgcc_s；设 RISCV_LIBGCC_DIR 指向含 libgcc_s.so 的目录）"
         fi
     fi
     # LoongArch64（龙芯）：需要 LoongArch64 的 libgcc_s（Loongson 官方交叉工具链提供）。
