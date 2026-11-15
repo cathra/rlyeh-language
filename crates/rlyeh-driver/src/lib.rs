@@ -16,6 +16,7 @@
 
 pub mod error;
 pub mod incremental;
+mod macro_oracle;
 mod module;
 mod stdlib;
 pub mod test_runner;
@@ -25,6 +26,7 @@ use std::process::Command;
 
 use error::DriverError;
 pub use incremental::cache::CacheStats;
+pub use macro_oracle::{emit_macro_expand, emit_macro_expand_rules};
 use incremental::cache::IncrementalCache;
 use incremental::hash::{compute_interface_hash, compute_source_hash, extract_interface};
 use rlyeh_borrowck::BorrowChecker;
@@ -1371,3 +1373,339 @@ pub use link::{
 };
 use link::*;
 use util::*;
+
+// ===========================================================================
+// M-M3a：类型化 AST 的节点级对拍 oracle
+// ---------------------------------------------------------------------------
+// 与既有 `emit_ast_canonical*` / `render_*_canonical` **完全同一套节点命名**，
+// 但改为「每个 AST 节点输出一行 head」（前序遍历），供 Rlyeh 版 AST 模型
+// （`self-host/ast.rl` 的 `ast_kinds`）做节点级差分对拍（不再依赖文本拼接）。
+//
+// 规则：与 render_*_canonical 的列表节点一一对应——凡渲染为真节点（有 head）
+// 的 AST 结点输出其 head；仅作为原子值渲染的内容（运算符名、名称、`mut`/
+// `pub`、数字标志等）不输出。既有 render 函数不做任何改动。
+// ===========================================================================
+
+/// 源码 -> 节点级 head 序列（程序级，逐行；对应 `emit_ast_canonical`）。
+///
+/// 前序遍历；每行一个 head（program/let/bin/int/...）。无尾随换行。
+pub fn emit_ast_kinds(source: &str) -> Result<String, DriverError> {
+    let ast = rlyeh_parser::parse(source)
+        .map_err(|e| DriverError::Typecheck(format!("parse error: {e}")))?;
+    let mut kinds: Vec<&'static str> = Vec::new();
+    kinds_program(&ast, &mut kinds);
+    Ok(kinds.join("\n"))
+}
+
+/// 源码 -> 节点级 head 序列（单表达式级，逐行；对应 `emit_ast_canonical_expr`）。
+pub fn emit_ast_kinds_expr(source: &str) -> Result<String, DriverError> {
+    let ast = rlyeh_parser::parse(source)
+        .map_err(|e| DriverError::Typecheck(format!("parse error: {e}")))?;
+    let item = ast
+        .items
+        .first()
+        .ok_or_else(|| DriverError::Typecheck("空程序".to_string()))?;
+    let expr = match item {
+        rlyeh_ast::AstItem::Statement(s) => match &**s {
+            rlyeh_ast::AstStmt::Expr(e) => e,
+            rlyeh_ast::AstStmt::Semi(e) => e,
+            _ => return Err(DriverError::Typecheck("顶层非表达式语句".to_string())),
+        },
+        _ => return Err(DriverError::Typecheck("顶层非语句项".to_string())),
+    };
+    let mut kinds: Vec<&'static str> = Vec::new();
+    kinds_expr(expr, &mut kinds);
+    Ok(kinds.join("\n"))
+}
+
+fn kinds_program(ast: &rlyeh_ast::AstProgram, out: &mut Vec<&'static str>) {
+    out.push("program");
+    for item in &ast.items {
+        match item {
+            rlyeh_ast::AstItem::Statement(stmt) => kinds_stmt(stmt, out),
+            rlyeh_ast::AstItem::FnDecl(decl) => kinds_fn_decl(decl, out),
+            rlyeh_ast::AstItem::StructDecl(decl) => {
+                out.push("struct");
+                if !decl.generics.is_empty() {
+                    out.push("generics");
+                }
+                for f in &decl.fields {
+                    out.push("field");
+                    kinds_type(&f.type_, out);
+                }
+            }
+            rlyeh_ast::AstItem::EnumDecl(decl) => {
+                out.push("enum");
+                if !decl.generics.is_empty() {
+                    out.push("generics");
+                }
+                for v in &decl.variants {
+                    out.push("variant");
+                    if !v.tuple_fields.is_empty() {
+                        for t in &v.tuple_fields {
+                            kinds_type(t, out);
+                        }
+                    } else {
+                        for f in &v.struct_fields {
+                            out.push("field");
+                            kinds_type(&f.type_, out);
+                        }
+                    }
+                }
+            }
+            _ => out.push("item-unsupported"),
+        }
+    }
+}
+
+fn kinds_fn_decl(decl: &rlyeh_ast::AstFnDecl, out: &mut Vec<&'static str>) {
+    out.push("fn");
+    if !decl.generics.is_empty() {
+        out.push("generics");
+    }
+    out.push("params");
+    for p in &decl.params {
+        out.push("param");
+        kinds_type(&p.type_, out);
+    }
+    if let Some(rt) = &decl.return_type {
+        kinds_type(rt, out);
+    }
+    if let Some(body) = &decl.body {
+        kinds_block(body, out);
+    }
+}
+
+fn kinds_stmt(stmt: &rlyeh_ast::AstStmt, out: &mut Vec<&'static str>) {
+    match stmt {
+        rlyeh_ast::AstStmt::Let {
+            pattern,
+            type_anno,
+            init,
+            ..
+        } => {
+            out.push("let");
+            kinds_pattern(pattern, out);
+            if let Some(ta) = type_anno {
+                kinds_type(&ta.ty, out);
+            }
+            kinds_expr(init, out);
+        }
+        rlyeh_ast::AstStmt::Expr(e) | rlyeh_ast::AstStmt::Semi(e) => {
+            out.push("semi");
+            kinds_expr(e, out);
+        }
+        rlyeh_ast::AstStmt::Item(_) => out.push("item-unsupported"),
+    }
+}
+
+fn kinds_block(block: &rlyeh_ast::AstBlock, out: &mut Vec<&'static str>) {
+    out.push("block");
+    for stmt in &block.stmts {
+        kinds_stmt(stmt, out);
+    }
+    if let Some(fe) = &block.final_expr {
+        kinds_expr(fe, out);
+    }
+}
+
+fn kinds_expr(e: &rlyeh_ast::AstExpr, out: &mut Vec<&'static str>) {
+    use rlyeh_ast::ExprKind::*;
+    match &*e.kind {
+        IntLiteral(_) => out.push("int"),
+        Ident(_) => out.push("var"),
+        Path(_) => out.push("path"),
+        BoolLiteral(_) => out.push("bool"),
+        StringLiteral(_) => out.push("str"),
+        // 与 render 对齐：仅 Neg 渲染为 (neg ...)，其余为 (unary-unsupported ...)
+        Unary { op, operand } => {
+            if matches!(op, rlyeh_ast::UnaryOp::Neg) {
+                out.push("neg");
+            } else {
+                out.push("unary-unsupported");
+            }
+            kinds_expr(operand, out);
+        }
+        Binary { left, right, .. } => {
+            out.push("bin");
+            kinds_expr(left, out);
+            kinds_expr(right, out);
+        }
+        ComparisonChain {
+            elements,
+            operators,
+        } => {
+            if operators.len() == 1 {
+                out.push("bin");
+                kinds_expr(&elements[0], out);
+                kinds_expr(&elements[1], out);
+            } else {
+                out.push("cmpchain-unsupported");
+            }
+        }
+        Return(opt) => {
+            out.push("return");
+            if let Some(e) = opt {
+                kinds_expr(e, out);
+            }
+        }
+        Block(b) => kinds_block(b, out),
+        If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            out.push("if");
+            kinds_expr(cond, out);
+            kinds_block(then_block, out);
+            if let Some(eb) = else_block {
+                kinds_block(eb, out);
+            }
+        }
+        While { cond, body } => {
+            out.push("while");
+            kinds_expr(cond, out);
+            kinds_block(body, out);
+        }
+        Loop { body } => {
+            out.push("loop");
+            kinds_block(body, out);
+        }
+        FieldAccess { expr, .. } => {
+            out.push("field");
+            kinds_expr(expr, out);
+        }
+        Index { expr, index } => {
+            out.push("index");
+            kinds_expr(expr, out);
+            kinds_expr(index, out);
+        }
+        Call { callee, args, .. } => {
+            out.push("call");
+            kinds_expr(callee, out);
+            for a in args {
+                kinds_expr(a, out);
+            }
+        }
+        // render 将 MethodCall 归一为 (call (field RECV M) ARGS)：节点级同样展开为
+        // call -> field -> RECV -> ARGS。
+        MethodCall { receiver, args, .. } => {
+            out.push("call");
+            out.push("field");
+            kinds_expr(receiver, out);
+            for a in args {
+                kinds_expr(a, out);
+            }
+        }
+        TupleLit(elements) => {
+            out.push("tuple");
+            for e in elements {
+                kinds_expr(e, out);
+            }
+        }
+        ArrayLit(elements) => {
+            out.push("array-lit");
+            for e in elements {
+                kinds_expr(e, out);
+            }
+        }
+        Unit => out.push("unit"),
+        Range { lower, upper, .. } => {
+            out.push("range");
+            if let Some(e) = lower {
+                kinds_expr(e, out);
+            }
+            if let Some(u) = upper {
+                kinds_expr(u, out);
+            }
+        }
+        For {
+            pattern,
+            iterator,
+            body,
+        } => {
+            out.push("for");
+            kinds_pattern(pattern, out);
+            kinds_expr(iterator, out);
+            kinds_block(body, out);
+        }
+        Match { expr, arms } => {
+            out.push("match");
+            kinds_expr(expr, out);
+            for arm in arms {
+                out.push("arm");
+                kinds_pattern(&arm.pattern, out);
+                if let Some(g) = &arm.guard {
+                    kinds_expr(g, out);
+                }
+                kinds_expr(&arm.body, out);
+            }
+        }
+        _ => out.push("unsupported"),
+    }
+}
+
+fn kinds_pattern(p: &rlyeh_ast::AstPattern, out: &mut Vec<&'static str>) {
+    use rlyeh_ast::AstPattern::*;
+    match p {
+        // 与 render 对齐：标识符 / 通配 / rest 渲染为裸原子，无节点 head
+        Ident(_) | Wildcard | Rest => {}
+        Literal(lv) => match lv {
+            rlyeh_ast::LiteralValue::Int(_) => out.push("lit-int"),
+            rlyeh_ast::LiteralValue::Bool(_) => out.push("lit-bool"),
+            rlyeh_ast::LiteralValue::Str(_) => out.push("lit-str"),
+            rlyeh_ast::LiteralValue::Char(_) => out.push("lit-char"),
+            rlyeh_ast::LiteralValue::Float(_) => out.push("lit-float"),
+            rlyeh_ast::LiteralValue::Time { .. } => out.push("lit-time"),
+        },
+        Tuple(elems, _) => {
+            out.push("tuple-pat");
+            for e in elems {
+                kinds_pattern(e, out);
+            }
+        }
+        Range { lower, upper, .. } => {
+            out.push("range-pat");
+            kinds_expr(lower, out);
+            kinds_expr(upper, out);
+        }
+        Or(alts) => {
+            out.push("or");
+            for a in alts {
+                kinds_pattern(a, out);
+            }
+        }
+        _ => out.push("pat-unsupported"),
+    }
+}
+
+fn kinds_type(t: &rlyeh_ast::AstType, out: &mut Vec<&'static str>) {
+    use rlyeh_ast::AstType::*;
+    match t {
+        Path(_, args) => {
+            out.push("type");
+            for a in args {
+                kinds_type(a, out);
+            }
+        }
+        Ref(inner, _, _) => {
+            out.push("ref");
+            kinds_type(inner, out);
+        }
+        Tuple(ts) => {
+            out.push("tuple-type");
+            for t in ts {
+                kinds_type(t, out);
+            }
+        }
+        Array(inner, len) => {
+            out.push("array");
+            kinds_type(inner, out);
+            if let Some(e) = len {
+                kinds_expr(e, out);
+            }
+        }
+        Infer => out.push("infer"),
+        _ => out.push("type-unsupported"),
+    }
+}

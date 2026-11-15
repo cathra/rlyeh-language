@@ -19,6 +19,7 @@ rlyeh-lir = { workspace = true }
 rlyeh-codegen = { workspace = true }
 rlyeh-parser = { workspace = true }
 rlyeh-lexer = { workspace = true }
+rlyeh-macro = { workspace = true }
 rlyeh-ast = { workspace = true }
 rlyeh-actor-runtime = { workspace = true }
 rlyeh-fmt = { workspace = true }

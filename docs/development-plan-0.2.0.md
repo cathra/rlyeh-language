@@ -42,7 +42,7 @@
 | **0.2.0-J** | FFI/ABI 链接桥 | 新增 | [SH-P2-4](tasks/leaf/sh-p2-4-linkage-bridge.md) | 🔴 高 | ✅ 完成（C-ABI staticlib 链接桥） | Rlyeh 产物经 `extern "C"` 符号 + `crate-type=["rlib","staticlib"]` 链接 `librlyeh_*_runtime.a`（按需、缺失跳过），actor/gc/region 测试全绿 |
 | **0.2.0-K** | 分阶段自举 + 差分测试基础设施 | 新增 | [SH-P2-5](tasks/leaf/sh-p2-5-staged-bootstrap.md) | 🔴 高 | 🟢 PoC(CD) | harness + 单编译器快照基线（C0/C1/C2）落地；三阶段自举 K-M1..K-M3 推迟 0.3.0 |
 | **0.2.0-L** | 诊断信息质量对齐 | 新增 | [SH-P2-6](tasks/leaf/sh-p2-6-diagnostics.md) | 🟠 中 | 🟢 完成 | L0 harness 诊断维度 + 探针基线（12 例 check 12/0/0/0）；L1 typecheck/borrowck/regionck 用户态 span 对齐 + 语句级坐标（HIR Span 传播）；L2 结构化诊断（稳定错误码 TC/BC/RC0xx + `= help:` + 相关 span 标注，TypeError 多位置回指） |
-| **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | 🟡 进行中 | M-M1a/b/c 切片1 落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串含转义/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）+ 差分对拍 harness（`--emit tokens` oracle）corpus1/2/3/4/5 token 逐行一致；M-M1c 浮点 ✅（原始拼写对齐，2026-09-21）、非法字符报错 ✅（2026-09-21，负向对拍）；M-M2a 表达式 parser ✅（2026-09-21，S-表达式 AST 对拍）；M-M2b 程序/语句 parser ✅（2026-09-21，b1 语句骨架 + b2 模式/类型标注 + b3 元组/数组类型标注，程序级 S-表达式 AST 对拍，含嵌套泛型 `Vec<Result<i64,String>>`/`&mut`/扁平元组模式/元组类型 `(i64,i64)`/数组 `[T;N]`）；**M-M2c 控制流 parser ✅（2026-09-22，if/else/else-if/while/loop 的语句/块尾双形态 + `let x = if...` 初始化，迭代式控制帧栈，差分对拍一致）**；M-M3/M-M4 待推进 |
+| **0.2.0-M** | 前端自举 PoC | 新增(扩) | [SH-P2-7](tasks/leaf/sh-p2-7-driver.md) | 🔴 高 | 🟢 完成（PoC） | M-M1a/b/c 切片1 落地：Rlyeh 版 lexer `self-host/lexer.rl`（标识符/关键字/整数/浮点/字符串含转义/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符）+ 差分对拍 harness（`--emit tokens` oracle）corpus1/2/3/4/5 token 逐行一致；M-M1c 浮点 ✅（原始拼写对齐，2026-09-21）、非法字符报错 ✅（2026-09-21，负向对拍）；M-M2a 表达式 parser ✅（2026-09-21，S-表达式 AST 对拍）；M-M2b 程序/语句 parser ✅（2026-09-21，b1 语句骨架 + b2 模式/类型标注 + b3 元组/数组类型标注，程序级 S-表达式 AST 对拍，含嵌套泛型 `Vec<Result<i64,String>>`/`&mut`/扁平元组模式/元组类型 `(i64,i64)`/数组 `[T;N]`）；**M-M2c 控制流 parser ✅（2026-09-22，if/else/else-if/while/loop 的语句/块尾双形态 + `let x = if...` 初始化，迭代式控制帧栈，差分对拍一致）**；M-M2d/M-M2e、元组/数组字面量（P-M3）、for+范围（P-M4）、match、fn 项、字符串·布尔字面量、struct/enum、`::` 路径、泛型参数（M-M10）均 ✅（parser 14 组差分对拍 + 真实示例 dogfood）；parser 已拆分为 `self-host/parser/*.rl` 6 个 ≤1000 行片段；计划级 M-M3 拆为 M-M3a（类型化 AST）/ M-M3b（parser 切换 AST）/ M-M3c（macro），M-M3a ✅（`self-host/ast.rl` 类型化 AST + `emit_ast_kinds` 节点级对拍 4/4）；M-M3b ✅（真·arena 全层节点构造：parser 15/15 + ast 4/4）；M-M3c ✅（macro 最小对拍 2/2，43 组用例）；M-M4 ✅（lexer+ast+parser 单编译单元串联 + 16 个真实语料四层 dogfood 2/2） |
 | **0.2.0-N** | 元组值构造 + 解构（多返回值） | P0-5 | [SH-P0-5](tasks/leaf/sh-p0-5-tuple-value.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：PoC 解析器 `(tok,rest)` 前置；类型层已就绪 |
 | **0.2.0-O** | `if let` / `while let` 模式控制流 | P0-6 | [SH-P0-6](tasks/leaf/sh-p0-6-if-let.md) | 🔴 高 | 🟢 完成 | **复审补遗**：语言完全缺失，解析器/类型检查器重写依赖 |
 | **0.2.0-P** | `match` 守卫 + 范围/或模式 | P0-7 | [SH-P0-7](tasks/leaf/sh-p0-7-match-guard.md) | 🔴 中高 | 🟢 完成 | **复审补遗**：字符分类/判别分支依赖 |
@@ -150,9 +150,9 @@
 > **关联文档**：[SH-P2-6 诊断信息质量对齐](tasks/leaf/sh-p2-6-diagnostics.md)
 
 ### 3.13 M 前端自举 PoC（交付物，扩展）
-- M1–M3：用 Rlyeh 重写 `lexer`+`parser`+`ast`+`macro`（依赖 A/B/C/E 落地）。
-- M4：经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）。
-- 验收即"前端逻辑主体已是 Rlyeh 源码、可被自身工具链编译"。
+- ✅ M1–M3：用 Rlyeh 重写 `lexer`+`parser`+`ast`+`macro`（依赖 A/B/C/E 落地）；parser 拆分为 `self-host/parser/*.rl` 6 个 ≤1000 行片段。
+- ✅ M4：经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）；`self_host_dogfood.rs` 单编译单元四层对拍覆盖 16 个真实语料。
+- 验收即"前端逻辑主体已是 Rlyeh 源码、可被自身工具链编译"（2026-11-14 收尾完成）。
 > **关联文档**：[SH-P2-7 前端自举 PoC（driver 自举）](tasks/leaf/sh-p2-7-driver.md)
 
 ### 3.14 N 元组值构造 + 解构（多返回值）（P0-5）
@@ -339,13 +339,14 @@ actor 消息协议（异构消息信封）地基（事实依据：`rlyeh-actor-r
 
 ### 7.7 M 前端自举 PoC（SH-P2-7，🔴 高）
 交付物（dogfood）；依赖 A/B/C/E 落地，复用 K 的差分 harness 逐步对拍。
-- **M-M1（中）** 用 Rlyeh 重写 `lexer`（依赖 N 元组值 / O `if let` / P `match` 守卫），对拍 token 一致。
-- **M-M2（中）** 用 Rlyeh 重写 `parser`（依赖 N/O/P + 递归下降），对拍 AST 一致。
+- **M-M1（✅ 2026-09-20）** 用 Rlyeh 重写 `lexer`（`self-host/lexer.rl`）：标识符/关键字/整数/浮点/字符串(含转义)/运算符/注释/char/生命周期/`not in`/时间/原始字符串/原始标识符；与 `--emit tokens` oracle 对拍 corpus1..5 逐行一致，非法字符负向对拍通过。
+- **M-M2（✅ 2026-09-22）** 用 Rlyeh 重写 `parser`（`self-host/parser/*.rl`）：14 组差分对拍 + 真实示例 dogfood；parser 已按 CODEBUDDY §7.0 拆分为 6 个 ≤1000 行片段（`00_prelude`/`01_tokenize`/`02_expr`/`03_types`/`04_items`/`05_program`，由 harness 按文件名顺序拼接）。
   - **M-M2a（✅ 2026-09-21）** 表达式 → S-表达式 AST（shunting-yard + RPN 迭代建树，无递归）。
   - **M-M2b（✅ 2026-09-22）** 程序/语句级：b1 语句骨架 + b2 模式/类型标注 + b3 元组/数组类型标注。
   - **M-M2c（✅ 2026-09-22）** 控制流 `if`/`else`/`else if`/`while`/`loop` 的语句/块尾双形态 + `let x = if...` 初始化（迭代式控制帧栈，差分对拍一致）。
-- **M-M3（中）** 用 Rlyeh 重写 `ast` + `macro`（依赖 C derive / I 内部可变性），对拍 AST 节点构造一致。
-- **M-M4（中）** 串联 M1–M3，经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）。
+  - **M-M2d–M-M10（✅ 2026-09-22）** 字段访问、索引/调用/方法、元组/数组字面量（P-M3）、for+范围（P-M4）、match、fn 项、字符串/布尔字面量+dogfood、struct/enum、`::` 路径、泛型参数；注意 parser 切片历史编号 M-M3/M-M4 与计划级 M-M3/M-M4 同名，叶子已消歧。
+- **M-M3（✅ 2026-11-14）** 用 Rlyeh 重写 `ast` + `macro`（依赖 C derive / I 内部可变性），对拍 AST 节点构造一致。拆为三个低风险切片：**M-M3a** 类型化 AST 模型 + 节点级对拍（✅ 2026-10-19）、**M-M3b** parser 切换 AST 构造（文本对拍不变，✅ 2026-10-19）、**M-M3c** macro 最小对拍（✅ 2026-11-14，`self-host/macro.rl` + `macro_oracle.rs` + `self_host_macro.rs`，2/2、43 组用例）。
+- **M-M4（✅ 2026-11-14）** 串联 M1–M3，经 Rust `rlyeh-driver` 编译通过，并与 Rust 版前端**对拍**（同 `.rl` 输入，token/AST 一致）；`self_host_dogfood.rs` 以 lexer+ast+parser 单编译单元一次产出 token/AST/kinds/roundtrip 四层并与 oracle 对拍，覆盖 16 个真实语料（examples 8 + tests/run-pass 8），2/2 通过（三阶段 bootstrap 的 K-M1..K-M3 按 SH-P2-5 推迟至 0.3.0，不属本轮）。
 - **关键 checkpoint**：对拍 token/AST 一致；验收即「前端逻辑主体已是 Rlyeh 源码、可被自身工具链编译」。
 > **关联文档**：[SH-P2-7 前端自举 PoC（driver 自举）](tasks/leaf/sh-p2-7-driver.md)
 
@@ -403,6 +404,8 @@ MutexGuard 自动解锁、arena 自动释放需 `Drop`/RAII；Rlyeh 0.1.0 完全
 | 2026-09-01 | **文档管理对齐**：§2 总览表增「关联文档」列（阶段→`tasks/leaf/sh-*` 叶子）；§3 各阶段明细补「关联文档」链接；复审补遗 N–Y 由合并 §3.14 拆分为 §3.14–§3.25 独立小节，与叶子文档 `计划` 反向链接（§3.14=SH-P0-5 … §3.25=SH-P3-1）一致；补齐缺失叶子 `sh-p0-6-if-let.md`（阶段 O） |
 | 2026-09-01 | **高危任务细化**：§7 由单表扩展为「速览表 + §7.1–§7.11 子任务小节」，各高危阶段列具体 M 子任务 / 关键 checkpoint / 关联叶子；补齐缺失叶子 `sh-p2-5-staged-bootstrap.md`（K）、`sh-p2-7-driver.md`（M）；修正 `sh-p0-1`/`sh-p0-3` 归属为 0.2.0-E/G（与原「0.3.0+ 长期跟踪」矛盾） |
 | 2026-09-21 | **M-M2b2 落地**：SH-P2-7 M-M2b 补齐 `let` 模式（扁平元组/`_`）与类型标注（`i64`/`&T`/`&mut T`/泛型 `@GEN@` 迭代收束，嵌套 `Vec<Result<i64,String>>` 正确）；Rust oracle 新增 `render_pattern_canonical`/`render_type_canonical`；`tests/self_host_parser.rs` 扩展 b2 用例逐字节对拍一致；实证 Rlyeh 5 项约束（`&&` 不短路、返回 `String` 禁用 `return`、if-表达式 else 返回条件值、`>>`=shr、前向调用推断 i64）写入叶子踩坑点 |
+| 2026-10-19 | **SH-P2-7 收尾启动**：M-M1/M-M2（a–m 全部切片）✅ 状态同步；parser 拆分 `self-host/parser/*.rl`（6 片段 ≤1000 行）；计划级 M-M3 拆为 M-M3a（类型化 AST）/M-M3b（parser 切换 AST）/M-M3c（macro 对拍），M-M3a ✅（类型化 AST + 节点级对拍 4/4）；M-M3b ✅（真·arena 全层贯通，parser 15/15 + ast 4/4）；M-M3c 进行中；M-M4 串联 + 扩大 dogfood 待推进 |
+| 2026-11-14 | **SH-P2-7 收尾完成**：M-M3c macro 最小对拍（`self-host/macro.rl` 876 行 + `macro_oracle.rs` + `self_host_macro.rs`，2/2、43 组用例）；M-M4 `self_host_dogfood.rs` 以 lexer+ast+parser 单编译单元串联，16 个真实语料 token/AST/kinds/roundtrip 四层对拍（2/2，35.56s）；parser 辅助函数改名 `p_is_ident_cont` 支持跨层拼接；0.2.0-M 状态置为 🟢 完成（PoC） |
 | 2026-09-22 | **M-M2c 落地**：SH-P2-7 M-M2c 控制流 `if`/`else`/`else if`/`while`/`loop` 的语句/块尾双形态 + `let x = if...` 初始化；Rlyeh 版 `self-host/parser.rl` 新增迭代式控制帧栈（`cf_*` + pending-let 栈，整数态全 `Vec<String>` 编码规避 `Vec<i64>` 的 `get`/`pop` 返回 ptr 冲突）；Rust oracle `render_expr_canonical` 新增 `If`/`While`/`Loop` 分支；`tests/self_host_parser.rs` 新增 `m_m2c_control_flow_ast_matches_rust_oracle` 差分对拍一致 |
 
 ---

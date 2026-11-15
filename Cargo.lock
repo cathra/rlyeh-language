@@ -852,6 +852,7 @@ dependencies = [
  "rlyeh-lexer",
  "rlyeh-lir",
  "rlyeh-lsp",
+ "rlyeh-macro",
  "rlyeh-mir",
  "rlyeh-parser",
  "rlyeh-region-alloc",
