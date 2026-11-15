@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-15
+
 ### 新增
 
 - **String clone/substring 预分配（2026-11-15）**：`String::clone` 与 `substring` 改为先 `String::with_capacity(len)` 一次分配、再逐字节写入，避免旧实现从 `String::new()` 的 8 字节缓冲反复 grow；`substring` 对 `start >= end` 显式取 0 长度。`rlyeh test tests` 364/364。

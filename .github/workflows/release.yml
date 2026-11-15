@@ -128,3 +128,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/${{ matrix.name }}.tar.gz
+          generate_release_notes: true

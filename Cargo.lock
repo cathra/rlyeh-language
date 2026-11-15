@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "dagon"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -769,7 +769,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rlyeh-actor-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "crossbeam-channel",
@@ -782,18 +782,18 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-ast"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-lexer",
 ]
 
 [[package]]
 name = "rlyeh-bench"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "rlyeh-borrowck"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-hir",
  "rlyeh-lexer",
@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-check"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-ast",
  "rlyeh-lexer",
@@ -811,14 +811,14 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-codegen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-lir",
 ]
 
 [[package]]
 name = "rlyeh-desugar"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-ast",
  "rlyeh-lexer",
@@ -828,7 +828,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-doc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-ast",
  "rlyeh-lexer",
@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-driver"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dagon",
  "rlyeh-actor-runtime",
@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-fmt"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-ast",
  "rlyeh-parser",
@@ -873,21 +873,21 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-gc-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "rlyeh-hir"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-lexer",
 ]
 
 [[package]]
 name = "rlyeh-lexer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "thiserror 1.0.69",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-lir"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-hir",
  "rlyeh-mir",
@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-lsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-check",
  "serde",
@@ -914,14 +914,14 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-macro"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-lexer",
 ]
 
 [[package]]
 name = "rlyeh-mir"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-hir",
  "rlyeh-typecheck",
@@ -929,7 +929,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "rlyeh-ast",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-region-alloc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "serde",
@@ -950,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-regionck"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-hir",
  "rlyeh-lexer",
@@ -959,14 +959,14 @@ dependencies = [
 
 [[package]]
 name = "rlyeh-std"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "rlyeh-typecheck"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rlyeh-ast",
  "rlyeh-desugar",

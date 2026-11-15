@@ -1,8 +1,8 @@
 # CODEBUDDY.md — Rlyeh 系统级编程语言
 
 > **项目代号**：Rlyeh  
-> **版本**：0.1.0（已收口） / 0.2.0（自举能力补齐，收尾验收完成）
-> **状态**：0.1.0 MVP 已收口；0.2.0 阶段 A–Y 已落地（前端自举 PoC ✅），0.2.0 收尾验收通过（134 测试目标 / 804 测试函数 / 0 失败；快照回归全绿；已知限制移交 0.3.0）
+> **版本**：0.2.0（自举能力补齐，已发布） / 0.1.0（MVP，已收口）
+> **状态**：0.1.0 MVP 已收口；0.2.0 阶段 A–Y 已落地（前端自举 PoC ✅），0.2.0 收尾验收通过（134 测试目标 / 804 测试函数 / 0 失败；快照回归全绿；已知限制移交 0.3.0）；0.3.0 工具链自举待启动
 > **目标平台**：Linux / macOS / Windows / WASM  
 > **实现语言**：Rust（自举编译器，bootstrap 阶段用 Rust 实现；0.2.0 起评估 Rlyeh 自举）  
 > **自举评估**：[`docs/self-hosting/feasibility.md`](docs/self-hosting/feasibility.md) · 0.2.0 计划：[`docs/development-plan-0.2.0.md`](docs/development-plan-0.2.0.md)

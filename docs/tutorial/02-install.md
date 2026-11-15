@@ -98,7 +98,7 @@ RLYEH_PREFIX=/opt/rlyeh ./toolchains/install.sh   # 自定义前缀
 
 ```bash
 export PATH="$HOME/.rlyeh/bin:$PATH"    # 建议写入 ~/.zshrc / ~/.bashrc 永久生效
-rlyeh --version                          # 验证：应显示 rlyeh 0.1.0
+rlyeh --version                          # 验证：应显示 rlyeh 0.2.0
 ```
 
 如果你看到版本号，恭喜，**工具链装好了**。如果提示 `command not found`，检查：PATH 是否写对、install.sh 是否成功执行、`<prefix>/bin` 下是否真有 `rlyeh` 可执行文件。
